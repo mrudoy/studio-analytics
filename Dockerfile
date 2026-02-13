@@ -25,6 +25,5 @@ RUN mkdir -p data/downloads
 EXPOSE 3000
 
 # Use xvfb-run to provide a virtual display for headed Chrome
-# -H 0.0.0.0 binds to all interfaces (required for Railway)
-# $PORT allows Railway to set the port dynamically
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1280x720x24", "npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+# Shell form so $PORT is expanded at runtime (Railway sets PORT dynamically)
+CMD xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx next start -H 0.0.0.0 -p ${PORT:-3000}
