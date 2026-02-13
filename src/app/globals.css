@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* SKY TING Brand Design Tokens */
+:root {
+  --st-bg-primary: #EDEBE8;
+  --st-bg-section: #F2EFE6;
+  --st-bg-card: #FAF9F8;
+  --st-bg-dark: #30302E;
+  --st-text-primary: #413A3A;
+  --st-text-secondary: rgba(65, 58, 58, 0.65);
+  --st-text-light: #EDEBE8;
+  --st-accent: #413A3A;
+  --st-accent-hover: #2E2828;
+  --st-border: rgba(65, 58, 58, 0.12);
+  --st-border-hover: rgba(65, 58, 58, 0.25);
+  --st-radius-pill: 30px;
+  --st-success: #4A7C59;
+  --st-error: #A04040;
+  --st-warning: #8B7340;
+}
+
+/* Fonts loaded via <link> in layout.tsx */
+body {
+  font-family: 'DM Sans', -apple-system, system-ui, 'Helvetica Neue', Helvetica, sans-serif;
+  background-color: var(--st-bg-primary);
+  color: var(--st-text-primary);
+}
+
+h1, h2, h3, .font-heading {
+  font-family: 'Cormorant Garamond', 'Times New Roman', Times, serif;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
