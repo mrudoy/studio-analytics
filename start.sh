@@ -2,7 +2,7 @@
 set -e
 
 echo "=== Studio Analytics Container Starting ==="
-echo "PORT=${PORT:-3000}"
+echo "PORT=3000 (hardcoded)"
 echo "NODE_ENV=${NODE_ENV}"
 echo "Starting Xvfb..."
 
@@ -21,5 +21,5 @@ else
   exit 1
 fi
 
-echo "Starting Next.js on 0.0.0.0:${PORT:-3000}..."
-exec npx next start -H 0.0.0.0 -p ${PORT:-3000}
+echo "Starting Next.js on 0.0.0.0:3000..."
+exec npx next start -H 0.0.0.0 -p 3000
