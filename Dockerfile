@@ -24,6 +24,7 @@ RUN mkdir -p data/downloads
 
 EXPOSE 3000
 
-# Use xvfb-run to provide a virtual display for headed Chrome
-# Shell form so $PORT is expanded at runtime (Railway sets PORT dynamically)
-CMD xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" npx next start -H 0.0.0.0 -p ${PORT:-3000}
+# Startup script: starts Xvfb, then Next.js with proper logging
+COPY start.sh ./
+RUN chmod +x start.sh
+CMD ["./start.sh"]
