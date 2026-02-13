@@ -1,6 +1,13 @@
 import type { AutoRenew } from "@/types/union-data";
 import { getCategory } from "./categories";
 
+/**
+ * Only count subscriptions in these states for active subscriber totals and MRR.
+ * "Valid Now" = actively billing, "Paused" = on hold but still a subscriber.
+ * Excluded: "Pending Cancellation", "Past Due", "In Trial"
+ */
+const COUNTABLE_STATES = new Set(["valid now", "paused"]);
+
 export interface SummaryKPIs {
   mrrMember: number;
   mrrSky3: number;
@@ -24,8 +31,16 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
   let mrrMember = 0, mrrSky3 = 0, mrrSkyTingTv = 0, mrrUnknown = 0;
   let activeMembers = 0, activeSky3 = 0, activeSkyTingTv = 0, activeUnknown = 0;
   const unknownPlanNames: Record<string, number> = {};
+  const skippedStates: Record<string, number> = {};
 
   for (const ar of activeAutoRenews) {
+    // Only count Active + Paused states; skip Pending Cancellation, Past Due, In Trial
+    const normalizedState = ar.state.toLowerCase().trim();
+    if (!COUNTABLE_STATES.has(normalizedState)) {
+      skippedStates[normalizedState] = (skippedStates[normalizedState] || 0) + 1;
+      continue;
+    }
+
     const cat = getCategory(ar.name);
     const monthlyPrice = ar.price; // Assuming price is monthly; annual plans would need division by 12
 
@@ -48,6 +63,12 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
         unknownPlanNames[ar.name] = (unknownPlanNames[ar.name] || 0) + 1;
         break;
     }
+  }
+
+  // Log filtered-out states for visibility
+  if (Object.keys(skippedStates).length > 0) {
+    const total = Object.values(skippedStates).reduce((a, b) => a + b, 0);
+    console.log(`[summary] Filtered out ${total} subscriptions by state: ${JSON.stringify(skippedStates)}`);
   }
 
   // Log unknown plan names for debugging
