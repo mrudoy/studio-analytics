@@ -47,6 +47,7 @@ export const REPORT_URLS = {
   allRegistrations: "/report/registrations/remaining",
   canceledAutoRenews: "/report/subscriptions/growth?filter=cancelled",
   activeAutoRenews: "/report/subscriptions/list?status=active",
+  pausedAutoRenews: "/report/subscriptions/list?status=paused",
   newAutoRenews: "/report/subscriptions/growth?filter=new",
 } as const;
 

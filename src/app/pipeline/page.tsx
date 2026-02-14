@@ -215,7 +215,7 @@ export default function PipelinePage() {
                 Pipeline complete
               </p>
               <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8, fontFamily: FONT_SANS }}>
-                Finished in {Math.round(status.duration / 1000)}s
+                Finished in {Math.floor(status.duration / 60000)}m {Math.round((status.duration % 60000) / 1000)}s
               </p>
               <a
                 href={status.sheetUrl}

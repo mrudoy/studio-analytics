@@ -41,12 +41,12 @@ export class UnionClient {
       mkdirSync(DOWNLOADS_DIR, { recursive: true });
     }
 
-    // Must use headed Chromium — Cloudflare blocks all headless browsers.
-    // Always use Playwright's bundled Chromium (pinned to match Docker image version).
-    // Window is positioned off-screen for pipeline runs (not visible to user).
+    // Use new headless mode — runs in background without stealing focus.
+    // Playwright's "new" headless is Chromium-based and harder to detect than old headless.
+    // If Cloudflare starts blocking this, switch back to headless: false or use initializeHeaded().
     try {
       this.browser = await chromium.launch({
-        headless: false,
+        headless: true,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -291,7 +291,7 @@ export class UnionClient {
     // Navigate to the report page first to establish the page context
     const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
     await this.page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await this.page.waitForTimeout(3000);
+    await this.page.waitForTimeout(1500);
 
     // Check for Cloudflare
     const pageContent = await this.page.content();
@@ -397,7 +397,7 @@ export class UnionClient {
     // Navigate if we're not already on this page, or if forced (e.g. after fetch failure/503)
     if (forceNavigate || !this.page.url().includes(REPORT_URLS[reportType].split("?")[0])) {
       await this.page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await this.page.waitForTimeout(5000);
+      await this.page.waitForTimeout(2000);
 
       // Check for Cloudflare
       const pageContent = await this.page.content();
@@ -410,7 +410,7 @@ export class UnionClient {
 
     // Wait for table content
     await this.page.waitForSelector("table, [class*='table'], [class*='report']", { timeout: 30000 }).catch(async () => {
-      await this.page!.waitForTimeout(3000);
+      await this.page!.waitForTimeout(1500);
     });
 
     // Set date range if provided
@@ -421,7 +421,7 @@ export class UnionClient {
           await dateInput.clear();
           await dateInput.fill(dateRange);
           await this.page.keyboard.press("Enter");
-          await this.page.waitForTimeout(3000);
+          await this.page.waitForTimeout(1500);
         }
       } catch {
         // Date range may not be available on all pages
@@ -555,25 +555,33 @@ export class UnionClient {
   async downloadAllReports(dateRange?: string): Promise<DownloadedFiles> {
     const files: Partial<DownloadedFiles> = {};
 
-    const reportTypes: ReportType[] = [
+    // Phase 1: Download fetch-based CSV reports in parallel (fast, ~5-25s each)
+    this.progress("Fetching CSV reports in parallel", 15);
+    const [canceledFile, newFile] = await Promise.all([
+      this.downloadCSV("canceledAutoRenews", dateRange, 15, 20),
+      this.downloadCSV("newAutoRenews", dateRange, 15, 20),
+    ]);
+    files.canceledAutoRenews = canceledFile;
+    files.newAutoRenews = newFile;
+
+    // Phase 2: Download scrape-based reports serially (share browser page for navigation)
+    const scrapeReports: ReportType[] = [
       "newCustomers",
       "orders",
       "firstVisits",
       "allRegistrations",
-      "canceledAutoRenews",
       "activeAutoRenews",
-      "newAutoRenews",
+      "pausedAutoRenews",
     ];
 
-    // Scraping phase spans 15% to 45% of the overall pipeline
-    const SCRAPE_START = 15;
+    const SCRAPE_START = 20;
     const SCRAPE_END = 45;
     const SCRAPE_RANGE = SCRAPE_END - SCRAPE_START;
 
-    for (let i = 0; i < reportTypes.length; i++) {
-      const reportType = reportTypes[i];
-      const reportStartPct = SCRAPE_START + (i / reportTypes.length) * SCRAPE_RANGE;
-      const reportEndPct = SCRAPE_START + ((i + 1) / reportTypes.length) * SCRAPE_RANGE;
+    for (let i = 0; i < scrapeReports.length; i++) {
+      const reportType = scrapeReports[i];
+      const reportStartPct = SCRAPE_START + (i / scrapeReports.length) * SCRAPE_RANGE;
+      const reportEndPct = SCRAPE_START + ((i + 1) / scrapeReports.length) * SCRAPE_RANGE;
 
       files[reportType] = await this.downloadCSV(reportType, dateRange, reportStartPct, reportEndPct);
     }

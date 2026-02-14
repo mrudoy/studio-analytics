@@ -85,7 +85,11 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   const registrationsResult = parseCSV<Registration>(files.allRegistrations, RegistrationSchema);
   const canceledResult = parseCSV<AutoRenew>(files.canceledAutoRenews, AutoRenewSchema);
   const activeResult = parseCSV<AutoRenew>(files.activeAutoRenews, AutoRenewSchema);
+  const pausedResult = parseCSV<AutoRenew>(files.pausedAutoRenews, AutoRenewSchema);
   const newAutoRenewsResult = parseCSV<AutoRenew>(files.newAutoRenews, AutoRenewSchema);
+
+  // Merge active + paused for complete current subscriber picture
+  const allCurrentSubs = [...activeResult.data, ...pausedResult.data];
 
   allWarnings.push(
     ...newCustomersResult.warnings,
@@ -94,6 +98,7 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     ...registrationsResult.warnings,
     ...canceledResult.warnings,
     ...activeResult.warnings,
+    ...pausedResult.warnings,
     ...newAutoRenewsResult.warnings
   );
 
@@ -104,6 +109,7 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     registrations: registrationsResult.data.length,
     canceledAutoRenews: canceledResult.data.length,
     activeAutoRenews: activeResult.data.length,
+    pausedAutoRenews: pausedResult.data.length,
     newAutoRenews: newAutoRenewsResult.data.length,
   };
 
@@ -127,7 +133,7 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   updateProgress(job, "Running churn analysis", 65);
   const churnResults = analyzeChurn(
     canceledResult.data,
-    activeResult.data,
+    allCurrentSubs,
     newAutoRenewsResult.data
   );
 
@@ -139,13 +145,13 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   );
 
   updateProgress(job, "Computing summary KPIs", 70);
-  const summary = computeSummary(activeResult.data);
+  const summary = computeSummary(allCurrentSubs);
 
   updateProgress(job, "Running trends analysis", 73);
   const trendsResults = analyzeTrends(
     newAutoRenewsResult.data,
     canceledResult.data,
-    activeResult.data,
+    allCurrentSubs,
     summary
   );
 
@@ -157,23 +163,15 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
     : "All time";
 
-  updateProgress(job, "Writing Dashboard tab", 78);
-  await writeDashboardTab(analyticsDoc, summary, dateRangeStr, recordCounts);
-
-  updateProgress(job, "Writing Funnel Overview tab", 80);
-  await writeFunnelOverviewTab(analyticsDoc, funnelOverview);
-
-  updateProgress(job, "Writing Funnel Analysis tab", 83);
-  await writeFunnelTab(analyticsDoc, funnelResults);
-
-  updateProgress(job, "Writing Weekly Volume tab", 86);
-  await writeWeeklyVolumeTab(analyticsDoc, volumeResults);
-
-  updateProgress(job, "Writing Churn tab", 88);
-  await writeChurnTab(analyticsDoc, churnResults);
-
-  updateProgress(job, "Writing Trends tab", 91);
-  await writeTrendsTab(analyticsDoc, trendsResults);
+  updateProgress(job, "Writing analytics tabs", 78);
+  await Promise.all([
+    writeDashboardTab(analyticsDoc, summary, dateRangeStr, recordCounts),
+    writeFunnelOverviewTab(analyticsDoc, funnelOverview),
+    writeFunnelTab(analyticsDoc, funnelResults),
+    writeWeeklyVolumeTab(analyticsDoc, volumeResults),
+    writeChurnTab(analyticsDoc, churnResults),
+    writeTrendsTab(analyticsDoc, trendsResults),
+  ]);
 
   updateProgress(job, "Writing Run Log", 93);
   await writeRunLogEntry(analyticsDoc, {
@@ -193,7 +191,7 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
       newCustomers: newCustomersResult.data as unknown as Record<string, string | number>[],
       orders: ordersResult.data as unknown as Record<string, string | number>[],
       registrations: registrationsResult.data as unknown as Record<string, string | number>[],
-      autoRenews: activeResult.data as unknown as Record<string, string | number>[],
+      autoRenews: allCurrentSubs as unknown as Record<string, string | number>[],
     });
 
     rawDataSheetUrl = getSheetUrl(rawDataSheetId);

@@ -53,5 +53,6 @@ export interface DownloadedFiles {
   allRegistrations: string;
   canceledAutoRenews: string;
   activeAutoRenews: string;
+  pausedAutoRenews: string;
   newAutoRenews: string;
 }
