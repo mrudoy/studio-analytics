@@ -265,13 +265,11 @@ export class UnionClient {
   /**
    * Download CSV for a report using the best available strategy.
    */
-  async downloadCSV(reportType: ReportType, dateRange?: string, pctStart = 0, pctEnd = 100): Promise<string> {
-    if (!this.page) throw new Error("Client not initialized");
-
+  async downloadCSV(reportType: ReportType, page: Page, dateRange?: string, pctStart = 0, pctEnd = 100): Promise<string> {
     if (FETCH_CSV_REPORTS.has(reportType)) {
-      return this.downloadViaFetch(reportType, dateRange, pctStart, pctEnd);
+      return this.downloadViaFetch(reportType, page, dateRange, pctStart, pctEnd);
     }
-    return this.downloadViaScrape(reportType, dateRange, pctStart, pctEnd);
+    return this.downloadViaScrape(reportType, page, dateRange, pctStart, pctEnd);
   }
 
   /**
@@ -281,21 +279,20 @@ export class UnionClient {
    */
   private async downloadViaFetch(
     reportType: ReportType,
+    page: Page,
     dateRange?: string,
     pctStart = 0,
     pctEnd = 100
   ): Promise<string> {
-    if (!this.page) throw new Error("Client not initialized");
-
     this.progress(`Fetching ${reportType} CSV directly`, Math.round(pctStart));
 
     // Navigate to the report page first to establish the page context
     const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
-    await this.page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await this.page.waitForTimeout(1500);
+    await page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(1500);
 
     // Check for Cloudflare
-    const pageContent = await this.page.content();
+    const pageContent = await page.content();
     if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge")) {
       throw new Error(
         "Cloudflare is blocking access. Session may have expired. Use 'Test Connection' in Settings to re-authenticate."
@@ -303,13 +300,13 @@ export class UnionClient {
     }
 
     // Read the form's date range (or use provided one)
-    const formDateRange = dateRange || await this.page.evaluate(() => {
+    const formDateRange = dateRange || await page.evaluate(() => {
       const input = document.querySelector('input[name="daterange"]') as HTMLInputElement | null;
       return input?.value || "";
     });
 
     // Build the fetch URL from the form action
-    const fetchUrl = await this.page.evaluate((args: { reportType: string; dateRange: string }) => {
+    const fetchUrl = await page.evaluate((args: { reportType: string; dateRange: string }) => {
       const form = document.querySelector('button[value="csv"]')?.closest("form") as HTMLFormElement | null;
       if (!form) return "";
 
@@ -335,13 +332,13 @@ export class UnionClient {
     if (!fetchUrl) {
       this.progress(`No CSV form found for ${reportType}, falling back to scraping`, Math.round(pctStart));
       // Page is already loaded, no need to force re-navigate since we're on the right page
-      return this.downloadViaScrape(reportType, dateRange, pctStart, pctEnd, false);
+      return this.downloadViaScrape(reportType, page, dateRange, pctStart, pctEnd, false);
     }
 
     this.progress(`Downloading ${reportType} CSV via API`, Math.round(pctStart + (pctEnd - pctStart) * 0.2));
 
     // Fetch the CSV data from within the page context (uses browser cookies/session)
-    const csvResult = await this.page.evaluate(async (url: string) => {
+    const csvResult = await page.evaluate(async (url: string) => {
       try {
         const resp = await fetch(url, {
           method: "GET",
@@ -365,7 +362,7 @@ export class UnionClient {
     if (!csvResult.ok || !csvResult.data) {
       this.progress(`CSV fetch failed for ${reportType} (status ${csvResult.status}), falling back to scraping`, Math.round(pctStart));
       // Force re-navigation since the current page may be showing a 503 error
-      return this.downloadViaScrape(reportType, dateRange, pctStart, pctEnd, true);
+      return this.downloadViaScrape(reportType, page, dateRange, pctStart, pctEnd, true);
     }
 
     // Save the CSV to disk
@@ -385,23 +382,22 @@ export class UnionClient {
    */
   private async downloadViaScrape(
     reportType: ReportType,
+    page: Page,
     dateRange?: string,
     pctStart = 0,
     pctEnd = 100,
     forceNavigate = false
   ): Promise<string> {
-    if (!this.page) throw new Error("Client not initialized");
-
     const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
     this.progress(`Navigating to ${reportType} report`, Math.round(pctStart));
 
     // Navigate if we're not already on this page, or if forced (e.g. after fetch failure/503)
-    if (forceNavigate || !this.page.url().includes(REPORT_URLS[reportType].split("?")[0])) {
-      await this.page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await this.page.waitForTimeout(2000);
+    if (forceNavigate || !page.url().includes(REPORT_URLS[reportType].split("?")[0])) {
+      await page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.waitForTimeout(2000);
 
       // Check for Cloudflare
-      const pageContent = await this.page.content();
+      const pageContent = await page.content();
       if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge")) {
         throw new Error(
           "Cloudflare is blocking access to report pages. Session may have expired. Use 'Test Connection' in Settings to re-authenticate."
@@ -410,19 +406,19 @@ export class UnionClient {
     }
 
     // Wait for table content
-    await this.page.waitForSelector("table, [class*='table'], [class*='report']", { timeout: 30000 }).catch(async () => {
-      await this.page!.waitForTimeout(1500);
+    await page.waitForSelector("table, [class*='table'], [class*='report']", { timeout: 30000 }).catch(async () => {
+      await page.waitForTimeout(1500);
     });
 
     // Set date range if provided
     if (dateRange) {
       try {
-        const dateInput = this.page.locator(SELECTORS.reports.dateRangeInput).first();
+        const dateInput = page.locator(SELECTORS.reports.dateRangeInput).first();
         if (await dateInput.isVisible({ timeout: 5000 })) {
           await dateInput.clear();
           await dateInput.fill(dateRange);
-          await this.page.keyboard.press("Enter");
-          await this.page.waitForTimeout(1500);
+          await page.keyboard.press("Enter");
+          await page.waitForTimeout(1500);
         }
       } catch {
         // Date range may not be available on all pages
@@ -473,9 +469,9 @@ export class UnionClient {
     };
 
     // Load page 1 to get headers and determine total pages
-    const firstPageData = await extractTable(this.page);
+    const firstPageData = await extractTable(page);
     if (!firstPageData || firstPageData.rows.length === 0) {
-      await this.screenshotOnError(`no-table-${reportType}`);
+      await this.screenshotOnError(`no-table-${reportType}`, page);
       throw new Error(`No table data found on ${reportType} report page`);
     }
 
@@ -483,7 +479,7 @@ export class UnionClient {
     const allRows: string[][] = [...firstPageData.rows];
 
     // Find total page count
-    const totalPages = await this.page.evaluate(() => {
+    const totalPages = await page.evaluate(() => {
       const links = document.querySelectorAll(".pagination a");
       for (const link of links) {
         const text = link.textContent?.trim() || "";
@@ -556,8 +552,10 @@ export class UnionClient {
   async downloadAllReports(dateRange?: string): Promise<DownloadedFiles> {
     const files: Partial<DownloadedFiles> = {};
 
-    // All reports download serially — they share a single browser page for navigation.
-    const reportTypes: ReportType[] = [
+    // Download reports in parallel batches of 4 — each gets its own browser page
+    // from this.context (cookies are shared). This cuts download time roughly in half.
+    const BATCH_SIZE = 4;
+    const allReports: ReportType[] = [
       "canceledAutoRenews",
       "newAutoRenews",
       "newCustomers",
@@ -573,23 +571,45 @@ export class UnionClient {
     const SCRAPE_END = 45;
     const SCRAPE_RANGE = SCRAPE_END - SCRAPE_START;
 
-    for (let i = 0; i < reportTypes.length; i++) {
-      const reportType = reportTypes[i];
-      const reportStartPct = SCRAPE_START + (i / reportTypes.length) * SCRAPE_RANGE;
-      const reportEndPct = SCRAPE_START + ((i + 1) / reportTypes.length) * SCRAPE_RANGE;
+    for (let batchStart = 0; batchStart < allReports.length; batchStart += BATCH_SIZE) {
+      const batch = allReports.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchPctStart = SCRAPE_START + (batchStart / allReports.length) * SCRAPE_RANGE;
+      const batchPctEnd = SCRAPE_START + (Math.min(batchStart + BATCH_SIZE, allReports.length) / allReports.length) * SCRAPE_RANGE;
 
-      files[reportType] = await this.downloadCSV(reportType, dateRange, reportStartPct, reportEndPct);
+      this.progress(
+        `Downloading batch ${Math.floor(batchStart / BATCH_SIZE) + 1}: ${batch.join(", ")}`,
+        Math.round(batchPctStart)
+      );
+
+      const results = await Promise.all(
+        batch.map(async (reportType, i) => {
+          const page = await this.context!.newPage();
+          try {
+            const pctStart = batchPctStart + (i / batch.length) * (batchPctEnd - batchPctStart);
+            const pctEnd = batchPctStart + ((i + 1) / batch.length) * (batchPctEnd - batchPctStart);
+            const filePath = await this.downloadCSV(reportType, page, dateRange, pctStart, pctEnd);
+            return { reportType, filePath };
+          } finally {
+            await page.close();
+          }
+        })
+      );
+
+      for (const { reportType, filePath } of results) {
+        files[reportType] = filePath;
+      }
     }
 
     return files as DownloadedFiles;
   }
 
-  private async screenshotOnError(name: string): Promise<void> {
-    if (!this.page) return;
+  private async screenshotOnError(name: string, page?: Page): Promise<void> {
+    const pg = page || this.page;
+    if (!pg) return;
     try {
       const screenshotDir = join(DOWNLOADS_DIR, "error-screenshots");
       if (!existsSync(screenshotDir)) mkdirSync(screenshotDir, { recursive: true });
-      await this.page.screenshot({
+      await pg.screenshot({
         path: join(screenshotDir, `${name}-${Date.now()}.png`),
         fullPage: true,
       });
