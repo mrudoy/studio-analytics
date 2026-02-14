@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  // Railway sets various RAILWAY_* env vars automatically
+  // Explicit override takes priority
+  if (process.env.APP_MODE === "dashboard" || process.env.APP_MODE === "pipeline") {
+    return NextResponse.json({ mode: process.env.APP_MODE });
+  }
+
+  // Auto-detect Railway (sets various RAILWAY_* env vars)
   const isRailway = !!(
     process.env.RAILWAY_ENVIRONMENT ||
     process.env.RAILWAY_ENVIRONMENT_NAME ||
