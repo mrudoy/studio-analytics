@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
-import { readDashboardStats } from "@/lib/sheets/read-dashboard";
+import { readDashboardStats, readTrendsData } from "@/lib/sheets/read-dashboard";
 import { getSheetUrl } from "@/lib/sheets/sheets-client";
 
 export async function GET() {
@@ -16,9 +16,14 @@ export async function GET() {
       );
     }
 
-    const stats = await readDashboardStats(spreadsheetId);
+    const [stats, trends] = await Promise.all([
+      readDashboardStats(spreadsheetId),
+      readTrendsData(spreadsheetId),
+    ]);
+
     return NextResponse.json({
       ...stats,
+      trends,
       spreadsheetUrl: getSheetUrl(spreadsheetId),
     });
   } catch (error) {

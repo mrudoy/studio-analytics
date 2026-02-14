@@ -8,12 +8,16 @@ type JobStatus =
   | { state: "complete"; sheetUrl: string; duration: number }
   | { state: "error"; message: string };
 
+// ─── Font constants ─────────────────────────────────────────
+const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
+
 /* Text-based SKY TING wordmark styled to match brand */
 function SkyTingLogo() {
   return (
     <span
       style={{
-        fontFamily: "'Cormorant Garamond', 'Times New Roman', serif",
+        fontFamily: FONT_BRAND,
         fontSize: "1.1rem",
         fontWeight: 400,
         letterSpacing: "0.35em",
@@ -26,7 +30,7 @@ function SkyTingLogo() {
   );
 }
 
-export default function Dashboard() {
+export default function PipelinePage() {
   const [status, setStatus] = useState<JobStatus>({ state: "idle" });
   const [hasCredentials, setHasCredentials] = useState<boolean | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -103,10 +107,18 @@ export default function Dashboard() {
           <div className="flex justify-center">
             <SkyTingLogo />
           </div>
-          <h1 className="text-5xl" style={{ color: "var(--st-text-primary)" }}>
+          <h1
+            style={{
+              color: "var(--st-text-primary)",
+              fontFamily: FONT_SANS,
+              fontWeight: 700,
+              fontSize: "2.4rem",
+              letterSpacing: "-0.03em",
+            }}
+          >
             Studio Analytics
           </h1>
-          <p style={{ color: "var(--st-text-secondary)", fontSize: "0.95rem", letterSpacing: "-0.01em" }}>
+          <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.95rem" }}>
             Pull data from Union.fit, run analytics, export to Google Sheets
           </p>
         </div>
@@ -119,6 +131,7 @@ export default function Dashboard() {
               backgroundColor: "var(--st-bg-section)",
               border: "1px solid var(--st-border)",
               color: "var(--st-warning)",
+              fontFamily: FONT_SANS,
             }}
           >
             No credentials configured.{" "}
@@ -140,12 +153,13 @@ export default function Dashboard() {
           <button
             onClick={runPipeline}
             disabled={status.state === "running" || !hasCredentials}
-            className="w-full px-6 py-4 text-base font-medium tracking-wide uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full px-6 py-4 text-base tracking-wide uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               backgroundColor: "var(--st-accent)",
               color: "var(--st-text-light)",
               borderRadius: "var(--st-radius-pill)",
-              fontFamily: "'DM Sans', sans-serif",
+              fontFamily: FONT_SANS,
+              fontWeight: 700,
               letterSpacing: "0.08em",
             }}
             onMouseOver={(e) => {
@@ -162,7 +176,7 @@ export default function Dashboard() {
           {/* Progress */}
           {status.state === "running" && (
             <div className="space-y-3">
-              <div className="flex justify-between text-sm" style={{ color: "var(--st-text-secondary)" }}>
+              <div className="flex justify-between text-sm" style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>
                 <span>{status.step}</span>
                 <span>{status.percent}%</span>
               </div>
@@ -181,7 +195,7 @@ export default function Dashboard() {
               <button
                 onClick={resetPipeline}
                 className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
-                style={{ color: "var(--st-text-secondary)" }}
+                style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}
               >
                 Reset if stuck
               </button>
@@ -197,21 +211,23 @@ export default function Dashboard() {
                 border: "1px solid rgba(74, 124, 89, 0.2)",
               }}
             >
-              <p className="font-medium" style={{ color: "var(--st-success)" }}>
+              <p style={{ color: "var(--st-success)", fontFamily: FONT_SANS, fontWeight: 700 }}>
                 Pipeline complete
               </p>
-              <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8 }}>
+              <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8, fontFamily: FONT_SANS }}>
                 Finished in {Math.round(status.duration / 1000)}s
               </p>
               <a
                 href={status.sheetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block mt-1 px-5 py-2 text-sm font-medium uppercase tracking-wider transition-colors"
+                className="inline-block mt-1 px-5 py-2 text-sm uppercase tracking-wider transition-colors"
                 style={{
                   backgroundColor: "var(--st-success)",
                   color: "#fff",
                   borderRadius: "var(--st-radius-pill)",
+                  fontFamily: FONT_SANS,
+                  fontWeight: 700,
                   letterSpacing: "0.06em",
                 }}
               >
@@ -229,14 +245,14 @@ export default function Dashboard() {
                 border: "1px solid rgba(160, 64, 64, 0.2)",
               }}
             >
-              <p className="font-medium" style={{ color: "var(--st-error)" }}>Error</p>
-              <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85 }}>
+              <p style={{ color: "var(--st-error)", fontFamily: FONT_SANS, fontWeight: 700 }}>Error</p>
+              <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85, fontFamily: FONT_SANS }}>
                 {status.message}
               </p>
               <button
                 onClick={() => setStatus({ state: "idle" })}
                 className="mt-3 text-sm underline"
-                style={{ color: "var(--st-error)", opacity: 0.7 }}
+                style={{ color: "var(--st-error)", opacity: 0.7, fontFamily: FONT_SANS }}
               >
                 Dismiss
               </button>
@@ -249,7 +265,7 @@ export default function Dashboard() {
           <a
             href="/"
             className="hover:underline transition-colors"
-            style={{ color: "var(--st-text-secondary)" }}
+            style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500 }}
             onMouseOver={(e) => (e.currentTarget.style.color = "var(--st-text-primary)")}
             onMouseOut={(e) => (e.currentTarget.style.color = "var(--st-text-secondary)")}
           >
@@ -258,7 +274,7 @@ export default function Dashboard() {
           <a
             href="/settings"
             className="hover:underline transition-colors"
-            style={{ color: "var(--st-text-secondary)" }}
+            style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500 }}
             onMouseOver={(e) => (e.currentTarget.style.color = "var(--st-text-primary)")}
             onMouseOut={(e) => (e.currentTarget.style.color = "var(--st-text-secondary)")}
           >
@@ -267,7 +283,7 @@ export default function Dashboard() {
           <a
             href="/results"
             className="hover:underline transition-colors"
-            style={{ color: "var(--st-text-secondary)" }}
+            style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500 }}
             onMouseOver={(e) => (e.currentTarget.style.color = "var(--st-text-primary)")}
             onMouseOut={(e) => (e.currentTarget.style.color = "var(--st-text-secondary)")}
           >

@@ -15,6 +15,7 @@ import { analyzeFunnelOverview } from "../analytics/funnel-overview";
 import { analyzeChurn } from "../analytics/churn";
 import { analyzeVolume } from "../analytics/volume";
 import { computeSummary } from "../analytics/summary";
+import { analyzeTrends } from "../analytics/trends";
 import { getSpreadsheet, getSheetUrl } from "../sheets/sheets-client";
 import {
   writeDashboardTab,
@@ -24,6 +25,7 @@ import {
   writeChurnTab,
   writeRunLogEntry,
   writeRawDataSheets,
+  writeTrendsTab,
 } from "../sheets/templates";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
@@ -136,8 +138,16 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     newCustomersResult.data
   );
 
-  updateProgress(job, "Computing summary KPIs", 72);
+  updateProgress(job, "Computing summary KPIs", 70);
   const summary = computeSummary(activeResult.data);
+
+  updateProgress(job, "Running trends analysis", 73);
+  const trendsResults = analyzeTrends(
+    newAutoRenewsResult.data,
+    canceledResult.data,
+    activeResult.data,
+    summary
+  );
 
   // Step 5: Export to Google Sheets
   updateProgress(job, "Connecting to Google Sheets", 75);
@@ -159,10 +169,13 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   updateProgress(job, "Writing Weekly Volume tab", 86);
   await writeWeeklyVolumeTab(analyticsDoc, volumeResults);
 
-  updateProgress(job, "Writing Churn tab", 90);
+  updateProgress(job, "Writing Churn tab", 88);
   await writeChurnTab(analyticsDoc, churnResults);
 
-  updateProgress(job, "Writing Run Log", 92);
+  updateProgress(job, "Writing Trends tab", 91);
+  await writeTrendsTab(analyticsDoc, trendsResults);
+
+  updateProgress(job, "Writing Run Log", 93);
   await writeRunLogEntry(analyticsDoc, {
     timestamp: new Date().toISOString(),
     duration: Date.now() - startTime,

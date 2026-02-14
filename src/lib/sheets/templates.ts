@@ -7,6 +7,9 @@ import type { SummaryKPIs } from "../analytics/summary";
 import { getOrCreateSheet, writeRows } from "./sheets-client";
 import { applyStandardFormatting, formatPercentColumns, formatCurrencyColumns } from "./formatters";
 
+// Re-export from write-trends so pipeline-worker can import from templates
+export { writeTrendsTab } from "./write-trends";
+
 export async function writeDashboardTab(
   doc: GoogleSpreadsheet,
   summary: SummaryKPIs,

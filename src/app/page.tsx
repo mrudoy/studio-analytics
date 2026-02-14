@@ -28,6 +28,59 @@ interface DashboardStats {
     skyTingTv: number;
     overall: number;
   };
+  trends?: TrendsData | null;
+}
+
+interface TrendRowData {
+  period: string;
+  type: string;
+  newMembers: number;
+  newSky3: number;
+  newSkyTingTv: number;
+  memberChurn: number;
+  sky3Churn: number;
+  skyTingTvChurn: number;
+  netMemberGrowth: number;
+  netSky3Growth: number;
+  revenueAdded: number;
+  revenueLost: number;
+  deltaNewMembers: number | null;
+  deltaNewSky3: number | null;
+  deltaRevenue: number | null;
+  deltaPctNewMembers: number | null;
+  deltaPctNewSky3: number | null;
+  deltaPctRevenue: number | null;
+}
+
+interface PacingData {
+  month: string;
+  daysElapsed: number;
+  daysInMonth: number;
+  newMembersActual: number;
+  newMembersPaced: number;
+  newSky3Actual: number;
+  newSky3Paced: number;
+  revenueActual: number;
+  revenuePaced: number;
+  memberCancellationsActual: number;
+  memberCancellationsPaced: number;
+  sky3CancellationsActual: number;
+  sky3CancellationsPaced: number;
+}
+
+interface ProjectionData {
+  year: number;
+  projectedAnnualRevenue: number;
+  currentMRR: number;
+  projectedYearEndMRR: number;
+  monthlyGrowthRate: number;
+}
+
+interface TrendsData {
+  weekly: TrendRowData[];
+  monthly: TrendRowData[];
+  pacing: PacingData | null;
+  projection: ProjectionData | null;
 }
 
 type DashboardLoadState =
@@ -97,6 +150,33 @@ function formatDateTime(iso: string): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+function formatDelta(n: number | null): string {
+  if (n == null) return "";
+  if (n > 0) return `+${n}`;
+  return String(n);
+}
+
+function formatDeltaPercent(n: number | null): string {
+  if (n == null) return "";
+  if (n > 0) return `+${n}%`;
+  return `${n}%`;
+}
+
+function formatWeekLabel(period: string): string {
+  // "2026-02-10" → "Feb 10"
+  const d = new Date(period + "T00:00:00");
+  if (isNaN(d.getTime())) return period;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function formatMonthLabel(period: string): string {
+  // "2026-02" → "Feb 2026"
+  const [year, month] = period.split("-");
+  const d = new Date(parseInt(year), parseInt(month) - 1);
+  if (isNaN(d.getTime())) return period;
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
 // ─── Shared Components ──────────────────────────────────────
@@ -446,6 +526,106 @@ function StatCard({ label, value, sublabel, size = "standard" }: StatCardProps) 
   );
 }
 
+// ─── Trend Card with Delta Badge ────────────────────────────
+
+interface TrendCardProps {
+  label: string;
+  value: string;
+  delta: number | null;
+  deltaPercent: number | null;
+  isPositiveGood?: boolean; // default true; for churn, set to false
+  sublabel?: string;
+}
+
+function DeltaBadge({ delta, deltaPercent, isPositiveGood = true }: { delta: number | null; deltaPercent: number | null; isPositiveGood?: boolean }) {
+  if (delta == null) return null;
+
+  const isPositive = delta > 0;
+  const isGood = isPositiveGood ? isPositive : !isPositive;
+  const color = delta === 0 ? "var(--st-text-secondary)" : isGood ? "var(--st-success)" : "var(--st-error)";
+  const arrow = delta > 0 ? "\u25B2" : delta < 0 ? "\u25BC" : "";
+  const bgColor = delta === 0
+    ? "rgba(128, 128, 128, 0.08)"
+    : isGood
+      ? "rgba(74, 124, 89, 0.08)"
+      : "rgba(160, 64, 64, 0.08)";
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
+      style={{
+        color,
+        backgroundColor: bgColor,
+        fontFamily: FONT_SANS,
+        fontWeight: 600,
+        fontSize: "0.72rem",
+      }}
+    >
+      {arrow} {formatDelta(delta)}
+      {deltaPercent != null && (
+        <span style={{ opacity: 0.75, fontWeight: 500 }}>{formatDeltaPercent(deltaPercent)}</span>
+      )}
+    </span>
+  );
+}
+
+function TrendCard({ label, value, delta, deltaPercent, isPositiveGood = true, sublabel }: TrendCardProps) {
+  return (
+    <div
+      className="rounded-2xl flex flex-col justify-between"
+      style={{
+        backgroundColor: "var(--st-bg-card)",
+        border: "1px solid var(--st-border)",
+        padding: "1.25rem",
+        minHeight: "110px",
+      }}
+    >
+      <p
+        className="uppercase"
+        style={{
+          color: "var(--st-text-secondary)",
+          fontFamily: FONT_SANS,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          fontSize: "0.65rem",
+        }}
+      >
+        {label}
+      </p>
+      <div>
+        <div className="flex items-end gap-2 flex-wrap">
+          <p
+            style={{
+              color: "var(--st-text-primary)",
+              fontFamily: FONT_SANS,
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              lineHeight: 1.1,
+              fontSize: "1.65rem",
+            }}
+          >
+            {value}
+          </p>
+          <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} />
+        </div>
+        {sublabel && (
+          <p
+            className="mt-1"
+            style={{
+              color: "var(--st-text-secondary)",
+              fontFamily: FONT_SANS,
+              fontWeight: 500,
+              fontSize: "0.78rem",
+            }}
+          >
+            {sublabel}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <h2
@@ -535,6 +715,197 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string |
   );
 }
 
+// ─── Trends Sections ─────────────────────────────────────────
+
+function WeekOverWeekSection({ weekly }: { weekly: TrendRowData[] }) {
+  if (weekly.length < 2) return null;
+
+  // Show the most recent week that has a delta (i.e., not the first one)
+  const latest = weekly[weekly.length - 1];
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader>Week over Week</SectionHeader>
+      <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
+        Week of {formatWeekLabel(latest.period)} vs previous week
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <TrendCard
+          label="New Members"
+          value={String(latest.newMembers)}
+          delta={latest.deltaNewMembers}
+          deltaPercent={latest.deltaPctNewMembers}
+        />
+        <TrendCard
+          label="New SKY3"
+          value={String(latest.newSky3)}
+          delta={latest.deltaNewSky3}
+          deltaPercent={latest.deltaPctNewSky3}
+        />
+        <TrendCard
+          label="Revenue Added"
+          value={formatCurrency(latest.revenueAdded)}
+          delta={latest.deltaRevenue}
+          deltaPercent={latest.deltaPctRevenue}
+        />
+        <TrendCard
+          label="Revenue Lost"
+          value={formatCurrency(latest.revenueLost)}
+          delta={null}
+          deltaPercent={null}
+          isPositiveGood={false}
+          sublabel="from cancellations"
+        />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <TrendCard
+          label="Member Churn"
+          value={String(latest.memberChurn)}
+          delta={latest.deltaNewMembers != null ? -(latest.memberChurn - (weekly[weekly.length - 2]?.memberChurn ?? 0)) : null}
+          deltaPercent={null}
+          isPositiveGood={false}
+        />
+        <TrendCard
+          label="SKY3 Churn"
+          value={String(latest.sky3Churn)}
+          delta={weekly.length >= 2 ? -(latest.sky3Churn - weekly[weekly.length - 2].sky3Churn) : null}
+          deltaPercent={null}
+          isPositiveGood={false}
+        />
+        <TrendCard
+          label="Net Member Growth"
+          value={formatDelta(latest.netMemberGrowth) || "0"}
+          delta={null}
+          deltaPercent={null}
+        />
+        <TrendCard
+          label="Net SKY3 Growth"
+          value={formatDelta(latest.netSky3Growth) || "0"}
+          delta={null}
+          deltaPercent={null}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MonthOverMonthSection({ monthly, pacing }: { monthly: TrendRowData[]; pacing: PacingData | null }) {
+  if (monthly.length < 1) return null;
+
+  const latest = monthly[monthly.length - 1];
+  const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader>Month over Month</SectionHeader>
+      <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
+        {formatMonthLabel(latest.period)}
+        {isPacing && (
+          <span style={{ color: "var(--st-accent)", fontWeight: 600 }}>
+            {" "} ({pacing!.daysElapsed}/{pacing!.daysInMonth} days — pacing shown)
+          </span>
+        )}
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <TrendCard
+          label="New Members"
+          value={isPacing ? `${pacing!.newMembersActual}` : String(latest.newMembers)}
+          delta={latest.deltaNewMembers}
+          deltaPercent={latest.deltaPctNewMembers}
+          sublabel={isPacing ? `Pacing: ${pacing!.newMembersPaced} projected` : undefined}
+        />
+        <TrendCard
+          label="New SKY3"
+          value={isPacing ? `${pacing!.newSky3Actual}` : String(latest.newSky3)}
+          delta={latest.deltaNewSky3}
+          deltaPercent={latest.deltaPctNewSky3}
+          sublabel={isPacing ? `Pacing: ${pacing!.newSky3Paced} projected` : undefined}
+        />
+        <TrendCard
+          label="Revenue Added"
+          value={isPacing ? formatCurrency(pacing!.revenueActual) : formatCurrency(latest.revenueAdded)}
+          delta={latest.deltaRevenue}
+          deltaPercent={latest.deltaPctRevenue}
+          sublabel={isPacing ? `Pacing: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
+        />
+        <TrendCard
+          label="Member Churn"
+          value={isPacing ? `${pacing!.memberCancellationsActual}` : String(latest.memberChurn)}
+          delta={null}
+          deltaPercent={null}
+          isPositiveGood={false}
+          sublabel={isPacing ? `Pacing: ${pacing!.memberCancellationsPaced} projected` : undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
+  return (
+    <div className="space-y-4">
+      <SectionHeader>{projection.year} Revenue Forecast</SectionHeader>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <StatCard
+          label={`Est. ${projection.year} Annual Revenue`}
+          value={formatCurrency(projection.projectedAnnualRevenue)}
+          sublabel={`Based on ${projection.monthlyGrowthRate > 0 ? "+" : ""}${projection.monthlyGrowthRate}% monthly growth`}
+          size="hero"
+        />
+        <div className="grid grid-rows-3 gap-4">
+          <div
+            className="rounded-2xl flex items-center justify-between"
+            style={{
+              backgroundColor: "var(--st-bg-card)",
+              border: "1px solid var(--st-border)",
+              padding: "1rem 1.25rem",
+            }}
+          >
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Current MRR
+            </p>
+            <p style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem" }}>
+              {formatCurrency(projection.currentMRR)}
+            </p>
+          </div>
+          <div
+            className="rounded-2xl flex items-center justify-between"
+            style={{
+              backgroundColor: "var(--st-bg-card)",
+              border: "1px solid var(--st-border)",
+              padding: "1rem 1.25rem",
+            }}
+          >
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Monthly Growth
+            </p>
+            <p style={{ color: projection.monthlyGrowthRate >= 0 ? "var(--st-success)" : "var(--st-error)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem" }}>
+              {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}%
+            </p>
+          </div>
+          <div
+            className="rounded-2xl flex items-center justify-between"
+            style={{
+              backgroundColor: "var(--st-bg-card)",
+              border: "1px solid var(--st-border)",
+              padding: "1rem 1.25rem",
+            }}
+          >
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Year-End MRR
+            </p>
+            <p style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem" }}>
+              {formatCurrency(projection.projectedYearEndMRR)}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard View ──────────────────────────────────────────
+
 function DashboardView() {
   const [loadState, setLoadState] = useState<DashboardLoadState>({ state: "loading" });
 
@@ -611,6 +982,7 @@ function DashboardView() {
   }
 
   const { data } = loadState;
+  const trends = data.trends;
 
   return (
     <div className="min-h-screen flex flex-col items-center p-8 pb-16">
@@ -669,6 +1041,21 @@ function DashboardView() {
             />
           </div>
         </div>
+
+        {/* WoW Trends */}
+        {trends && trends.weekly.length >= 2 && (
+          <WeekOverWeekSection weekly={trends.weekly} />
+        )}
+
+        {/* MoM Trends */}
+        {trends && trends.monthly.length >= 1 && (
+          <MonthOverMonthSection monthly={trends.monthly} pacing={trends.pacing} />
+        )}
+
+        {/* Revenue Projection */}
+        {trends?.projection && (
+          <RevenueProjectionSection projection={trends.projection} />
+        )}
 
         {/* Revenue per Subscriber */}
         <div className="space-y-4">

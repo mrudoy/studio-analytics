@@ -3,6 +3,26 @@ import { JWT } from "google-auth-library";
 
 let cachedAuth: JWT | null = null;
 
+/**
+ * Clean up the private key string from environment variables.
+ * Railway and other hosts may store the key with literal "\n" strings,
+ * double-escaped newlines, or missing PEM headers.
+ */
+function cleanPrivateKey(rawKey: string): string {
+  let key = rawKey;
+  // Handle double-escaped newlines (\\n → \n)
+  key = key.replace(/\\\\n/g, "\n");
+  // Handle single-escaped newlines (\n → actual newline)
+  key = key.replace(/\\n/g, "\n");
+  // Strip surrounding quotes if present
+  key = key.replace(/^["']|["']$/g, "");
+  // Ensure proper PEM format
+  if (!key.includes("-----BEGIN")) {
+    key = `-----BEGIN PRIVATE KEY-----\n${key}\n-----END PRIVATE KEY-----\n`;
+  }
+  return key;
+}
+
 function getAuth(): JWT {
   if (cachedAuth) return cachedAuth;
 
@@ -15,7 +35,7 @@ function getAuth(): JWT {
 
   cachedAuth = new JWT({
     email,
-    key: key.replace(/\\n/g, "\n"),
+    key: cleanPrivateKey(key),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
@@ -25,7 +45,13 @@ function getAuth(): JWT {
 export async function getSpreadsheet(spreadsheetId: string): Promise<GoogleSpreadsheet> {
   const auth = getAuth();
   const doc = new GoogleSpreadsheet(spreadsheetId, auth);
-  await doc.loadInfo();
+  try {
+    await doc.loadInfo();
+  } catch (err) {
+    // Clear cached auth so next attempt re-creates the JWT
+    cachedAuth = null;
+    throw err;
+  }
   return doc;
 }
 
