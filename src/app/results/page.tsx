@@ -171,6 +171,7 @@ export default function ResultsPage() {
 
         <div className="flex justify-center gap-6 text-sm text-gray-500">
           <a href="/" className="hover:text-gray-700 underline">Dashboard</a>
+          <a href="/pipeline" className="hover:text-gray-700 underline">Pipeline</a>
           <a href="/settings" className="hover:text-gray-700 underline">Settings</a>
         </div>
       </div>

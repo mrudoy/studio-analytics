@@ -300,6 +300,15 @@ export default function SettingsPage() {
             Dashboard
           </a>
           <a
+            href="/pipeline"
+            className="hover:underline transition-colors"
+            style={{ color: "var(--st-text-secondary)" }}
+            onMouseOver={(e) => (e.currentTarget.style.color = "var(--st-text-primary)")}
+            onMouseOut={(e) => (e.currentTarget.style.color = "var(--st-text-secondary)")}
+          >
+            Pipeline
+          </a>
+          <a
             href="/results"
             className="hover:underline transition-colors"
             style={{ color: "var(--st-text-secondary)" }}

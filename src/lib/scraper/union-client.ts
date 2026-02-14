@@ -41,22 +41,23 @@ export class UnionClient {
       mkdirSync(DOWNLOADS_DIR, { recursive: true });
     }
 
-    // Must use headed Chrome — Cloudflare blocks all headless browsers.
-    // In production (Docker), use Playwright's bundled Chromium with Xvfb providing the display.
-    // Locally, use the system's Chrome installation with the window positioned off-screen.
-    const isProduction = process.env.NODE_ENV === "production";
-    this.browser = await chromium.launch({
-      ...(isProduction ? {} : { channel: "chrome" }),
-      headless: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        ...(isProduction ? [] : ["--window-position=-2400,-2400"]),
-      ],
-    });
+    // Must use headed Chromium — Cloudflare blocks all headless browsers.
+    // Always use Playwright's bundled Chromium (pinned to match Docker image version).
+    // Window is positioned off-screen for pipeline runs (not visible to user).
+    try {
+      this.browser = await chromium.launch({
+        headless: false,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-blink-features=AutomationControlled",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+        ],
+      });
+    } catch (err) {
+      throw new Error(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     this.context = await this.browser.newContext({
       acceptDownloads: true,
@@ -86,20 +87,22 @@ export class UnionClient {
       mkdirSync(DOWNLOADS_DIR, { recursive: true });
     }
 
-    // Use real Chrome locally; bundled Chromium in production (Docker/Railway)
-    const isProduction = process.env.NODE_ENV === "production";
-    this.browser = await chromium.launch({
-      ...(isProduction ? {} : { channel: "chrome" }),
-      headless: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-      ],
-      slowMo: 100,
-    });
+    // Use Playwright's bundled Chromium in headed mode — visible to user for Cloudflare verification
+    try {
+      this.browser = await chromium.launch({
+        headless: false,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-blink-features=AutomationControlled",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+        ],
+        slowMo: 100,
+      });
+    } catch (err) {
+      throw new Error(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     this.context = await this.browser.newContext({
       acceptDownloads: true,
