@@ -41,18 +41,19 @@ export class UnionClient {
       mkdirSync(DOWNLOADS_DIR, { recursive: true });
     }
 
-    // Use new headless mode — runs in background without stealing focus.
-    // Playwright's "new" headless is Chromium-based and harder to detect than old headless.
-    // If Cloudflare starts blocking this, switch back to headless: false or use initializeHeaded().
+    // Must use headed Chromium — Cloudflare blocks headless browsers.
+    // Position window off-screen so it doesn't steal focus during pipeline runs.
     try {
       this.browser = await chromium.launch({
-        headless: true,
+        headless: false,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-blink-features=AutomationControlled",
           "--disable-gpu",
           "--disable-dev-shm-usage",
+          "--window-position=-2400,-2400",
+          "--window-size=1440,900",
         ],
       });
     } catch (err) {
@@ -555,17 +556,10 @@ export class UnionClient {
   async downloadAllReports(dateRange?: string): Promise<DownloadedFiles> {
     const files: Partial<DownloadedFiles> = {};
 
-    // Phase 1: Download fetch-based CSV reports in parallel (fast, ~5-25s each)
-    this.progress("Fetching CSV reports in parallel", 15);
-    const [canceledFile, newFile] = await Promise.all([
-      this.downloadCSV("canceledAutoRenews", dateRange, 15, 20),
-      this.downloadCSV("newAutoRenews", dateRange, 15, 20),
-    ]);
-    files.canceledAutoRenews = canceledFile;
-    files.newAutoRenews = newFile;
-
-    // Phase 2: Download scrape-based reports serially (share browser page for navigation)
-    const scrapeReports: ReportType[] = [
+    // All reports download serially — they share a single browser page for navigation.
+    const reportTypes: ReportType[] = [
+      "canceledAutoRenews",
+      "newAutoRenews",
       "newCustomers",
       "orders",
       "firstVisits",
@@ -574,14 +568,15 @@ export class UnionClient {
       "pausedAutoRenews",
     ];
 
-    const SCRAPE_START = 20;
+    // Scraping phase spans 15% to 45% of the overall pipeline
+    const SCRAPE_START = 15;
     const SCRAPE_END = 45;
     const SCRAPE_RANGE = SCRAPE_END - SCRAPE_START;
 
-    for (let i = 0; i < scrapeReports.length; i++) {
-      const reportType = scrapeReports[i];
-      const reportStartPct = SCRAPE_START + (i / scrapeReports.length) * SCRAPE_RANGE;
-      const reportEndPct = SCRAPE_START + ((i + 1) / scrapeReports.length) * SCRAPE_RANGE;
+    for (let i = 0; i < reportTypes.length; i++) {
+      const reportType = reportTypes[i];
+      const reportStartPct = SCRAPE_START + (i / reportTypes.length) * SCRAPE_RANGE;
+      const reportEndPct = SCRAPE_START + ((i + 1) / reportTypes.length) * SCRAPE_RANGE;
 
       files[reportType] = await this.downloadCSV(reportType, dateRange, reportStartPct, reportEndPct);
     }
