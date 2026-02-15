@@ -23,6 +23,13 @@ const COLUMN_ALIASES: Record<string, string> = {
   salesChannel: "salesChannel",
   currentState: "currentState",
   currentSubscription: "currentSubscription",
+  // Orders/transactions direct CSV → schema fields
+  orderCode: "code",
+  transactionType: "type",
+  paymentMethod: "payment",
+  orderTotal: "total",
+  amount: "total",
+  transactionTotal: "total",
 };
 
 /**
@@ -73,6 +80,15 @@ export function parseCSV<T>(
     dynamicTyping: false,
     transformHeader: normalizeHeader,
   });
+
+  // Diagnostic: log actual column headers after normalization + first row
+  if (parsed.data.length > 0) {
+    const headers = Object.keys(parsed.data[0] as Record<string, unknown>);
+    const shortPath = filePath.split("/").pop() || filePath;
+    console.log(`[csv-parser] ${shortPath} headers (${headers.length}): [${headers.join(", ")}]`);
+    console.log(`[csv-parser] ${shortPath} first row:`, JSON.stringify(parsed.data[0]));
+    console.log(`[csv-parser] ${shortPath} total rows: ${parsed.data.length}`);
+  }
 
   const data: T[] = [];
   const warnings: string[] = [];

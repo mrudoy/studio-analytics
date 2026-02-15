@@ -30,7 +30,7 @@ import {
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
 import type { NewCustomer, Order, FirstVisit, Registration, AutoRenew } from "@/types/union-data";
-import { writeFileSync } from "fs";
+import { writeFileSync, copyFileSync } from "fs";
 import { join } from "path";
 
 function updateProgress(job: Job, step: string, percent: number) {
@@ -83,6 +83,17 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
 
   const newCustomersResult = parseCSV<NewCustomer>(files.newCustomers, NewCustomerSchema);
   const ordersResult = parseCSV<Order>(files.orders, OrderSchema);
+
+  // Diagnostic: log first order to verify column mapping
+  if (ordersResult.data.length > 0) {
+    console.log(`[pipeline] First order sample:`, JSON.stringify(ordersResult.data[0]));
+  } else {
+    console.log(`[pipeline] WARNING: 0 orders parsed from CSV`);
+  }
+  if (ordersResult.warnings.length > 0) {
+    console.log(`[pipeline] Order parse warnings (first 5):`, ordersResult.warnings.slice(0, 5));
+  }
+
   const firstVisitsResult = parseCSV<FirstVisit>(files.firstVisits, FirstVisitSchema);
   const registrationsResult = parseCSV<Registration>(files.allRegistrations, RegistrationSchema);
   const canceledResult = parseCSV<AutoRenew>(files.canceledAutoRenews, AutoRenewSchema);
@@ -234,6 +245,13 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
 
     rawDataSheetUrl = getSheetUrl(rawDataSheetId);
   }
+
+  // Save debug copy of orders CSV before cleanup
+  try {
+    const debugPath = join(process.cwd(), "data", "debug-orders-sample.csv");
+    copyFileSync(files.orders, debugPath);
+    console.log(`[pipeline] Saved debug orders CSV to ${debugPath}`);
+  } catch { /* ignore */ }
 
   // Cleanup temp files
   cleanupDownloads();
