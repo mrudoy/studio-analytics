@@ -77,14 +77,14 @@ export async function GET(request: NextRequest) {
         }
       }, 1000);
 
-      // Timeout after 20 minutes (pipeline takes ~8-12 min)
+      // Timeout after 30 minutes — safety net in case pipeline is slow
       setTimeout(() => {
         if (!closed) {
           send("error", { message: "Job timed out" });
           clearInterval(interval);
           closeStream();
         }
-      }, 1200000);
+      }, 1800000);
     },
   });
 

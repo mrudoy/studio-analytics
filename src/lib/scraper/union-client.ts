@@ -20,6 +20,12 @@ const COOKIE_FILE = join(process.cwd(), "data", "union-cookies.json");
 const FETCH_CSV_REPORTS: Set<ReportType> = new Set([
   "canceledAutoRenews",
   "newAutoRenews",
+  "activeAutoRenews",
+  "pausedAutoRenews",
+  "orders",
+  "newCustomers",
+  "firstVisits",
+  "allRegistrations",
 ]);
 
 export class UnionClient {
@@ -133,7 +139,7 @@ export class UnionClient {
 
     this.progress("Navigating to Union.fit sign-in page");
     await this.page.goto(`${BASE_URL}/signin`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await this.page.waitForTimeout(3000); // Let JS hydrate + Cloudflare check
+    await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {}); // Wait for JS hydration
 
     // Check if we hit a Cloudflare challenge
     const pageContent = await this.page.content();
@@ -292,7 +298,7 @@ export class UnionClient {
     // Navigate to the report page first to establish the page context
     const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
     await this.page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await this.page.waitForTimeout(1500);
+    await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
 
     // Check for Cloudflare
     const pageContent = await this.page.content();
@@ -398,7 +404,7 @@ export class UnionClient {
     // Navigate if we're not already on this page, or if forced (e.g. after fetch failure/503)
     if (forceNavigate || !this.page.url().includes(REPORT_URLS[reportType].split("?")[0])) {
       await this.page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await this.page.waitForTimeout(2000);
+      await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
 
       // Check for Cloudflare
       const pageContent = await this.page.content();
@@ -411,7 +417,7 @@ export class UnionClient {
 
     // Wait for table content
     await this.page.waitForSelector("table, [class*='table'], [class*='report']", { timeout: 30000 }).catch(async () => {
-      await this.page!.waitForTimeout(1500);
+      await this.page!.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
     });
 
     // Set date range if provided
@@ -422,7 +428,7 @@ export class UnionClient {
           await dateInput.clear();
           await dateInput.fill(dateRange);
           await this.page.keyboard.press("Enter");
-          await this.page.waitForTimeout(1500);
+          await this.page.waitForSelector("table tbody tr", { timeout: 10000 }).catch(() => {});
         }
       } catch {
         // Date range may not be available on all pages
@@ -504,7 +510,7 @@ export class UnionClient {
     this.progress(`Scraping ${reportType}: page 1/${pageCount} (${allRows.length} rows)`, Math.round(pctStart + pctRange * (1 / pageCount)));
 
     if (pageCount > 1) {
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 8;
       const baseUrl = reportUrl.includes("?") ? reportUrl : `${reportUrl}?`;
       const separator = reportUrl.includes("?") ? "&" : "";
 
@@ -573,13 +579,19 @@ export class UnionClient {
     const SCRAPE_END = 45;
     const SCRAPE_RANGE = SCRAPE_END - SCRAPE_START;
 
+    const phaseStart = Date.now();
     for (let i = 0; i < reportTypes.length; i++) {
       const reportType = reportTypes[i];
       const reportStartPct = SCRAPE_START + (i / reportTypes.length) * SCRAPE_RANGE;
       const reportEndPct = SCRAPE_START + ((i + 1) / reportTypes.length) * SCRAPE_RANGE;
 
+      const t0 = Date.now();
       files[reportType] = await this.downloadCSV(reportType, dateRange, reportStartPct, reportEndPct);
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      const strategy = FETCH_CSV_REPORTS.has(reportType) ? "fetch" : "scrape";
+      console.log(`[scraper] ${reportType}: ${elapsed}s (${strategy})`);
     }
+    console.log(`[scraper] Total download phase: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`);
 
     return files as DownloadedFiles;
   }
