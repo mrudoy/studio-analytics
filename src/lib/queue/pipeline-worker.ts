@@ -68,9 +68,22 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     await client.login(settings.credentials.email, settings.credentials.password);
 
     updateProgress(job, "Downloading CSV reports", 20);
-    const dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
+    let dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
       ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
       : undefined;
+
+    // Default to last 12 months if no date range provided.
+    // The Orders/Transactions page on Union.fit requires a date range —
+    // without one it returns 0 rows. Other reports have sensible defaults
+    // but benefit from an explicit range too.
+    if (!dateRange) {
+      const now = new Date();
+      const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+      const start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      const startStr = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()}`;
+      dateRange = `${startStr} - ${endStr}`;
+      console.log(`[pipeline] No date range specified, defaulting to last 12 months: ${dateRange}`);
+    }
 
     files = await client.downloadAllReports(dateRange);
     updateProgress(job, "All CSVs downloaded", 45);
