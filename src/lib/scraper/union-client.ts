@@ -510,7 +510,7 @@ export class UnionClient {
     this.progress(`Scraping ${reportType}: page 1/${pageCount} (${allRows.length} rows)`, Math.round(pctStart + pctRange * (1 / pageCount)));
 
     if (pageCount > 1) {
-      const BATCH_SIZE = 8;
+      const BATCH_SIZE = 5;
       const baseUrl = reportUrl.includes("?") ? reportUrl : `${reportUrl}?`;
       const separator = reportUrl.includes("?") ? "&" : "";
 
@@ -529,6 +529,9 @@ export class UnionClient {
             await tab.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
             const data = await extractTable(tab);
             return { pageNum, rows: data?.rows || [] };
+          } catch (err) {
+            console.warn(`[scraper] Tab failed for ${reportType} page=${pageNum}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+            return { pageNum, rows: [] as string[][] };
           } finally {
             await tab.close();
           }
