@@ -40,6 +40,7 @@ export interface AutoRenew {
   state: string; // "Valid Now", "Canceled", "In Trial", etc.
   price: number;
   customer: string;
+  email?: string;      // "Customer Email" — available in direct CSV downloads
   canceledAt?: string; // "Canceled At" column on canceled report
   created?: string;    // "Created" column on active/new reports
 }

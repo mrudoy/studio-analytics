@@ -32,13 +32,69 @@ export interface FunnelResults {
 }
 
 /**
- * Build a map of customer name -> earliest known dates for different stages.
+ * Normalize a name to a consistent key for matching across reports.
+ * First Visits use "Last, First" format; other reports use "First Last".
+ * This converts both to "first last" lowercase.
+ */
+function normalizeName(name: string): string {
+  let n = name.trim().toLowerCase();
+  if (n.includes(",")) {
+    const parts = n.split(",").map((p) => p.trim());
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      n = parts[1] + " " + parts[0];
+    }
+  }
+  return n.replace(/\s+/g, " ");
+}
+
+/**
+ * Build a name→email lookup from NewCustomers.
+ * Used to resolve FirstVisit attendees (which only have names) to emails.
+ */
+function buildNameToEmailMap(newCustomers: NewCustomer[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const nc of newCustomers) {
+    if (!nc.name || !nc.email) continue;
+    const key = normalizeName(nc.name);
+    // Keep the first email seen for each name (earlier sign-up wins)
+    if (!map.has(key)) {
+      map.set(key, nc.email.trim().toLowerCase());
+    }
+  }
+  return map;
+}
+
+/**
+ * Resolve a person to their best matching key (email preferred, name fallback).
+ */
+function resolveKey(
+  name: string,
+  email: string | undefined,
+  nameToEmail: Map<string, string>
+): string {
+  // Use direct email if available
+  if (email && email.trim()) return email.trim().toLowerCase();
+  // Look up email from name
+  const normalName = normalizeName(name);
+  const resolved = nameToEmail.get(normalName);
+  if (resolved) return resolved;
+  // Fallback to normalized name with prefix to avoid collisions with emails
+  return `name:${normalName}`;
+}
+
+/**
+ * Build a map of customer (by email) -> earliest known dates for different stages.
+ * Uses email matching where possible (more reliable than name matching).
  */
 function buildCustomerTimeline(
   firstVisits: FirstVisit[],
   newAutoRenews: AutoRenew[],
   newCustomers: NewCustomer[]
 ) {
+  const nameToEmail = buildNameToEmailMap(newCustomers);
+  let emailMatches = 0;
+  let nameOnlyMatches = 0;
+
   const timeline = new Map<
     string,
     {
@@ -50,35 +106,19 @@ function buildCustomerTimeline(
     }
   >();
 
-  /**
-   * Normalize a name to a consistent key for matching across reports.
-   * First Visits use "Last, First" format; other reports use "First Last".
-   * This converts both to "first last" lowercase.
-   */
-  function normalizeName(name: string): string {
-    let n = name.trim().toLowerCase();
-    // If the name contains a comma, assume "Last, First" format
-    if (n.includes(",")) {
-      const parts = n.split(",").map((p) => p.trim());
-      if (parts.length === 2 && parts[0] && parts[1]) {
-        n = parts[1] + " " + parts[0]; // "first last"
-      }
-    }
-    return n.replace(/\s+/g, " ");
-  }
-
-  function getOrCreate(name: string) {
-    const key = normalizeName(name);
+  function getOrCreate(key: string) {
     if (!timeline.has(key)) timeline.set(key, {});
     return timeline.get(key)!;
   }
 
-  // Map first visits
+  // Map first visits (resolve attendee name → email via NewCustomers lookup)
   for (const fv of firstVisits) {
     if (!fv.attendee || !isDropInOrIntro(fv.pass)) continue;
     const date = parseDate(fv.redeemedAt);
     if (!date) continue;
-    const entry = getOrCreate(fv.attendee);
+    const key = resolveKey(fv.attendee, undefined, nameToEmail);
+    if (key.startsWith("name:")) nameOnlyMatches++; else emailMatches++;
+    const entry = getOrCreate(key);
     if (!entry.firstVisitDate || date < entry.firstVisitDate) {
       entry.firstVisitDate = date;
       entry.firstVisitPass = fv.pass;
@@ -86,12 +126,14 @@ function buildCustomerTimeline(
   }
 
   // Map new auto-renews to SKY3 or MEMBER start dates
+  // (ar.email available from direct CSV download)
   for (const ar of newAutoRenews) {
     if (!ar.customer) continue;
     const category = getCategory(ar.name);
     const date = parseDate(ar.created || "");
     if (!date) continue;
-    const entry = getOrCreate(ar.customer);
+    const key = resolveKey(ar.customer, ar.email, nameToEmail);
+    const entry = getOrCreate(key);
 
     if (category === "SKY3" && (!entry.sky3Date || date < entry.sky3Date)) {
       entry.sky3Date = date;
@@ -101,17 +143,19 @@ function buildCustomerTimeline(
     }
   }
 
-  // Map sign-up dates
+  // Map sign-up dates (NewCustomers has email directly)
   for (const nc of newCustomers) {
     if (!nc.name) continue;
     const date = parseDate(nc.created);
     if (!date) continue;
-    const entry = getOrCreate(nc.name);
+    const key = resolveKey(nc.name, nc.email, nameToEmail);
+    const entry = getOrCreate(key);
     if (!entry.signUpDate || date < entry.signUpDate) {
       entry.signUpDate = date;
     }
   }
 
+  console.log(`[funnel] Email matching: ${emailMatches} resolved via email, ${nameOnlyMatches} fell back to name`);
   return timeline;
 }
 

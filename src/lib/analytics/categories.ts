@@ -113,7 +113,13 @@ export function isAnnualPlan(planName: string): boolean {
 }
 
 /**
- * Check if a pass/plan name represents a drop-in or intro type visit.
+ * Check if a pass/plan name represents a non-membership visit type
+ * (drop-in, intro, guest, community pass, etc.).
+ *
+ * Based on the marketing team's conversion funnel methodology:
+ *   Intro Week, Exclusive Intro Week, Guest pass, Member guest,
+ *   Community Day, On Running Guest, Poker chip, Teacher's guest,
+ *   5 pack, drop-in
  */
 export function isDropInOrIntro(passName: string): boolean {
   const upper = passName.trim().toUpperCase();
@@ -125,6 +131,12 @@ export function isDropInOrIntro(passName: string): boolean {
     upper.includes("TRIAL") ||
     upper.includes("FIRST") ||
     upper.includes("SINGLE CLASS") ||
-    upper.includes("WELLHUB")
+    upper.includes("WELLHUB") ||
+    upper.includes("GUEST") ||
+    upper.includes("COMMUNITY DAY") ||
+    upper.includes("POKER CHIP") ||
+    upper.includes("5 PACK") ||
+    upper.includes("5-PACK") ||
+    upper.includes("ON RUNNING")
   );
 }

@@ -42,43 +42,6 @@ export interface FunnelOverviewResults {
 }
 
 /**
- * Build a lookup: normalized customer name → earliest first-visit date.
- * Includes ALL first visits (the report is already filtered to first-time attendees).
- */
-function buildFirstVisitMap(firstVisits: FirstVisit[]): Map<string, Date> {
-  const map = new Map<string, Date>();
-  for (const fv of firstVisits) {
-    if (!fv.attendee) continue;
-    const date = parseDate(fv.redeemedAt);
-    if (!date) continue;
-    const key = normalizeName(fv.attendee);
-    const existing = map.get(key);
-    if (!existing || date < existing) {
-      map.set(key, date);
-    }
-  }
-  return map;
-}
-
-/**
- * Build a lookup: normalized customer name → earliest auto-renew created date
- */
-function buildAutoRenewMap(newAutoRenews: AutoRenew[]): Map<string, Date> {
-  const map = new Map<string, Date>();
-  for (const ar of newAutoRenews) {
-    if (!ar.customer) continue;
-    const date = parseDate(ar.created || "");
-    if (!date) continue;
-    const key = normalizeName(ar.customer);
-    const existing = map.get(key);
-    if (!existing || date < existing) {
-      map.set(key, date);
-    }
-  }
-  return map;
-}
-
-/**
  * Normalize "Last, First" → "first last" lowercase for cross-report matching.
  */
 function normalizeName(name: string): string {
@@ -90,6 +53,72 @@ function normalizeName(name: string): string {
     }
   }
   return n.replace(/\s+/g, " ");
+}
+
+/**
+ * Build a name→email lookup from NewCustomers for email-based matching.
+ */
+function buildNameToEmailMap(newCustomers: NewCustomer[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const nc of newCustomers) {
+    if (!nc.name || !nc.email) continue;
+    const key = normalizeName(nc.name);
+    if (!map.has(key)) {
+      map.set(key, nc.email.trim().toLowerCase());
+    }
+  }
+  return map;
+}
+
+/**
+ * Resolve a person to their best matching key (email preferred, name fallback).
+ */
+function resolveKey(
+  name: string,
+  email: string | undefined,
+  nameToEmail: Map<string, string>
+): string {
+  if (email && email.trim()) return email.trim().toLowerCase();
+  const normalName = normalizeName(name);
+  const resolved = nameToEmail.get(normalName);
+  if (resolved) return resolved;
+  return `name:${normalName}`;
+}
+
+/**
+ * Build a lookup: customer key (email preferred) → earliest first-visit date.
+ */
+function buildFirstVisitMap(firstVisits: FirstVisit[], nameToEmail: Map<string, string>): Map<string, Date> {
+  const map = new Map<string, Date>();
+  for (const fv of firstVisits) {
+    if (!fv.attendee) continue;
+    const date = parseDate(fv.redeemedAt);
+    if (!date) continue;
+    const key = resolveKey(fv.attendee, undefined, nameToEmail);
+    const existing = map.get(key);
+    if (!existing || date < existing) {
+      map.set(key, date);
+    }
+  }
+  return map;
+}
+
+/**
+ * Build a lookup: customer key (email preferred) → earliest auto-renew created date
+ */
+function buildAutoRenewMap(newAutoRenews: AutoRenew[], nameToEmail: Map<string, string>): Map<string, Date> {
+  const map = new Map<string, Date>();
+  for (const ar of newAutoRenews) {
+    if (!ar.customer) continue;
+    const date = parseDate(ar.created || "");
+    if (!date) continue;
+    const key = resolveKey(ar.customer, ar.email, nameToEmail);
+    const existing = map.get(key);
+    if (!existing || date < existing) {
+      map.set(key, date);
+    }
+  }
+  return map;
 }
 
 interface CustomerRecord {
@@ -105,7 +134,8 @@ interface CustomerRecord {
 function buildCustomerRecords(
   newCustomers: NewCustomer[],
   firstVisitMap: Map<string, Date>,
-  autoRenewMap: Map<string, Date>
+  autoRenewMap: Map<string, Date>,
+  nameToEmail: Map<string, string>
 ): CustomerRecord[] {
   const records: CustomerRecord[] = [];
 
@@ -114,7 +144,7 @@ function buildCustomerRecords(
     const signUpDate = parseDate(nc.created);
     if (!signUpDate) continue;
 
-    const key = normalizeName(nc.name);
+    const key = resolveKey(nc.name, nc.email, nameToEmail);
     const firstVisitDate = firstVisitMap.get(key) || null;
     const autoRenewDate = autoRenewMap.get(key) || null;
 
@@ -166,9 +196,10 @@ export function analyzeFunnelOverview(
   firstVisits: FirstVisit[],
   newAutoRenews: AutoRenew[]
 ): FunnelOverviewResults {
-  const firstVisitMap = buildFirstVisitMap(firstVisits);
-  const autoRenewMap = buildAutoRenewMap(newAutoRenews);
-  const records = buildCustomerRecords(newCustomers, firstVisitMap, autoRenewMap);
+  const nameToEmail = buildNameToEmailMap(newCustomers);
+  const firstVisitMap = buildFirstVisitMap(firstVisits, nameToEmail);
+  const autoRenewMap = buildAutoRenewMap(newAutoRenews, nameToEmail);
+  const records = buildCustomerRecords(newCustomers, firstVisitMap, autoRenewMap, nameToEmail);
 
   // Debug: show sample first visit records to diagnose matching issues
   if (firstVisits.length > 0) {

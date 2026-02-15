@@ -105,6 +105,7 @@ export const AutoRenewSchema = z.object({
         .trim()
     )
     .default(""),
+  email: z.string().optional().default(""),
   canceledAt: z.string().optional().default(""),
   created: z.string().optional().default(""),
 });
