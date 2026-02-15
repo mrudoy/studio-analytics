@@ -1,5 +1,6 @@
-import type { AutoRenew } from "@/types/union-data";
+import type { AutoRenew, Order } from "@/types/union-data";
 import { getCategory, isAnnualPlan } from "./categories";
+import { parseDate, getMonthKey } from "./date-utils";
 
 /**
  * Only count subscriptions in these states for active subscriber totals and MRR.
@@ -27,9 +28,13 @@ export interface SummaryKPIs {
   unknownPlanNames: Record<string, number>;
   /** Map of states that were skipped (not in COUNTABLE_STATES) → count */
   skippedStates: Record<string, number>;
+  /** Actual revenue from orders for the current calendar month */
+  currentMonthRevenue: number;
+  /** Actual revenue from orders for the previous calendar month */
+  previousMonthRevenue: number;
 }
 
-export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
+export function computeSummary(activeAutoRenews: AutoRenew[], orders: Order[] = []): SummaryKPIs {
   let mrrMember = 0, mrrSky3 = 0, mrrSkyTingTv = 0, mrrUnknown = 0;
   let activeMembers = 0, activeSky3 = 0, activeSkyTingTv = 0, activeUnknown = 0;
   const unknownPlanNames: Record<string, number> = {};
@@ -93,6 +98,22 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
   const mrrTotal = mrrMember + mrrSky3 + mrrSkyTingTv + mrrUnknown;
   const activeTotal = activeMembers + activeSky3 + activeSkyTingTv + activeUnknown;
 
+  // Compute actual monthly revenue from orders
+  const now = new Date();
+  const currentMonthKey = getMonthKey(now);
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = getMonthKey(prevMonth);
+
+  let currentMonthRevenue = 0;
+  let previousMonthRevenue = 0;
+  for (const order of orders) {
+    const date = parseDate(order.created || "");
+    if (!date || order.total <= 0) continue;
+    const mk = getMonthKey(date);
+    if (mk === currentMonthKey) currentMonthRevenue += order.total;
+    else if (mk === prevMonthKey) previousMonthRevenue += order.total;
+  }
+
   return {
     mrrMember: Math.round(mrrMember * 100) / 100,
     mrrSky3: Math.round(mrrSky3 * 100) / 100,
@@ -110,5 +131,7 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
     arpuOverall: activeTotal > 0 ? Math.round((mrrTotal / activeTotal) * 100) / 100 : 0,
     unknownPlanNames,
     skippedStates,
+    currentMonthRevenue: Math.round(currentMonthRevenue * 100) / 100,
+    previousMonthRevenue: Math.round(previousMonthRevenue * 100) / 100,
   };
 }

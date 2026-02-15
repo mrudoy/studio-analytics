@@ -1,5 +1,5 @@
 import { getDaysInMonth } from "date-fns";
-import type { AutoRenew } from "@/types/union-data";
+import type { AutoRenew, Order } from "@/types/union-data";
 import type { SummaryKPIs } from "./summary";
 import { getCategory } from "./categories";
 import { parseDate, getWeekKey, getMonthKey } from "./date-utils";
@@ -151,7 +151,8 @@ export function analyzeTrends(
   newAutoRenews: AutoRenew[],
   canceledAutoRenews: AutoRenew[],
   activeAutoRenews: AutoRenew[],
-  summary: SummaryKPIs
+  summary: SummaryKPIs,
+  orders: Order[] = []
 ): TrendsResults {
   const weeklyBuckets = new Map<string, PeriodBucket>();
   const monthlyBuckets = new Map<string, PeriodBucket>();
@@ -176,8 +177,7 @@ export function analyzeTrends(
       wBucket.newSkyTingTv++;
       mBucket.newSkyTingTv++;
     }
-    wBucket.revenue += ar.price;
-    mBucket.revenue += ar.price;
+    // NOTE: revenue now comes from orders (below), not subscription prices
   }
 
   // --- Bucket canceled auto-renews ---
@@ -202,6 +202,18 @@ export function analyzeTrends(
     }
     wBucket.revenueLost += ar.price;
     mBucket.revenueLost += ar.price;
+  }
+
+  // --- Bucket actual revenue from orders ---
+  for (const order of orders) {
+    const date = parseDate(order.created || "");
+    if (!date || order.total <= 0) continue;
+    const wk = getWeekKey(date);
+    const mo = getMonthKey(date);
+    const wBucket = getOrCreate(weeklyBuckets, wk);
+    const mBucket = getOrCreate(monthlyBuckets, mo);
+    wBucket.revenue += order.total;
+    mBucket.revenue += order.total;
   }
 
   // --- Sort and convert to TrendPeriod arrays ---

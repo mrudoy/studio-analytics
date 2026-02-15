@@ -147,7 +147,7 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   );
 
   updateProgress(job, "Computing summary KPIs", 70);
-  const summary = computeSummary(allCurrentSubs);
+  const summary = computeSummary(allCurrentSubs, ordersResult.data);
 
   // Diagnostic: log category breakdown and dump debug data
   console.log(`[pipeline] computeSummary input: ${allCurrentSubs.length} total subs`);
@@ -171,12 +171,26 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     console.log(`[pipeline] Wrote debug plan names to ${debugPath}`);
   } catch { /* ignore */ }
 
+  // Diagnostic: log order type breakdown for revenue categorization
+  const orderTypeRevenue: Record<string, number> = {};
+  for (const order of ordersResult.data) {
+    const t = order.type || "(blank)";
+    orderTypeRevenue[t] = (orderTypeRevenue[t] || 0) + order.total;
+  }
+  console.log(`[pipeline] Order type revenue breakdown (${ordersResult.data.length} orders):`);
+  const sortedTypes = Object.entries(orderTypeRevenue).sort((a, b) => b[1] - a[1]);
+  for (const [type, revenue] of sortedTypes) {
+    console.log(`  "${type}": $${revenue.toFixed(2)}`);
+  }
+  console.log(`[pipeline] Current month revenue: $${summary.currentMonthRevenue}, Previous month: $${summary.previousMonthRevenue}`);
+
   updateProgress(job, "Running trends analysis", 73);
   const trendsResults = analyzeTrends(
     newAutoRenewsResult.data,
     canceledResult.data,
     allCurrentSubs,
-    summary
+    summary,
+    ordersResult.data
   );
 
   // Step 5: Export to Google Sheets

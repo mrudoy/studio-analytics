@@ -30,6 +30,9 @@ export async function writeDashboardTab(
     r("Active Subscribers", summary.activeMembers, summary.activeSky3, summary.activeSkyTingTv, summary.activeUnknown, summary.activeTotal),
     r("ARPU", summary.arpuMember, summary.arpuSky3, summary.arpuSkyTingTv, "", summary.arpuOverall),
     r("", "", "", "", "", ""),
+    r("Current Month Revenue", "", "", "", "", summary.currentMonthRevenue),
+    r("Previous Month Revenue", "", "", "", "", summary.previousMonthRevenue),
+    r("", "", "", "", "", ""),
     r("Records Processed", "", "", "", "", ""),
     ...Object.entries(recordCounts).map(([key, count]) =>
       r(`  ${key}`, count, "", "", "", "")

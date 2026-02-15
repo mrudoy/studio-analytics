@@ -24,6 +24,9 @@ export interface DashboardStats {
     skyTingTv: number;
     overall: number;
   };
+  currentMonthRevenue: number;
+  previousMonthRevenue: number;
+  spreadsheetUrl?: string;
 }
 
 // In-memory cache with 5-minute TTL
@@ -69,6 +72,10 @@ export async function readDashboardStats(
         unknown: parseFloat(row.get("UNKNOWN")) || 0,
         overall: parseFloat(row.get("Overall")) || 0,
       };
+    } else if (metric === "Current Month Revenue") {
+      metricData[metric] = { overall: parseFloat(row.get("Overall")) || 0 };
+    } else if (metric === "Previous Month Revenue") {
+      metricData[metric] = { overall: parseFloat(row.get("Overall")) || 0 };
     }
   }
 
@@ -99,6 +106,8 @@ export async function readDashboardStats(
       skyTingTv: arpuRow.skyTingTv ?? 0,
       overall: arpuRow.overall ?? 0,
     },
+    currentMonthRevenue: metricData["Current Month Revenue"]?.overall ?? 0,
+    previousMonthRevenue: metricData["Previous Month Revenue"]?.overall ?? 0,
   };
 
   cached = { data, fetchedAt: Date.now() };

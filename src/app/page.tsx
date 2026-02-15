@@ -28,6 +28,8 @@ interface DashboardStats {
     skyTingTv: number;
     overall: number;
   };
+  currentMonthRevenue: number;
+  previousMonthRevenue: number;
   trends?: TrendsData | null;
 }
 
@@ -1171,10 +1173,14 @@ function DashboardView() {
         <div className="space-y-4">
           <SectionHeader>Financial Health</SectionHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatCard label="Total MRR" value={formatCurrency(data.mrr.total)} size="hero" />
-            <StatCard label="Member MRR" value={formatCurrency(data.mrr.member)} size="hero" />
-            <StatCard label="SKY3 MRR" value={formatCurrency(data.mrr.sky3)} size="hero" />
-            <StatCard label="TV MRR" value={formatCurrency(data.mrr.skyTingTv)} size="hero" />
+            <StatCard label="This Month's Revenue" value={formatCurrency(data.currentMonthRevenue)} size="hero" />
+            <StatCard label="Last Month's Revenue" value={formatCurrency(data.previousMonthRevenue)} size="hero" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <StatCard label="Total MRR (est.)" value={formatCurrency(data.mrr.total)} sublabel="from subscription prices" />
+            <StatCard label="Member MRR" value={formatCurrency(data.mrr.member)} />
+            <StatCard label="SKY3 MRR" value={formatCurrency(data.mrr.sky3)} />
+            <StatCard label="TV MRR" value={formatCurrency(data.mrr.skyTingTv)} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard label="Overall ARPU" value={formatCurrencyDecimal(data.arpu.overall)} />
