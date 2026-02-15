@@ -562,10 +562,92 @@ export class UnionClient {
     return filePath;
   }
 
+  /**
+   * Download a single report via fetch using its own dedicated tab.
+   * Returns the file path or null if fetch fails (needs scrape fallback).
+   */
+  private async downloadViaFetchInTab(
+    reportType: ReportType,
+    dateRange?: string
+  ): Promise<string | null> {
+    if (!this.context) throw new Error("Client not initialized");
+
+    const tab = await this.context.newPage();
+    try {
+      const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
+      await tab.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await tab.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+
+      // Check for Cloudflare
+      const pageContent = await tab.content();
+      if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge")) {
+        return null; // Will fall back to serial scrape on main page
+      }
+
+      // Read the form's date range (or use provided one)
+      const formDateRange = dateRange || await tab.evaluate(() => {
+        const input = document.querySelector('input[name="daterange"]') as HTMLInputElement | null;
+        return input?.value || "";
+      });
+
+      // Build the fetch URL from the form action
+      const fetchUrl = await tab.evaluate((args: { dateRange: string }) => {
+        const form = document.querySelector('button[value="csv"]')?.closest("form") as HTMLFormElement | null;
+        if (!form) return "";
+        const params: Record<string, string> = {};
+        form.querySelectorAll("input[name], select[name]").forEach((el) => {
+          const inp = el as HTMLInputElement;
+          if (inp.name && inp.value) params[inp.name] = inp.value;
+        });
+        if (args.dateRange) params["daterange"] = args.dateRange;
+        params["format"] = "csv";
+        const qs = Object.entries(params)
+          .filter(([, v]) => v)
+          .map(([k, v]) => k + "=" + encodeURIComponent(v))
+          .join("&");
+        return form.action + (form.action.includes("?") ? "&" : "?") + qs;
+      }, { dateRange: formDateRange });
+
+      if (!fetchUrl) return null;
+
+      // Fetch the CSV data
+      const csvResult = await tab.evaluate(async (url: string) => {
+        try {
+          const resp = await fetch(url, {
+            method: "GET",
+            credentials: "include",
+            redirect: "follow",
+          });
+          const text = await resp.text();
+          const isCSV = resp.headers.get("content-type")?.includes("text/csv") ||
+                         (!text.includes("<html") && !text.includes("<!DOCTYPE") && text.includes(","));
+          return {
+            ok: isCSV && resp.status === 200,
+            status: resp.status,
+            data: isCSV ? text : "",
+            lineCount: isCSV ? text.split("\n").length : 0,
+          };
+        } catch (e) {
+          return { ok: false, status: 0, data: "", lineCount: 0, error: String(e) };
+        }
+      }, fetchUrl);
+
+      if (!csvResult.ok || !csvResult.data) return null;
+
+      const filePath = join(DOWNLOADS_DIR, `${reportType}-${Date.now()}.csv`);
+      writeFileSync(filePath, csvResult.data, "utf8");
+      return filePath;
+    } catch (err) {
+      console.warn(`[scraper] Parallel fetch failed for ${reportType}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+      return null;
+    } finally {
+      await tab.close();
+    }
+  }
+
   async downloadAllReports(dateRange?: string): Promise<DownloadedFiles> {
     const files: Partial<DownloadedFiles> = {};
 
-    // All reports download serially — they share a single browser page for navigation.
     const reportTypes: ReportType[] = [
       "canceledAutoRenews",
       "newAutoRenews",
@@ -577,23 +659,63 @@ export class UnionClient {
       "pausedAutoRenews",
     ];
 
-    // Scraping phase spans 15% to 45% of the overall pipeline
     const SCRAPE_START = 15;
     const SCRAPE_END = 45;
     const SCRAPE_RANGE = SCRAPE_END - SCRAPE_START;
 
     const phaseStart = Date.now();
-    for (let i = 0; i < reportTypes.length; i++) {
-      const reportType = reportTypes[i];
-      const reportStartPct = SCRAPE_START + (i / reportTypes.length) * SCRAPE_RANGE;
-      const reportEndPct = SCRAPE_START + ((i + 1) / reportTypes.length) * SCRAPE_RANGE;
 
+    // Phase 1: Try all CSV-fetch-eligible reports in parallel (4 at a time)
+    const fetchEligible = reportTypes.filter((r) => FETCH_CSV_REPORTS.has(r));
+    const PARALLEL_LIMIT = 4;
+    const needsScrape: ReportType[] = [];
+
+    this.progress("Downloading reports in parallel", SCRAPE_START);
+
+    for (let i = 0; i < fetchEligible.length; i += PARALLEL_LIMIT) {
+      const batch = fetchEligible.slice(i, i + PARALLEL_LIMIT);
       const t0 = Date.now();
-      files[reportType] = await this.downloadCSV(reportType, dateRange, reportStartPct, reportEndPct);
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      const strategy = FETCH_CSV_REPORTS.has(reportType) ? "fetch" : "scrape";
-      console.log(`[scraper] ${reportType}: ${elapsed}s (${strategy})`);
+      const results = await Promise.all(
+        batch.map(async (rt) => {
+          const filePath = await this.downloadViaFetchInTab(rt, dateRange);
+          return { reportType: rt, filePath };
+        })
+      );
+      const batchElapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      const batchNames = batch.join(", ");
+
+      for (const { reportType, filePath } of results) {
+        if (filePath) {
+          files[reportType] = filePath;
+          console.log(`[scraper] ${reportType}: OK (parallel fetch)`);
+        } else {
+          needsScrape.push(reportType);
+          console.log(`[scraper] ${reportType}: fetch failed, queued for scrape`);
+        }
+      }
+      console.log(`[scraper] Parallel batch [${batchNames}]: ${batchElapsed}s`);
+
+      const pct = SCRAPE_START + ((i + batch.length) / reportTypes.length) * SCRAPE_RANGE;
+      this.progress(`Downloaded ${Object.keys(files).length}/${reportTypes.length} reports`, Math.round(pct));
     }
+
+    // Phase 2: Serially scrape any reports that failed parallel fetch
+    // Also scrape any reports not in FETCH_CSV_REPORTS (currently none, but future-proof)
+    const nonFetchReports = reportTypes.filter((r) => !FETCH_CSV_REPORTS.has(r));
+    const scrapeList = [...needsScrape, ...nonFetchReports];
+
+    if (scrapeList.length > 0) {
+      console.log(`[scraper] Falling back to serial scrape for: ${scrapeList.join(", ")}`);
+      for (const reportType of scrapeList) {
+        const t0 = Date.now();
+        const scrapeStart = SCRAPE_START + ((reportTypes.indexOf(reportType)) / reportTypes.length) * SCRAPE_RANGE;
+        const scrapeEnd = SCRAPE_START + ((reportTypes.indexOf(reportType) + 1) / reportTypes.length) * SCRAPE_RANGE;
+        files[reportType] = await this.downloadViaScrape(reportType, dateRange, scrapeStart, scrapeEnd, true);
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+        console.log(`[scraper] ${reportType}: ${elapsed}s (scrape fallback)`);
+      }
+    }
+
     console.log(`[scraper] Total download phase: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`);
 
     return files as DownloadedFiles;
