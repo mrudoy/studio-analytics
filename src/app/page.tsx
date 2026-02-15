@@ -513,6 +513,9 @@ function StatCard({ label, value, sublabel, size = "standard" }: StatCardProps) 
             letterSpacing: "-0.02em",
             lineHeight: 1.1,
             fontSize: isHero ? "3.2rem" : "1.85rem",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
           {value}
@@ -1167,7 +1170,7 @@ function DashboardView() {
         {/* ── FINANCIAL HEALTH ───────────────────────── */}
         <div className="space-y-4">
           <SectionHeader>Financial Health</SectionHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <StatCard label="Total MRR" value={formatCurrency(data.mrr.total)} size="hero" />
             <StatCard label="Member MRR" value={formatCurrency(data.mrr.member)} size="hero" />
             <StatCard label="SKY3 MRR" value={formatCurrency(data.mrr.sky3)} size="hero" />
