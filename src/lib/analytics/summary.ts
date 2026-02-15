@@ -1,5 +1,5 @@
 import type { AutoRenew } from "@/types/union-data";
-import { getCategory } from "./categories";
+import { getCategory, isAnnualPlan } from "./categories";
 
 /**
  * Only count subscriptions in these states for active subscriber totals and MRR.
@@ -34,6 +34,7 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
   let activeMembers = 0, activeSky3 = 0, activeSkyTingTv = 0, activeUnknown = 0;
   const unknownPlanNames: Record<string, number> = {};
   const skippedStates: Record<string, number> = {};
+  let annualPlanCount = 0;
 
   for (const ar of activeAutoRenews) {
     // Only count Active + Paused states; skip Pending Cancellation, Past Due, In Trial
@@ -44,7 +45,9 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
     }
 
     const cat = getCategory(ar.name);
-    const monthlyPrice = ar.price; // Assuming price is monthly; annual plans would need division by 12
+    const annual = isAnnualPlan(ar.name);
+    const monthlyPrice = annual ? ar.price / 12 : ar.price;
+    if (annual) annualPlanCount++;
 
     switch (cat) {
       case "MEMBER":
@@ -80,6 +83,11 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
     for (const [name, count] of sorted) {
       console.log(`  "${name}" × ${count}`);
     }
+  }
+
+  // Log annual plan detection
+  if (annualPlanCount > 0) {
+    console.log(`[summary] ${annualPlanCount} annual plans detected — prices divided by 12 for MRR`);
   }
 
   const mrrTotal = mrrMember + mrrSky3 + mrrSkyTingTv + mrrUnknown;

@@ -91,6 +91,28 @@ export function getCategory(planName: string): SubscriptionCategory {
 }
 
 /**
+ * Detect whether a subscription plan bills annually (vs monthly).
+ * Annual plans store the full yearly price, so MRR = price / 12.
+ *
+ * Known annual plans from the SKY TING pricing page:
+ *   - SKY UNLIMITED ANNUAL   → $2,300/yr
+ *   - ALL ACCESS YEARLY       → $2,300/yr
+ *   - SKY TING TV ANNUAL      → $390/yr
+ *   - Founding Member Annual SKY TING TV
+ *   - SKY TING TV Unlimited Yearly
+ */
+export function isAnnualPlan(planName: string): boolean {
+  const upper = planName.trim().toUpperCase();
+  return (
+    upper.includes("ANNUAL") ||
+    upper.includes("YEARLY") ||
+    upper.includes("12 MONTH") ||
+    upper.includes("12-MONTH") ||
+    upper.includes("12M ")
+  );
+}
+
+/**
  * Check if a pass/plan name represents a drop-in or intro type visit.
  */
 export function isDropInOrIntro(passName: string): boolean {
