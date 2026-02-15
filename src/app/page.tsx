@@ -158,6 +158,14 @@ function formatDelta(n: number | null): string {
   return String(n);
 }
 
+function formatDeltaCurrency(n: number | null): string {
+  if (n == null) return "";
+  const formatted = Math.abs(Math.round(n)).toLocaleString("en-US");
+  if (n > 0) return `+$${formatted}`;
+  if (n < 0) return `-$${formatted}`;
+  return "$0";
+}
+
 function formatDeltaPercent(n: number | null): string {
   if (n == null) return "";
   if (n > 0) return `+${n}%`;
@@ -534,10 +542,11 @@ interface TrendCardProps {
   delta: number | null;
   deltaPercent: number | null;
   isPositiveGood?: boolean; // default true; for churn, set to false
+  isCurrency?: boolean; // format delta with $ sign
   sublabel?: string;
 }
 
-function DeltaBadge({ delta, deltaPercent, isPositiveGood = true }: { delta: number | null; deltaPercent: number | null; isPositiveGood?: boolean }) {
+function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = false }: { delta: number | null; deltaPercent: number | null; isPositiveGood?: boolean; isCurrency?: boolean }) {
   if (delta == null) return null;
 
   const isPositive = delta > 0;
@@ -561,7 +570,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true }: { delta: num
         fontSize: "0.72rem",
       }}
     >
-      {arrow} {formatDelta(delta)}
+      {arrow} {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
       {deltaPercent != null && (
         <span style={{ opacity: 0.75, fontWeight: 500 }}>{formatDeltaPercent(deltaPercent)}</span>
       )}
@@ -569,7 +578,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true }: { delta: num
   );
 }
 
-function TrendCard({ label, value, delta, deltaPercent, isPositiveGood = true, sublabel }: TrendCardProps) {
+function TrendCard({ label, value, delta, deltaPercent, isPositiveGood = true, isCurrency = false, sublabel }: TrendCardProps) {
   return (
     <div
       className="rounded-2xl flex flex-col justify-between"
@@ -606,7 +615,7 @@ function TrendCard({ label, value, delta, deltaPercent, isPositiveGood = true, s
           >
             {value}
           </p>
-          <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} />
+          <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} />
         </div>
         {sublabel && (
           <p
@@ -747,6 +756,7 @@ function WeekOverWeekSection({ weekly }: { weekly: TrendRowData[] }) {
           value={formatCurrency(latest.revenueAdded)}
           delta={latest.deltaRevenue}
           deltaPercent={latest.deltaPctRevenue}
+          isCurrency={true}
         />
         <TrendCard
           label="Revenue Lost"
@@ -826,6 +836,7 @@ function MonthOverMonthSection({ monthly, pacing }: { monthly: TrendRowData[]; p
           value={isPacing ? formatCurrency(pacing!.revenueActual) : formatCurrency(latest.revenueAdded)}
           delta={latest.deltaRevenue}
           deltaPercent={latest.deltaPctRevenue}
+          isCurrency={true}
           sublabel={isPacing ? `Pacing: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
         />
         <TrendCard
@@ -1011,61 +1022,168 @@ function DashboardView() {
           <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} />
         </div>
 
-        {/* Hero Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <StatCard
-            label="Total Members"
-            value={formatNumber(data.activeSubscribers.member)}
-            sublabel={`${formatCurrency(data.mrr.member)} MRR`}
-            size="hero"
-          />
-          <StatCard
-            label="Total SKY3"
-            value={formatNumber(data.activeSubscribers.sky3)}
-            sublabel={`${formatCurrency(data.mrr.sky3)} MRR`}
-            size="hero"
-          />
-        </div>
-
-        {/* Overview */}
+        {/* ── MEMBERSHIP ─────────────────────────────────── */}
         <div className="space-y-4">
-          <SectionHeader>Overview</SectionHeader>
+          <SectionHeader>Membership</SectionHeader>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard label="All Subscribers" value={formatNumber(data.activeSubscribers.total)} />
-            <StatCard label="Total MRR" value={formatCurrency(data.mrr.total)} />
-            <StatCard label="Overall ARPU" value={formatCurrencyDecimal(data.arpu.overall)} />
+            <StatCard
+              label="Overall"
+              value={formatNumber(data.activeSubscribers.total)}
+              sublabel={`${formatCurrency(data.mrr.total)} MRR`}
+              size="hero"
+            />
+            <StatCard
+              label="Members"
+              value={formatNumber(data.activeSubscribers.member)}
+              sublabel={`${formatCurrency(data.mrr.member)} MRR`}
+              size="hero"
+            />
+            <StatCard
+              label="SKY3"
+              value={formatNumber(data.activeSubscribers.sky3)}
+              sublabel={`${formatCurrency(data.mrr.sky3)} MRR`}
+              size="hero"
+            />
             <StatCard
               label="SKY TING TV"
               value={formatNumber(data.activeSubscribers.skyTingTv)}
               sublabel={`${formatCurrency(data.mrr.skyTingTv)} MRR`}
+              size="hero"
             />
           </div>
         </div>
 
-        {/* WoW Trends */}
-        {trends && trends.weekly.length >= 2 && (
-          <WeekOverWeekSection weekly={trends.weekly} />
-        )}
+        {/* WoW — New signups & churn counts */}
+        {trends && trends.weekly.length >= 2 && (() => {
+          const latest = trends.weekly[trends.weekly.length - 1];
+          const prev = trends.weekly[trends.weekly.length - 2];
+          return (
+            <div className="space-y-4">
+              <SectionHeader>Week over Week</SectionHeader>
+              <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
+                Week of {formatWeekLabel(latest.period)} vs previous week
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <TrendCard label="New Members" value={String(latest.newMembers)} delta={latest.deltaNewMembers} deltaPercent={latest.deltaPctNewMembers} />
+                <TrendCard label="New SKY3" value={String(latest.newSky3)} delta={latest.deltaNewSky3} deltaPercent={latest.deltaPctNewSky3} />
+                <TrendCard label="Member Churn" value={String(latest.memberChurn)} delta={prev ? -(latest.memberChurn - prev.memberChurn) : null} deltaPercent={null} isPositiveGood={false} />
+                <TrendCard label="SKY3 Churn" value={String(latest.sky3Churn)} delta={prev ? -(latest.sky3Churn - prev.sky3Churn) : null} deltaPercent={null} isPositiveGood={false} />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <TrendCard label="Net Member Growth" value={formatDelta(latest.netMemberGrowth) || "0"} delta={null} deltaPercent={null} />
+                <TrendCard label="Net SKY3 Growth" value={formatDelta(latest.netSky3Growth) || "0"} delta={null} deltaPercent={null} />
+              </div>
+            </div>
+          );
+        })()}
 
-        {/* MoM Trends */}
-        {trends && trends.monthly.length >= 1 && (
-          <MonthOverMonthSection monthly={trends.monthly} pacing={trends.pacing} />
-        )}
+        {/* MoM — New signups & churn counts */}
+        {trends && trends.monthly.length >= 1 && (() => {
+          const latest = trends.monthly[trends.monthly.length - 1];
+          const pacing = trends.pacing;
+          const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+          return (
+            <div className="space-y-4">
+              <SectionHeader>Month over Month</SectionHeader>
+              <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
+                {formatMonthLabel(latest.period)}
+                {isPacing && (
+                  <span style={{ color: "var(--st-accent)", fontWeight: 600 }}>
+                    {" "} ({pacing!.daysElapsed}/{pacing!.daysInMonth} days — pacing shown)
+                  </span>
+                )}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <TrendCard
+                  label="New Members"
+                  value={isPacing ? `${pacing!.newMembersActual}` : String(latest.newMembers)}
+                  delta={latest.deltaNewMembers} deltaPercent={latest.deltaPctNewMembers}
+                  sublabel={isPacing ? `Pacing: ${pacing!.newMembersPaced} projected` : undefined}
+                />
+                <TrendCard
+                  label="New SKY3"
+                  value={isPacing ? `${pacing!.newSky3Actual}` : String(latest.newSky3)}
+                  delta={latest.deltaNewSky3} deltaPercent={latest.deltaPctNewSky3}
+                  sublabel={isPacing ? `Pacing: ${pacing!.newSky3Paced} projected` : undefined}
+                />
+                <TrendCard
+                  label="Member Churn"
+                  value={isPacing ? `${pacing!.memberCancellationsActual}` : String(latest.memberChurn)}
+                  delta={null} deltaPercent={null} isPositiveGood={false}
+                  sublabel={isPacing ? `Pacing: ${pacing!.memberCancellationsPaced} projected` : undefined}
+                />
+                <TrendCard
+                  label="SKY3 Churn"
+                  value={isPacing ? `${pacing!.sky3CancellationsActual}` : String(latest.sky3Churn)}
+                  delta={null} deltaPercent={null} isPositiveGood={false}
+                  sublabel={isPacing ? `Pacing: ${pacing!.sky3CancellationsPaced} projected` : undefined}
+                />
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── REVENUE ──────────────────────────────────── */}
+        <div className="space-y-4">
+          <SectionHeader>Revenue</SectionHeader>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <StatCard label="Total MRR" value={formatCurrency(data.mrr.total)} size="hero" />
+            <StatCard label="Overall ARPU" value={formatCurrencyDecimal(data.arpu.overall)} />
+            <StatCard label="ARPU — Member" value={formatCurrencyDecimal(data.arpu.member)} />
+            <StatCard label="ARPU — SKY3" value={formatCurrencyDecimal(data.arpu.sky3)} />
+          </div>
+        </div>
+
+        {/* WoW Revenue Trends */}
+        {trends && trends.weekly.length >= 2 && (() => {
+          const latest = trends.weekly[trends.weekly.length - 1];
+          return (
+            <div className="space-y-4">
+              <SectionHeader>Revenue — Week over Week</SectionHeader>
+              <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
+                Week of {formatWeekLabel(latest.period)} vs previous week
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <TrendCard label="Revenue Added" value={formatCurrency(latest.revenueAdded)} delta={latest.deltaRevenue} deltaPercent={latest.deltaPctRevenue} isCurrency={true} />
+                <TrendCard label="Revenue Lost" value={formatCurrency(latest.revenueLost)} delta={null} deltaPercent={null} isPositiveGood={false} sublabel="from cancellations" />
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* MoM Revenue Trends */}
+        {trends && trends.monthly.length >= 1 && (() => {
+          const latest = trends.monthly[trends.monthly.length - 1];
+          const pacing = trends.pacing;
+          const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+          return (
+            <div className="space-y-4">
+              <SectionHeader>Revenue — Month over Month</SectionHeader>
+              <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
+                {formatMonthLabel(latest.period)}
+                {isPacing && (
+                  <span style={{ color: "var(--st-accent)", fontWeight: 600 }}>
+                    {" "} ({pacing!.daysElapsed}/{pacing!.daysInMonth} days)
+                  </span>
+                )}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <TrendCard
+                  label="Revenue Added"
+                  value={isPacing ? formatCurrency(pacing!.revenueActual) : formatCurrency(latest.revenueAdded)}
+                  delta={latest.deltaRevenue} deltaPercent={latest.deltaPctRevenue} isCurrency={true}
+                  sublabel={isPacing ? `Pacing: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
+                />
+                <TrendCard label="Revenue Lost" value={formatCurrency(latest.revenueLost)} delta={null} deltaPercent={null} isPositiveGood={false} sublabel="from cancellations" />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Revenue Projection */}
         {trends?.projection && (
           <RevenueProjectionSection projection={trends.projection} />
         )}
-
-        {/* Revenue per Subscriber */}
-        <div className="space-y-4">
-          <SectionHeader>Revenue per Subscriber</SectionHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard label="ARPU — Member" value={formatCurrencyDecimal(data.arpu.member)} />
-            <StatCard label="ARPU — SKY3" value={formatCurrencyDecimal(data.arpu.sky3)} />
-            <StatCard label="ARPU — SKY TING TV" value={formatCurrencyDecimal(data.arpu.skyTingTv)} />
-          </div>
-        </div>
 
         {/* Footer */}
         <div className="text-center pt-6">

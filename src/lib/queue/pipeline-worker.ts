@@ -30,6 +30,8 @@ import {
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
 import type { NewCustomer, Order, FirstVisit, Registration, AutoRenew } from "@/types/union-data";
+import { writeFileSync } from "fs";
+import { join } from "path";
 
 function updateProgress(job: Job, step: string, percent: number) {
   job.updateProgress({ step, percent });
@@ -146,6 +148,28 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
 
   updateProgress(job, "Computing summary KPIs", 70);
   const summary = computeSummary(allCurrentSubs);
+
+  // Diagnostic: log category breakdown and dump debug data
+  console.log(`[pipeline] computeSummary input: ${allCurrentSubs.length} total subs`);
+  console.log(`[pipeline] Category breakdown: MEMBER=${summary.activeMembers}, SKY3=${summary.activeSky3}, TV=${summary.activeSkyTingTv}, UNKNOWN=${summary.activeUnknown}, TOTAL=${summary.activeTotal}`);
+  if (summary.activeUnknown > 0) {
+    console.log(`[pipeline] UNKNOWN plan names:`, JSON.stringify(summary.unknownPlanNames));
+  }
+  if (Object.keys(summary.skippedStates).length > 0) {
+    console.log(`[pipeline] Skipped states:`, JSON.stringify(summary.skippedStates));
+  }
+
+  // Dump unique plan names for debugging
+  try {
+    const planNameCounts: Record<string, number> = {};
+    for (const ar of allCurrentSubs) {
+      const key = `${ar.name} | state=${ar.state}`;
+      planNameCounts[key] = (planNameCounts[key] || 0) + 1;
+    }
+    const debugPath = join(process.cwd(), "data", "debug-plan-names.json");
+    writeFileSync(debugPath, JSON.stringify(planNameCounts, null, 2));
+    console.log(`[pipeline] Wrote debug plan names to ${debugPath}`);
+  } catch { /* ignore */ }
 
   updateProgress(job, "Running trends analysis", 73);
   const trendsResults = analyzeTrends(

@@ -25,6 +25,8 @@ export interface SummaryKPIs {
   arpuOverall: number;
   /** Map of unrecognized plan names → count of subscribers with that plan */
   unknownPlanNames: Record<string, number>;
+  /** Map of states that were skipped (not in COUNTABLE_STATES) → count */
+  skippedStates: Record<string, number>;
 }
 
 export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
@@ -99,5 +101,6 @@ export function computeSummary(activeAutoRenews: AutoRenew[]): SummaryKPIs {
     arpuSkyTingTv: activeSkyTingTv > 0 ? Math.round((mrrSkyTingTv / activeSkyTingTv) * 100) / 100 : 0,
     arpuOverall: activeTotal > 0 ? Math.round((mrrTotal / activeTotal) * 100) / 100 : 0,
     unknownPlanNames,
+    skippedStates,
   };
 }
