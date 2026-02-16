@@ -212,6 +212,15 @@ function formatWeekLabel(period: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function formatWeekRange(period: string): string {
+  const start = new Date(period + "T00:00:00");
+  if (isNaN(start.getTime())) return period;
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${fmt(start)} \u2013 ${fmt(end)}`;
+}
+
 function formatMonthLabel(period: string): string {
   const [year, month] = period.split("-");
   const d = new Date(parseInt(year), parseInt(month) - 1);
@@ -948,96 +957,66 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   );
 }
 
-// ─── Layer 2: Revenue Drivers Bridge ─────────────────────────
+// ─── Revenue Section (weekly + monthly, hard separation) ─────
 
-function RevenueDriversBridge({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
-  const latestW = trends && trends.weekly.length >= 2 ? trends.weekly[trends.weekly.length - 1] : null;
-  const pacing = trends?.pacing;
-  const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+function RevenueSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
+  const weekly = trends?.weekly || [];
+  const monthly = trends?.monthly || [];
+  const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
+  const prevW = weekly.length >= 2 ? weekly[weekly.length - 2] : null;
 
-  // MRR stacked bar
-  const mrrData: StackedBarData[] = [{
-    label: "MRR Breakdown",
-    segments: [
-      { value: data.mrr.member, color: COLORS.member, label: "Member" },
-      { value: data.mrr.sky3, color: COLORS.sky3, label: "SKY3" },
-      { value: data.mrr.skyTingTv, color: COLORS.tv, label: "TV" },
-      ...(data.mrr.unknown > 0 ? [{ value: data.mrr.unknown, color: "#999", label: "Other" }] : []),
-    ],
-  }];
+  // Weekly delta
+  const weeklyDelta = latestW && prevW && prevW.revenueAdded > 0
+    ? latestW.revenueAdded - prevW.revenueAdded
+    : null;
+  const weeklyDeltaPct = latestW && prevW && prevW.revenueAdded > 0
+    ? Math.round((latestW.revenueAdded - prevW.revenueAdded) / prevW.revenueAdded * 1000) / 10
+    : null;
 
-  // Revenue monthly bars
-  const revenueMonthlyBars: BarChartData[] = [];
-  if (trends && trends.monthly.length > 0) {
-    for (const m of trends.monthly.slice(-6)) {
-      revenueMonthlyBars.push({
-        label: formatMonthLabel(m.period),
-        value: m.revenueAdded,
-        color: COLORS.member,
-      });
-    }
-  }
+  // Monthly bars
+  const revenueMonthlyBars: BarChartData[] = monthly.slice(-6).map((m) => ({
+    label: formatMonthLabel(m.period),
+    value: m.revenueAdded,
+    color: COLORS.member,
+  }));
+
+  // Last month total (second-to-last monthly period)
+  const lastMonthRevenue = monthly.length >= 2 ? monthly[monthly.length - 2].revenueAdded : null;
 
   return (
     <div className="space-y-5">
-      <SectionHeader>What Changed</SectionHeader>
+      <SectionHeader>Revenue</SectionHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {/* Left: Revenue changes + MRR bar */}
+        {/* Left: Weekly Revenue */}
         <Card padding="1.5rem">
-          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-            Revenue Flow (WoW)
+          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "2px" }}>
+            Weekly Revenue
           </p>
+          {latestW && (
+            <p style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)", marginBottom: "12px" }}>
+              {formatWeekRange(latestW.period)}
+            </p>
+          )}
 
           {latestW ? (
             <>
-              <TrendRow
-                label="Revenue Added"
-                value={formatCurrency(latestW.revenueAdded)}
-                delta={latestW.deltaRevenue}
-                deltaPercent={latestW.deltaPctRevenue}
-                isCurrency
-              />
-              <TrendRow
-                label="Revenue Lost"
-                value={formatCurrency(latestW.revenueLost)}
-                delta={null}
-                deltaPercent={null}
-                isPositiveGood={false}
-              />
-              <div className="flex items-center justify-between" style={{ padding: "0.65rem 0" }}>
-                <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "0.92rem", color: "var(--st-text-primary)" }}>
-                  Net Change
-                </span>
-                <span style={{
-                  fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.35rem",
-                  color: (latestW.revenueAdded - latestW.revenueLost) >= 0 ? "var(--st-success)" : "var(--st-error)",
-                }}>
-                  {formatDeltaCurrency(latestW.revenueAdded - latestW.revenueLost)}
-                </span>
-              </div>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                {formatCurrency(latestW.revenueAdded)}
+              </p>
+              {weeklyDelta != null && (
+                <p style={{ marginTop: "6px" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>vs prior week: </span>
+                  <DeltaBadge delta={weeklyDelta} deltaPercent={weeklyDeltaPct} isCurrency compact />
+                </p>
+              )}
             </>
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No weekly data yet</p>
           )}
-
-          {/* MRR composition bar */}
-          <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
-            <StackedBarChart data={mrrData} />
-            <div className="flex gap-4 mt-3 flex-wrap">
-              {mrrData[0].segments.filter(s => s.value > 0).map((seg, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
-                    {seg.label}: {formatCurrency(seg.value)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
         </Card>
 
-        {/* Right: Monthly revenue trend + pacing */}
+        {/* Right: Monthly Revenue Trend */}
         <Card padding="1.5rem">
           <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
             Monthly Revenue Trend
@@ -1047,27 +1026,52 @@ function RevenueDriversBridge({ data, trends }: { data: DashboardStats; trends?:
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No monthly data yet</p>
           )}
-
-          {isPacing && (
-            <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
-              <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-accent)", letterSpacing: "0.06em", marginBottom: "6px" }}>
-                Month Pacing ({pacing!.daysElapsed}/{pacing!.daysInMonth}d)
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>Revenue MTD</p>
-                  <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.1rem", color: "var(--st-text-primary)" }}>{formatCurrency(pacing!.revenueActual)}</p>
-                </div>
-                <div>
-                  <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>Projected</p>
-                  <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.1rem", color: "var(--st-accent)" }}>{formatCurrency(pacing!.revenuePaced)}</p>
-                </div>
-              </div>
-            </div>
+          {lastMonthRevenue != null && lastMonthRevenue > 0 && (
+            <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "10px" }}>
+              Last month: {formatCurrency(lastMonthRevenue)}
+            </p>
           )}
         </Card>
       </div>
     </div>
+  );
+}
+
+// ─── MRR Breakdown (standalone) ──────────────────────────────
+
+function MRRBreakdown({ data }: { data: DashboardStats }) {
+  const mrrData: StackedBarData[] = [{
+    label: "MRR",
+    segments: [
+      { value: data.mrr.member, color: COLORS.member, label: "Member" },
+      { value: data.mrr.sky3, color: COLORS.sky3, label: "SKY3" },
+      { value: data.mrr.skyTingTv, color: COLORS.tv, label: "TV" },
+      ...(data.mrr.unknown > 0 ? [{ value: data.mrr.unknown, color: "#999", label: "Other" }] : []),
+    ],
+  }];
+
+  return (
+    <Card padding="1.5rem">
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          Recurring Revenue (MRR)
+        </p>
+        <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+          {formatCurrency(data.mrr.total)}
+        </p>
+      </div>
+      <StackedBarChart data={mrrData} />
+      <div className="flex gap-4 mt-3 flex-wrap">
+        {mrrData[0].segments.filter(s => s.value > 0).map((seg, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
+            <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
+              {seg.label}: {formatCurrency(seg.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -1695,64 +1699,48 @@ function DashboardView() {
           <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} />
         </div>
 
-        {/* ━━ LAYER 1: KPI Hero Strip ━━━━━━━━━━━━━━━ */}
+        {/* ━━ KPI Hero Strip ━━━━━━━━━━━━━━━━━━━━━━━ */}
         <KPIHeroStrip tiles={(() => {
-          const latestW = weekly.length >= 2 ? weekly[weekly.length - 1] : null;
-          const prevW = weekly.length >= 2 ? weekly[weekly.length - 2] : null;
-          const netGrowthW = latestW
-            ? latestW.netMemberGrowth + latestW.netSky3Growth + (latestW.newSkyTingTv - latestW.skyTingTvChurn)
+          const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
+          const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
+          const inStudioNet = latestW
+            ? latestW.netMemberGrowth + latestW.netSky3Growth
+            : null;
+          const digitalNet = latestW
+            ? latestW.newSkyTingTv - latestW.skyTingTvChurn
             : null;
 
           const tiles: HeroTile[] = [
             {
               label: "Revenue MTD",
               value: formatCurrency(data.currentMonthRevenue),
-              delta: data.previousMonthRevenue > 0
-                ? Math.round(data.currentMonthRevenue - data.previousMonthRevenue)
-                : null,
-              deltaPercent: data.previousMonthRevenue > 0
-                ? Math.round((data.currentMonthRevenue - data.previousMonthRevenue) / data.previousMonthRevenue * 100)
-                : null,
-              isCurrency: true,
-            },
-            {
-              label: "MRR",
-              value: formatCurrency(data.mrr.total),
-            },
-            {
-              label: "Subscribers",
-              value: formatNumber(data.activeSubscribers.total),
-              delta: netGrowthW,
-              sublabel: netGrowthW != null ? "net this week" : undefined,
-            },
-            {
-              label: "Churn (WoW)",
-              value: latestW ? formatCurrency(latestW.revenueLost) : "—",
-              isPositiveGood: false,
-            },
-            ...(trends?.dropIns ? [{
-              label: "Drop-ins MTD",
-              value: String(trends.dropIns.currentMonthTotal),
-              delta: trends.dropIns.previousMonthTotal > 0
-                ? trends.dropIns.currentMonthTotal - trends.dropIns.previousMonthTotal
-                : null,
-              deltaPercent: null,
-              sublabel: trends.dropIns.currentMonthDaysElapsed < trends.dropIns.currentMonthDaysInMonth
-                ? `proj. ${trends.dropIns.currentMonthPaced}`
+              sublabel: data.previousMonthRevenue > 0
+                ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
                 : undefined,
-            }] : []),
+            },
             {
-              label: "ARPU",
-              value: formatCurrencyDecimal(data.arpu.overall),
+              label: "In-Studio Auto-Renews",
+              value: formatNumber(inStudioCount),
+              delta: inStudioNet,
+              sublabel: inStudioNet != null ? "net this week" : undefined,
+            },
+            {
+              label: "Sky Ting TV (Digital)",
+              value: formatNumber(data.activeSubscribers.skyTingTv),
+              delta: digitalNet,
+              sublabel: digitalNet != null ? "net this week" : undefined,
             },
           ];
           return tiles;
         })()} />
 
-        {/* ━━ LAYER 2: What Changed ━━━━━━━━━━━━━━━━━ */}
-        <RevenueDriversBridge data={data} trends={trends} />
+        {/* ━━ Revenue ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        <RevenueSection data={data} trends={trends} />
 
-        {/* ━━ LAYER 3: Product Lines ━━━━━━━━━━━━━━━━ */}
+        {/* ━━ MRR Breakdown ━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        <MRRBreakdown data={data} />
+
+        {/* ━━ Subscriptions ━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <SectionHeader>Subscriptions</SectionHeader>
 
         {/* Members */}
@@ -1802,19 +1790,6 @@ function DashboardView() {
         {trends?.dropIns && (
           <DropInCardNew dropIns={trends.dropIns} />
         )}
-
-        {/* ━━ ARPU Detail ━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        <Card padding="1.5rem">
-          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-            Average Revenue Per User
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4">
-            <KPIMetric label="Overall" value={formatCurrencyDecimal(data.arpu.overall)} />
-            <KPIMetric label="Member" value={formatCurrencyDecimal(data.arpu.member)} />
-            <KPIMetric label="SKY3" value={formatCurrencyDecimal(data.arpu.sky3)} />
-            <KPIMetric label="TV" value={formatCurrencyDecimal(data.arpu.skyTingTv)} />
-          </div>
-        </Card>
 
         {/* ━━ Revenue Forecast ━━━━━━━━━━━━━━━━━━━━━━ */}
         {trends?.projection && (
