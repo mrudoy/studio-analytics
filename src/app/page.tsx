@@ -922,9 +922,9 @@ interface HeroTile {
 function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   return (
     <Card padding="1.75rem">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-5">
+      <div className="flex flex-wrap gap-x-6 gap-y-5">
         {tiles.map((tile, i) => (
-          <div key={i} style={{ borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "0.75rem" : 0 }}>
+          <div key={i} style={{ flex: "1 1 140px", minWidth: "140px", borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "0.75rem" : 0 }}>
             <p style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>
               {tile.label}
             </p>
