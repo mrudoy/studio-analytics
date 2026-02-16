@@ -215,7 +215,14 @@ export default function PipelinePage() {
                 Pipeline complete
               </p>
               <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8, fontFamily: FONT_SANS }}>
-                Finished in {Math.floor(status.duration / 60000)}m {Math.round((status.duration % 60000) / 1000)}s
+                Finished in {(() => {
+                  const sec = status.duration > 100_000
+                    ? Math.round(status.duration / 1000)
+                    : Math.round(status.duration);
+                  const m = Math.floor(sec / 60);
+                  const s = sec % 60;
+                  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+                })()}
               </p>
               <a
                 href={status.sheetUrl}
@@ -249,13 +256,30 @@ export default function PipelinePage() {
               <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85, fontFamily: FONT_SANS }}>
                 {status.message}
               </p>
-              <button
-                onClick={() => setStatus({ state: "idle" })}
-                className="mt-3 text-sm underline"
-                style={{ color: "var(--st-error)", opacity: 0.7, fontFamily: FONT_SANS }}
-              >
-                Dismiss
-              </button>
+              <div className="flex justify-center gap-4 mt-3">
+                {status.message.includes("already running") && (
+                  <button
+                    onClick={resetPipeline}
+                    className="text-sm font-medium px-4 py-1.5 rounded-full transition-all"
+                    style={{
+                      backgroundColor: "var(--st-accent)",
+                      color: "var(--st-text-light)",
+                      fontFamily: FONT_SANS,
+                      fontSize: "0.8rem",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    Reset Queue
+                  </button>
+                )}
+                <button
+                  onClick={() => setStatus({ state: "idle" })}
+                  className="text-sm underline"
+                  style={{ color: "var(--st-error)", opacity: 0.7, fontFamily: FONT_SANS }}
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           )}
         </div>

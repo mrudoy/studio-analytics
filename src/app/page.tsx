@@ -76,6 +76,17 @@ interface ProjectionData {
   currentMRR: number;
   projectedYearEndMRR: number;
   monthlyGrowthRate: number;
+  priorYearRevenue: number;
+}
+
+interface DropInData {
+  currentMonthTotal: number;
+  currentMonthDaysElapsed: number;
+  currentMonthDaysInMonth: number;
+  currentMonthPaced: number;
+  previousMonthTotal: number;
+  weeklyAvg6w: number;
+  weeklyBreakdown: { week: string; count: number }[];
 }
 
 interface TrendsData {
@@ -83,6 +94,7 @@ interface TrendsData {
   monthly: TrendRowData[];
   pacing: PacingData | null;
   projection: ProjectionData | null;
+  dropIns: DropInData | null;
 }
 
 type DashboardLoadState =
@@ -103,6 +115,19 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 
 const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
+
+// ─── Color palette for categories ──────────────────────────
+
+const COLORS = {
+  member: "#4A7C59",     // forest green
+  sky3: "#5B7FA5",       // steel blue
+  tv: "#8B6FA5",         // muted purple
+  accent: "#413A3A",
+  accentLight: "rgba(65, 58, 58, 0.08)",
+  success: "#4A7C59",
+  error: "#A04040",
+  warning: "#8B7340",
+};
 
 // ─── Formatting helpers ──────────────────────────────────────
 
@@ -126,6 +151,13 @@ function formatCurrencyDecimal(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function formatCompactCurrency(n: number): string {
+  if (n >= 1000) {
+    return "$" + (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
+  }
+  return formatCurrency(n);
 }
 
 function formatRelativeTime(iso: string): string {
@@ -175,14 +207,12 @@ function formatDeltaPercent(n: number | null): string {
 }
 
 function formatWeekLabel(period: string): string {
-  // "2026-02-10" → "Feb 10"
   const d = new Date(period + "T00:00:00");
   if (isNaN(d.getTime())) return period;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function formatMonthLabel(period: string): string {
-  // "2026-02" → "Feb 2026"
   const [year, month] = period.split("-");
   const d = new Date(parseInt(year), parseInt(month) - 1);
   if (isNaN(d.getTime())) return period;
@@ -302,7 +332,6 @@ function PipelineView() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8">
       <div className="max-w-xl w-full space-y-10">
-        {/* Header */}
         <div className="text-center space-y-4">
           <div className="flex justify-center">
             <SkyTingLogo />
@@ -323,7 +352,6 @@ function PipelineView() {
           </p>
         </div>
 
-        {/* Credentials warning */}
         {hasCredentials === false && (
           <div
             className="rounded-2xl p-4 text-center text-sm"
@@ -342,7 +370,6 @@ function PipelineView() {
           </div>
         )}
 
-        {/* Main card */}
         <div
           className="rounded-2xl p-8 space-y-6"
           style={{
@@ -373,7 +400,6 @@ function PipelineView() {
             {status.state === "running" ? "Pipeline Running..." : "Run Analytics Pipeline"}
           </button>
 
-          {/* Progress */}
           {status.state === "running" && (
             <div className="space-y-3">
               <div className="flex justify-between text-sm" style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>
@@ -402,7 +428,6 @@ function PipelineView() {
             </div>
           )}
 
-          {/* Complete */}
           {status.state === "complete" && (
             <div
               className="rounded-2xl p-5 text-center space-y-3"
@@ -435,7 +460,6 @@ function PipelineView() {
             </div>
           )}
 
-          {/* Error */}
           {status.state === "error" && (
             <div
               className="rounded-2xl p-5 text-center"
@@ -459,7 +483,6 @@ function PipelineView() {
           )}
         </div>
 
-        {/* Footer nav */}
         <div className="flex justify-center gap-8 text-sm" style={{ color: "var(--st-text-secondary)" }}>
           <NavLink href="/settings">Settings</NavLink>
           <NavLink href="/results">Results</NavLink>
@@ -470,193 +493,95 @@ function PipelineView() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  DASHBOARD VIEW (production / Railway)
+//  DASHBOARD VIEW — Visual redesign
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-interface StatCardProps {
-  label: string;
-  value: string;
-  sublabel?: string;
-  size?: "hero" | "standard";
-}
+// ─── Section Header ──────────────────────────────────────────
 
-function StatCard({ label, value, sublabel, size = "standard" }: StatCardProps) {
-  const isHero = size === "hero";
-
+function SectionHeader({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
   return (
-    <div
-      className="rounded-2xl flex flex-col justify-between"
-      style={{
-        backgroundColor: "var(--st-bg-card)",
-        border: "1px solid var(--st-border)",
-        padding: isHero ? "2rem" : "1.5rem",
-        minHeight: isHero ? "180px" : "120px",
-      }}
-    >
-      <p
-        className="uppercase"
+    <div>
+      <h2
         style={{
-          color: "var(--st-text-secondary)",
+          color: "var(--st-text-primary)",
           fontFamily: FONT_SANS,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          fontSize: "0.7rem",
+          fontWeight: 700,
+          fontSize: "1.15rem",
+          letterSpacing: "-0.01em",
+          textTransform: "uppercase" as const,
         }}
       >
-        {label}
-      </p>
-      <div>
-        <p
-          className={isHero ? "stat-hero-value" : ""}
-          style={{
-            color: "var(--st-text-primary)",
-            fontFamily: FONT_SANS,
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
-            lineHeight: 1.1,
-            fontSize: isHero ? "3.2rem" : "1.85rem",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {value}
+        {children}
+      </h2>
+      {subtitle && (
+        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "2px" }}>
+          {subtitle}
         </p>
-        {sublabel && (
-          <p
-            className="mt-1"
-            style={{
-              color: "var(--st-text-secondary)",
-              fontFamily: FONT_SANS,
-              fontWeight: 500,
-              fontSize: "0.85rem",
-            }}
-          >
-            {sublabel}
-          </p>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-// ─── Trend Card with Delta Badge ────────────────────────────
+// ─── Delta Badge ─────────────────────────────────────────────
 
-interface TrendCardProps {
-  label: string;
-  value: string;
+function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = false, compact = false }: {
   delta: number | null;
   deltaPercent: number | null;
-  isPositiveGood?: boolean; // default true; for churn, set to false
-  isCurrency?: boolean; // format delta with $ sign
-  sublabel?: string;
-}
-
-function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = false }: { delta: number | null; deltaPercent: number | null; isPositiveGood?: boolean; isCurrency?: boolean }) {
+  isPositiveGood?: boolean;
+  isCurrency?: boolean;
+  compact?: boolean;
+}) {
   if (delta == null) return null;
 
   const isPositive = delta > 0;
   const isGood = isPositiveGood ? isPositive : !isPositive;
   const color = delta === 0 ? "var(--st-text-secondary)" : isGood ? "var(--st-success)" : "var(--st-error)";
-  const arrow = delta > 0 ? "\u25B2" : delta < 0 ? "\u25BC" : "";
-  const bgColor = delta === 0
-    ? "rgba(128, 128, 128, 0.08)"
-    : isGood
-      ? "rgba(74, 124, 89, 0.08)"
-      : "rgba(160, 64, 64, 0.08)";
+  const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "";
 
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
-      style={{
-        color,
-        backgroundColor: bgColor,
-        fontFamily: FONT_SANS,
-        fontWeight: 600,
-        fontSize: "0.72rem",
-      }}
-    >
-      {arrow} {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
-      {deltaPercent != null && (
-        <span style={{ opacity: 0.75, fontWeight: 500 }}>{formatDeltaPercent(deltaPercent)}</span>
-      )}
-    </span>
-  );
-}
-
-function TrendCard({ label, value, delta, deltaPercent, isPositiveGood = true, isCurrency = false, sublabel }: TrendCardProps) {
-  return (
-    <div
-      className="rounded-2xl flex flex-col justify-between"
-      style={{
-        backgroundColor: "var(--st-bg-card)",
-        border: "1px solid var(--st-border)",
-        padding: "1.25rem",
-        minHeight: "110px",
-      }}
-    >
-      <p
-        className="uppercase"
-        style={{
-          color: "var(--st-text-secondary)",
-          fontFamily: FONT_SANS,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          fontSize: "0.65rem",
-        }}
+  if (compact) {
+    return (
+      <span
+        className="inline-flex items-center gap-1"
+        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.82rem" }}
       >
-        {label}
-      </p>
-      <div>
-        <div className="flex items-end gap-2 flex-wrap">
-          <p
-            style={{
-              color: "var(--st-text-primary)",
-              fontFamily: FONT_SANS,
-              fontWeight: 700,
-              letterSpacing: "-0.02em",
-              lineHeight: 1.1,
-              fontSize: "1.65rem",
-            }}
-          >
-            {value}
-          </p>
-          <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} />
-        </div>
-        {sublabel && (
-          <p
-            className="mt-1"
-            style={{
-              color: "var(--st-text-secondary)",
-              fontFamily: FONT_SANS,
-              fontWeight: 500,
-              fontSize: "0.78rem",
-            }}
-          >
-            {sublabel}
-          </p>
-        )}
-      </div>
+        <span style={{ fontSize: "0.55rem" }}>{arrow}</span>
+        {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
+        {deltaPercent != null && <span style={{ opacity: 0.75 }}>({formatDeltaPercent(deltaPercent)})</span>}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-1.5" style={{ fontFamily: FONT_SANS }}>
+      <span
+        className="inline-flex items-center gap-1"
+        style={{ color, fontWeight: 700, fontSize: "0.95rem", letterSpacing: "-0.01em" }}
+      >
+        <span style={{ fontSize: "0.65rem" }}>{arrow}</span>
+        {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
+      </span>
+      {deltaPercent != null && (
+        <span
+          className="inline-flex items-center rounded-full px-2 py-0.5"
+          style={{
+            color,
+            backgroundColor: delta === 0
+              ? "rgba(128, 128, 128, 0.1)"
+              : isGood
+                ? "rgba(74, 124, 89, 0.1)"
+                : "rgba(160, 64, 64, 0.1)",
+            fontWeight: 600,
+            fontSize: "0.82rem",
+          }}
+        >
+          {formatDeltaPercent(deltaPercent)}
+        </span>
+      )}
     </div>
   );
 }
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h2
-      style={{
-        color: "var(--st-text-primary)",
-        fontFamily: FONT_SANS,
-        fontWeight: 700,
-        fontSize: "1.15rem",
-        letterSpacing: "-0.01em",
-        textTransform: "uppercase" as const,
-      }}
-    >
-      {children}
-    </h2>
-  );
-}
+// ─── Freshness Badge ─────────────────────────────────────────
 
 function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string | null; spreadsheetUrl?: string }) {
   if (!lastUpdated) return null;
@@ -665,10 +590,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string |
   const isStale = Date.now() - date.getTime() > 24 * 60 * 60 * 1000;
 
   return (
-    <div
-      className="flex items-center justify-center gap-3 flex-wrap"
-      style={{ fontSize: "0.85rem" }}
-    >
+    <div className="flex items-center justify-center gap-3 flex-wrap" style={{ fontSize: "0.85rem" }}>
       <div
         className="inline-flex items-center gap-2 rounded-full px-4 py-1.5"
         style={{
@@ -680,11 +602,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string |
       >
         <span
           className="inline-block rounded-full"
-          style={{
-            width: "7px",
-            height: "7px",
-            backgroundColor: isStale ? "var(--st-error)" : "var(--st-success)",
-          }}
+          style={{ width: "7px", height: "7px", backgroundColor: isStale ? "var(--st-error)" : "var(--st-success)" }}
         />
         <span style={{ color: isStale ? "var(--st-error)" : "var(--st-success)" }}>
           Updated {formatRelativeTime(lastUpdated)}
@@ -730,198 +648,708 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string |
   );
 }
 
-// ─── Trends Sections ─────────────────────────────────────────
+// ─── SVG Donut Chart ─────────────────────────────────────────
 
-function WeekOverWeekSection({ weekly }: { weekly: TrendRowData[] }) {
-  if (weekly.length < 2) return null;
+interface DonutSegment {
+  label: string;
+  value: number;
+  color: string;
+}
 
-  // Show the most recent week that has a delta (i.e., not the first one)
-  const latest = weekly[weekly.length - 1];
+function DonutChart({ segments, size = 160 }: { segments: DonutSegment[]; size?: number }) {
+  const total = segments.reduce((s, seg) => s + seg.value, 0);
+  if (total === 0) return null;
+
+  const radius = 52;
+  const strokeWidth = 20;
+  const circumference = 2 * Math.PI * radius;
+  let cumulativeOffset = 0;
 
   return (
-    <div className="space-y-4">
-      <SectionHeader>Week over Week</SectionHeader>
-      <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
-        Week of {formatWeekLabel(latest.period)} vs previous week
-      </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <TrendCard
-          label="New Members"
-          value={String(latest.newMembers)}
-          delta={latest.deltaNewMembers}
-          deltaPercent={latest.deltaPctNewMembers}
-        />
-        <TrendCard
-          label="New SKY3"
-          value={String(latest.newSky3)}
-          delta={latest.deltaNewSky3}
-          deltaPercent={latest.deltaPctNewSky3}
-        />
-        <TrendCard
-          label="Revenue Added"
-          value={formatCurrency(latest.revenueAdded)}
-          delta={latest.deltaRevenue}
-          deltaPercent={latest.deltaPctRevenue}
-          isCurrency={true}
-        />
-        <TrendCard
-          label="Revenue Lost"
-          value={formatCurrency(latest.revenueLost)}
-          delta={null}
-          deltaPercent={null}
-          isPositiveGood={false}
-          sublabel="from cancellations"
-        />
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <TrendCard
-          label="Member Churn"
-          value={String(latest.memberChurn)}
-          delta={latest.deltaNewMembers != null ? -(latest.memberChurn - (weekly[weekly.length - 2]?.memberChurn ?? 0)) : null}
-          deltaPercent={null}
-          isPositiveGood={false}
-        />
-        <TrendCard
-          label="SKY3 Churn"
-          value={String(latest.sky3Churn)}
-          delta={weekly.length >= 2 ? -(latest.sky3Churn - weekly[weekly.length - 2].sky3Churn) : null}
-          deltaPercent={null}
-          isPositiveGood={false}
-        />
-        <TrendCard
-          label="Net Member Growth"
-          value={formatDelta(latest.netMemberGrowth) || "0"}
-          delta={null}
-          deltaPercent={null}
-        />
-        <TrendCard
-          label="Net SKY3 Growth"
-          value={formatDelta(latest.netSky3Growth) || "0"}
-          delta={null}
-          deltaPercent={null}
-        />
+    <div className="flex items-center gap-6">
+      <svg width={size} height={size} viewBox="0 0 128 128">
+        {segments.map((seg, i) => {
+          const fraction = seg.value / total;
+          const dashLength = fraction * circumference;
+          const dashOffset = -cumulativeOffset;
+          cumulativeOffset += dashLength;
+          return (
+            <circle
+              key={i}
+              cx="64"
+              cy="64"
+              r={radius}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${dashLength} ${circumference - dashLength}`}
+              strokeDashoffset={dashOffset}
+              transform="rotate(-90 64 64)"
+              strokeLinecap="butt"
+              style={{ opacity: 0.85 }}
+            />
+          );
+        })}
+        <text x="64" y="58" textAnchor="middle" style={{ fill: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "22px" }}>
+          {formatNumber(total)}
+        </text>
+        <text x="64" y="76" textAnchor="middle" style={{ fill: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500, fontSize: "9px", letterSpacing: "0.08em" }}>
+          TOTAL
+        </text>
+      </svg>
+      <div className="flex flex-col gap-2">
+        {segments.map((seg, i) => (
+          <div key={i} className="flex items-center gap-2.5">
+            <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: seg.color, flexShrink: 0, opacity: 0.85 }} />
+            <div>
+              <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
+                {formatNumber(seg.value)}
+              </span>
+              <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.78rem", color: "var(--st-text-secondary)", marginLeft: "6px" }}>
+                {seg.label}
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function MonthOverMonthSection({ monthly, pacing }: { monthly: TrendRowData[]; pacing: PacingData | null }) {
-  if (monthly.length < 1) return null;
+// ─── Mini Bar Chart (reusable) ───────────────────────────────
 
-  const latest = monthly[monthly.length - 1];
-  const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+interface BarChartData {
+  label: string;
+  value: number;
+  color?: string;
+}
+
+function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
+  data: BarChartData[];
+  height?: number;
+  showValues?: boolean;
+  formatValue?: (v: number) => string;
+}) {
+  if (data.length === 0) return null;
+  const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
+  const fmt = formatValue || ((v: number) => String(v));
+
+  // Reserve space for labels; actual bar area is the remaining height
+  const labelSpace = showValues ? 36 : 18; // value label + date label
+  const barAreaHeight = Math.max(height - labelSpace, 30);
 
   return (
-    <div className="space-y-4">
-      <SectionHeader>Month over Month</SectionHeader>
-      <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.82rem", marginTop: "-0.5rem" }}>
-        {formatMonthLabel(latest.period)}
-        {isPacing && (
-          <span style={{ color: "var(--st-accent)", fontWeight: 600 }}>
-            {" "} ({pacing!.daysElapsed}/{pacing!.daysInMonth} days — pacing shown)
+    <div className="flex items-end gap-2" style={{ height: `${height}px` }}>
+      {data.map((d, i) => {
+        const fraction = Math.abs(d.value) / max;
+        const barHeight = Math.max(Math.round(fraction * barAreaHeight), 6);
+        return (
+          <div key={i} className="flex flex-col items-center justify-end flex-1" style={{ minWidth: 0, height: "100%" }}>
+            {showValues && (
+              <span style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "0.72rem", marginBottom: "3px", lineHeight: 1 }}>
+                {fmt(d.value)}
+              </span>
+            )}
+            <div
+              className="w-full rounded-t"
+              style={{
+                height: `${barHeight}px`,
+                backgroundColor: d.color || "var(--st-accent)",
+                opacity: 0.75,
+              }}
+            />
+            <span style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.6rem", marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", lineHeight: 1 }}>
+              {d.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Stacked Bar Chart ───────────────────────────────────────
+
+interface StackedBarData {
+  label: string;
+  segments: { value: number; color: string; label: string }[];
+}
+
+function StackedBarChart({ data, height = 28 }: { data: StackedBarData[]; height?: number }) {
+  if (data.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {data.map((bar, i) => {
+        const total = bar.segments.reduce((s, seg) => s + seg.value, 0);
+        if (total === 0) return null;
+        return (
+          <div key={i}>
+            <div className="flex items-center justify-between mb-1">
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", fontWeight: 600, color: "var(--st-text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+                {bar.label}
+              </span>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 700, color: "var(--st-text-primary)" }}>
+                {formatCurrency(total)}
+              </span>
+            </div>
+            <div className="flex rounded-full overflow-hidden" style={{ height: `${height}px`, backgroundColor: "var(--st-border)" }}>
+              {bar.segments.map((seg, j) => {
+                const pct = (seg.value / total) * 100;
+                if (pct < 0.5) return null;
+                return (
+                  <div
+                    key={j}
+                    title={`${seg.label}: ${formatCurrency(seg.value)} (${pct.toFixed(0)}%)`}
+                    style={{
+                      width: `${pct}%`,
+                      backgroundColor: seg.color,
+                      opacity: 0.8,
+                      transition: "width 0.4s ease",
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── KPI Row (open layout — no box) ─────────────────────────
+
+function KPIMetric({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
+  return (
+    <div style={{ padding: "0.5rem 0" }}>
+      <p style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        {label}
+      </p>
+      <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.5rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "2px" }}>
+        {value}
+      </p>
+      {sublabel && (
+        <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.78rem", color: "var(--st-text-secondary)", marginTop: "1px" }}>
+          {sublabel}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Card wrapper (used selectively) ─────────────────────────
+
+function Card({ children, padding = "1.5rem" }: { children: React.ReactNode; padding?: string }) {
+  return (
+    <div
+      className="rounded-2xl"
+      style={{
+        backgroundColor: "var(--st-bg-card)",
+        border: "1px solid var(--st-border)",
+        padding,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Trend Row (compact, inline) ─────────────────────────────
+
+function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, isCurrency = false, sublabel }: {
+  label: string;
+  value: string;
+  delta: number | null;
+  deltaPercent: number | null;
+  isPositiveGood?: boolean;
+  isCurrency?: boolean;
+  sublabel?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between" style={{ padding: "0.65rem 0", borderBottom: "1px solid var(--st-border)" }}>
+      <div>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+          {label}
+        </span>
+        {sublabel && (
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-accent)", marginLeft: "6px" }}>
+            {sublabel}
           </span>
         )}
-      </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <TrendCard
-          label="New Members"
-          value={isPacing ? `${pacing!.newMembersActual}` : String(latest.newMembers)}
-          delta={latest.deltaNewMembers}
-          deltaPercent={latest.deltaPctNewMembers}
-          sublabel={isPacing ? `Pacing: ${pacing!.newMembersPaced} projected` : undefined}
-        />
-        <TrendCard
-          label="New SKY3"
-          value={isPacing ? `${pacing!.newSky3Actual}` : String(latest.newSky3)}
-          delta={latest.deltaNewSky3}
-          deltaPercent={latest.deltaPctNewSky3}
-          sublabel={isPacing ? `Pacing: ${pacing!.newSky3Paced} projected` : undefined}
-        />
-        <TrendCard
-          label="Revenue Added"
-          value={isPacing ? formatCurrency(pacing!.revenueActual) : formatCurrency(latest.revenueAdded)}
-          delta={latest.deltaRevenue}
-          deltaPercent={latest.deltaPctRevenue}
-          isCurrency={true}
-          sublabel={isPacing ? `Pacing: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
-        />
-        <TrendCard
-          label="Member Churn"
-          value={isPacing ? `${pacing!.memberCancellationsActual}` : String(latest.memberChurn)}
-          delta={null}
-          deltaPercent={null}
-          isPositiveGood={false}
-          sublabel={isPacing ? `Pacing: ${pacing!.memberCancellationsPaced} projected` : undefined}
-        />
+      </div>
+      <div className="flex items-center gap-3">
+        <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.1rem", color: "var(--st-text-primary)" }}>
+          {value}
+        </span>
+        <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} compact />
       </div>
     </div>
   );
 }
 
-function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
+// ─── Forecast Metric ─────────────────────────────────────────
+
+function ForecastMetric({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="space-y-4">
-      <SectionHeader>{projection.year} Revenue Forecast</SectionHeader>
+    <div className="flex items-center justify-between" style={{ padding: "0.7rem 0", borderBottom: "1px solid var(--st-border)" }}>
+      <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        {label}
+      </p>
+      <p style={{ color: color || "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.2rem" }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DASHBOARD SECTIONS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ─── Subscriber Overview (donut + breakdown) ─────────────────
+
+function SubscriberOverview({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
+  const segments: DonutSegment[] = [
+    { label: "Members", value: data.activeSubscribers.member, color: COLORS.member },
+    { label: "SKY3", value: data.activeSubscribers.sky3, color: COLORS.sky3 },
+    { label: "TV", value: data.activeSubscribers.skyTingTv, color: COLORS.tv },
+  ];
+
+  // Build weekly trend data for the bar chart (last 6 weeks)
+  const weeklyBars: BarChartData[] = [];
+  if (trends && trends.weekly.length > 0) {
+    const recent = trends.weekly.slice(-6);
+    for (const w of recent) {
+      const net = w.netMemberGrowth + w.netSky3Growth + (w.newSkyTingTv - w.skyTingTvChurn);
+      weeklyBars.push({
+        label: formatWeekLabel(w.period),
+        value: net,
+        color: net >= 0 ? COLORS.success : COLORS.error,
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader>Subscribers</SectionHeader>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <StatCard
-          label={`Est. ${projection.year} Annual Revenue`}
-          value={formatCurrency(projection.projectedAnnualRevenue)}
-          sublabel={`Based on ${projection.monthlyGrowthRate > 0 ? "+" : ""}${projection.monthlyGrowthRate}% monthly growth`}
-          size="hero"
-        />
-        <div className="grid grid-rows-3 gap-4">
-          <div
-            className="rounded-2xl flex items-center justify-between"
-            style={{
-              backgroundColor: "var(--st-bg-card)",
-              border: "1px solid var(--st-border)",
-              padding: "1rem 1.25rem",
-            }}
-          >
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Current MRR
+        {/* Left: Donut */}
+        <Card padding="1.75rem">
+          <p className="uppercase mb-4" style={{ fontFamily: FONT_SANS, fontWeight: 600, letterSpacing: "0.06em", fontSize: "0.65rem", color: "var(--st-text-secondary)" }}>
+            Active Subscribers by Type
+          </p>
+          <DonutChart segments={segments} />
+        </Card>
+
+        {/* Right: Net growth bar chart */}
+        <Card padding="1.75rem">
+          <p className="uppercase mb-4" style={{ fontFamily: FONT_SANS, fontWeight: 600, letterSpacing: "0.06em", fontSize: "0.65rem", color: "var(--st-text-secondary)" }}>
+            Net Growth — Weekly
+          </p>
+          {weeklyBars.length > 0 ? (
+            <MiniBarChart data={weeklyBars} height={100} formatValue={(v) => formatDelta(v) || "0"} />
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.85rem" }}>
+              No trend data yet
             </p>
-            <p style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem" }}>
-              {formatCurrency(projection.currentMRR)}
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Category Detail Section (Members / SKY3 / TV) ──────────
+
+function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn }: {
+  title: string;
+  color: string;
+  count: number;
+  weekly: TrendRowData[];
+  monthly: TrendRowData[];
+  pacing: PacingData | null;
+  weeklyKeyNew: (r: TrendRowData) => number;
+  weeklyKeyChurn: (r: TrendRowData) => number;
+  weeklyKeyNet: (r: TrendRowData) => number;
+  pacingNew?: (p: PacingData) => { actual: number; paced: number };
+  pacingChurn?: (p: PacingData) => { actual: number; paced: number };
+}) {
+  const latestW = weekly.length >= 2 ? weekly[weekly.length - 1] : null;
+  const prevW = weekly.length >= 2 ? weekly[weekly.length - 2] : null;
+  const latestM = monthly.length >= 1 ? monthly[monthly.length - 1] : null;
+  const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+
+  // Build weekly new sign-ups for mini chart
+  const weeklyNewBars: BarChartData[] = weekly.slice(-6).map((w) => ({
+    label: formatWeekLabel(w.period),
+    value: weeklyKeyNew(w),
+    color,
+  }));
+
+  return (
+    <Card padding="1.5rem">
+      {/* Header row */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: color, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "0.85rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            {title}
+          </span>
+        </div>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          {formatNumber(count)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Left: Weekly new sign-ups chart */}
+        <div>
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.6rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            New Sign-ups — Weekly
+          </p>
+          {weeklyNewBars.length > 0 ? (
+            <MiniBarChart data={weeklyNewBars} height={64} />
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>—</p>
+          )}
+        </div>
+
+        {/* Right: Key metrics */}
+        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+          {latestW && (
+            <>
+              <TrendRow
+                label="New (WoW)"
+                value={String(weeklyKeyNew(latestW))}
+                delta={prevW ? weeklyKeyNew(latestW) - weeklyKeyNew(prevW) : null}
+                deltaPercent={null}
+              />
+              <TrendRow
+                label="Churn (WoW)"
+                value={String(weeklyKeyChurn(latestW))}
+                delta={prevW ? -(weeklyKeyChurn(latestW) - weeklyKeyChurn(prevW)) : null}
+                deltaPercent={null}
+                isPositiveGood={false}
+              />
+              <TrendRow
+                label="Net Growth"
+                value={formatDelta(weeklyKeyNet(latestW)) || "0"}
+                delta={null}
+                deltaPercent={null}
+              />
+            </>
+          )}
+          {latestM && isPacing && pacingNew && (
+            <div style={{ marginTop: "0.5rem", padding: "0.5rem 0", borderTop: "1px solid var(--st-border)" }}>
+              <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.6rem", color: "var(--st-accent)", letterSpacing: "0.06em", marginBottom: "4px" }}>
+                Month Pacing ({pacing!.daysElapsed}/{pacing!.daysInMonth}d)
+              </p>
+              <div className="flex gap-4">
+                <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-primary)" }}>
+                  <b>{pacingNew(pacing!).actual}</b> new <span style={{ color: "var(--st-text-secondary)" }}>(proj. {pacingNew(pacing!).paced})</span>
+                </span>
+                {pacingChurn && (
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-primary)" }}>
+                    <b>{pacingChurn(pacing!).actual}</b> churn <span style={{ color: "var(--st-text-secondary)" }}>(proj. {pacingChurn(pacing!).paced})</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Financial Health Section ────────────────────────────────
+
+function FinancialHealthSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
+  const pacing = trends?.pacing;
+  const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+  const latestW = trends && trends.weekly.length >= 2 ? trends.weekly[trends.weekly.length - 1] : null;
+  const latestM = trends && trends.monthly.length >= 1 ? trends.monthly[trends.monthly.length - 1] : null;
+
+  // Revenue bar chart from monthly data
+  const revenueMonthlyBars: BarChartData[] = [];
+  if (trends && trends.monthly.length > 0) {
+    for (const m of trends.monthly.slice(-6)) {
+      revenueMonthlyBars.push({
+        label: formatMonthLabel(m.period),
+        value: m.revenueAdded,
+        color: COLORS.member,
+      });
+    }
+  }
+
+  // MRR stacked bar
+  const mrrData: StackedBarData[] = [{
+    label: "Monthly Recurring Revenue",
+    segments: [
+      { value: data.mrr.member, color: COLORS.member, label: "Member" },
+      { value: data.mrr.sky3, color: COLORS.sky3, label: "SKY3" },
+      { value: data.mrr.skyTingTv, color: COLORS.tv, label: "TV" },
+      ...(data.mrr.unknown > 0 ? [{ value: data.mrr.unknown, color: "#999", label: "Other" }] : []),
+    ],
+  }];
+
+  // Revenue change
+  const revenueChange = data.previousMonthRevenue > 0
+    ? ((data.currentMonthRevenue - data.previousMonthRevenue) / data.previousMonthRevenue * 100)
+    : null;
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader>Financial Health</SectionHeader>
+
+      {/* Revenue hero numbers */}
+      <Card padding="1.75rem">
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              This Month{isPacing ? ` (${pacing!.daysElapsed}/${pacing!.daysInMonth}d)` : ""}
             </p>
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "4px" }}>
+              {formatCurrency(data.currentMonthRevenue)}
+            </p>
+            {isPacing && (
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-accent)", marginTop: "4px" }}>
+                Pacing: {formatCurrency(pacing!.revenuePaced)}
+              </p>
+            )}
+            {revenueChange != null && (
+              <DeltaBadge
+                delta={Math.round(data.currentMonthRevenue - data.previousMonthRevenue)}
+                deltaPercent={Math.round(revenueChange)}
+                isCurrency
+              />
+            )}
           </div>
-          <div
-            className="rounded-2xl flex items-center justify-between"
-            style={{
-              backgroundColor: "var(--st-bg-card)",
-              border: "1px solid var(--st-border)",
-              padding: "1rem 1.25rem",
-            }}
-          >
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Monthly Growth
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              Last Month
             </p>
-            <p style={{ color: projection.monthlyGrowthRate >= 0 ? "var(--st-success)" : "var(--st-error)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem" }}>
-              {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}%
-            </p>
-          </div>
-          <div
-            className="rounded-2xl flex items-center justify-between"
-            style={{
-              backgroundColor: "var(--st-bg-card)",
-              border: "1px solid var(--st-border)",
-              padding: "1rem 1.25rem",
-            }}
-          >
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Year-End MRR
-            </p>
-            <p style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem" }}>
-              {formatCurrency(projection.projectedYearEndMRR)}
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-secondary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "4px", opacity: 0.7 }}>
+              {formatCurrency(data.previousMonthRevenue)}
             </p>
           </div>
         </div>
+      </Card>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* MRR Breakdown — stacked bar */}
+        <Card padding="1.5rem">
+          <StackedBarChart data={mrrData} />
+          <div className="flex gap-4 mt-3 flex-wrap">
+            {mrrData[0].segments.filter(s => s.value > 0).map((seg, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
+                <span style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", color: "var(--st-text-secondary)" }}>
+                  {seg.label}: {formatCurrency(seg.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* ARPU metrics — open layout */}
+        <Card padding="1.5rem">
+          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Average Revenue Per User
+          </p>
+          <div className="grid grid-cols-2 gap-x-4">
+            <KPIMetric label="Overall" value={formatCurrencyDecimal(data.arpu.overall)} />
+            <KPIMetric label="Member" value={formatCurrencyDecimal(data.arpu.member)} />
+            <KPIMetric label="SKY3" value={formatCurrencyDecimal(data.arpu.sky3)} />
+            <KPIMetric label="TV" value={formatCurrencyDecimal(data.arpu.skyTingTv)} />
+          </div>
+        </Card>
+      </div>
+
+      {/* Revenue Monthly Bar Chart + WoW/MoM trends */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {revenueMonthlyBars.length > 0 && (
+          <Card padding="1.5rem">
+            <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              Monthly Revenue Trend
+            </p>
+            <MiniBarChart data={revenueMonthlyBars} height={90} formatValue={formatCompactCurrency} />
+          </Card>
+        )}
+
+        <Card padding="1.5rem">
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Revenue Changes
+          </p>
+          {latestW && (
+            <>
+              <TrendRow
+                label="Revenue Added (WoW)"
+                value={formatCurrency(latestW.revenueAdded)}
+                delta={latestW.deltaRevenue}
+                deltaPercent={latestW.deltaPctRevenue}
+                isCurrency
+              />
+              <TrendRow
+                label="Revenue Lost (WoW)"
+                value={formatCurrency(latestW.revenueLost)}
+                delta={null}
+                deltaPercent={null}
+                isPositiveGood={false}
+              />
+            </>
+          )}
+          {latestM && (
+            <>
+              <TrendRow
+                label={`Revenue Added (MoM)${isPacing ? "*" : ""}`}
+                value={isPacing ? formatCurrency(pacing!.revenueActual) : formatCurrency(latestM.revenueAdded)}
+                delta={latestM.deltaRevenue}
+                deltaPercent={latestM.deltaPctRevenue}
+                isCurrency
+                sublabel={isPacing ? `proj: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
+              />
+              <TrendRow
+                label="Revenue Lost (MoM)"
+                value={formatCurrency(latestM.revenueLost)}
+                delta={null}
+                deltaPercent={null}
+                isPositiveGood={false}
+              />
+            </>
+          )}
+        </Card>
       </div>
     </div>
   );
 }
 
-// ─── Dashboard View ──────────────────────────────────────────
+// ─── Drop-Ins Section ────────────────────────────────────────
+
+function DropInsSection({ dropIns }: { dropIns: DropInData }) {
+  const isPacing = dropIns.currentMonthDaysElapsed < dropIns.currentMonthDaysInMonth;
+
+  const weeklyBars: BarChartData[] = dropIns.weeklyBreakdown.map((w) => {
+    const d = new Date(w.week + "T00:00:00");
+    const label = isNaN(d.getTime()) ? w.week : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return { label, value: w.count, color: "#8B7340" };
+  });
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader>Drop-Ins</SectionHeader>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <Card padding="1.5rem">
+          <div className="grid grid-cols-3 gap-3">
+            <KPIMetric label="Month to Date" value={String(dropIns.currentMonthTotal)} sublabel={isPacing ? `proj. ${dropIns.currentMonthPaced}` : undefined} />
+            <KPIMetric label="Last Month" value={String(dropIns.previousMonthTotal)} />
+            <KPIMetric label="Weekly Avg" value={String(dropIns.weeklyAvg6w)} sublabel="6-week rolling" />
+          </div>
+        </Card>
+
+        {weeklyBars.length > 0 && (
+          <Card padding="1.5rem">
+            <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              Weekly Drop-Ins
+            </p>
+            <MiniBarChart data={weeklyBars} height={80} />
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Revenue Forecast Section ────────────────────────────────
+
+function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
+  const yoyChange = projection.priorYearRevenue > 0
+    ? ((projection.projectedAnnualRevenue - projection.priorYearRevenue) / projection.priorYearRevenue * 100).toFixed(1)
+    : null;
+
+  // Visual comparison bars for prior vs projected
+  const maxRev = Math.max(projection.projectedAnnualRevenue, projection.priorYearRevenue, 1);
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader>{projection.year} Revenue Forecast</SectionHeader>
+
+      <Card padding="1.75rem">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {/* Left: Big number */}
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.65rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              Est. {projection.year} Annual Revenue
+            </p>
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+              {formatCurrency(projection.projectedAnnualRevenue)}
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+              Based on {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
+            </p>
+            {yoyChange && (
+              <div className="mt-3">
+                <DeltaBadge
+                  delta={Math.round(projection.projectedAnnualRevenue - projection.priorYearRevenue)}
+                  deltaPercent={Math.round(Number(yoyChange))}
+                  isCurrency
+                />
+                <p style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
+                  vs {projection.year - 1}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Metrics + visual bar comparison */}
+          <div>
+            <ForecastMetric label="Current MRR" value={formatCurrency(projection.currentMRR)} />
+            <ForecastMetric
+              label="Monthly Growth"
+              value={`${projection.monthlyGrowthRate > 0 ? "+" : ""}${projection.monthlyGrowthRate}%`}
+              color={projection.monthlyGrowthRate >= 0 ? "var(--st-success)" : "var(--st-error)"}
+            />
+            <ForecastMetric label="Year-End MRR" value={formatCurrency(projection.projectedYearEndMRR)} />
+
+            {/* Visual comparison */}
+            {projection.priorYearRevenue > 0 && (
+              <div style={{ marginTop: "1rem" }}>
+                <div className="flex items-center gap-3 mb-2">
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", fontWeight: 600, color: "var(--st-text-secondary)", width: "40px" }}>
+                    {projection.year - 1}
+                  </span>
+                  <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
+                    <div style={{ width: `${(projection.priorYearRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: "var(--st-text-secondary)", opacity: 0.3, borderRadius: "9999px" }} />
+                  </div>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", fontWeight: 600, color: "var(--st-text-secondary)", minWidth: "60px", textAlign: "right" }}>
+                    {formatCompactCurrency(projection.priorYearRevenue)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", fontWeight: 600, color: "var(--st-text-primary)", width: "40px" }}>
+                    {projection.year}
+                  </span>
+                  <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
+                    <div style={{ width: `${(projection.projectedAnnualRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: COLORS.member, opacity: 0.7, borderRadius: "9999px" }} />
+                  </div>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", fontWeight: 700, color: "var(--st-text-primary)", minWidth: "60px", textAlign: "right" }}>
+                    {formatCompactCurrency(projection.projectedAnnualRevenue)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DASHBOARD VIEW
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function DashboardView() {
   const [loadState, setLoadState] = useState<DashboardLoadState>({ state: "loading" });
@@ -1000,11 +1428,14 @@ function DashboardView() {
 
   const { data } = loadState;
   const trends = data.trends;
+  const weekly = trends?.weekly || [];
+  const monthly = trends?.monthly || [];
+  const pacing = trends?.pacing || null;
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-8 pb-16">
-      <div className="max-w-3xl w-full space-y-10">
-        {/* Header */}
+    <div className="min-h-screen flex flex-col items-center p-6 sm:p-8 pb-16">
+      <div className="max-w-4xl w-full space-y-10">
+        {/* ── Header ─────────────────────────────────── */}
         <div className="text-center space-y-3 pt-4">
           <div className="flex justify-center">
             <SkyTingLogo />
@@ -1028,211 +1459,66 @@ function DashboardView() {
           <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} />
         </div>
 
-        {/* ── MEMBERS ──────────────────────────────────── */}
-        <div className="space-y-4">
-          <SectionHeader>Members</SectionHeader>
-          <StatCard label="Active Members" value={formatNumber(data.activeSubscribers.member)} size="hero" />
+        {/* ── Subscriber Overview (donut + net growth) ── */}
+        <SubscriberOverview data={data} trends={trends} />
 
-          {trends && trends.weekly.length >= 2 && (() => {
-            const latest = trends.weekly[trends.weekly.length - 1];
-            const prev = trends.weekly[trends.weekly.length - 2];
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Week over Week
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <TrendCard label="New Members" value={String(latest.newMembers)} delta={latest.deltaNewMembers} deltaPercent={latest.deltaPctNewMembers} />
-                  <TrendCard label="Churn" value={String(latest.memberChurn)} delta={prev ? -(latest.memberChurn - prev.memberChurn) : null} deltaPercent={null} isPositiveGood={false} />
-                  <TrendCard label="Net Growth" value={formatDelta(latest.netMemberGrowth) || "0"} delta={null} deltaPercent={null} />
-                </div>
-              </>
-            );
-          })()}
+        {/* ── Members Detail ────────────────────────── */}
+        <CategoryDetail
+          title="Members"
+          color={COLORS.member}
+          count={data.activeSubscribers.member}
+          weekly={weekly}
+          monthly={monthly}
+          pacing={pacing}
+          weeklyKeyNew={(r) => r.newMembers}
+          weeklyKeyChurn={(r) => r.memberChurn}
+          weeklyKeyNet={(r) => r.netMemberGrowth}
+          pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
+          pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+        />
 
-          {trends && trends.monthly.length >= 1 && (() => {
-            const latest = trends.monthly[trends.monthly.length - 1];
-            const pacing = trends.pacing;
-            const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Month over Month
-                  {isPacing && <span style={{ color: "var(--st-accent)" }}> ({pacing!.daysElapsed}/{pacing!.daysInMonth} days)</span>}
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TrendCard
-                    label="New Members"
-                    value={isPacing ? `${pacing!.newMembersActual}` : String(latest.newMembers)}
-                    delta={latest.deltaNewMembers} deltaPercent={latest.deltaPctNewMembers}
-                    sublabel={isPacing ? `Pacing: ${pacing!.newMembersPaced} projected` : undefined}
-                  />
-                  <TrendCard
-                    label="Churn"
-                    value={isPacing ? `${pacing!.memberCancellationsActual}` : String(latest.memberChurn)}
-                    delta={null} deltaPercent={null} isPositiveGood={false}
-                    sublabel={isPacing ? `Pacing: ${pacing!.memberCancellationsPaced} projected` : undefined}
-                  />
-                </div>
-              </>
-            );
-          })()}
-        </div>
+        {/* ── SKY3 Detail ───────────────────────────── */}
+        <CategoryDetail
+          title="SKY3"
+          color={COLORS.sky3}
+          count={data.activeSubscribers.sky3}
+          weekly={weekly}
+          monthly={monthly}
+          pacing={pacing}
+          weeklyKeyNew={(r) => r.newSky3}
+          weeklyKeyChurn={(r) => r.sky3Churn}
+          weeklyKeyNet={(r) => r.netSky3Growth}
+          pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
+          pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+        />
 
-        {/* ── SKY3 ───────────────────────────────────── */}
-        <div className="space-y-4">
-          <SectionHeader>SKY3</SectionHeader>
-          <StatCard label="Active SKY3" value={formatNumber(data.activeSubscribers.sky3)} size="hero" />
+        {/* ── SKY TING TV Detail ────────────────────── */}
+        <CategoryDetail
+          title="SKY TING TV"
+          color={COLORS.tv}
+          count={data.activeSubscribers.skyTingTv}
+          weekly={weekly}
+          monthly={monthly}
+          pacing={pacing}
+          weeklyKeyNew={(r) => r.newSkyTingTv}
+          weeklyKeyChurn={(r) => r.skyTingTvChurn}
+          weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+        />
 
-          {trends && trends.weekly.length >= 2 && (() => {
-            const latest = trends.weekly[trends.weekly.length - 1];
-            const prev = trends.weekly[trends.weekly.length - 2];
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Week over Week
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <TrendCard label="New SKY3" value={String(latest.newSky3)} delta={latest.deltaNewSky3} deltaPercent={latest.deltaPctNewSky3} />
-                  <TrendCard label="Churn" value={String(latest.sky3Churn)} delta={prev ? -(latest.sky3Churn - prev.sky3Churn) : null} deltaPercent={null} isPositiveGood={false} />
-                  <TrendCard label="Net Growth" value={formatDelta(latest.netSky3Growth) || "0"} delta={null} deltaPercent={null} />
-                </div>
-              </>
-            );
-          })()}
+        {/* ── Financial Health ──────────────────────── */}
+        <FinancialHealthSection data={data} trends={trends} />
 
-          {trends && trends.monthly.length >= 1 && (() => {
-            const latest = trends.monthly[trends.monthly.length - 1];
-            const pacing = trends.pacing;
-            const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Month over Month
-                  {isPacing && <span style={{ color: "var(--st-accent)" }}> ({pacing!.daysElapsed}/{pacing!.daysInMonth} days)</span>}
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TrendCard
-                    label="New SKY3"
-                    value={isPacing ? `${pacing!.newSky3Actual}` : String(latest.newSky3)}
-                    delta={latest.deltaNewSky3} deltaPercent={latest.deltaPctNewSky3}
-                    sublabel={isPacing ? `Pacing: ${pacing!.newSky3Paced} projected` : undefined}
-                  />
-                  <TrendCard
-                    label="Churn"
-                    value={isPacing ? `${pacing!.sky3CancellationsActual}` : String(latest.sky3Churn)}
-                    delta={null} deltaPercent={null} isPositiveGood={false}
-                    sublabel={isPacing ? `Pacing: ${pacing!.sky3CancellationsPaced} projected` : undefined}
-                  />
-                </div>
-              </>
-            );
-          })()}
-        </div>
+        {/* ── Drop-Ins ──────────────────────────────── */}
+        {trends?.dropIns && (
+          <DropInsSection dropIns={trends.dropIns} />
+        )}
 
-        {/* ── SKY TING TV ────────────────────────────── */}
-        <div className="space-y-4">
-          <SectionHeader>SKY TING TV</SectionHeader>
-          <StatCard label="Active Subscribers" value={formatNumber(data.activeSubscribers.skyTingTv)} size="hero" />
-
-          {trends && trends.weekly.length >= 2 && (() => {
-            const latest = trends.weekly[trends.weekly.length - 1];
-            const prev = trends.weekly[trends.weekly.length - 2];
-            const netTvGrowth = latest.newSkyTingTv - latest.skyTingTvChurn;
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Week over Week
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <TrendCard label="New Subscribers" value={String(latest.newSkyTingTv)} delta={prev ? latest.newSkyTingTv - prev.newSkyTingTv : null} deltaPercent={null} />
-                  <TrendCard label="Churn" value={String(latest.skyTingTvChurn)} delta={prev ? -(latest.skyTingTvChurn - prev.skyTingTvChurn) : null} deltaPercent={null} isPositiveGood={false} />
-                  <TrendCard label="Net Growth" value={formatDelta(netTvGrowth) || "0"} delta={null} deltaPercent={null} />
-                </div>
-              </>
-            );
-          })()}
-
-          {trends && trends.monthly.length >= 1 && (() => {
-            const latest = trends.monthly[trends.monthly.length - 1];
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Month over Month
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TrendCard label="New Subscribers" value={String(latest.newSkyTingTv)} delta={null} deltaPercent={null} />
-                  <TrendCard label="Churn" value={String(latest.skyTingTvChurn)} delta={null} deltaPercent={null} isPositiveGood={false} />
-                </div>
-              </>
-            );
-          })()}
-        </div>
-
-        {/* ── FINANCIAL HEALTH ───────────────────────── */}
-        <div className="space-y-4">
-          <SectionHeader>Financial Health</SectionHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatCard label="This Month's Revenue" value={formatCurrency(data.currentMonthRevenue)} size="hero" />
-            <StatCard label="Last Month's Revenue" value={formatCurrency(data.previousMonthRevenue)} size="hero" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatCard label="Total MRR (est.)" value={formatCurrency(data.mrr.total)} sublabel="from subscription prices" />
-            <StatCard label="Member MRR" value={formatCurrency(data.mrr.member)} />
-            <StatCard label="SKY3 MRR" value={formatCurrency(data.mrr.sky3)} />
-            <StatCard label="TV MRR" value={formatCurrency(data.mrr.skyTingTv)} />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard label="Overall ARPU" value={formatCurrencyDecimal(data.arpu.overall)} />
-            <StatCard label="ARPU — Member" value={formatCurrencyDecimal(data.arpu.member)} />
-            <StatCard label="ARPU — SKY3" value={formatCurrencyDecimal(data.arpu.sky3)} />
-          </div>
-
-          {trends && trends.weekly.length >= 2 && (() => {
-            const latest = trends.weekly[trends.weekly.length - 1];
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Revenue — Week over Week
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TrendCard label="Revenue Added" value={formatCurrency(latest.revenueAdded)} delta={latest.deltaRevenue} deltaPercent={latest.deltaPctRevenue} isCurrency={true} />
-                  <TrendCard label="Revenue Lost" value={formatCurrency(latest.revenueLost)} delta={null} deltaPercent={null} isPositiveGood={false} sublabel="from cancellations" />
-                </div>
-              </>
-            );
-          })()}
-
-          {trends && trends.monthly.length >= 1 && (() => {
-            const latest = trends.monthly[trends.monthly.length - 1];
-            const pacing = trends.pacing;
-            const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
-            return (
-              <>
-                <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: "0.5rem" }}>
-                  Revenue — Month over Month
-                  {isPacing && <span style={{ color: "var(--st-accent)" }}> ({pacing!.daysElapsed}/{pacing!.daysInMonth} days)</span>}
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TrendCard
-                    label="Revenue Added"
-                    value={isPacing ? formatCurrency(pacing!.revenueActual) : formatCurrency(latest.revenueAdded)}
-                    delta={latest.deltaRevenue} deltaPercent={latest.deltaPctRevenue} isCurrency={true}
-                    sublabel={isPacing ? `Pacing: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
-                  />
-                  <TrendCard label="Revenue Lost" value={formatCurrency(latest.revenueLost)} delta={null} deltaPercent={null} isPositiveGood={false} sublabel="from cancellations" />
-                </div>
-              </>
-            );
-          })()}
-        </div>
-
-        {/* Revenue Projection */}
+        {/* ── Revenue Forecast ─────────────────────── */}
         {trends?.projection && (
           <RevenueProjectionSection projection={trends.projection} />
         )}
 
-        {/* Footer */}
+        {/* ── Footer ────────────────────────────────── */}
         <div className="text-center pt-6">
           <div className="flex justify-center gap-8 text-sm" style={{ color: "var(--st-text-secondary)" }}>
             <NavLink href="/settings">Settings</NavLink>
@@ -1252,7 +1538,10 @@ export default function Home() {
   const [mode, setMode] = useState<AppMode>("loading");
 
   useEffect(() => {
-    fetch("/api/mode")
+    const qs = new URLSearchParams(window.location.search);
+    const modeParam = qs.get("mode");
+    const url = modeParam ? `/api/mode?mode=${modeParam}` : "/api/mode";
+    fetch(url)
       .then((res) => res.json())
       .then((data) => setMode(data.mode))
       .catch(() => setMode("pipeline"));

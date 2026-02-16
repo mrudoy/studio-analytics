@@ -127,7 +127,7 @@ export async function writeTrendsTab(
   });
   rows.push({
     Period: "Current MRR",
-    Type: "",
+    Type: "MRR",
     "New Members": "",
     "New SKY3": "",
     "New SKY TING TV": "",
@@ -147,7 +147,7 @@ export async function writeTrendsTab(
   });
   rows.push({
     Period: "Projected Year-End MRR",
-    Type: "",
+    Type: "MRR",
     "New Members": "",
     "New SKY3": "",
     "New SKY TING TV": "",
@@ -165,6 +165,116 @@ export async function writeTrendsTab(
     "Δ% New SKY3": "",
     "Δ% Revenue": "",
   });
+  rows.push({
+    Period: `${a.year - 1} Est. Revenue`,
+    Type: "PriorYear",
+    "New Members": "",
+    "New SKY3": "",
+    "New SKY TING TV": "",
+    "Member Churn": "",
+    "SKY3 Churn": "",
+    "SKY TING TV Churn": "",
+    "Net Member Growth": "",
+    "Net SKY3 Growth": "",
+    "Revenue Added": a.priorYearRevenue,
+    "Revenue Lost": "",
+    "Δ New Members": "",
+    "Δ New SKY3": "",
+    "Δ Revenue": "",
+    "Δ% New Members": "",
+    "Δ% New SKY3": "",
+    "Δ% Revenue": "",
+  });
+
+  // Spacer
+  rows.push(spacer);
+
+  // Drop-in section
+  const d = trends.dropIns;
+  rows.push({ ...spacer, Period: "— Drop-Ins —" });
+  rows.push({
+    Period: `Drop-Ins MTD (${d.currentMonthDaysElapsed}/${d.currentMonthDaysInMonth} days)`,
+    Type: "DropIn",
+    "New Members": d.currentMonthTotal,
+    "New SKY3": d.currentMonthPaced,
+    "New SKY TING TV": "",
+    "Member Churn": "",
+    "SKY3 Churn": "",
+    "SKY TING TV Churn": "",
+    "Net Member Growth": "",
+    "Net SKY3 Growth": "",
+    "Revenue Added": "",
+    "Revenue Lost": "",
+    "Δ New Members": "",
+    "Δ New SKY3": "",
+    "Δ Revenue": "",
+    "Δ% New Members": "",
+    "Δ% New SKY3": "",
+    "Δ% Revenue": "",
+  });
+  rows.push({
+    Period: "Drop-Ins Last Month",
+    Type: "DropIn",
+    "New Members": d.previousMonthTotal,
+    "New SKY3": "",
+    "New SKY TING TV": "",
+    "Member Churn": "",
+    "SKY3 Churn": "",
+    "SKY TING TV Churn": "",
+    "Net Member Growth": "",
+    "Net SKY3 Growth": "",
+    "Revenue Added": "",
+    "Revenue Lost": "",
+    "Δ New Members": "",
+    "Δ New SKY3": "",
+    "Δ Revenue": "",
+    "Δ% New Members": "",
+    "Δ% New SKY3": "",
+    "Δ% Revenue": "",
+  });
+  rows.push({
+    Period: `Drop-Ins Weekly Avg (6w)`,
+    Type: "DropIn",
+    "New Members": d.weeklyAvg6w,
+    "New SKY3": "",
+    "New SKY TING TV": "",
+    "Member Churn": "",
+    "SKY3 Churn": "",
+    "SKY TING TV Churn": "",
+    "Net Member Growth": "",
+    "Net SKY3 Growth": "",
+    "Revenue Added": "",
+    "Revenue Lost": "",
+    "Δ New Members": "",
+    "Δ New SKY3": "",
+    "Δ Revenue": "",
+    "Δ% New Members": "",
+    "Δ% New SKY3": "",
+    "Δ% Revenue": "",
+  });
+  // Individual weekly breakdown
+  for (const wb of d.weeklyBreakdown) {
+    rows.push({
+      Period: wb.week,
+      Type: "DropInWeek",
+      "New Members": wb.count,
+      "New SKY3": "",
+      "New SKY TING TV": "",
+      "Member Churn": "",
+      "SKY3 Churn": "",
+      "SKY TING TV Churn": "",
+      "Net Member Growth": "",
+      "Net SKY3 Growth": "",
+      "Revenue Added": "",
+      "Revenue Lost": "",
+      "Δ New Members": "",
+      "Δ New SKY3": "",
+      "Δ Revenue": "",
+      "Δ% New Members": "",
+      "Δ% New SKY3": "",
+      "Δ% Revenue": "",
+    });
+  }
 
   await writeRows(sheet, rows);
   await applyStandardFormatting(sheet, rows.length);

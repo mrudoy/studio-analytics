@@ -31,7 +31,15 @@ export interface DashboardStats {
 
 // In-memory cache with 5-minute TTL
 let cached: { data: DashboardStats; fetchedAt: number } | null = null;
+// eslint-disable-next-line prefer-const -- assigned in readTrendsData section below
+let cachedTrends: { data: TrendsData | null; fetchedAt: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Clear all dashboard caches so next read fetches fresh data from sheets */
+export function clearDashboardCache(): void {
+  cached = null;
+  cachedTrends = null;
+}
 
 export async function readDashboardStats(
   spreadsheetId: string
@@ -162,6 +170,17 @@ export interface ProjectionData {
   currentMRR: number;
   projectedYearEndMRR: number;
   monthlyGrowthRate: number;
+  priorYearRevenue: number;
+}
+
+export interface DropInData {
+  currentMonthTotal: number;
+  currentMonthDaysElapsed: number;
+  currentMonthDaysInMonth: number;
+  currentMonthPaced: number;
+  previousMonthTotal: number;
+  weeklyAvg6w: number;
+  weeklyBreakdown: { week: string; count: number }[];
 }
 
 export interface TrendsData {
@@ -169,9 +188,10 @@ export interface TrendsData {
   monthly: TrendRowData[];
   pacing: PacingData | null;
   projection: ProjectionData | null;
+  dropIns: DropInData | null;
 }
 
-let cachedTrends: { data: TrendsData; fetchedAt: number } | null = null;
+// cachedTrends declared at top of file alongside cached
 
 function parseNum(val: string | undefined | null): number {
   if (!val) return 0;
@@ -218,9 +238,37 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
   let pacing: PacingData | null = null;
   let projection: ProjectionData | null = null;
 
+  // Temp vars — MRR/PriorYear rows may appear before or after the Projection row
+  let pendingCurrentMRR: number | null = null;
+  let pendingYearEndMRR: number | null = null;
+  let pendingPriorYearRevenue: number | null = null;
+
+  // Drop-in tracking
+  let dropInMtd = 0;
+  let dropInMtdPaced = 0;
+  let dropInMtdDaysElapsed = 0;
+  let dropInMtdDaysInMonth = 0;
+  let dropInLastMonth = 0;
+  let dropInWeeklyAvg = 0;
+  const dropInWeeklyBreakdown: { week: string; count: number }[] = [];
+
   for (const row of rows) {
     const period = String(row.get("Period") || "").trim();
     const type = String(row.get("Type") || "").trim();
+
+    // Capture MRR rows regardless of row order (projection may not exist yet)
+    if (period === "Current MRR") {
+      pendingCurrentMRR = parseNum(row.get("Revenue Added"));
+      continue;
+    }
+    if (period === "Projected Year-End MRR") {
+      pendingYearEndMRR = parseNum(row.get("Revenue Added"));
+      continue;
+    }
+    if (period.includes("Est. Revenue")) {
+      pendingPriorYearRevenue = parseNum(row.get("Revenue Added"));
+      continue;
+    }
 
     // Skip section headers and spacers
     if (!period || period.startsWith("—") || !type) continue;
@@ -284,23 +332,55 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
         currentMRR: 0,
         projectedYearEndMRR: 0,
         monthlyGrowthRate: growthMatch ? parseFloat(growthMatch[1]) : 0,
+        priorYearRevenue: 0,
       };
-    } else if (period === "Current MRR") {
-      if (projection) {
-        projection.currentMRR = parseNum(row.get("Revenue Added"));
+    } else if (type === "DropIn") {
+      // Parse aggregated drop-in rows
+      if (period.startsWith("Drop-Ins MTD")) {
+        const daysMatch = period.match(/\((\d+)\/(\d+)/);
+        dropInMtd = parseNum(row.get("New Members"));
+        dropInMtdPaced = parseNum(row.get("New SKY3"));
+        dropInMtdDaysElapsed = daysMatch ? parseInt(daysMatch[1]) : 0;
+        dropInMtdDaysInMonth = daysMatch ? parseInt(daysMatch[2]) : 0;
+      } else if (period === "Drop-Ins Last Month") {
+        dropInLastMonth = parseNum(row.get("New Members"));
+      } else if (period.startsWith("Drop-Ins Weekly Avg")) {
+        dropInWeeklyAvg = parseNum(row.get("New Members"));
       }
-    } else if (period === "Projected Year-End MRR") {
-      if (projection) {
-        projection.projectedYearEndMRR = parseNum(row.get("Revenue Added"));
-      }
+    } else if (type === "DropInWeek") {
+      dropInWeeklyBreakdown.push({
+        week: period,
+        count: parseNum(row.get("New Members")),
+      });
     }
   }
 
-  const data: TrendsData = { weekly, monthly, pacing, projection };
+  // Assign MRR / prior-year values after loop (handles any row order)
+  if (projection) {
+    if (pendingCurrentMRR !== null) projection.currentMRR = pendingCurrentMRR;
+    if (pendingYearEndMRR !== null) projection.projectedYearEndMRR = pendingYearEndMRR;
+    if (pendingPriorYearRevenue !== null) projection.priorYearRevenue = pendingPriorYearRevenue;
+  }
+
+  // Build drop-in data (null if no drop-in rows were found)
+  const dropIns: DropInData | null = dropInMtd > 0 || dropInLastMonth > 0 || dropInWeeklyBreakdown.length > 0
+    ? {
+        currentMonthTotal: dropInMtd,
+        currentMonthDaysElapsed: dropInMtdDaysElapsed,
+        currentMonthDaysInMonth: dropInMtdDaysInMonth,
+        currentMonthPaced: dropInMtdPaced,
+        previousMonthTotal: dropInLastMonth,
+        weeklyAvg6w: dropInWeeklyAvg,
+        weeklyBreakdown: dropInWeeklyBreakdown,
+      }
+    : null;
+
+  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns };
   cachedTrends = { data, fetchedAt: Date.now() };
 
   console.log(
-    `[read-dashboard] Loaded trends: ${weekly.length} weekly, ${monthly.length} monthly periods`
+    `[read-dashboard] Loaded trends: ${weekly.length} weekly, ${monthly.length} monthly periods` +
+    (dropIns ? `, drop-ins: MTD=${dropIns.currentMonthTotal}` : "")
   );
   return data;
 }

@@ -28,16 +28,43 @@ import {
   writeTrendsTab,
 } from "../sheets/templates";
 import { cleanupDownloads } from "../scraper/download-manager";
+import { clearDashboardCache } from "../sheets/read-dashboard";
 import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
 import type { NewCustomer, Order, FirstVisit, Registration, AutoRenew } from "@/types/union-data";
 import { writeFileSync, copyFileSync } from "fs";
 import { join } from "path";
+
+/** Maximum total time the pipeline is allowed to run before being killed. */
+const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+
+/**
+ * Race a promise against a timeout. If the timeout fires first, throw.
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout: ${label} (after ${ms / 1000}s)`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
 
 function updateProgress(job: Job, step: string, percent: number) {
   job.updateProgress({ step, percent });
 }
 
 async function runPipeline(job: Job): Promise<PipelineResult> {
+  return withTimeout(
+    runPipelineInner(job),
+    PIPELINE_TIMEOUT_MS,
+    "Pipeline timed out after 20 minutes — try again or check Union.fit connectivity"
+  );
+}
+
+async function runPipelineInner(job: Job): Promise<PipelineResult> {
   const startTime = Date.now();
   const allWarnings: string[] = [];
 
@@ -214,7 +241,8 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
     canceledResult.data,
     allCurrentSubs,
     summary,
-    ordersResult.data
+    ordersResult.data,
+    firstVisitsResult.data
   );
 
   // Step 5: Export to Google Sheets
@@ -269,6 +297,9 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   // Cleanup temp files
   cleanupDownloads();
 
+  // Clear dashboard cache so next read fetches fresh data from sheets
+  clearDashboardCache();
+
   updateProgress(job, "Pipeline complete!", 100);
 
   return {
@@ -281,37 +312,41 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   };
 }
 
-let worker: Worker | null = null;
+// Store on globalThis so the singleton survives Next.js HMR reloads.
+// Without this, each hot reload resets `let worker = null` in the new module
+// scope while the old Worker stays alive in Redis, orphaning the queue.
+const g = globalThis as unknown as { __pipelineWorker?: Worker };
 
 export function startPipelineWorker(): Worker {
-  if (worker) return worker;
+  if (g.__pipelineWorker) return g.__pipelineWorker;
 
-  worker = new Worker(
+  const w = new Worker(
     "pipeline",
     async (job) => runPipeline(job),
     {
       connection: getRedisConnection(),
       concurrency: 1,
-      lockDuration: 900000, // 15 minutes — pipeline takes ~8 min
+      lockDuration: 1_500_000, // 25 minutes — pipeline timeout is 20 min + margin
     }
   );
 
-  worker.on("completed", (job) => {
+  w.on("completed", (job) => {
     console.log(`[worker] Pipeline job ${job.id} completed`);
   });
 
-  worker.on("failed", (job, err) => {
+  w.on("failed", (job, err) => {
     console.error(`[worker] Pipeline job ${job?.id} failed:`, err.message);
   });
 
-  worker.on("error", (err) => {
+  w.on("error", (err) => {
     console.error("[worker] Worker error:", err.message);
   });
 
-  worker.on("stalled", (jobId) => {
+  w.on("stalled", (jobId) => {
     console.warn(`[worker] Job ${jobId} stalled — lock may have expired`);
   });
 
+  g.__pipelineWorker = w;
   console.log("[worker] Pipeline worker started and listening for jobs");
-  return worker;
+  return w;
 }

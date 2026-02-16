@@ -10,22 +10,49 @@ const ADMIN_BASE = `${BASE_URL}/admin/orgs/${ORG_SLUG}`;
 const DOWNLOADS_DIR = join(process.cwd(), "data", "downloads");
 const COOKIE_FILE = join(process.cwd(), "data", "union-cookies.json");
 
+/** Maximum time (ms) for a single fetch-tab operation before it's forcibly killed. */
+const TAB_TIMEOUT_MS = 90_000;
+/** Longer timeout for paginated scrape tabs (100+ pages can take minutes). */
+const SCRAPE_TAB_TIMEOUT_MS = 300_000;
+
+/**
+ * Race a promise against a timeout. If the timeout fires first,
+ * run the cleanup callback (e.g. close the tab) and throw.
+ */
+async function withTabTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+  cleanup?: () => Promise<void>,
+  timeoutMs: number = TAB_TIMEOUT_MS
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Tab timeout after ${timeoutMs / 1000}s: ${label}`)),
+      timeoutMs
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } catch (err) {
+    if (cleanup) await cleanup().catch(() => {});
+    throw err;
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 /**
  * Reports that support direct CSV download via fetch() with format=csv.
- * These use the /subscriptions/growth endpoint which returns CSV directly.
- *
- * Note: activeAutoRenews is NOT included — growth?filter=active frequently
- * returns 503 timeouts. It's faster to scrape the HTML table for that report.
+ * Only subscription endpoints have the CSV download button in their form.
+ * Other reports (orders, customers, registrations, firstVisits) don't have
+ * button[value="csv"] — they go straight to HTML table scraping.
  */
 const FETCH_CSV_REPORTS: Set<ReportType> = new Set([
   "canceledAutoRenews",
   "newAutoRenews",
   "activeAutoRenews",
   "pausedAutoRenews",
-  "orders",
-  "newCustomers",
-  "firstVisits",
-  "allRegistrations",
 ]);
 
 export class UnionClient {
@@ -438,48 +465,8 @@ export class UnionClient {
     const pctRange = pctEnd - pctStart;
     this.progress(`Scraping ${reportType} table data`, Math.round(pctStart));
 
-    // Helper: extract table data from a page
-    const extractTable = async (pg: Page) => {
-      return pg.evaluate(() => {
-        const table = document.querySelector("table");
-        if (!table) return null;
-
-        const hdrs: string[] = [];
-        table.querySelectorAll("thead th, thead td").forEach((th) => {
-          hdrs.push(th.textContent?.trim() || "");
-        });
-
-        const headerCount = hdrs.length;
-        const rows: string[][] = [];
-        table.querySelectorAll("tbody tr").forEach((tr) => {
-          const cells: string[] = [];
-          tr.querySelectorAll("td").forEach((td) => {
-            let text = "";
-            const link = td.querySelector("a:not(.btn):not(.dropdown-toggle)");
-            if (link) {
-              text = link.textContent?.trim() || "";
-            } else {
-              const clone = td.cloneNode(true) as HTMLElement;
-              clone.querySelectorAll(".dropdown, .dropdown-menu, .btn, button, .dropdown-toggle").forEach(el => el.remove());
-              text = clone.textContent?.trim() || "";
-            }
-            cells.push(text);
-          });
-          if (cells.length > 0) {
-            // Handle header/data mismatch: some tables have an extra avatar/initials <td>
-            if (cells.length > headerCount) {
-              cells.splice(0, cells.length - headerCount);
-            }
-            rows.push(cells);
-          }
-        });
-
-        return { headers: hdrs, rows };
-      });
-    };
-
     // Load page 1 to get headers and determine total pages
-    const firstPageData = await extractTable(this.page);
+    const firstPageData = await this.extractTable(this.page);
     if (!firstPageData || firstPageData.rows.length === 0) {
       await this.screenshotOnError(`no-table-${reportType}`);
       throw new Error(`No table data found on ${reportType} report page`);
@@ -523,21 +510,39 @@ export class UnionClient {
 
         const tabPromises = pageNums.map(async (pageNum) => {
           const tab = await this.context!.newPage();
+          const label = `${reportType} page=${pageNum}`;
+
+          const work = async (): Promise<{ pageNum: number; rows: string[][] }> => {
+            try {
+              const pageUrl = `${baseUrl}${separator}page=${pageNum}`;
+              await tab.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+              await tab.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
+              const data = await this.extractTable(tab);
+              return { pageNum, rows: data?.rows || [] };
+            } catch (err) {
+              console.warn(`[scraper] Tab failed for ${label}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+              return { pageNum, rows: [] as string[][] };
+            } finally {
+              await tab.close().catch(() => {});
+            }
+          };
+
           try {
-            const pageUrl = `${baseUrl}${separator}page=${pageNum}`;
-            await tab.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-            await tab.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
-            const data = await extractTable(tab);
-            return { pageNum, rows: data?.rows || [] };
+            return await withTabTimeout(work(), label, async () => {
+              await tab.close().catch(() => {});
+            });
           } catch (err) {
-            console.warn(`[scraper] Tab failed for ${reportType} page=${pageNum}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+            console.warn(`[scraper] Tab timed out for ${label}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
             return { pageNum, rows: [] as string[][] };
-          } finally {
-            await tab.close();
           }
         });
 
-        const results = await Promise.all(tabPromises);
+        const settled = await Promise.allSettled(tabPromises);
+        const results = settled.map((s, i) =>
+          s.status === "fulfilled"
+            ? s.value
+            : { pageNum: pageNums[i], rows: [] as string[][] }
+        );
         results.sort((a, b) => a.pageNum - b.pageNum);
         for (const r of results) {
           allRows.push(...r.rows);
@@ -573,75 +578,229 @@ export class UnionClient {
     if (!this.context) throw new Error("Client not initialized");
 
     const tab = await this.context.newPage();
-    try {
-      const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
-      await tab.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await tab.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    const label = `fetch-${reportType}`;
 
-      // Check for Cloudflare
-      const pageContent = await tab.content();
-      if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge")) {
-        return null; // Will fall back to serial scrape on main page
-      }
+    const work = async (): Promise<string | null> => {
+      try {
+        const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
+        await tab.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await tab.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
 
-      // Read the form's date range (or use provided one)
-      const formDateRange = dateRange || await tab.evaluate(() => {
-        const input = document.querySelector('input[name="daterange"]') as HTMLInputElement | null;
-        return input?.value || "";
-      });
-
-      // Build the fetch URL from the form action
-      const fetchUrl = await tab.evaluate((args: { dateRange: string }) => {
-        const form = document.querySelector('button[value="csv"]')?.closest("form") as HTMLFormElement | null;
-        if (!form) return "";
-        const params: Record<string, string> = {};
-        form.querySelectorAll("input[name], select[name]").forEach((el) => {
-          const inp = el as HTMLInputElement;
-          if (inp.name && inp.value) params[inp.name] = inp.value;
-        });
-        if (args.dateRange) params["daterange"] = args.dateRange;
-        params["format"] = "csv";
-        const qs = Object.entries(params)
-          .filter(([, v]) => v)
-          .map(([k, v]) => k + "=" + encodeURIComponent(v))
-          .join("&");
-        return form.action + (form.action.includes("?") ? "&" : "?") + qs;
-      }, { dateRange: formDateRange });
-
-      if (!fetchUrl) return null;
-
-      // Fetch the CSV data
-      const csvResult = await tab.evaluate(async (url: string) => {
-        try {
-          const resp = await fetch(url, {
-            method: "GET",
-            credentials: "include",
-            redirect: "follow",
-          });
-          const text = await resp.text();
-          const isCSV = resp.headers.get("content-type")?.includes("text/csv") ||
-                         (!text.includes("<html") && !text.includes("<!DOCTYPE") && text.includes(","));
-          return {
-            ok: isCSV && resp.status === 200,
-            status: resp.status,
-            data: isCSV ? text : "",
-            lineCount: isCSV ? text.split("\n").length : 0,
-          };
-        } catch (e) {
-          return { ok: false, status: 0, data: "", lineCount: 0, error: String(e) };
+        // Check for Cloudflare
+        const pageContent = await tab.content();
+        if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge")) {
+          return null; // Will fall back to serial scrape on main page
         }
-      }, fetchUrl);
 
-      if (!csvResult.ok || !csvResult.data) return null;
+        // Read the form's date range (or use provided one)
+        const formDateRange = dateRange || await tab.evaluate(() => {
+          const input = document.querySelector('input[name="daterange"]') as HTMLInputElement | null;
+          return input?.value || "";
+        });
 
-      const filePath = join(DOWNLOADS_DIR, `${reportType}-${Date.now()}.csv`);
-      writeFileSync(filePath, csvResult.data, "utf8");
-      return filePath;
+        // Build the fetch URL from the form action
+        const fetchUrl = await tab.evaluate((args: { dateRange: string }) => {
+          const form = document.querySelector('button[value="csv"]')?.closest("form") as HTMLFormElement | null;
+          if (!form) return "";
+          const params: Record<string, string> = {};
+          form.querySelectorAll("input[name], select[name]").forEach((el) => {
+            const inp = el as HTMLInputElement;
+            if (inp.name && inp.value) params[inp.name] = inp.value;
+          });
+          if (args.dateRange) params["daterange"] = args.dateRange;
+          params["format"] = "csv";
+          const qs = Object.entries(params)
+            .filter(([, v]) => v)
+            .map(([k, v]) => k + "=" + encodeURIComponent(v))
+            .join("&");
+          return form.action + (form.action.includes("?") ? "&" : "?") + qs;
+        }, { dateRange: formDateRange });
+
+        if (!fetchUrl) return null;
+
+        // Fetch the CSV data
+        const csvResult = await tab.evaluate(async (url: string) => {
+          try {
+            const resp = await fetch(url, {
+              method: "GET",
+              credentials: "include",
+              redirect: "follow",
+            });
+            const text = await resp.text();
+            const isCSV = resp.headers.get("content-type")?.includes("text/csv") ||
+                           (!text.includes("<html") && !text.includes("<!DOCTYPE") && text.includes(","));
+            return {
+              ok: isCSV && resp.status === 200,
+              status: resp.status,
+              data: isCSV ? text : "",
+              lineCount: isCSV ? text.split("\n").length : 0,
+            };
+          } catch (e) {
+            return { ok: false, status: 0, data: "", lineCount: 0, error: String(e) };
+          }
+        }, fetchUrl);
+
+        if (!csvResult.ok || !csvResult.data) return null;
+
+        const filePath = join(DOWNLOADS_DIR, `${reportType}-${Date.now()}.csv`);
+        writeFileSync(filePath, csvResult.data, "utf8");
+        return filePath;
+      } catch (err) {
+        console.warn(`[scraper] Parallel fetch failed for ${reportType}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+        return null;
+      } finally {
+        await tab.close().catch(() => {});
+      }
+    };
+
+    try {
+      return await withTabTimeout(work(), label, async () => {
+        await tab.close().catch(() => {});
+      });
     } catch (err) {
-      console.warn(`[scraper] Parallel fetch failed for ${reportType}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+      console.warn(`[scraper] Tab timed out for ${label}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
       return null;
-    } finally {
-      await tab.close();
+    }
+  }
+
+  /**
+   * Scrape an HTML-table report in its own dedicated tab (no dependency on this.page).
+   * Used for reports that don't support CSV fetch (orders, customers, registrations, firstVisits).
+   * Opens sub-tabs for paginated pages, same pattern as downloadViaScrape.
+   */
+  private async scrapeReportInTab(
+    reportType: ReportType,
+    dateRange?: string
+  ): Promise<string> {
+    if (!this.context) throw new Error("Client not initialized");
+
+    const tab = await this.context.newPage();
+    const label = `scrape-tab-${reportType}`;
+
+    const work = async (): Promise<string> => {
+      try {
+        const reportUrl = `${ADMIN_BASE}${REPORT_URLS[reportType]}`;
+        await tab.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await tab.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+
+        // Check for Cloudflare
+        const pageContent = await tab.content();
+        if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge")) {
+          throw new Error("Cloudflare is blocking access. Use 'Test Connection' in Settings.");
+        }
+
+        // Wait for table
+        await tab.waitForSelector("table, [class*='table'], [class*='report']", { timeout: 30000 }).catch(async () => {
+          await tab.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+        });
+
+        // Set date range if provided
+        if (dateRange) {
+          try {
+            const dateInput = tab.locator(SELECTORS.reports.dateRangeInput).first();
+            if (await dateInput.isVisible({ timeout: 5000 })) {
+              await dateInput.clear();
+              await dateInput.fill(dateRange);
+              await tab.keyboard.press("Enter");
+              await tab.waitForSelector("table tbody tr", { timeout: 10000 }).catch(() => {});
+            }
+          } catch { /* Date range may not be available */ }
+        }
+
+        // Extract first page
+        const firstPageData = await this.extractTable(tab);
+        if (!firstPageData || firstPageData.rows.length === 0) {
+          throw new Error(`No table data found on ${reportType} report page`);
+        }
+
+        const headers = firstPageData.headers;
+        const allRows: string[][] = [...firstPageData.rows];
+
+        // Detect pagination
+        const totalPages = await tab.evaluate(() => {
+          const links = document.querySelectorAll(".pagination a");
+          for (const link of links) {
+            const text = link.textContent?.trim() || "";
+            if (text.startsWith("Last")) {
+              const match = (link as HTMLAnchorElement).href.match(/page=(\d+)/);
+              return match ? parseInt(match[1]) : null;
+            }
+          }
+          let maxPage = 1;
+          for (const link of links) {
+            const num = parseInt(link.textContent?.trim() || "");
+            if (!isNaN(num) && num > maxPage) maxPage = num;
+          }
+          return maxPage > 1 ? maxPage : 1;
+        });
+        const pageCount = totalPages ?? 1;
+
+        // Scrape remaining pages in parallel sub-tabs (batches of 8)
+        if (pageCount > 1) {
+          const BATCH_SIZE = 8;
+          const baseUrl = reportUrl.includes("?") ? reportUrl : `${reportUrl}?`;
+          const separator = reportUrl.includes("?") ? "&" : "";
+
+          for (let batchStart = 2; batchStart <= pageCount; batchStart += BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, pageCount);
+            const pageNums = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
+
+            const tabPromises = pageNums.map(async (pageNum) => {
+              const subTab = await this.context!.newPage();
+              const subLabel = `${reportType} page=${pageNum}`;
+              const subWork = async (): Promise<{ pageNum: number; rows: string[][] }> => {
+                try {
+                  await subTab.goto(`${baseUrl}${separator}page=${pageNum}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+                  await subTab.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
+                  const data = await this.extractTable(subTab);
+                  return { pageNum, rows: data?.rows || [] };
+                } catch (err) {
+                  console.warn(`[scraper] Tab failed for ${subLabel}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+                  return { pageNum, rows: [] as string[][] };
+                } finally {
+                  await subTab.close().catch(() => {});
+                }
+              };
+              try {
+                return await withTabTimeout(subWork(), subLabel, async () => { await subTab.close().catch(() => {}); });
+              } catch (err) {
+                console.warn(`[scraper] Tab timed out for ${subLabel}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+                return { pageNum, rows: [] as string[][] };
+              }
+            });
+
+            const settled = await Promise.allSettled(tabPromises);
+            const results = settled.map((s, i) =>
+              s.status === "fulfilled" ? s.value : { pageNum: pageNums[i], rows: [] as string[][] }
+            );
+            results.sort((a, b) => a.pageNum - b.pageNum);
+            for (const r of results) allRows.push(...r.rows);
+          }
+        }
+
+        // Build CSV
+        const validCols = headers.map((h, i) => ({ header: h, index: i })).filter(c => c.header.length > 0);
+        const csvHeaders = validCols.map(c => c.header);
+        const csvRows = allRows.map(row => validCols.map(c => row[c.index] || ""));
+        const csvLines = [
+          csvHeaders.map(h => `"${h.replace(/"/g, '""')}"`).join(","),
+          ...csvRows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(",")),
+        ];
+
+        const filePath = join(DOWNLOADS_DIR, `${reportType}-${Date.now()}.csv`);
+        writeFileSync(filePath, csvLines.join("\n"), "utf8");
+        console.log(`[scraper] ${reportType}: ${allRows.length} rows across ${pageCount} pages (parallel scrape)`);
+        return filePath;
+      } finally {
+        await tab.close().catch(() => {});
+      }
+    };
+
+    try {
+      return await withTabTimeout(work(), label, async () => { await tab.close().catch(() => {}); }, SCRAPE_TAB_TIMEOUT_MS);
+    } catch (err) {
+      console.warn(`[scraper] scrapeReportInTab timed out for ${label}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+      throw err; // Re-throw so caller can fall back to serial scrape
     }
   }
 
@@ -675,50 +834,161 @@ export class UnionClient {
     for (let i = 0; i < fetchEligible.length; i += PARALLEL_LIMIT) {
       const batch = fetchEligible.slice(i, i + PARALLEL_LIMIT);
       const t0 = Date.now();
-      const results = await Promise.all(
+      const PER_FETCH_TIMEOUT = 120_000; // 2 minutes per report fetch
+      const settled = await Promise.allSettled(
         batch.map(async (rt) => {
-          const filePath = await this.downloadViaFetchInTab(rt, dateRange);
+          const filePath = await withTabTimeout(
+            this.downloadViaFetchInTab(rt, dateRange),
+            `CSV fetch: ${rt}`,
+            undefined,
+            PER_FETCH_TIMEOUT
+          );
           return { reportType: rt, filePath };
         })
+      );
+      const results = settled.map((s, i) =>
+        s.status === "fulfilled"
+          ? s.value
+          : { reportType: batch[i], filePath: null as string | null }
       );
       const batchElapsed = ((Date.now() - t0) / 1000).toFixed(1);
       const batchNames = batch.join(", ");
 
+      const retryQueue: ReportType[] = [];
       for (const { reportType, filePath } of results) {
         if (filePath) {
           files[reportType] = filePath;
           console.log(`[scraper] ${reportType}: OK (parallel fetch)`);
         } else {
-          needsScrape.push(reportType);
-          console.log(`[scraper] ${reportType}: fetch failed, queued for scrape`);
+          retryQueue.push(reportType);
+          console.log(`[scraper] ${reportType}: fetch failed, will retry once`);
         }
       }
       console.log(`[scraper] Parallel batch [${batchNames}]: ${batchElapsed}s`);
+
+      // Retry failed CSV fetches once before falling back to scrape
+      for (const rt of retryQueue) {
+        console.log(`[scraper] ${rt}: retrying CSV fetch...`);
+        let retryPath: string | null = null;
+        try {
+          retryPath = await withTabTimeout(
+            this.downloadViaFetchInTab(rt, dateRange),
+            `CSV fetch retry: ${rt}`,
+            undefined,
+            PER_FETCH_TIMEOUT
+          );
+        } catch (err) {
+          console.warn(`[scraper] ${rt}: retry timed out — ${err instanceof Error ? err.message : err}`);
+        }
+        if (retryPath) {
+          files[rt] = retryPath;
+          console.log(`[scraper] ${rt}: OK (CSV fetch retry)`);
+        } else {
+          needsScrape.push(rt);
+          console.log(`[scraper] ${rt}: retry failed, queued for scrape`);
+        }
+      }
 
       const pct = SCRAPE_START + ((i + batch.length) / reportTypes.length) * SCRAPE_RANGE;
       this.progress(`Downloaded ${Object.keys(files).length}/${reportTypes.length} reports`, Math.round(pct));
     }
 
-    // Phase 2: Serially scrape any reports that failed parallel fetch
-    // Also scrape any reports not in FETCH_CSV_REPORTS (currently none, but future-proof)
+    // Phase 2: Scrape reports that don't support CSV fetch — parallel batches of 3
     const nonFetchReports = reportTypes.filter((r) => !FETCH_CSV_REPORTS.has(r));
     const scrapeList = [...needsScrape, ...nonFetchReports];
 
     if (scrapeList.length > 0) {
-      console.log(`[scraper] Falling back to serial scrape for: ${scrapeList.join(", ")}`);
-      for (const reportType of scrapeList) {
+      const SCRAPE_PARALLEL = 3;
+      console.log(`[scraper] Scraping ${scrapeList.length} reports (${SCRAPE_PARALLEL} at a time): ${scrapeList.join(", ")}`);
+
+      for (let i = 0; i < scrapeList.length; i += SCRAPE_PARALLEL) {
+        const batch = scrapeList.slice(i, i + SCRAPE_PARALLEL);
         const t0 = Date.now();
-        const scrapeStart = SCRAPE_START + ((reportTypes.indexOf(reportType)) / reportTypes.length) * SCRAPE_RANGE;
-        const scrapeEnd = SCRAPE_START + ((reportTypes.indexOf(reportType) + 1) / reportTypes.length) * SCRAPE_RANGE;
-        files[reportType] = await this.downloadViaScrape(reportType, dateRange, scrapeStart, scrapeEnd, true);
-        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-        console.log(`[scraper] ${reportType}: ${elapsed}s (scrape fallback)`);
+
+        const PER_SCRAPE_TIMEOUT = 300_000; // 5 minutes per report scrape
+        const settled = await Promise.allSettled(
+          batch.map((rt) =>
+            withTabTimeout(
+              this.scrapeReportInTab(rt, dateRange),
+              `Scrape: ${rt}`,
+              undefined,
+              PER_SCRAPE_TIMEOUT
+            )
+          )
+        );
+
+        for (let j = 0; j < batch.length; j++) {
+          const rt = batch[j];
+          const result = settled[j];
+          if (result.status === "fulfilled") {
+            files[rt] = result.value;
+            console.log(`[scraper] ${rt}: OK (parallel scrape)`);
+          } else {
+            console.warn(`[scraper] ${rt}: parallel scrape failed, trying serial fallback`);
+            try {
+              files[rt] = await withTabTimeout(
+                this.downloadViaScrape(rt, dateRange, 0, 100, true),
+                `Serial scrape fallback: ${rt}`,
+                undefined,
+                PER_SCRAPE_TIMEOUT
+              );
+              console.log(`[scraper] ${rt}: OK (serial scrape fallback)`);
+            } catch (fallbackErr) {
+              throw new Error(`Failed to download ${rt}: ${fallbackErr instanceof Error ? fallbackErr.message : fallbackErr}`);
+            }
+          }
+        }
+
+        const batchElapsed = ((Date.now() - t0) / 1000).toFixed(1);
+        console.log(`[scraper] Scrape batch [${batch.join(", ")}]: ${batchElapsed}s`);
+
+        const pct = SCRAPE_START + ((Object.keys(files).length) / reportTypes.length) * SCRAPE_RANGE;
+        this.progress(`Downloaded ${Object.keys(files).length}/${reportTypes.length} reports`, Math.round(pct));
       }
     }
 
     console.log(`[scraper] Total download phase: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`);
 
     return files as DownloadedFiles;
+  }
+
+  /** Extract headers + rows from an HTML table on the given page. */
+  private async extractTable(pg: Page): Promise<{ headers: string[]; rows: string[][] } | null> {
+    return pg.evaluate(() => {
+      const table = document.querySelector("table");
+      if (!table) return null;
+
+      const hdrs: string[] = [];
+      table.querySelectorAll("thead th, thead td").forEach((th) => {
+        hdrs.push(th.textContent?.trim() || "");
+      });
+
+      const headerCount = hdrs.length;
+      const rows: string[][] = [];
+      table.querySelectorAll("tbody tr").forEach((tr) => {
+        const cells: string[] = [];
+        tr.querySelectorAll("td").forEach((td) => {
+          let text = "";
+          const link = td.querySelector("a:not(.btn):not(.dropdown-toggle)");
+          if (link) {
+            text = link.textContent?.trim() || "";
+          } else {
+            const clone = td.cloneNode(true) as HTMLElement;
+            clone.querySelectorAll(".dropdown, .dropdown-menu, .btn, button, .dropdown-toggle").forEach(el => el.remove());
+            text = clone.textContent?.trim() || "";
+          }
+          cells.push(text);
+        });
+        if (cells.length > 0) {
+          if (cells.length > headerCount) {
+            cells.splice(0, cells.length - headerCount);
+          }
+          rows.push(cells);
+        }
+      });
+
+      return { headers: hdrs, rows };
+    });
   }
 
   private async screenshotOnError(name: string): Promise<void> {
