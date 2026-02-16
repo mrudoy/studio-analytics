@@ -904,7 +904,248 @@ function ForecastMetric({ label, value, color }: { label: string; value: string;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  DASHBOARD SECTIONS
+//  NEW LAYOUT — Layer 1, 2, 3 components
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ─── Layer 1: KPI Hero Strip ────────────────────────────────
+
+interface HeroTile {
+  label: string;
+  value: string;
+  delta?: number | null;
+  deltaPercent?: number | null;
+  isPositiveGood?: boolean;
+  isCurrency?: boolean;
+  sublabel?: string;
+}
+
+function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
+  return (
+    <Card padding="1.75rem">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-5">
+        {tiles.map((tile, i) => (
+          <div key={i} style={{ borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "1rem" : 0 }}>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>
+              {tile.label}
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.7rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              {tile.value}
+            </p>
+            {tile.sublabel && (
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
+                {tile.sublabel}
+              </p>
+            )}
+            {tile.delta != null && (
+              <div style={{ marginTop: "4px" }}>
+                <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Layer 2: Revenue Drivers Bridge ─────────────────────────
+
+function RevenueDriversBridge({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
+  const latestW = trends && trends.weekly.length >= 2 ? trends.weekly[trends.weekly.length - 1] : null;
+  const pacing = trends?.pacing;
+  const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+
+  // MRR stacked bar
+  const mrrData: StackedBarData[] = [{
+    label: "MRR Breakdown",
+    segments: [
+      { value: data.mrr.member, color: COLORS.member, label: "Member" },
+      { value: data.mrr.sky3, color: COLORS.sky3, label: "SKY3" },
+      { value: data.mrr.skyTingTv, color: COLORS.tv, label: "TV" },
+      ...(data.mrr.unknown > 0 ? [{ value: data.mrr.unknown, color: "#999", label: "Other" }] : []),
+    ],
+  }];
+
+  // Revenue monthly bars
+  const revenueMonthlyBars: BarChartData[] = [];
+  if (trends && trends.monthly.length > 0) {
+    for (const m of trends.monthly.slice(-6)) {
+      revenueMonthlyBars.push({
+        label: formatMonthLabel(m.period),
+        value: m.revenueAdded,
+        color: COLORS.member,
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader>What Changed</SectionHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Left: Revenue changes + MRR bar */}
+        <Card padding="1.5rem">
+          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Revenue Flow (WoW)
+          </p>
+
+          {latestW ? (
+            <>
+              <TrendRow
+                label="Revenue Added"
+                value={formatCurrency(latestW.revenueAdded)}
+                delta={latestW.deltaRevenue}
+                deltaPercent={latestW.deltaPctRevenue}
+                isCurrency
+              />
+              <TrendRow
+                label="Revenue Lost"
+                value={formatCurrency(latestW.revenueLost)}
+                delta={null}
+                deltaPercent={null}
+                isPositiveGood={false}
+              />
+              <div className="flex items-center justify-between" style={{ padding: "0.65rem 0" }}>
+                <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "0.92rem", color: "var(--st-text-primary)" }}>
+                  Net Change
+                </span>
+                <span style={{
+                  fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.35rem",
+                  color: (latestW.revenueAdded - latestW.revenueLost) >= 0 ? "var(--st-success)" : "var(--st-error)",
+                }}>
+                  {formatDeltaCurrency(latestW.revenueAdded - latestW.revenueLost)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No weekly data yet</p>
+          )}
+
+          {/* MRR composition bar */}
+          <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
+            <StackedBarChart data={mrrData} />
+            <div className="flex gap-4 mt-3 flex-wrap">
+              {mrrData[0].segments.filter(s => s.value > 0).map((seg, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
+                    {seg.label}: {formatCurrency(seg.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        {/* Right: Monthly revenue trend + pacing */}
+        <Card padding="1.5rem">
+          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Monthly Revenue Trend
+          </p>
+          {revenueMonthlyBars.length > 0 ? (
+            <MiniBarChart data={revenueMonthlyBars} height={100} formatValue={formatCompactCurrency} />
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No monthly data yet</p>
+          )}
+
+          {isPacing && (
+            <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
+              <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-accent)", letterSpacing: "0.06em", marginBottom: "6px" }}>
+                Month Pacing ({pacing!.daysElapsed}/{pacing!.daysInMonth}d)
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>Revenue MTD</p>
+                  <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.1rem", color: "var(--st-text-primary)" }}>{formatCurrency(pacing!.revenueActual)}</p>
+                </div>
+                <div>
+                  <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>Projected</p>
+                  <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.1rem", color: "var(--st-accent)" }}>{formatCurrency(pacing!.revenuePaced)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Layer 3: Drop-In Card (visits-focused, distinct from CategoryDetail) ──
+
+function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
+  const isPacing = dropIns.currentMonthDaysElapsed < dropIns.currentMonthDaysInMonth;
+  const prevDelta = dropIns.previousMonthTotal > 0
+    ? dropIns.currentMonthTotal - dropIns.previousMonthTotal
+    : null;
+
+  const weeklyBars: BarChartData[] = dropIns.weeklyBreakdown.map((w) => {
+    const d = new Date(w.week + "T00:00:00");
+    const label = isNaN(d.getTime()) ? w.week : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return { label, value: w.count, color: COLORS.warning };
+  });
+
+  return (
+    <Card padding="1.5rem">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Drop-Ins
+          </span>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+            Visits
+          </span>
+        </div>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          {formatNumber(dropIns.currentMonthTotal)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Left: Weekly visits chart */}
+        <div>
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Weekly Visits
+          </p>
+          {weeklyBars.length > 0 ? (
+            <MiniBarChart data={weeklyBars} height={64} />
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>—</p>
+          )}
+        </div>
+
+        {/* Right: Key metrics */}
+        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+          <TrendRow
+            label="Month to Date"
+            value={String(dropIns.currentMonthTotal)}
+            delta={prevDelta}
+            deltaPercent={null}
+            sublabel={isPacing ? `proj. ${dropIns.currentMonthPaced}` : undefined}
+          />
+          <TrendRow
+            label="Last Month"
+            value={String(dropIns.previousMonthTotal)}
+            delta={null}
+            deltaPercent={null}
+          />
+          <TrendRow
+            label="Weekly Avg"
+            value={String(dropIns.weeklyAvg6w)}
+            delta={null}
+            deltaPercent={null}
+            sublabel="6-week rolling"
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  LEGACY SECTIONS (kept for revert — not rendered in new layout)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // ─── Subscriber Overview (donut + breakdown) ─────────────────
@@ -1451,18 +1692,70 @@ function DashboardView() {
           >
             Studio Dashboard
           </h1>
-          {data.dateRange && (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.95rem" }}>
-              {data.dateRange}
-            </p>
-          )}
           <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} />
         </div>
 
-        {/* ── Subscriber Overview (donut + net growth) ── */}
-        <SubscriberOverview data={data} trends={trends} />
+        {/* ━━ LAYER 1: KPI Hero Strip ━━━━━━━━━━━━━━━ */}
+        <KPIHeroStrip tiles={(() => {
+          const latestW = weekly.length >= 2 ? weekly[weekly.length - 1] : null;
+          const prevW = weekly.length >= 2 ? weekly[weekly.length - 2] : null;
+          const netGrowthW = latestW
+            ? latestW.netMemberGrowth + latestW.netSky3Growth + (latestW.newSkyTingTv - latestW.skyTingTvChurn)
+            : null;
 
-        {/* ── Members Detail ────────────────────────── */}
+          const tiles: HeroTile[] = [
+            {
+              label: "Revenue MTD",
+              value: formatCurrency(data.currentMonthRevenue),
+              delta: data.previousMonthRevenue > 0
+                ? Math.round(data.currentMonthRevenue - data.previousMonthRevenue)
+                : null,
+              deltaPercent: data.previousMonthRevenue > 0
+                ? Math.round((data.currentMonthRevenue - data.previousMonthRevenue) / data.previousMonthRevenue * 100)
+                : null,
+              isCurrency: true,
+            },
+            {
+              label: "MRR",
+              value: formatCurrency(data.mrr.total),
+            },
+            {
+              label: "Subscribers",
+              value: formatNumber(data.activeSubscribers.total),
+              delta: netGrowthW,
+              sublabel: netGrowthW != null ? "net this week" : undefined,
+            },
+            {
+              label: "Churn (WoW)",
+              value: latestW ? formatCurrency(latestW.revenueLost) : "—",
+              isPositiveGood: false,
+            },
+            ...(trends?.dropIns ? [{
+              label: "Drop-ins MTD",
+              value: String(trends.dropIns.currentMonthTotal),
+              delta: trends.dropIns.previousMonthTotal > 0
+                ? trends.dropIns.currentMonthTotal - trends.dropIns.previousMonthTotal
+                : null,
+              deltaPercent: null,
+              sublabel: trends.dropIns.currentMonthDaysElapsed < trends.dropIns.currentMonthDaysInMonth
+                ? `proj. ${trends.dropIns.currentMonthPaced}`
+                : undefined,
+            }] : []),
+            {
+              label: "ARPU",
+              value: formatCurrencyDecimal(data.arpu.overall),
+            },
+          ];
+          return tiles;
+        })()} />
+
+        {/* ━━ LAYER 2: What Changed ━━━━━━━━━━━━━━━━━ */}
+        <RevenueDriversBridge data={data} trends={trends} />
+
+        {/* ━━ LAYER 3: Product Lines ━━━━━━━━━━━━━━━━ */}
+        <SectionHeader>Subscriptions</SectionHeader>
+
+        {/* Members */}
         <CategoryDetail
           title="Members"
           color={COLORS.member}
@@ -1477,7 +1770,7 @@ function DashboardView() {
           pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
         />
 
-        {/* ── SKY3 Detail ───────────────────────────── */}
+        {/* SKY3 */}
         <CategoryDetail
           title="SKY3"
           color={COLORS.sky3}
@@ -1492,7 +1785,7 @@ function DashboardView() {
           pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
         />
 
-        {/* ── SKY TING TV Detail ────────────────────── */}
+        {/* SKY TING TV */}
         <CategoryDetail
           title="SKY TING TV"
           color={COLORS.tv}
@@ -1505,15 +1798,25 @@ function DashboardView() {
           weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
         />
 
-        {/* ── Financial Health ──────────────────────── */}
-        <FinancialHealthSection data={data} trends={trends} />
-
-        {/* ── Drop-Ins ──────────────────────────────── */}
+        {/* Drop-Ins (distinct card — visits, not subscriptions) */}
         {trends?.dropIns && (
-          <DropInsSection dropIns={trends.dropIns} />
+          <DropInCardNew dropIns={trends.dropIns} />
         )}
 
-        {/* ── Revenue Forecast ─────────────────────── */}
+        {/* ━━ ARPU Detail ━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        <Card padding="1.5rem">
+          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Average Revenue Per User
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4">
+            <KPIMetric label="Overall" value={formatCurrencyDecimal(data.arpu.overall)} />
+            <KPIMetric label="Member" value={formatCurrencyDecimal(data.arpu.member)} />
+            <KPIMetric label="SKY3" value={formatCurrencyDecimal(data.arpu.sky3)} />
+            <KPIMetric label="TV" value={formatCurrencyDecimal(data.arpu.skyTingTv)} />
+          </div>
+        </Card>
+
+        {/* ━━ Revenue Forecast ━━━━━━━━━━━━━━━━━━━━━━ */}
         {trends?.projection && (
           <RevenueProjectionSection projection={trends.projection} />
         )}
