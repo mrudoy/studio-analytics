@@ -542,7 +542,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
     return (
       <span
         className="inline-flex items-center gap-1"
-        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.9rem" }}
+        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.9rem", whiteSpace: "nowrap" }}
       >
         <span style={{ fontSize: "0.6rem" }}>{arrow}</span>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
@@ -922,13 +922,13 @@ interface HeroTile {
 function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   return (
     <Card padding="1.75rem">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-5">
         {tiles.map((tile, i) => (
-          <div key={i} style={{ borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "1rem" : 0 }}>
+          <div key={i} style={{ borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "0.75rem" : 0 }}>
             <p style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>
               {tile.label}
             </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.7rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.5rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, whiteSpace: "nowrap" }}>
               {tile.value}
             </p>
             {tile.sublabel && (
@@ -1675,7 +1675,7 @@ function DashboardView() {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-6 sm:p-8 pb-16">
-      <div className="max-w-4xl w-full space-y-10">
+      <div className="max-w-6xl w-full space-y-10">
         {/* ── Header ─────────────────────────────────── */}
         <div className="text-center space-y-3 pt-4">
           <div className="flex justify-center">
