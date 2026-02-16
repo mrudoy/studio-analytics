@@ -31,6 +31,23 @@ interface DashboardStats {
   currentMonthRevenue: number;
   previousMonthRevenue: number;
   trends?: TrendsData | null;
+  revenueCategories?: RevenueCategoryData | null;
+}
+
+interface RevenueCategoryData {
+  periodStart: string;
+  periodEnd: string;
+  categories: { category: string; revenue: number; netRevenue: number; fees: number; refunded: number }[];
+  totalRevenue: number;
+  totalNetRevenue: number;
+  totalFees: number;
+  totalRefunded: number;
+  dropInRevenue: number;
+  dropInNetRevenue: number;
+  subscriptionRevenue: number;
+  subscriptionNetRevenue: number;
+  workshopRevenue: number;
+  otherRevenue: number;
 }
 
 interface TrendRowData {
@@ -1075,6 +1092,122 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
   );
 }
 
+// ─── Revenue Categories Card ─────────────────────────────────
+
+const CATEGORY_COLORS = [
+  "#4A7C59", "#5B7FA5", "#8B6FA5", "#8B7340", "#A04040",
+  "#5B9B7C", "#7B8FA5", "#A08B6F", "#6B8B5B", "#9B6B8B",
+];
+
+function RevenueCategoriesCard({ data }: { data: RevenueCategoryData }) {
+  // Top-level breakdown: Subscriptions, Drop-Ins, Workshops, Other
+  const breakdownSegments = [
+    { value: data.subscriptionRevenue, color: COLORS.member, label: "Subscriptions" },
+    { value: data.dropInRevenue, color: COLORS.warning, label: "Drop-Ins" },
+    { value: data.workshopRevenue, color: COLORS.sky3, label: "Workshops" },
+    { value: data.otherRevenue, color: COLORS.tv, label: "Other" },
+  ].filter((s) => s.value > 0);
+
+  const breakdownData: StackedBarData[] = [{
+    label: "Revenue Breakdown",
+    segments: breakdownSegments,
+  }];
+
+  // Top categories table (sorted by revenue descending, show top 10)
+  const topCategories = data.categories.slice(0, 10);
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader subtitle={`${data.periodStart} \u2013 ${data.periodEnd}`}>
+        Revenue by Category
+      </SectionHeader>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Left: Stacked bar + totals */}
+        <Card padding="1.5rem">
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              Total Revenue
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+              {formatCurrency(data.totalRevenue)}
+            </p>
+          </div>
+          <StackedBarChart data={breakdownData} />
+          <div className="flex gap-4 mt-3 flex-wrap">
+            {breakdownSegments.map((seg, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
+                <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
+                  {seg.label}: {formatCurrency(seg.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid var(--st-border)" }}>
+            <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.88rem" }}>
+              <span style={{ color: "var(--st-text-secondary)", fontWeight: 600 }}>Net Revenue</span>
+              <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{formatCurrency(data.totalNetRevenue)}</span>
+            </div>
+            <div className="flex justify-between mt-1" style={{ fontFamily: FONT_SANS, fontSize: "0.82rem" }}>
+              <span style={{ color: "var(--st-text-secondary)" }}>Fees + Transfers</span>
+              <span style={{ color: "var(--st-error)" }}>-{formatCurrency(data.totalFees)}</span>
+            </div>
+            <div className="flex justify-between mt-1" style={{ fontFamily: FONT_SANS, fontSize: "0.82rem" }}>
+              <span style={{ color: "var(--st-text-secondary)" }}>Refunded</span>
+              <span style={{ color: "var(--st-error)" }}>-{formatCurrency(data.totalRefunded)}</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Right: Top categories table */}
+        <Card padding="1.5rem">
+          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Top Categories
+          </p>
+          <div className="space-y-0">
+            {topCategories.map((cat, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between"
+                style={{
+                  padding: "0.5rem 0",
+                  borderBottom: i < topCategories.length - 1 ? "1px solid var(--st-border)" : "none",
+                }}
+              >
+                <div className="flex items-center gap-2" style={{ minWidth: 0, flex: 1 }}>
+                  <span className="rounded-full flex-shrink-0" style={{ width: "6px", height: "6px", backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length], opacity: 0.85 }} />
+                  <span
+                    style={{
+                      fontFamily: FONT_SANS,
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      color: "var(--st-text-primary)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cat.category}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", fontWeight: 700, color: "var(--st-text-primary)" }}>
+                    {formatCurrency(cat.revenue)}
+                  </span>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", fontWeight: 500, color: "var(--st-text-secondary)", minWidth: "60px", textAlign: "right" }}>
+                    net {formatCurrency(cat.netRevenue)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── Layer 3: Drop-In Card (visits-focused, distinct from CategoryDetail) ──
 
 function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
@@ -1739,6 +1872,11 @@ function DashboardView() {
 
         {/* ━━ MRR Breakdown ━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <MRRBreakdown data={data} />
+
+        {/* ━━ Revenue Categories ━━━━━━━━━━━━━━━━━━━━ */}
+        {data.revenueCategories && (
+          <RevenueCategoriesCard data={data.revenueCategories} />
+        )}
 
         {/* ━━ Subscriptions ━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <SectionHeader>Subscriptions</SectionHeader>

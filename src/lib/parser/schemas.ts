@@ -69,6 +69,21 @@ export const RegistrationSchema = z.object({
 });
 
 /**
+ * Revenue Categories schema — matches the /reports/revenue page.
+ * Columns: Revenue Category, Revenue, Union Fees, Stripe Fees, Transfers, Refunded, Union Fees Refunded, Net Revenue
+ */
+export const RevenueCategorySchema = z.object({
+  revenueCategory: z.string().default(""),
+  revenue: money,
+  unionFees: money,
+  stripeFees: money,
+  transfers: money,
+  refunded: money,
+  unionFeesRefunded: money,
+  netRevenue: money,
+});
+
+/**
  * AutoRenew schema — used for active, new, and canceled auto-renew reports.
  * - Active/New have: Name, State, Price, Customer, Created
  * - Canceled has:    Name, State, Price, Customer, Canceled At

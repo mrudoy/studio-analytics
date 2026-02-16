@@ -4,6 +4,7 @@ import type { FunnelOverviewResults } from "../analytics/funnel-overview";
 import type { ChurnResults, ChurnRow } from "../analytics/churn";
 import type { VolumeResults, WeeklyVolumeRow } from "../analytics/volume";
 import type { SummaryKPIs } from "../analytics/summary";
+import type { RevenueCategoryAnalysis } from "../analytics/revenue-categories";
 import { getOrCreateSheet, writeRows } from "./sheets-client";
 import { applyStandardFormatting, formatPercentColumns, formatCurrencyColumns } from "./formatters";
 
@@ -289,4 +290,40 @@ export async function writeRawDataSheets(
     await writeRows(sheet, data.newCustomers);
     await applyStandardFormatting(sheet, data.newCustomers.length);
   }
+}
+
+export async function writeRevenueCategoriesTab(
+  doc: GoogleSpreadsheet,
+  analysis: RevenueCategoryAnalysis,
+  dateRange: string
+): Promise<void> {
+  const headers = ["Category", "Revenue", "Net Revenue", "Fees", "Refunded"];
+  const sheet = await getOrCreateSheet(doc, "Revenue Categories", headers);
+
+  const rows: Record<string, string | number>[] = [
+    { Category: `Date Range: ${dateRange}`, Revenue: "", "Net Revenue": "", Fees: "", Refunded: "" },
+    { Category: "", Revenue: "", "Net Revenue": "", Fees: "", Refunded: "" },
+    // Summary row
+    { Category: "TOTAL", Revenue: analysis.totalRevenue, "Net Revenue": analysis.totalNetRevenue, Fees: analysis.totalFees, Refunded: analysis.totalRefunded },
+    { Category: "", Revenue: "", "Net Revenue": "", Fees: "", Refunded: "" },
+    // Breakdown by type
+    { Category: "Subscriptions", Revenue: analysis.subscriptionRevenue, "Net Revenue": analysis.subscriptionNetRevenue, Fees: "", Refunded: "" },
+    { Category: "Drop-Ins", Revenue: analysis.dropInRevenue, "Net Revenue": analysis.dropInNetRevenue, Fees: "", Refunded: "" },
+    { Category: "Workshops", Revenue: analysis.workshopRevenue, "Net Revenue": "", Fees: "", Refunded: "" },
+    { Category: "Other", Revenue: analysis.otherRevenue, "Net Revenue": "", Fees: "", Refunded: "" },
+    { Category: "", Revenue: "", "Net Revenue": "", Fees: "", Refunded: "" },
+    { Category: "— Per Category —", Revenue: "", "Net Revenue": "", Fees: "", Refunded: "" },
+    // Individual categories
+    ...analysis.categories.map((c) => ({
+      Category: c.category,
+      Revenue: c.revenue,
+      "Net Revenue": c.netRevenue,
+      Fees: c.fees,
+      Refunded: c.refunded,
+    })),
+  ];
+
+  await writeRows(sheet, rows);
+  await applyStandardFormatting(sheet, rows.length);
+  await formatCurrencyColumns(sheet, [1, 2, 3, 4], rows.length);
 }

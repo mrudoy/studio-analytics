@@ -49,6 +49,7 @@ export const REPORT_URLS = {
   activeAutoRenews: "/report/subscriptions/list?status=active",
   pausedAutoRenews: "/report/subscriptions/list?status=paused",
   newAutoRenews: "/report/subscriptions/growth?filter=new",
+  revenueCategories: "/reports/revenue",
 } as const;
 
 export type ReportType = keyof typeof REPORT_URLS;

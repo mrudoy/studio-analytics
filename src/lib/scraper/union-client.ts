@@ -816,6 +816,7 @@ export class UnionClient {
       "allRegistrations",
       "activeAutoRenews",
       "pausedAutoRenews",
+      "revenueCategories",
     ];
 
     const SCRAPE_START = 15;

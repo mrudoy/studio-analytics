@@ -35,6 +35,17 @@ export interface Registration {
   revenueCategory: string;
 }
 
+export interface RevenueCategory {
+  revenueCategory: string;
+  revenue: number;
+  unionFees: number;
+  stripeFees: number;
+  transfers: number;
+  refunded: number;
+  unionFeesRefunded: number;
+  netRevenue: number;
+}
+
 export interface AutoRenew {
   name: string; // plan name e.g. "SKY UNLIMITED" (cleaned of "\nSubscription" suffix)
   state: string; // "Valid Now", "Canceled", "In Trial", etc.
@@ -56,4 +67,5 @@ export interface DownloadedFiles {
   activeAutoRenews: string;
   pausedAutoRenews: string;
   newAutoRenews: string;
+  revenueCategories: string;
 }

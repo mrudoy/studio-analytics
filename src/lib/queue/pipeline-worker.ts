@@ -9,6 +9,7 @@ import {
   FirstVisitSchema,
   RegistrationSchema,
   AutoRenewSchema,
+  RevenueCategorySchema,
 } from "../parser/schemas";
 import { analyzeFunnel } from "../analytics/funnel";
 import { analyzeFunnelOverview } from "../analytics/funnel-overview";
@@ -16,6 +17,7 @@ import { analyzeChurn } from "../analytics/churn";
 import { analyzeVolume } from "../analytics/volume";
 import { computeSummary } from "../analytics/summary";
 import { analyzeTrends } from "../analytics/trends";
+import { analyzeRevenueCategories } from "../analytics/revenue-categories";
 import { getSpreadsheet, getSheetUrl } from "../sheets/sheets-client";
 import {
   writeDashboardTab,
@@ -26,11 +28,13 @@ import {
   writeRunLogEntry,
   writeRawDataSheets,
   writeTrendsTab,
+  writeRevenueCategoriesTab,
 } from "../sheets/templates";
 import { cleanupDownloads } from "../scraper/download-manager";
 import { clearDashboardCache } from "../sheets/read-dashboard";
 import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
-import type { NewCustomer, Order, FirstVisit, Registration, AutoRenew } from "@/types/union-data";
+import type { NewCustomer, Order, FirstVisit, Registration, AutoRenew, RevenueCategory } from "@/types/union-data";
+import { saveRevenueCategories, savePipelineRun, getLatestPeriod, lockPeriod } from "../db/revenue-store";
 import { writeFileSync, copyFileSync } from "fs";
 import { join } from "path";
 
@@ -89,27 +93,46 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   });
 
   let files;
+  let dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
+    ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
+    : "";
+
   try {
     await client.initialize();
     updateProgress(job, "Logging into Union.fit", 15);
     await client.login(settings.credentials.email, settings.credentials.password);
 
     updateProgress(job, "Downloading CSV reports", 20);
-    let dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
-      ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
-      : undefined;
 
-    // Default to last 12 months if no date range provided.
-    // The Orders/Transactions page on Union.fit requires a date range —
-    // without one it returns 0 rows. Other reports have sensible defaults
-    // but benefit from an explicit range too.
+    // Incremental mode: if no date range provided, check SQLite for last locked period.
+    // If we have historical data, only fetch from the start of last month forward.
+    // First run = full 12 months; subsequent runs = current + previous month only.
     if (!dateRange) {
       const now = new Date();
       const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-      const start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      const startStr = `${start.getMonth() + 1}/${start.getDate()}/${start.getFullYear()}`;
+      let startDate: Date;
+
+      try {
+        const latestPeriod = getLatestPeriod();
+        if (latestPeriod) {
+          // We have data — only fetch from 1st of last month to catch any late entries
+          const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          startDate = lastMonth;
+          console.log(`[pipeline] Incremental mode: have data through ${latestPeriod.periodEnd}, fetching from ${lastMonth.toISOString().slice(0, 10)}`);
+        } else {
+          // First run — fetch full 12 months
+          startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+          console.log(`[pipeline] First run: no historical data, fetching last 12 months`);
+        }
+      } catch {
+        // SQLite not available — full 12 month fallback
+        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+        console.log(`[pipeline] SQLite not available, defaulting to last 12 months`);
+      }
+
+      const startStr = `${startDate.getMonth() + 1}/${startDate.getDate()}/${startDate.getFullYear()}`;
       dateRange = `${startStr} - ${endStr}`;
-      console.log(`[pipeline] No date range specified, defaulting to last 12 months: ${dateRange}`);
+      console.log(`[pipeline] Date range: ${dateRange}`);
     }
 
     files = await client.downloadAllReports(dateRange);
@@ -140,6 +163,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   const activeResult = parseCSV<AutoRenew>(files.activeAutoRenews, AutoRenewSchema);
   const pausedResult = parseCSV<AutoRenew>(files.pausedAutoRenews, AutoRenewSchema);
   const newAutoRenewsResult = parseCSV<AutoRenew>(files.newAutoRenews, AutoRenewSchema);
+  const revenueCatResult = parseCSV<RevenueCategory>(files.revenueCategories, RevenueCategorySchema);
 
   // Merge active + paused for complete current subscriber picture
   const allCurrentSubs = [...activeResult.data, ...pausedResult.data];
@@ -152,7 +176,8 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     ...canceledResult.warnings,
     ...activeResult.warnings,
     ...pausedResult.warnings,
-    ...newAutoRenewsResult.warnings
+    ...newAutoRenewsResult.warnings,
+    ...revenueCatResult.warnings
   );
 
   const recordCounts = {
@@ -164,6 +189,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     activeAutoRenews: activeResult.data.length,
     pausedAutoRenews: pausedResult.data.length,
     newAutoRenews: newAutoRenewsResult.data.length,
+    revenueCategories: revenueCatResult.data.length,
   };
 
   updateProgress(job, "CSV parsing complete", 55);
@@ -245,6 +271,35 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     firstVisitsResult.data
   );
 
+  // Step 4b: Save revenue categories to SQLite
+  if (revenueCatResult.data.length > 0) {
+    updateProgress(job, "Saving revenue categories to database", 74);
+    // Parse date range to get period start/end
+    const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
+    const periodStart = drParts[0] || new Date().toISOString().slice(0, 10);
+    const periodEnd = drParts[1] || new Date().toISOString().slice(0, 10);
+    try {
+      saveRevenueCategories(periodStart, periodEnd, revenueCatResult.data);
+      console.log(`[pipeline] Saved ${revenueCatResult.data.length} revenue categories to SQLite`);
+
+      // Auto-lock completed months (any period that ends before the 1st of current month)
+      const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      const periodEndDate = new Date(periodEnd);
+      if (!isNaN(periodEndDate.getTime()) && periodEndDate < currentMonthStart) {
+        lockPeriod(periodStart, periodEnd);
+        console.log(`[pipeline] Auto-locked completed period ${periodStart} – ${periodEnd}`);
+      }
+    } catch (dbErr) {
+      console.warn(`[pipeline] Failed to save revenue categories to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`);
+      allWarnings.push(`SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown error"}`);
+    }
+  }
+
+  // Step 4c: Analyze revenue categories
+  const revenueCatAnalysis = revenueCatResult.data.length > 0
+    ? analyzeRevenueCategories(revenueCatResult.data)
+    : null;
+
   // Step 5: Export to Google Sheets
   updateProgress(job, "Connecting to Google Sheets", 75);
   const analyticsDoc = await getSpreadsheet(analyticsSheetId);
@@ -261,6 +316,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     writeWeeklyVolumeTab(analyticsDoc, volumeResults),
     writeChurnTab(analyticsDoc, churnResults),
     writeTrendsTab(analyticsDoc, trendsResults),
+    ...(revenueCatAnalysis ? [writeRevenueCategoriesTab(analyticsDoc, revenueCatAnalysis, dateRangeStr)] : []),
   ]);
 
   updateProgress(job, "Writing Run Log", 93);
@@ -293,6 +349,21 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     copyFileSync(files.orders, debugPath);
     console.log(`[pipeline] Saved debug orders CSV to ${debugPath}`);
   } catch { /* ignore */ }
+
+  // Log revenue categories summary
+  if (revenueCatResult.data.length > 0) {
+    console.log(`[pipeline] Revenue Categories (${revenueCatResult.data.length} categories):`);
+    const sorted = [...revenueCatResult.data].sort((a, b) => b.netRevenue - a.netRevenue);
+    for (const cat of sorted.slice(0, 10)) {
+      console.log(`  "${cat.revenueCategory}": revenue=$${cat.revenue.toFixed(2)}, net=$${cat.netRevenue.toFixed(2)}`);
+    }
+  }
+
+  // Save pipeline run to SQLite
+  try {
+    const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
+    savePipelineRun(drParts[0] || "", drParts[1] || "", recordCounts, Date.now() - startTime);
+  } catch { /* non-critical */ }
 
   // Cleanup temp files
   cleanupDownloads();
