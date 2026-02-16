@@ -91,6 +91,8 @@ interface PeriodBucket {
   skyTingTvCancellations: number;
   revenue: number;
   revenueLost: number;
+  /** Sum of prices from new auto-renews — fallback when order data is unavailable */
+  subscriptionRevenueAdded: number;
 }
 
 function emptyBucket(): PeriodBucket {
@@ -103,6 +105,7 @@ function emptyBucket(): PeriodBucket {
     skyTingTvCancellations: 0,
     revenue: 0,
     revenueLost: 0,
+    subscriptionRevenueAdded: 0,
   };
 }
 
@@ -190,7 +193,9 @@ export function analyzeTrends(
       wBucket.newSkyTingTv++;
       mBucket.newSkyTingTv++;
     }
-    // NOTE: revenue now comes from orders (below), not subscription prices
+    // Track subscription revenue for fallback when orders data is limited
+    wBucket.subscriptionRevenueAdded += ar.price;
+    mBucket.subscriptionRevenueAdded += ar.price;
   }
 
   // --- Bucket canceled auto-renews ---
@@ -227,6 +232,21 @@ export function analyzeTrends(
     const mBucket = getOrCreate(monthlyBuckets, mo);
     wBucket.revenue += order.total;
     mBucket.revenue += order.total;
+  }
+
+  // --- Fill gaps: if a period has $0 order revenue but has subscription
+  //     activity, use the subscription revenue as a fallback estimate.
+  //     Union.fit's Orders export only covers ~1 month of history, so older
+  //     months need this fallback to avoid showing $0 in the chart. ---
+  for (const bucket of weeklyBuckets.values()) {
+    if (bucket.revenue === 0 && bucket.subscriptionRevenueAdded > 0) {
+      bucket.revenue = bucket.subscriptionRevenueAdded;
+    }
+  }
+  for (const bucket of monthlyBuckets.values()) {
+    if (bucket.revenue === 0 && bucket.subscriptionRevenueAdded > 0) {
+      bucket.revenue = bucket.subscriptionRevenueAdded;
+    }
   }
 
   // --- Sort and convert to TrendPeriod arrays ---
