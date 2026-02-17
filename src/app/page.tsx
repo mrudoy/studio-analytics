@@ -1345,6 +1345,11 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
                   </div>
                   <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
                     {count}
+                    {aggTotal > 0 && (
+                      <span style={{ fontWeight: 500, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                        {Math.round((count / aggTotal) * 100)}%
+                      </span>
+                    )}
                   </span>
                 </div>
               );
@@ -1401,6 +1406,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
     guest: agg.guest,
     other: agg.other + agg.introWeek,
   };
+  const rnmAggTotal = aggDisplay.dropIn + aggDisplay.guest + aggDisplay.other;
   const otherTop5 = returningNonMembers.otherBreakdownTop5 || [];
 
   return (
@@ -1452,6 +1458,11 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
                 </div>
                 <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
                   {aggDisplay[seg] || 0}
+                  {rnmAggTotal > 0 && (
+                    <span style={{ fontWeight: 500, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                      {Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -1503,7 +1514,10 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
     ? dropIns.currentMonthTotal - dropIns.previousMonthTotal
     : null;
 
-  const weeklyBars: BarChartData[] = dropIns.weeklyBreakdown.map((w) => {
+  // Drop current partial week — only show completed weeks
+  const allWeeks = dropIns.weeklyBreakdown;
+  const completedDropInWeeks = allWeeks.length > 0 ? allWeeks.slice(0, -1) : [];
+  const weeklyBars: BarChartData[] = completedDropInWeeks.map((w) => {
     const d = new Date(w.week + "T00:00:00");
     const label = isNaN(d.getTime()) ? w.week : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     return { label, value: w.count, color: COLORS.warning };
