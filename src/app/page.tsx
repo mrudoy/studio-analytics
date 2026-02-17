@@ -1034,6 +1034,16 @@ function Card({ children, padding = "1.5rem" }: { children: React.ReactNode; pad
   );
 }
 
+function NoData({ label }: { label: string }) {
+  return (
+    <Card padding="1.5rem">
+      <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
+        {label}: <span style={{ opacity: 0.6 }}>No data available</span>
+      </p>
+    </Card>
+  );
+}
+
 // ─── Trend Row (compact, inline) ─────────────────────────────
 
 function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, isCurrency = false, sublabel }: {
@@ -2222,26 +2232,26 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
       <SectionHeader>Revenue</SectionHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* 2025 Actual */}
-        {priorYearRev > 0 && (
-          <Card padding="1.75rem">
-            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-              {projection.year - 1} Total Revenue{isActualPrior ? "" : " (Est.)"}
-            </p>
-            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
-              {formatCurrency(priorYearRev)}
-            </p>
-            {isActualPrior ? (
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
-                Actual net revenue
+        {/* Prior year (2025) */}
+        <Card padding="1.75rem">
+          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            {projection.year - 1} Total Revenue{priorYearRev > 0 && !isActualPrior ? " (Est.)" : ""}
+          </p>
+          {priorYearRev > 0 ? (
+            <>
+              <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+                {formatCurrency(priorYearRev)}
               </p>
-            ) : (
               <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
-                Estimated from MRR data
+                {isActualPrior ? "Actual net revenue" : "Estimated from MRR data"}
               </p>
-            )}
-          </Card>
-        )}
+            </>
+          ) : (
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "1rem", color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
+              No data available
+            </p>
+          )}
+        </Card>
 
         {/* 2026 Forecast */}
         <Card padding="1.75rem">
@@ -2462,8 +2472,10 @@ function DashboardView() {
         <MRRBreakdown data={data} />
 
         {/* ━━ Revenue Categories ━━━━━━━━━━━━━━━━━━━━ */}
-        {data.revenueCategories && (
+        {data.revenueCategories ? (
           <RevenueCategoriesCard data={data.revenueCategories} />
+        ) : (
+          <NoData label="Revenue Categories" />
         )}
 
         {/* ━━ Auto-Renews ━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
@@ -2513,18 +2525,27 @@ function DashboardView() {
         />
 
         {/* ━━ Churn Rates ━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {trends?.churnRates && (
+        {trends?.churnRates ? (
           <ChurnRateCard churn={trends.churnRates} />
+        ) : (
+          <NoData label="Churn Rates" />
         )}
 
         {/* ━━ Non Members (First Visits + Returning Non-Members + Drop-Ins) ━━━━━ */}
-        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) && (
+        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
           <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} />
+        ) : (
+          <NoData label="Non-Members (First Visits, Drop-Ins)" />
         )}
 
         {/* ━━ Revenue ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {trends?.projection && (
+        {trends?.projection ? (
           <RevenueProjectionSection projection={trends.projection} />
+        ) : (
+          <div className="space-y-5">
+            <SectionHeader>Revenue</SectionHeader>
+            <NoData label="Revenue Projection" />
+          </div>
         )}
 
         {/* ── Footer ────────────────────────────────── */}
