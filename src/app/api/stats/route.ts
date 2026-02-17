@@ -4,8 +4,8 @@ import { readDashboardStats, readTrendsData } from "@/lib/sheets/read-dashboard"
 import { getSheetUrl } from "@/lib/sheets/sheets-client";
 import { getLatestPeriod, getRevenueForPeriod } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
-import { computeStatsFromSQLite } from "@/lib/analytics/sqlite-stats";
-import { computeTrendsFromSQLite } from "@/lib/analytics/sqlite-trends";
+import { computeStatsFromDB } from "@/lib/analytics/db-stats";
+import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
 import type { RevenueCategory } from "@/types/union-data";
 import type { DashboardStats } from "@/lib/sheets/read-dashboard";
 import type { TrendsData } from "@/lib/sheets/read-dashboard";
@@ -19,10 +19,10 @@ export async function GET() {
     // ── 1. Try database first ─────────────────────────────────
     let stats: DashboardStats | null = null;
     let trends: TrendsData | null = null;
-    let dataSource: "sqlite" | "sheets" | "hybrid" = "sheets";
+    let dataSource: "database" | "sheets" | "hybrid" = "sheets";
 
     try {
-      stats = await computeStatsFromSQLite();
+      stats = await computeStatsFromDB();
       if (stats) {
         console.log("[api/stats] Loaded stats from database");
       }
@@ -31,7 +31,7 @@ export async function GET() {
     }
 
     try {
-      trends = await computeTrendsFromSQLite();
+      trends = await computeTrendsFromDB();
       if (trends) {
         console.log("[api/stats] Loaded trends from database");
       }
@@ -70,12 +70,12 @@ export async function GET() {
     }
 
     // ── 3. Determine data source label ──────────────────────
-    const statsFromSQLite = stats?.lastUpdated && !stats.spreadsheetUrl;
-    const trendsFromSQLite = trends !== null && stats !== null && statsFromSQLite;
+    const statsFromDB = stats?.lastUpdated && !stats.spreadsheetUrl;
+    const trendsFromDB = trends !== null && stats !== null && statsFromDB;
 
-    if (statsFromSQLite && trendsFromSQLite) {
-      dataSource = "sqlite";
-    } else if (statsFromSQLite || trendsFromSQLite) {
+    if (statsFromDB && trendsFromDB) {
+      dataSource = "database";
+    } else if (statsFromDB || trendsFromDB) {
       dataSource = "hybrid";
     } else {
       dataSource = "sheets";

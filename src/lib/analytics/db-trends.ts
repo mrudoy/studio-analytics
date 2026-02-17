@@ -104,9 +104,9 @@ function bucketToTrendRow(period: string, type: string, b: PeriodBucket, prev: P
 
 // ── Main ────────────────────────────────────────────────────
 
-export async function computeTrendsFromSQLite(): Promise<TrendsData | null> {
+export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   if (!(await hasAutoRenewData())) {
-    console.log("[sqlite-trends] No auto-renew data — skipping");
+    console.log("[db-trends] No auto-renew data — skipping");
     return null;
   }
 
@@ -453,7 +453,7 @@ export async function computeTrendsFromSQLite(): Promise<TrendsData | null> {
         };
       }
     } catch (err) {
-      console.warn("[sqlite-trends] Failed to compute returning non-members:", err);
+      console.warn("[db-trends] Failed to compute returning non-members:", err);
     }
   }
 
@@ -462,11 +462,11 @@ export async function computeTrendsFromSQLite(): Promise<TrendsData | null> {
   try {
     churnRates = await computeChurnRates();
   } catch (err) {
-    console.warn("[sqlite-trends] Failed to compute churn rates:", err);
+    console.warn("[db-trends] Failed to compute churn rates:", err);
   }
 
   console.log(
-    `[sqlite-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
+    `[db-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins MTD=${dropIns.currentMonthTotal}` : "") +
     (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
     (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "")

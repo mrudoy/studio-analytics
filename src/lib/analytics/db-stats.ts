@@ -19,16 +19,16 @@ import type { DashboardStats } from "../sheets/read-dashboard";
  * Revenue data is optional — if revenue_categories exist we include them,
  * otherwise we return 0 for revenue fields (better than blocking everything).
  */
-export async function computeStatsFromSQLite(): Promise<DashboardStats | null> {
+export async function computeStatsFromDB(): Promise<DashboardStats | null> {
   // ── Guard: need auto-renew data ──────────────────────────
   if (!(await hasAutoRenewData())) {
-    console.log("[sqlite-stats] No auto-renew data — skipping");
+    console.log("[db-stats] No auto-renew data — skipping");
     return null;
   }
 
   const subStats = await getAutoRenewStats();
   if (!subStats) {
-    console.log("[sqlite-stats] No active auto-renews — skipping");
+    console.log("[db-stats] No active auto-renews — skipping");
     return null;
   }
 
@@ -59,7 +59,7 @@ export async function computeStatsFromSQLite(): Promise<DashboardStats | null> {
       }
     }
   } catch (err) {
-    console.warn("[sqlite-stats] Failed to load revenue data:", err);
+    console.warn("[db-stats] Failed to load revenue data:", err);
     // Non-fatal: we still have subscription stats
   }
 
@@ -75,7 +75,7 @@ export async function computeStatsFromSQLite(): Promise<DashboardStats | null> {
   };
 
   console.log(
-    `[sqlite-stats] Computed: ${subStats.active.total} subscribers, ` +
+    `[db-stats] Computed: ${subStats.active.total} subscribers, ` +
     `$${subStats.mrr.total} MRR, $${currentMonthRevenue} current month revenue`
   );
 

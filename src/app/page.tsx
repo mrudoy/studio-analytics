@@ -8,7 +8,7 @@ interface DashboardStats {
   lastUpdated: string | null;
   dateRange: string | null;
   spreadsheetUrl?: string;
-  dataSource?: "sqlite" | "sheets" | "hybrid";
+  dataSource?: "database" | "sheets" | "hybrid";
   mrr: {
     member: number;
     sky3: number;
@@ -670,7 +670,7 @@ function useNextRunCountdown() {
   return countdown;
 }
 
-function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "sqlite" | "sheets" | "hybrid" }) {
+function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
   const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
   const countdown = useNextRunCountdown();
 
@@ -697,41 +697,45 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
   const date = new Date(lastUpdated);
   const isStale = Date.now() - date.getTime() > 24 * 60 * 60 * 1000;
 
-  const sourceLabel = dataSource === "sqlite"
-    ? "Live from database"
-    : dataSource === "hybrid"
-    ? "Database + Sheets"
-    : "From Google Sheets";
-
   return (
-    <div className="flex flex-col items-center gap-2" style={{ fontSize: "0.85rem" }}>
-      {/* Combined freshness badge: Updated time + next refresh countdown */}
-      <div
-        className="inline-flex items-center gap-2 rounded-full px-4 py-1.5"
-        style={{
-          backgroundColor: isStale ? "rgba(160, 64, 64, 0.08)" : "rgba(74, 124, 89, 0.08)",
-          border: `1px solid ${isStale ? "rgba(160, 64, 64, 0.2)" : "rgba(74, 124, 89, 0.2)"}`,
-          fontFamily: FONT_SANS,
-          fontWeight: 600,
-        }}
-      >
-        <span
-          className="inline-block rounded-full"
-          style={{ width: "7px", height: "7px", backgroundColor: isStale ? "var(--st-error)" : "var(--st-success)" }}
-        />
-        <span style={{ color: isStale ? "var(--st-error)" : "var(--st-success)" }}>
-          Updated {formatRelativeTime(lastUpdated)}
-        </span>
-        <span style={{ color: "var(--st-text-secondary)", fontWeight: 400 }}>
-          {formatDateTime(lastUpdated)}
-        </span>
+    <div className="flex flex-col items-center gap-2.5" style={{ fontSize: "0.85rem" }}>
+      {/* Freshness pills row */}
+      <div className="inline-flex items-center gap-2">
+        {/* Updated pill */}
+        <div
+          className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5"
+          style={{
+            backgroundColor: isStale ? "rgba(160, 64, 64, 0.08)" : "rgba(74, 124, 89, 0.08)",
+            border: `1px solid ${isStale ? "rgba(160, 64, 64, 0.2)" : "rgba(74, 124, 89, 0.2)"}`,
+            fontFamily: FONT_SANS,
+            fontWeight: 600,
+          }}
+        >
+          <span
+            className="inline-block rounded-full"
+            style={{ width: "7px", height: "7px", backgroundColor: isStale ? "var(--st-error)" : "var(--st-success)" }}
+          />
+          <span style={{ color: isStale ? "var(--st-error)" : "var(--st-success)" }}>
+            Updated {formatRelativeTime(lastUpdated)}
+          </span>
+          <span style={{ color: "var(--st-text-secondary)", fontWeight: 400 }}>
+            {formatDateTime(lastUpdated)}
+          </span>
+        </div>
+        {/* Next run pill */}
         {countdown && refreshState !== "running" && (
-          <>
-            <span style={{ color: "var(--st-border)", fontWeight: 300 }}>|</span>
-            <span style={{ color: "var(--st-text-secondary)", fontWeight: 400 }}>
-              Next in {countdown}
-            </span>
-          </>
+          <div
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5"
+            style={{
+              backgroundColor: "rgba(128, 128, 128, 0.06)",
+              border: "1px solid var(--st-border)",
+              fontFamily: FONT_SANS,
+              fontWeight: 500,
+              color: "var(--st-text-secondary)",
+            }}
+          >
+            Next in {countdown}
+          </div>
         )}
       </div>
 
@@ -2191,7 +2195,7 @@ function DropInsSection({ dropIns }: { dropIns: DropInData }) {
   );
 }
 
-// ─── Revenue Forecast Section ────────────────────────────────
+// ─── Revenue Section ─────────────────────────────────────────
 
 function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
   // Use actual prior year revenue if available
@@ -2207,74 +2211,95 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
 
   return (
     <div className="space-y-5">
-      <SectionHeader>{projection.year} Revenue Forecast</SectionHeader>
+      <SectionHeader>Revenue</SectionHeader>
 
-      <Card padding="1.75rem">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* Left: Big number */}
-          <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* 2025 Actual */}
+        {priorYearRev > 0 && (
+          <Card padding="1.75rem">
             <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-              Est. {projection.year} Annual Revenue
+              {projection.year - 1} Total Revenue{isActualPrior ? "" : " (Est.)"}
             </p>
-            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "3.2rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
-              {formatCurrency(projection.projectedAnnualRevenue)}
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+              {formatCurrency(priorYearRev)}
             </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.92rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
-              Based on {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth + non-subscription revenue
-            </p>
-            {yoyChange && (
-              <div className="mt-3">
-                <DeltaBadge
-                  delta={Math.round(projection.projectedAnnualRevenue - priorYearRev)}
-                  deltaPercent={Math.round(Number(yoyChange))}
-                  isCurrency
-                />
-                <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
-                  vs {projection.year - 1}{isActualPrior ? " actual" : " est."}
-                </p>
-              </div>
+            {isActualPrior ? (
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                Actual net revenue
+              </p>
+            ) : (
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                Estimated from MRR data
+              </p>
             )}
-          </div>
+          </Card>
+        )}
 
-          {/* Right: Metrics + visual bar comparison */}
-          <div>
-            <ForecastMetric label="Current MRR" value={formatCurrency(projection.currentMRR)} />
-            <ForecastMetric
-              label="Monthly Growth"
-              value={`${projection.monthlyGrowthRate > 0 ? "+" : ""}${projection.monthlyGrowthRate}%`}
-              color={projection.monthlyGrowthRate >= 0 ? "var(--st-success)" : "var(--st-error)"}
-            />
-            <ForecastMetric label="Year-End MRR" value={formatCurrency(projection.projectedYearEndMRR)} />
+        {/* 2026 Forecast */}
+        <Card padding="1.75rem">
+          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            {projection.year} Forecast
+          </p>
+          <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+            {formatCurrency(projection.projectedAnnualRevenue)}
+          </p>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+            Based on {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
+          </p>
+          {yoyChange && (
+            <div className="mt-2">
+              <DeltaBadge
+                delta={Math.round(projection.projectedAnnualRevenue - priorYearRev)}
+                deltaPercent={Math.round(Number(yoyChange))}
+                isCurrency
+              />
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
+                vs {projection.year - 1}
+              </p>
+            </div>
+          )}
+        </Card>
+      </div>
 
-            {/* Visual comparison */}
-            {priorYearRev > 0 && (
-              <div style={{ marginTop: "1rem" }}>
-                <div className="flex items-center gap-3 mb-2">
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-secondary)", width: "55px" }}>
-                    {projection.year - 1}{isActualPrior ? "" : " est"}
-                  </span>
-                  <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
-                    <div style={{ width: `${(priorYearRev / maxRev) * 100}%`, height: "100%", backgroundColor: "var(--st-text-secondary)", opacity: 0.3, borderRadius: "9999px" }} />
-                  </div>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 600, color: "var(--st-text-secondary)", minWidth: "70px", textAlign: "right" }}>
-                    {formatCompactCurrency(priorYearRev)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-primary)", width: "55px" }}>
-                    {projection.year}
-                  </span>
-                  <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
-                    <div style={{ width: `${(projection.projectedAnnualRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: COLORS.member, opacity: 0.7, borderRadius: "9999px" }} />
-                  </div>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 700, color: "var(--st-text-primary)", minWidth: "70px", textAlign: "right" }}>
-                    {formatCompactCurrency(projection.projectedAnnualRevenue)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+      {/* Metrics + visual comparison bar */}
+      <Card padding="1.75rem">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <ForecastMetric label="Current MRR" value={formatCurrency(projection.currentMRR)} />
+          <ForecastMetric
+            label="Monthly Growth"
+            value={`${projection.monthlyGrowthRate > 0 ? "+" : ""}${projection.monthlyGrowthRate}%`}
+            color={projection.monthlyGrowthRate >= 0 ? "var(--st-success)" : "var(--st-error)"}
+          />
+          <ForecastMetric label="Year-End MRR (Est.)" value={formatCurrency(projection.projectedYearEndMRR)} />
         </div>
+
+        {/* Visual comparison bars */}
+        {priorYearRev > 0 && (
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-secondary)", width: "55px" }}>
+                {projection.year - 1}
+              </span>
+              <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
+                <div style={{ width: `${(priorYearRev / maxRev) * 100}%`, height: "100%", backgroundColor: "var(--st-text-secondary)", opacity: 0.3, borderRadius: "9999px" }} />
+              </div>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 600, color: "var(--st-text-secondary)", minWidth: "70px", textAlign: "right" }}>
+                {formatCompactCurrency(priorYearRev)}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-primary)", width: "55px" }}>
+                {projection.year}
+              </span>
+              <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
+                <div style={{ width: `${(projection.projectedAnnualRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: COLORS.member, opacity: 0.7, borderRadius: "9999px" }} />
+              </div>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 700, color: "var(--st-text-primary)", minWidth: "70px", textAlign: "right" }}>
+                {formatCompactCurrency(projection.projectedAnnualRevenue)}
+              </span>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -2489,7 +2514,7 @@ function DashboardView() {
           <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} />
         )}
 
-        {/* ━━ Revenue Forecast ━━━━━━━━━━━━━━━━━━━━━━ */}
+        {/* ━━ Revenue ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {trends?.projection && (
           <RevenueProjectionSection projection={trends.projection} />
         )}

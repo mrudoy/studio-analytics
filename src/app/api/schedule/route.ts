@@ -24,7 +24,7 @@ export async function PUT(request: Request) {
     const existing = loadSettings() || {};
     const schedule: ScheduleConfig = {
       enabled: !!body.enabled,
-      cronPattern: body.cronPattern || "0 10,16 * * *",
+      cronPattern: body.cronPattern || "0 */6 * * *",
       timezone: body.timezone || "America/New_York",
     };
 

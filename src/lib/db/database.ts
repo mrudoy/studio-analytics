@@ -14,13 +14,19 @@ export function getPool(): Pool {
     );
   }
 
+  const isRailway = connectionString.includes("railway");
+
   const pool = new Pool({
     connectionString,
-    max: 10,
+    // Connection limits
+    max: isRailway ? 8 : 10,
+    min: 1,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+    // Query timeout (30s) to prevent runaway queries
+    statement_timeout: 30_000,
     // Railway Postgres requires SSL
-    ssl: connectionString.includes("railway")
-      ? { rejectUnauthorized: false }
-      : undefined,
+    ssl: isRailway ? { rejectUnauthorized: false } : undefined,
   });
 
   pool.on("error", (err) => {
@@ -30,6 +36,19 @@ export function getPool(): Pool {
   globalForDb.pgPool = pool;
   console.log("[db] PostgreSQL pool created");
   return pool;
+}
+
+/**
+ * Gracefully close the connection pool.
+ * Call during shutdown to drain active connections.
+ */
+export async function closePool(): Promise<void> {
+  if (globalForDb.pgPool) {
+    console.log("[db] Closing PostgreSQL pool...");
+    await globalForDb.pgPool.end();
+    globalForDb.pgPool = undefined;
+    console.log("[db] PostgreSQL pool closed");
+  }
 }
 
 /**
