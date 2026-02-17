@@ -1867,10 +1867,11 @@ function SubscriberOverview({ data, trends }: { data: DashboardStats; trends?: T
     { label: "TV", value: data.activeSubscribers.skyTingTv, color: COLORS.tv },
   ];
 
-  // Build weekly trend data for the bar chart (last 6 weeks)
+  // Build weekly trend data for the bar chart (last 6 completed weeks, drop current partial)
   const weeklyBars: BarChartData[] = [];
-  if (trends && trends.weekly.length > 0) {
-    const recent = trends.weekly.slice(-6);
+  if (trends && trends.weekly.length > 1) {
+    const completed = trends.weekly.slice(0, -1); // drop current partial week
+    const recent = completed.slice(-6);
     for (const w of recent) {
       const net = w.netMemberGrowth + w.netSky3Growth + (w.newSkyTingTv - w.skyTingTvChurn);
       weeklyBars.push({
@@ -1932,8 +1933,9 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   const latestM = monthly.length >= 1 ? monthly[monthly.length - 1] : null;
   const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
 
-  // Build weekly new sign-ups for mini chart
-  const weeklyNewBars: BarChartData[] = weekly.slice(-6).map((w) => ({
+  // Build weekly new sign-ups for mini chart (drop current partial week)
+  const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+  const weeklyNewBars: BarChartData[] = completedWeekly.slice(-6).map((w) => ({
     label: formatWeekLabel(w.period),
     value: weeklyKeyNew(w),
     color,

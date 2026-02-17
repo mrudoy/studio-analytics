@@ -270,9 +270,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     // Sum all periods that fall within the prior year
     try {
       const allPeriods = await getAllPeriods();
+      console.log(`[db-trends] getAllPeriods: ${allPeriods.length} periods. Starts: [${allPeriods.slice(0, 5).map(p => p.periodStart).join(", ")}]`);
       const priorYearPeriods = allPeriods.filter(
         (p) => p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0
       );
+      console.log(`[db-trends] Prior year ${priorYear} filter: ${priorYearPeriods.length} matching periods`);
       if (priorYearPeriods.length > 0) {
         const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
         // Calculate how many months are covered
@@ -294,17 +296,20 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
 
     // MRR-based estimate as fallback
     const priorMonths = mrrSeries.filter((e) => e.month.startsWith(String(priorYear)));
+    console.log(`[db-trends] MRR series: ${mrrSeries.length} entries. Prior year (${priorYear}) months: ${priorMonths.length}. Keys: [${priorMonths.map(m => m.month).join(", ")}]`);
     if (priorMonths.length > 0) {
       const total = priorMonths.reduce((sum, e) => sum + e.mrr, 0);
       priorYearRevenue = priorMonths.length < 12
         ? (total / priorMonths.length) * 12
         : total;
+      console.log(`[db-trends] MRR-based prior year estimate: $${Math.round(priorYearRevenue)}`);
     }
 
     // Use actual if available
     if (priorYearActualRevenue && priorYearActualRevenue > priorYearRevenue) {
       priorYearRevenue = priorYearActualRevenue;
     }
+    console.log(`[db-trends] Final priorYearRevenue=$${Math.round(priorYearRevenue)}, priorYearActualRevenue=${priorYearActualRevenue ? "$" + Math.round(priorYearActualRevenue) : "null"}`);
 
     // Compute non-MRR revenue ratio from actual data
     // (drop-ins, workshops, retail, teacher training, etc.)
