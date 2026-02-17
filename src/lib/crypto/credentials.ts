@@ -80,11 +80,47 @@ export function saveSettings(settings: AppSettings): void {
   writeFileSync(CREDENTIALS_FILE, encrypted, "utf8");
 }
 
+/**
+ * Build AppSettings from environment variables.
+ * Used on Railway where there's no persistent volume for credentials.enc.
+ */
+function loadSettingsFromEnv(): AppSettings | null {
+  const email = process.env.UNION_EMAIL;
+  const password = process.env.UNION_PASSWORD;
+  if (!email || !password) return null;
+
+  return {
+    credentials: { email, password },
+    robotEmail: process.env.ROBOT_EMAIL
+      ? { address: process.env.ROBOT_EMAIL }
+      : undefined,
+    analyticsSpreadsheetId: process.env.ANALYTICS_SPREADSHEET_ID,
+    rawDataSpreadsheetId: process.env.RAW_DATA_SPREADSHEET_ID,
+    schedule: process.env.SCHEDULE_CRON
+      ? {
+          enabled: true,
+          cronPattern: process.env.SCHEDULE_CRON,
+          timezone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
+        }
+      : undefined,
+  };
+}
+
 export function loadSettings(): AppSettings | null {
-  if (!existsSync(CREDENTIALS_FILE)) return null;
-  const blob = readFileSync(CREDENTIALS_FILE, "utf8");
-  if (!blob.trim()) return null;
-  return decryptSettings(blob);
+  // Env vars take precedence (works on Railway without persistent volume)
+  const envSettings = loadSettingsFromEnv();
+  if (envSettings) return envSettings;
+
+  // Fall back to encrypted file (local dev)
+  try {
+    if (!existsSync(CREDENTIALS_FILE)) return null;
+    const blob = readFileSync(CREDENTIALS_FILE, "utf8");
+    if (!blob.trim()) return null;
+    return decryptSettings(blob);
+  } catch {
+    // Missing ENCRYPTION_MASTER_KEY or corrupt file — skip
+    return null;
+  }
 }
 
 export function hasStoredCredentials(): boolean {
