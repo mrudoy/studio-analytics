@@ -267,23 +267,26 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     let priorYearActualRevenue: number | null = null;
 
     // Try to find actual revenue from revenue_categories table
+    // Sum all periods that fall within the prior year
     try {
       const allPeriods = await getAllPeriods();
-      // Find the longest period that starts in the prior year
-      for (const p of allPeriods) {
-        if (p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0) {
-          // Normalize to 12 months if the period is longer or shorter
-          const pStart = new Date(p.periodStart);
-          const pEnd = new Date(p.periodEnd);
-          const periodDays = (pEnd.getTime() - pStart.getTime()) / (1000 * 60 * 60 * 24);
-          if (periodDays > 0) {
-            const annualized = p.totalNetRevenue / periodDays * 365;
-            priorYearActualRevenue = Math.round(annualized);
-          } else {
-            priorYearActualRevenue = Math.round(p.totalNetRevenue);
-          }
-          break;
+      const priorYearPeriods = allPeriods.filter(
+        (p) => p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0
+      );
+      if (priorYearPeriods.length > 0) {
+        const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
+        // Calculate how many months are covered
+        const coveredMonths = new Set(
+          priorYearPeriods.map((p) => p.periodStart.slice(0, 7))
+        ).size;
+        if (coveredMonths >= 10) {
+          // Close to a full year — use total as-is (or extrapolate the gap)
+          priorYearActualRevenue = Math.round(totalNet / coveredMonths * 12);
+        } else if (coveredMonths > 0) {
+          // Partial year — extrapolate
+          priorYearActualRevenue = Math.round(totalNet / coveredMonths * 12);
         }
+        console.log(`[db-trends] Prior year ${priorYear}: ${coveredMonths} months, $${Math.round(totalNet).toLocaleString()} actual, $${priorYearActualRevenue?.toLocaleString()} annualized`);
       }
     } catch {
       // revenue_categories may not exist yet
@@ -301,11 +304,6 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     // Use actual if available
     if (priorYearActualRevenue && priorYearActualRevenue > priorYearRevenue) {
       priorYearRevenue = priorYearActualRevenue;
-    }
-
-    // Fallback: if we still have no prior year estimate, use current MRR * 12
-    if (priorYearRevenue === 0 && currentMRR > 0) {
-      priorYearRevenue = currentMRR * 12;
     }
 
     // Compute non-MRR revenue ratio from actual data
