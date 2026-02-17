@@ -36,6 +36,14 @@ const migrations: Migration[] = [
       UPDATE revenue_categories
       SET period_end = TO_CHAR(TO_DATE(period_end, 'MM/DD/YYYY'), 'YYYY-MM-DD')
       WHERE period_end ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$';
+
+      UPDATE pipeline_runs
+      SET date_range_start = TO_CHAR(TO_DATE(date_range_start, 'MM/DD/YYYY'), 'YYYY-MM-DD')
+      WHERE date_range_start ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$';
+
+      UPDATE pipeline_runs
+      SET date_range_end = TO_CHAR(TO_DATE(date_range_end, 'MM/DD/YYYY'), 'YYYY-MM-DD')
+      WHERE date_range_end ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$';
     `,
   },
 ];

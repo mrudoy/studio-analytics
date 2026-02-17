@@ -485,7 +485,11 @@ export async function runPipelineFromFiles(
   // Save pipeline run to database
   try {
     const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
-    await savePipelineRun(drParts[0] || "", drParts[1] || "", recordCounts, Date.now() - startTime);
+    const toISO2 = (s: string): string => {
+      const d = new Date(s);
+      return !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : s;
+    };
+    await savePipelineRun(toISO2(drParts[0] || ""), toISO2(drParts[1] || ""), recordCounts, Date.now() - startTime);
   } catch {
     /* non-critical */
   }
