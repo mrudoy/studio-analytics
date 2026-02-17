@@ -22,10 +22,25 @@ export interface UnionCredentials {
   password: string;
 }
 
+export interface ScheduleConfig {
+  enabled: boolean;
+  cronPattern: string;  // e.g. "0 10,16 * * *" for 10am and 4pm daily
+  timezone: string;     // e.g. "America/New_York"
+}
+
+export interface RobotEmailConfig {
+  /** Robot email address (e.g. robot@skyting.com) — used for both Union.fit login and Gmail inbox */
+  address: string;
+  /** Gmail App Password (only needed if not using service account domain-wide delegation) */
+  appPassword?: string;
+}
+
 export interface AppSettings {
   credentials?: UnionCredentials;
+  robotEmail?: RobotEmailConfig;
   analyticsSpreadsheetId?: string;
   rawDataSpreadsheetId?: string;
+  schedule?: ScheduleConfig;
 }
 
 export function encryptSettings(settings: AppSettings): string {

@@ -4,7 +4,11 @@ import { readDashboardStats, readTrendsData } from "@/lib/sheets/read-dashboard"
 import { getSheetUrl } from "@/lib/sheets/sheets-client";
 import { getLatestPeriod, getRevenueForPeriod } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
+import { computeStatsFromSQLite } from "@/lib/analytics/sqlite-stats";
+import { computeTrendsFromSQLite } from "@/lib/analytics/sqlite-trends";
 import type { RevenueCategory } from "@/types/union-data";
+import type { DashboardStats } from "@/lib/sheets/read-dashboard";
+import type { TrendsData } from "@/lib/sheets/read-dashboard";
 
 export async function GET() {
   try {
@@ -12,19 +16,72 @@ export async function GET() {
     const spreadsheetId =
       settings?.analyticsSpreadsheetId || process.env.ANALYTICS_SPREADSHEET_ID;
 
-    if (!spreadsheetId) {
-      return NextResponse.json(
-        { error: "Analytics spreadsheet not configured" },
-        { status: 503 }
-      );
+    // ── 1. Try SQLite first ─────────────────────────────────
+    let stats: DashboardStats | null = null;
+    let trends: TrendsData | null = null;
+    let dataSource: "sqlite" | "sheets" | "hybrid" = "sheets";
+
+    try {
+      stats = computeStatsFromSQLite();
+      if (stats) {
+        console.log("[api/stats] Loaded stats from SQLite");
+      }
+    } catch (err) {
+      console.warn("[api/stats] SQLite stats failed, will try Sheets:", err);
     }
 
-    const [stats, trends] = await Promise.all([
-      readDashboardStats(spreadsheetId),
-      readTrendsData(spreadsheetId),
-    ]);
+    try {
+      trends = computeTrendsFromSQLite();
+      if (trends) {
+        console.log("[api/stats] Loaded trends from SQLite");
+      }
+    } catch (err) {
+      console.warn("[api/stats] SQLite trends failed, will try Sheets:", err);
+    }
 
-    // Load revenue category data from SQLite (if available)
+    // ── 2. Fall back to Sheets if needed ────────────────────
+    if (!stats || !trends) {
+      if (!spreadsheetId) {
+        if (!stats) {
+          return NextResponse.json(
+            { error: "No data available — SQLite empty and analytics spreadsheet not configured" },
+            { status: 503 }
+          );
+        }
+        // We have stats from SQLite but no trends and no Sheets — return what we have
+      } else {
+        try {
+          if (!stats) {
+            stats = await readDashboardStats(spreadsheetId);
+            console.log("[api/stats] Loaded stats from Sheets (SQLite had no data)");
+          }
+          if (!trends) {
+            trends = await readTrendsData(spreadsheetId);
+            console.log("[api/stats] Loaded trends from Sheets (SQLite had no data)");
+          }
+        } catch (sheetsErr) {
+          console.warn("[api/stats] Sheets fallback also failed:", sheetsErr);
+          if (!stats) {
+            const message = sheetsErr instanceof Error ? sheetsErr.message : "Failed to load stats";
+            return NextResponse.json({ error: message }, { status: 500 });
+          }
+        }
+      }
+    }
+
+    // ── 3. Determine data source label ──────────────────────
+    const statsFromSQLite = stats?.lastUpdated && !stats.spreadsheetUrl;
+    const trendsFromSQLite = trends !== null && stats !== null && statsFromSQLite;
+
+    if (statsFromSQLite && trendsFromSQLite) {
+      dataSource = "sqlite";
+    } else if (statsFromSQLite || trendsFromSQLite) {
+      dataSource = "hybrid";
+    } else {
+      dataSource = "sheets";
+    }
+
+    // ── 4. Revenue categories always from SQLite ────────────
     let revenueCategories = null;
     try {
       const latestPeriod = getLatestPeriod();
@@ -36,6 +93,7 @@ export async function GET() {
             revenue: r.revenue,
             unionFees: r.unionFees,
             stripeFees: r.stripeFees,
+            otherFees: r.otherFees,
             transfers: r.transfers,
             refunded: r.refunded,
             unionFeesRefunded: r.unionFeesRefunded,
@@ -52,11 +110,13 @@ export async function GET() {
       console.warn("[api/stats] Failed to load revenue categories from SQLite:", dbErr);
     }
 
+    // ── 5. Return response ──────────────────────────────────
     return NextResponse.json({
-      ...stats,
+      ...(stats || {}),
       trends,
       revenueCategories,
-      spreadsheetUrl: getSheetUrl(spreadsheetId),
+      dataSource,
+      spreadsheetUrl: spreadsheetId ? getSheetUrl(spreadsheetId) : undefined,
     });
   } catch (error) {
     const message =

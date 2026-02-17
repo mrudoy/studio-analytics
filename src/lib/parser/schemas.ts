@@ -77,10 +77,42 @@ export const RevenueCategorySchema = z.object({
   revenue: money,
   unionFees: money,
   stripeFees: money,
-  transfers: money,
+  otherFees: money,           // "other_fees" in CSV download
+  transfers: money,           // "transfers" in HTML scrape (0 in CSV download)
   refunded: money,
-  unionFeesRefunded: money,
+  unionFeesRefunded: money,   // "refunded_union_fees" in CSV download
   netRevenue: money,
+});
+
+/**
+ * Full Registration schema — matches the /registrations/all CSV export (22 columns).
+ * CSV headers use snake_case (event_name, attended_at, etc.) which normalizeHeader()
+ * converts to camelCase automatically.
+ *
+ * If fetched via HTML scrape (fallback), only 7 columns are available and most fields
+ * will default to empty/false. The analytics layer checks for email presence before
+ * running returning-non-members analysis.
+ */
+export const FullRegistrationSchema = z.object({
+  eventName: z.string().default(""),
+  locationName: z.string().default(""),
+  teacherName: z.string().default(""),
+  firstName: z.string().default(""),
+  lastName: z.string().default(""),
+  email: z.string().default(""),
+  attendedAt: z.string().default(""),
+  registrationType: z.string().default(""),
+  state: z.string().default(""),
+  pass: z.string().default(""),
+  subscription: z
+    .string()
+    .or(z.boolean())
+    .transform((val) => {
+      if (typeof val === "boolean") return val;
+      return val.trim().toLowerCase() === "true";
+    })
+    .default(false),
+  revenue: money,
 });
 
 /**

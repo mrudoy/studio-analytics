@@ -46,6 +46,12 @@ function matchesAny(name: string, patterns: RegExp[]): boolean {
 export function analyzeRevenueCategories(
   data: RevenueCategory[]
 ): RevenueCategoryAnalysis {
+  // Filter out summary/total rows and empty rows from HTML table scraping
+  const filtered = data.filter((row) => {
+    const name = row.revenueCategory.trim().toLowerCase();
+    return name !== "" && name !== "total";
+  });
+
   let totalRevenue = 0;
   let totalNetRevenue = 0;
   let totalFees = 0;
@@ -57,8 +63,8 @@ export function analyzeRevenueCategories(
   let workshopRevenue = 0;
   let otherRevenue = 0;
 
-  const categories = data.map((row) => {
-    const fees = row.unionFees + row.stripeFees + row.transfers;
+  const categories = filtered.map((row) => {
+    const fees = row.unionFees + row.stripeFees + (row.otherFees ?? 0) + (row.transfers ?? 0);
     totalRevenue += row.revenue;
     totalNetRevenue += row.netRevenue;
     totalFees += fees;

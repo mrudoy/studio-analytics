@@ -40,7 +40,8 @@ export interface RevenueCategory {
   revenue: number;
   unionFees: number;
   stripeFees: number;
-  transfers: number;
+  otherFees: number;       // "other_fees" in CSV (was "transfers" in HTML scrape)
+  transfers: number;        // kept for backward compat — 0 if CSV has other_fees instead
   refunded: number;
   unionFeesRefunded: number;
   netRevenue: number;
@@ -58,14 +59,31 @@ export interface AutoRenew {
 
 export type SubscriptionCategory = "MEMBER" | "SKY3" | "SKY_TING_TV" | "UNKNOWN";
 
+export interface FullRegistration {
+  eventName: string;
+  locationName: string;
+  teacherName: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  attendedAt: string;
+  registrationType: string;
+  state: string;
+  pass: string;
+  subscription: boolean;  // transformed from "true"/"false" string
+  revenue: number;
+}
+
 export interface DownloadedFiles {
   newCustomers: string;
   orders: string;
   firstVisits: string;
-  allRegistrations: string;
+  allRegistrations?: string;    // Optional — only used for raw "Class Roster" export
   canceledAutoRenews: string;
   activeAutoRenews: string;
   pausedAutoRenews: string;
+  trialingAutoRenews: string;
   newAutoRenews: string;
-  revenueCategories: string;
+  revenueCategories?: string;   // Optional — scraped in Phase 3, non-fatal if missing
+  fullRegistrations: string;    // Required — /registrations/all with 22 columns
 }

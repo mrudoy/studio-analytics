@@ -7,7 +7,24 @@ interface SettingsState {
   password: string;
   analyticsSpreadsheetId: string;
   rawDataSpreadsheetId: string;
+  robotEmail: string;
 }
+
+interface ScheduleState {
+  enabled: boolean;
+  preset: "10am-4pm" | "every-6h" | "every-12h" | "custom";
+  customCron: string;
+  timezone: string;
+  nextRun: number | null;
+  saving: boolean;
+  message: string;
+}
+
+const SCHEDULE_PRESETS: Record<string, { label: string; cron: string }> = {
+  "10am-4pm": { label: "10am & 4pm daily", cron: "0 10,16 * * *" },
+  "every-6h": { label: "Every 6 hours", cron: "0 */6 * * *" },
+  "every-12h": { label: "8am & 8pm daily", cron: "0 8,20 * * *" },
+};
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsState>({
@@ -15,18 +32,51 @@ export default function SettingsPage() {
     password: "",
     analyticsSpreadsheetId: "",
     rawDataSpreadsheetId: "",
+    robotEmail: "",
   });
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [currentRobotEmail, setCurrentRobotEmail] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  const [schedule, setSchedule] = useState<ScheduleState>({
+    enabled: false,
+    preset: "10am-4pm",
+    customCron: "",
+    timezone: "America/New_York",
+    nextRun: null,
+    saving: false,
+    message: "",
+  });
 
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
       .then((data) => {
         setCurrentEmail(data.email || null);
+        setCurrentRobotEmail(data.robotEmail || null);
+      })
+      .catch(() => {});
+
+    // Load current schedule
+    fetch("/api/schedule")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) return;
+        const cron = data.cronPattern || "";
+        let preset: ScheduleState["preset"] = "custom";
+        for (const [key, val] of Object.entries(SCHEDULE_PRESETS)) {
+          if (val.cron === cron) { preset = key as ScheduleState["preset"]; break; }
+        }
+        setSchedule((s) => ({
+          ...s,
+          enabled: data.enabled,
+          preset,
+          customCron: preset === "custom" ? cron : "",
+          timezone: data.timezone || "America/New_York",
+          nextRun: data.nextRun,
+        }));
       })
       .catch(() => {});
   }, []);
@@ -47,6 +97,9 @@ export default function SettingsPage() {
       if (settings.rawDataSpreadsheetId) {
         body.rawDataSpreadsheetId = settings.rawDataSpreadsheetId;
       }
+      if (settings.robotEmail) {
+        body.robotEmail = settings.robotEmail;
+      }
 
       const res = await fetch("/api/settings", {
         method: "PUT",
@@ -65,6 +118,7 @@ export default function SettingsPage() {
       const refreshRes = await fetch("/api/settings");
       const refreshData = await refreshRes.json();
       setCurrentEmail(refreshData.email || null);
+      setCurrentRobotEmail(refreshData.robotEmail || null);
     } catch (err) {
       setStatus("error");
       setErrorMsg(err instanceof Error ? err.message : "Save failed");
@@ -89,6 +143,41 @@ export default function SettingsPage() {
     } catch {
       setTestStatus("error");
       setTestMessage("Failed to connect to the test endpoint.");
+    }
+  }
+
+  async function handleScheduleSave() {
+    setSchedule((s) => ({ ...s, saving: true, message: "" }));
+    try {
+      const cronPattern = schedule.preset === "custom"
+        ? schedule.customCron
+        : SCHEDULE_PRESETS[schedule.preset]?.cron || "0 10,16 * * *";
+
+      const res = await fetch("/api/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: schedule.enabled,
+          cronPattern,
+          timezone: schedule.timezone,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save schedule");
+
+      setSchedule((s) => ({
+        ...s,
+        saving: false,
+        nextRun: data.nextRun,
+        message: schedule.enabled ? "Schedule saved" : "Schedule disabled",
+      }));
+    } catch (err) {
+      setSchedule((s) => ({
+        ...s,
+        saving: false,
+        message: err instanceof Error ? err.message : "Failed to save",
+      }));
     }
   }
 
@@ -254,6 +343,184 @@ export default function SettingsPage() {
                 style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
                 placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
               />
+            </div>
+          </div>
+
+          <hr style={{ borderColor: "var(--st-border)" }} />
+
+          {/* Robot Email (for automated pipeline) */}
+          <div className="space-y-4">
+            <h2 className="text-2xl" style={{ color: "var(--st-text-primary)" }}>
+              Robot Email
+            </h2>
+            <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+              The automated pipeline uses a dedicated email address to receive CSV exports from Union.fit.
+              Create a Google Workspace email (e.g. robot@skyting.com) and a Union.fit account with the same address.
+              When the pipeline runs, it clicks &quot;Download CSV&quot; on Union.fit, which emails the data to this address.
+            </p>
+            {currentRobotEmail && (
+              <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+                Currently configured: {currentRobotEmail}
+              </p>
+            )}
+            <div>
+              <label
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: "var(--st-text-secondary)" }}
+              >
+                Robot Email Address
+              </label>
+              <input
+                type="email"
+                value={settings.robotEmail}
+                onChange={(e) => setSettings((s) => ({ ...s, robotEmail: e.target.value }))}
+                className={inputFocusClass}
+                style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
+                placeholder="robot@skyting.com"
+              />
+              <p className="text-xs mt-1" style={{ color: "var(--st-text-secondary)" }}>
+                Must be a Google Workspace email with Gmail API access via the service account.
+                The Union.fit credentials above should also use this email address.
+              </p>
+            </div>
+          </div>
+
+          <hr style={{ borderColor: "var(--st-border)" }} />
+
+          {/* Schedule */}
+          <div className="space-y-4">
+            <h2 className="text-2xl" style={{ color: "var(--st-text-primary)" }}>
+              Automatic Schedule
+            </h2>
+            <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+              Run the analytics pipeline automatically on a schedule. The dashboard updates without any manual work.
+            </p>
+
+            {/* Enable toggle */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={schedule.enabled}
+                onChange={(e) => setSchedule((s) => ({ ...s, enabled: e.target.checked }))}
+                className="w-5 h-5 rounded"
+                style={{ accentColor: "var(--st-accent)" }}
+              />
+              <span className="text-sm font-medium" style={{ color: "var(--st-text-primary)" }}>
+                Enable automatic pipeline runs
+              </span>
+            </label>
+
+            {schedule.enabled && (
+              <div className="space-y-4 pl-1">
+                {/* Preset selector */}
+                <div>
+                  <label
+                    className="block text-sm font-medium mb-1.5"
+                    style={{ color: "var(--st-text-secondary)" }}
+                  >
+                    Frequency
+                  </label>
+                  <select
+                    value={schedule.preset}
+                    onChange={(e) =>
+                      setSchedule((s) => ({
+                        ...s,
+                        preset: e.target.value as ScheduleState["preset"],
+                      }))
+                    }
+                    className={inputFocusClass}
+                    style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
+                  >
+                    {Object.entries(SCHEDULE_PRESETS).map(([key, val]) => (
+                      <option key={key} value={key}>
+                        {val.label}
+                      </option>
+                    ))}
+                    <option value="custom">Custom cron</option>
+                  </select>
+                </div>
+
+                {/* Custom cron input */}
+                {schedule.preset === "custom" && (
+                  <div>
+                    <label
+                      className="block text-sm font-medium mb-1.5"
+                      style={{ color: "var(--st-text-secondary)" }}
+                    >
+                      Cron pattern
+                    </label>
+                    <input
+                      type="text"
+                      value={schedule.customCron}
+                      onChange={(e) =>
+                        setSchedule((s) => ({ ...s, customCron: e.target.value }))
+                      }
+                      className={`${inputFocusClass} font-mono text-sm`}
+                      style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
+                      placeholder="0 10,16 * * *"
+                    />
+                    <p className="text-xs mt-1" style={{ color: "var(--st-text-secondary)" }}>
+                      Standard cron format: minute hour day month weekday
+                    </p>
+                  </div>
+                )}
+
+                {/* Timezone */}
+                <div>
+                  <label
+                    className="block text-sm font-medium mb-1.5"
+                    style={{ color: "var(--st-text-secondary)" }}
+                  >
+                    Timezone
+                  </label>
+                  <select
+                    value={schedule.timezone}
+                    onChange={(e) =>
+                      setSchedule((s) => ({ ...s, timezone: e.target.value }))
+                    }
+                    className={inputFocusClass}
+                    style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
+                  >
+                    <option value="America/New_York">Eastern (New York)</option>
+                    <option value="America/Chicago">Central (Chicago)</option>
+                    <option value="America/Denver">Mountain (Denver)</option>
+                    <option value="America/Los_Angeles">Pacific (Los Angeles)</option>
+                    <option value="UTC">UTC</option>
+                  </select>
+                </div>
+
+                {/* Next run display */}
+                {schedule.nextRun && (
+                  <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+                    Next run:{" "}
+                    <span style={{ color: "var(--st-text-primary)" }}>
+                      {new Date(schedule.nextRun).toLocaleString()}
+                    </span>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Save schedule button */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleScheduleSave}
+                disabled={schedule.saving}
+                className="px-5 py-2 text-sm font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+                style={{
+                  backgroundColor: "var(--st-bg-dark)",
+                  color: "var(--st-text-light)",
+                  borderRadius: "var(--st-radius-pill)",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {schedule.saving ? "Saving..." : "Save Schedule"}
+              </button>
+              {schedule.message && (
+                <span className="text-sm" style={{ color: "var(--st-success)" }}>
+                  {schedule.message}
+                </span>
+              )}
             </div>
           </div>
 

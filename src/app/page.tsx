@@ -8,6 +8,7 @@ interface DashboardStats {
   lastUpdated: string | null;
   dateRange: string | null;
   spreadsheetUrl?: string;
+  dataSource?: "sqlite" | "sheets" | "hybrid";
   mrr: {
     member: number;
     sky3: number;
@@ -106,12 +107,30 @@ interface DropInData {
   weeklyBreakdown: { week: string; count: number }[];
 }
 
+type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
+
+interface FirstVisitData {
+  currentWeekTotal: number;
+  currentWeekSegments: Record<FirstVisitSegment, number>;
+  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  aggregateSegments: Record<FirstVisitSegment, number>;
+}
+
+interface ReturningNonMemberData {
+  currentWeekTotal: number;
+  currentWeekSegments: Record<FirstVisitSegment, number>;
+  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  aggregateSegments: Record<FirstVisitSegment, number>;
+}
+
 interface TrendsData {
   weekly: TrendRowData[];
   monthly: TrendRowData[];
   pacing: PacingData | null;
   projection: ProjectionData | null;
   dropIns: DropInData | null;
+  firstVisits: FirstVisitData | null;
+  returningNonMembers: ReturningNonMemberData | null;
 }
 
 type DashboardLoadState =
@@ -144,6 +163,8 @@ const COLORS = {
   success: "#4A7C59",
   error: "#A04040",
   warning: "#8B7340",
+  teal: "#3A8A8A",       // teal for first visits
+  copper: "#B87333",     // copper for returning non-members
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -609,11 +630,17 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
 
 // ─── Freshness Badge ─────────────────────────────────────────
 
-function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string | null; spreadsheetUrl?: string }) {
+function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "sqlite" | "sheets" | "hybrid" }) {
   if (!lastUpdated) return null;
 
   const date = new Date(lastUpdated);
   const isStale = Date.now() - date.getTime() > 24 * 60 * 60 * 1000;
+
+  const sourceLabel = dataSource === "sqlite"
+    ? "Live from database"
+    : dataSource === "hybrid"
+    ? "Database + Sheets"
+    : "From Google Sheets";
 
   return (
     <div className="flex flex-col items-center gap-2" style={{ fontSize: "0.85rem" }}>
@@ -638,38 +665,68 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl }: { lastUpdated: string |
         </span>
       </div>
 
-      {spreadsheetUrl && (
-        <a
-          href={spreadsheetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 transition-colors"
-          style={{
-            color: "var(--st-text-secondary)",
-            border: "1px solid var(--st-border)",
-            fontFamily: FONT_SANS,
-            fontWeight: 500,
-            fontSize: "0.85rem",
-          }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.borderColor = "var(--st-border-hover)";
-            e.currentTarget.style.color = "var(--st-text-primary)";
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.borderColor = "var(--st-border)";
-            e.currentTarget.style.color = "var(--st-text-secondary)";
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-            <polyline points="10 9 9 9 8 9" />
-          </svg>
-          Google Sheet
-        </a>
-      )}
+      <div className="inline-flex items-center gap-3">
+        {dataSource && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+            style={{
+              color: dataSource === "sqlite" ? "var(--st-success)" : "var(--st-text-secondary)",
+              backgroundColor: dataSource === "sqlite" ? "rgba(74, 124, 89, 0.06)" : "transparent",
+              border: `1px solid ${dataSource === "sqlite" ? "rgba(74, 124, 89, 0.15)" : "var(--st-border)"}`,
+              fontFamily: FONT_SANS,
+              fontWeight: 500,
+              fontSize: "0.8rem",
+            }}
+          >
+            {dataSource === "sqlite" ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            )}
+            {sourceLabel}
+          </span>
+        )}
+
+        {spreadsheetUrl && (
+          <a
+            href={spreadsheetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors"
+            style={{
+              color: "var(--st-text-secondary)",
+              border: "1px solid var(--st-border)",
+              fontFamily: FONT_SANS,
+              fontWeight: 500,
+              fontSize: "0.8rem",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "var(--st-border-hover)";
+              e.currentTarget.style.color = "var(--st-text-primary)";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "var(--st-border)";
+              e.currentTarget.style.color = "var(--st-text-secondary)";
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+            Google Sheet
+          </a>
+        )}
+      </div>
     </div>
   );
 }
@@ -1204,6 +1261,198 @@ function RevenueCategoriesCard({ data }: { data: RevenueCategoryData }) {
           </div>
         </Card>
       </div>
+    </div>
+  );
+}
+
+// ─── Layer 3: First Visits Card ─────────────────────────────
+
+const SEGMENT_LABELS: Record<FirstVisitSegment, string> = {
+  introWeek: "Intro Week",
+  dropIn: "Drop-In",
+  guest: "Guest Pass",
+  other: "Other",
+};
+
+const SEGMENT_COLORS: Record<FirstVisitSegment, string> = {
+  introWeek: "#3A8A8A",
+  dropIn: "#8B7340",
+  guest: "#5B7FA5",
+  other: "#999999",
+};
+
+function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
+  const weeklyBars: BarChartData[] = firstVisits.completedWeeks.map((w) => {
+    return { label: formatWeekRange(w.week), value: w.count, color: COLORS.teal };
+  });
+
+  const segments: FirstVisitSegment[] = ["introWeek", "dropIn", "guest", "other"];
+  const agg = firstVisits.aggregateSegments;
+  const aggTotal = agg.introWeek + agg.dropIn + agg.guest + agg.other;
+
+  return (
+    <Card padding="1.5rem">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.teal, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            First Visits
+          </span>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+            {formatNumber(firstVisits.currentWeekTotal)}
+          </span>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            This Week (to date)
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Left: Weekly bar chart — last 4 completed weeks */}
+        <div>
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Weekly — Last 4 Weeks
+          </p>
+          {weeklyBars.length > 0 ? (
+            <MiniBarChart data={weeklyBars} height={64} />
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>--</p>
+          )}
+        </div>
+
+        {/* Right: Source Mix (aggregate across full window) */}
+        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Source Mix
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {segments.map((seg) => {
+              const count = agg[seg] || 0;
+              if (count === 0 && aggTotal === 0) return null;
+              return (
+                <div key={seg} className="flex items-center justify-between" style={{ padding: "0.3rem 0" }}>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full" style={{ width: "7px", height: "7px", backgroundColor: SEGMENT_COLORS[seg] }} />
+                    <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)" }}>
+                      {SEGMENT_LABELS[seg]}
+                    </span>
+                  </div>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
+                    {count}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Layer 3: Returning Non-Members Card ────────────────────
+
+const RNM_SEGMENT_COLORS: Record<string, string> = {
+  dropIn: "#B87333",
+  guest: "#5B7FA5",
+  other: "#999999",
+};
+
+const RNM_SEGMENT_LABELS: Record<string, string> = {
+  dropIn: "Drop-In",
+  guest: "Guest Pass",
+  other: "Other",
+};
+
+function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers: ReturningNonMemberData }) {
+  const weeklyBars: BarChartData[] = returningNonMembers.completedWeeks.map((w) => {
+    return { label: formatWeekRange(w.week), value: w.count, color: COLORS.copper };
+  });
+
+  // 3 buckets only (no Intro Week — it's merged into Other in the analytics)
+  const rnmSegments = ["dropIn", "guest", "other"] as const;
+  const agg = returningNonMembers.aggregateSegments;
+  // Merge any introWeek into other for display (defensive)
+  const aggDisplay = {
+    dropIn: agg.dropIn,
+    guest: agg.guest,
+    other: agg.other + agg.introWeek,
+  };
+
+  return (
+    <Card padding="1.5rem">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.copper, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Returning Non-Members
+          </span>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+            {formatNumber(returningNonMembers.currentWeekTotal)}
+          </span>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            This Week (to date)
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Left: Weekly bar chart */}
+        <div>
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Weekly — Last 4 Weeks
+          </p>
+          {weeklyBars.length > 0 ? (
+            <MiniBarChart data={weeklyBars} height={64} />
+          ) : (
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>--</p>
+          )}
+        </div>
+
+        {/* Right: Source Mix (aggregate, 3 buckets) */}
+        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Source Mix
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {rnmSegments.map((seg) => (
+              <div key={seg} className="flex items-center justify-between" style={{ padding: "0.3rem 0" }}>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full" style={{ width: "7px", height: "7px", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)" }}>
+                    {RNM_SEGMENT_LABELS[seg]}
+                  </span>
+                </div>
+                <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
+                  {aggDisplay[seg] || 0}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
+
+function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firstVisits: FirstVisitData | null; returningNonMembers: ReturningNonMemberData | null; dropIns: DropInData | null }) {
+  if (!firstVisits && !returningNonMembers && !dropIns) return null;
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">Non Members</SectionHeader>
+
+      {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
+      {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
+      {dropIns && <DropInCardNew dropIns={dropIns} />}
     </div>
   );
 }
@@ -1829,7 +2078,7 @@ function DashboardView() {
           >
             Studio Dashboard
           </h1>
-          <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} />
+          <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
         </div>
 
         {/* ━━ KPI Hero Strip ━━━━━━━━━━━━━━━━━━━━━━━ */}
@@ -1924,9 +2173,9 @@ function DashboardView() {
           weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
         />
 
-        {/* Drop-Ins (distinct card — visits, not subscriptions) */}
-        {trends?.dropIns && (
-          <DropInCardNew dropIns={trends.dropIns} />
+        {/* ━━ Non Members (First Visits + Returning Non-Members + Drop-Ins) ━━━━━ */}
+        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) && (
+          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} />
         )}
 
         {/* ━━ Revenue Forecast ━━━━━━━━━━━━━━━━━━━━━━ */}

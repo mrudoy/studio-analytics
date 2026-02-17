@@ -8,13 +8,14 @@ export function saveRevenueCategories(
 ): void {
   const db = getDatabase();
   const upsert = db.prepare(`
-    INSERT INTO revenue_categories (period_start, period_end, category, revenue, union_fees, stripe_fees, transfers, refunded, union_fees_refunded, net_revenue)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO revenue_categories (period_start, period_end, category, revenue, union_fees, stripe_fees, other_fees, transfers, refunded, union_fees_refunded, net_revenue)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(period_start, period_end, category)
     DO UPDATE SET
       revenue = excluded.revenue,
       union_fees = excluded.union_fees,
       stripe_fees = excluded.stripe_fees,
+      other_fees = excluded.other_fees,
       transfers = excluded.transfers,
       refunded = excluded.refunded,
       union_fees_refunded = excluded.union_fees_refunded,
@@ -31,7 +32,8 @@ export function saveRevenueCategories(
         row.revenue,
         row.unionFees,
         row.stripeFees,
-        row.transfers,
+        row.otherFees ?? 0,
+        row.transfers ?? 0,
         row.refunded,
         row.unionFeesRefunded,
         row.netRevenue
@@ -63,6 +65,7 @@ export interface StoredRevenueRow {
   revenue: number;
   unionFees: number;
   stripeFees: number;
+  otherFees: number;
   transfers: number;
   refunded: number;
   unionFeesRefunded: number;
@@ -75,14 +78,14 @@ export interface StoredRevenueRow {
 export function getRevenueForPeriod(periodStart: string, periodEnd: string): StoredRevenueRow[] {
   const db = getDatabase();
   const rows = db.prepare(
-    `SELECT category, revenue, union_fees, stripe_fees, transfers, refunded, union_fees_refunded, net_revenue, period_start, period_end, locked
+    `SELECT category, revenue, union_fees, stripe_fees, other_fees, transfers, refunded, union_fees_refunded, net_revenue, period_start, period_end, locked
      FROM revenue_categories
      WHERE period_start = ? AND period_end = ?
      ORDER BY revenue DESC`
   ).all(periodStart, periodEnd) as {
     category: string; revenue: number; union_fees: number; stripe_fees: number;
-    transfers: number; refunded: number; union_fees_refunded: number; net_revenue: number;
-    period_start: string; period_end: string; locked: number;
+    other_fees: number; transfers: number; refunded: number; union_fees_refunded: number;
+    net_revenue: number; period_start: string; period_end: string; locked: number;
   }[];
 
   return rows.map((r) => ({
@@ -90,6 +93,7 @@ export function getRevenueForPeriod(periodStart: string, periodEnd: string): Sto
     revenue: r.revenue,
     unionFees: r.union_fees,
     stripeFees: r.stripe_fees,
+    otherFees: r.other_fees,
     transfers: r.transfers,
     refunded: r.refunded,
     unionFeesRefunded: r.union_fees_refunded,

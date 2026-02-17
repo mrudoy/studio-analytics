@@ -17,8 +17,10 @@ export async function GET() {
       hasCredentials: has,
       hasAnalyticsSheet: !!settings?.analyticsSpreadsheetId,
       hasRawDataSheet: !!settings?.rawDataSpreadsheetId,
+      hasRobotEmail: !!settings?.robotEmail?.address,
       // Never return actual credentials — only existence flags
       email: settings?.credentials?.email ? maskEmail(settings.credentials.email) : null,
+      robotEmail: settings?.robotEmail?.address ? maskEmail(settings.robotEmail.address) : null,
     });
   } catch {
     return NextResponse.json({ hasCredentials: false });
@@ -52,6 +54,13 @@ export async function PUT(request: Request) {
 
     if (body.rawDataSpreadsheetId !== undefined) {
       updated.rawDataSpreadsheetId = body.rawDataSpreadsheetId;
+    }
+
+    if (body.robotEmail) {
+      updated.robotEmail = {
+        address: body.robotEmail,
+        ...(body.robotEmailAppPassword ? { appPassword: body.robotEmailAppPassword } : {}),
+      };
     }
 
     saveSettings(updated);

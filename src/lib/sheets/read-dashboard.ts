@@ -183,12 +183,30 @@ export interface DropInData {
   weeklyBreakdown: { week: string; count: number }[];
 }
 
+export type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
+
+export interface FirstVisitData {
+  currentWeekTotal: number;
+  currentWeekSegments: Record<FirstVisitSegment, number>;
+  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  aggregateSegments: Record<FirstVisitSegment, number>;
+}
+
+export interface ReturningNonMemberData {
+  currentWeekTotal: number;
+  currentWeekSegments: Record<FirstVisitSegment, number>;
+  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  aggregateSegments: Record<FirstVisitSegment, number>;
+}
+
 export interface TrendsData {
   weekly: TrendRowData[];
   monthly: TrendRowData[];
   pacing: PacingData | null;
   projection: ProjectionData | null;
   dropIns: DropInData | null;
+  firstVisits: FirstVisitData | null;
+  returningNonMembers: ReturningNonMemberData | null;
 }
 
 // cachedTrends declared at top of file alongside cached
@@ -251,6 +269,14 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
   let dropInLastMonth = 0;
   let dropInWeeklyAvg = 0;
   const dropInWeeklyBreakdown: { week: string; count: number }[] = [];
+  let fvCurrentWeekTotal = 0;
+  let fvCurrentWeekSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
+  const fvCompletedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[] = [];
+  let fvAggregateSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
+  let rnmCurrentWeekTotal = 0;
+  let rnmCurrentWeekSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
+  const rnmCompletedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[] = [];
+  let rnmAggregateSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
 
   for (const row of rows) {
     const period = String(row.get("Period") || "").trim();
@@ -352,6 +378,58 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
         week: period,
         count: parseNum(row.get("New Members")),
       });
+    } else if (type === "FirstVisitCurrent") {
+      fvCurrentWeekTotal = parseNum(row.get("New Members"));
+      fvCurrentWeekSegments = {
+        introWeek: parseNum(row.get("New SKY3")),
+        dropIn: parseNum(row.get("New SKY TING TV")),
+        guest: parseNum(row.get("Member Churn")),
+        other: parseNum(row.get("SKY3 Churn")),
+      };
+    } else if (type === "FirstVisitWeek") {
+      fvCompletedWeeks.push({
+        week: period,
+        count: parseNum(row.get("New Members")),
+        segments: {
+          introWeek: parseNum(row.get("New SKY3")),
+          dropIn: parseNum(row.get("New SKY TING TV")),
+          guest: parseNum(row.get("Member Churn")),
+          other: parseNum(row.get("SKY3 Churn")),
+        },
+      });
+    } else if (type === "ReturningNonMemberCurrent") {
+      rnmCurrentWeekTotal = parseNum(row.get("New Members"));
+      rnmCurrentWeekSegments = {
+        introWeek: parseNum(row.get("New SKY3")),
+        dropIn: parseNum(row.get("New SKY TING TV")),
+        guest: parseNum(row.get("Member Churn")),
+        other: parseNum(row.get("SKY3 Churn")),
+      };
+    } else if (type === "ReturningNonMemberWeek") {
+      rnmCompletedWeeks.push({
+        week: period,
+        count: parseNum(row.get("New Members")),
+        segments: {
+          introWeek: parseNum(row.get("New SKY3")),
+          dropIn: parseNum(row.get("New SKY TING TV")),
+          guest: parseNum(row.get("Member Churn")),
+          other: parseNum(row.get("SKY3 Churn")),
+        },
+      });
+    } else if (type === "FirstVisitAggregate") {
+      fvAggregateSegments = {
+        introWeek: parseNum(row.get("New SKY3")),
+        dropIn: parseNum(row.get("New SKY TING TV")),
+        guest: parseNum(row.get("Member Churn")),
+        other: parseNum(row.get("SKY3 Churn")),
+      };
+    } else if (type === "ReturningNonMemberAggregate") {
+      rnmAggregateSegments = {
+        introWeek: parseNum(row.get("New SKY3")),
+        dropIn: parseNum(row.get("New SKY TING TV")),
+        guest: parseNum(row.get("Member Churn")),
+        other: parseNum(row.get("SKY3 Churn")),
+      };
     }
   }
 
@@ -375,7 +453,17 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
       }
     : null;
 
-  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns };
+  // Build first visit data (null if no first visit rows were found)
+  const firstVisits: FirstVisitData | null = fvCurrentWeekTotal > 0 || fvCompletedWeeks.length > 0
+    ? { currentWeekTotal: fvCurrentWeekTotal, currentWeekSegments: fvCurrentWeekSegments, completedWeeks: fvCompletedWeeks, aggregateSegments: fvAggregateSegments }
+    : null;
+
+  // Build returning non-members data (null if no rows were found)
+  const returningNonMembers: ReturningNonMemberData | null = rnmCurrentWeekTotal > 0 || rnmCompletedWeeks.length > 0
+    ? { currentWeekTotal: rnmCurrentWeekTotal, currentWeekSegments: rnmCurrentWeekSegments, completedWeeks: rnmCompletedWeeks, aggregateSegments: rnmAggregateSegments }
+    : null;
+
+  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns, firstVisits, returningNonMembers };
   cachedTrends = { data, fetchedAt: Date.now() };
 
   console.log(

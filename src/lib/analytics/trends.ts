@@ -72,12 +72,29 @@ export interface DropInStats {
   weeklyBreakdown: { week: string; count: number }[]; // last 8 weeks
 }
 
+export type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
+
+export interface FirstVisitWeek {
+  week: string;
+  count: number;
+  segments: Record<FirstVisitSegment, number>;
+}
+
+export interface FirstVisitStats {
+  currentWeekTotal: number;       // cumulative this week (in progress)
+  currentWeekSegments: Record<FirstVisitSegment, number>;
+  completedWeeks: FirstVisitWeek[];  // last 4 completed weeks
+  aggregateSegments: Record<FirstVisitSegment, number>; // unique people by source across full window
+}
+
 export interface TrendsResults {
   weekly: TrendDelta[];
   monthly: TrendDelta[];
   currentMonthPacing: CurrentMonthPacing;
   annualProjection: AnnualProjection;
   dropIns: DropInStats;
+  firstVisitStats: FirstVisitStats;
+  returningNonMembers: import("./returning-non-members").ReturningNonMemberStats | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -473,6 +490,95 @@ export function analyzeTrends(
     weeklyBreakdown,
   };
 
+  // --- First Visit weekly stats (unique people, with segment breakdown) ---
+  const emptySegments = (): Record<FirstVisitSegment, number> =>
+    ({ introWeek: 0, dropIn: 0, guest: 0, other: 0 });
+
+  const classifyPass = (pass: string): FirstVisitSegment => {
+    const upper = pass.trim().toUpperCase();
+    if (upper.includes("INTRO")) return "introWeek";
+    if (upper.includes("GUEST")) return "guest";
+    if (
+      upper.includes("DROP-IN") || upper.includes("DROP IN") || upper.includes("DROPIN") ||
+      upper.includes("SINGLE CLASS") || upper.includes("WELLHUB") ||
+      upper.includes("5 PACK") || upper.includes("5-PACK") ||
+      upper.includes("COMMUNITY DAY") || upper.includes("POKER CHIP") ||
+      upper.includes("ON RUNNING")
+    ) return "dropIn";
+    return "other";
+  };
+
+  /** Normalize attendee name for dedup ("Last, First" → "first last") */
+  const normalizeFvName = (name: string): string => {
+    let n = name.trim().toLowerCase();
+    if (n.includes(",")) {
+      const parts = n.split(",").map((p) => p.trim());
+      if (parts.length === 2 && parts[0] && parts[1]) n = parts[1] + " " + parts[0];
+    }
+    return n.replace(/\s+/g, " ");
+  };
+
+  // Per-week: Set of normalized names (unique people) + segment counts
+  const fvWeekNames = new Map<string, Set<string>>();
+  const fvWeekSegments = new Map<string, Record<FirstVisitSegment, number>>();
+  // Cross-window: person → source (for aggregate breakdown, each person counted once)
+  const fvPersonSource = new Map<string, FirstVisitSegment>();
+
+  for (const fv of firstVisits) {
+    const date = parseDate(fv.redeemedAt || "");
+    if (!date) continue;
+    const wk = getWeekKey(date);
+    const seg = classifyPass(fv.pass);
+    const name = normalizeFvName(fv.attendee || "");
+    if (!name) continue;
+
+    // Per-week dedup
+    if (!fvWeekNames.has(wk)) fvWeekNames.set(wk, new Set());
+    if (!fvWeekSegments.has(wk)) fvWeekSegments.set(wk, emptySegments());
+    const nameSet = fvWeekNames.get(wk)!;
+    if (!nameSet.has(name)) {
+      nameSet.add(name);
+      fvWeekSegments.get(wk)![seg]++;
+    }
+
+    // Cross-window: first occurrence sets the source (each person counted once)
+    if (!fvPersonSource.has(name)) {
+      fvPersonSource.set(name, seg);
+    }
+  }
+
+  const currentWeekKey = getWeekKey(now);
+  const allFvWeeks = Array.from(fvWeekNames.keys()).sort();
+  const completedFvWeeks = allFvWeeks.filter((w) => w < currentWeekKey);
+  const last4Completed = completedFvWeeks.slice(-4);
+
+  // Aggregate: only count people whose weeks fall in the display window
+  const displayWeeks = new Set([...last4Completed, currentWeekKey]);
+  const fvAggregateSegments = emptySegments();
+  const fvAggregateNames = new Set<string>();
+  for (const wk of displayWeeks) {
+    const names = fvWeekNames.get(wk);
+    if (!names) continue;
+    for (const name of names) {
+      if (!fvAggregateNames.has(name)) {
+        fvAggregateNames.add(name);
+        const seg = fvPersonSource.get(name) || "other";
+        fvAggregateSegments[seg]++;
+      }
+    }
+  }
+
+  const firstVisitStats: FirstVisitStats = {
+    currentWeekTotal: fvWeekNames.get(currentWeekKey)?.size || 0,
+    currentWeekSegments: fvWeekSegments.get(currentWeekKey) || emptySegments(),
+    completedWeeks: last4Completed.map((wk) => ({
+      week: wk,
+      count: fvWeekNames.get(wk)?.size || 0,
+      segments: fvWeekSegments.get(wk) || emptySegments(),
+    })),
+    aggregateSegments: fvAggregateSegments,
+  };
+
   console.log(
     `[trends] Weekly: ${weekly.length} periods, Monthly: ${monthly.length} periods, ` +
     `Growth rate: ${annualProjection.monthlyGrowthRate}%, ` +
@@ -482,6 +588,10 @@ export function analyzeTrends(
     `[trends] Drop-ins: MTD=${dropIns.currentMonthTotal}, last month=${dropIns.previousMonthTotal}, ` +
     `6w avg=${dropIns.weeklyAvg6w}/wk, paced=${dropIns.currentMonthPaced}/mo`
   );
+  console.log(
+    `[trends] First visits: this week=${firstVisitStats.currentWeekTotal}, ` +
+    `last 4 weeks=[${firstVisitStats.completedWeeks.map((w) => w.count).join(", ")}]`
+  );
 
   return {
     weekly,
@@ -489,5 +599,7 @@ export function analyzeTrends(
     currentMonthPacing,
     annualProjection,
     dropIns,
+    firstVisitStats,
+    returningNonMembers: null, // Set by pipeline worker after separate analysis
   };
 }

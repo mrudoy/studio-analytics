@@ -48,8 +48,10 @@ export const REPORT_URLS = {
   canceledAutoRenews: "/report/subscriptions/growth?filter=cancelled",
   activeAutoRenews: "/report/subscriptions/list?status=active",
   pausedAutoRenews: "/report/subscriptions/list?status=paused",
+  trialingAutoRenews: "/report/subscriptions/list?status=trialing",
   newAutoRenews: "/report/subscriptions/growth?filter=new",
   revenueCategories: "/reports/revenue",
+  fullRegistrations: "/registrations/all",
 } as const;
 
 export type ReportType = keyof typeof REPORT_URLS;

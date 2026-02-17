@@ -5,9 +5,10 @@ import { parseDate, getMonthKey } from "./date-utils";
 /**
  * Only count subscriptions in these states for active subscriber totals and MRR.
  * "Valid Now" = actively billing, "Paused" = on hold but still a subscriber.
- * Excluded: "Pending Cancellation", "Past Due", "In Trial"
+ * "In Trial" / "Trialing" = trial period, counted as active (matches Union.fit behavior).
+ * Excluded: "Pending Cancellation", "Past Due"
  */
-const COUNTABLE_STATES = new Set(["valid now", "paused"]);
+const COUNTABLE_STATES = new Set(["valid now", "paused", "in trial", "trialing"]);
 
 export interface SummaryKPIs {
   mrrMember: number;

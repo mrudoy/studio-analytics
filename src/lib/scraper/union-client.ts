@@ -53,6 +53,8 @@ const FETCH_CSV_REPORTS: Set<ReportType> = new Set([
   "newAutoRenews",
   "activeAutoRenews",
   "pausedAutoRenews",
+  "trialingAutoRenews",
+  "fullRegistrations", // Try CSV fetch; auto-falls back to HTML scrape if no CSV button
 ]);
 
 export class UnionClient {
@@ -67,6 +69,11 @@ export class UnionClient {
 
   private progress(step: string, percent?: number) {
     this.onProgress?.(step, percent ?? 0);
+  }
+
+  /** Expose the active page for external modules (e.g. csv-trigger). */
+  getPage(): Page | null {
+    return this.page;
   }
 
   async initialize(): Promise<void> {
@@ -183,8 +190,9 @@ export class UnionClient {
       }
     }
 
-    // Check if already logged in (redirected to dashboard or has session)
-    if (this.page.url().includes("/dashboard")) {
+    // Check if already logged in (redirected to dashboard or admin area)
+    const currentUrl = this.page.url();
+    if (currentUrl.includes("/dashboard") || currentUrl.includes("/admin/")) {
       this.progress("Already logged in");
       await this.saveCookies();
       return;
@@ -816,8 +824,13 @@ export class UnionClient {
       "allRegistrations",
       "activeAutoRenews",
       "pausedAutoRenews",
-      "revenueCategories",
+      "trialingAutoRenews",
+      "fullRegistrations",
+      // revenueCategories excluded — scraped in Phase 3 (lightweight, no pagination)
     ];
+
+    // Lightweight reports are scraped in a separate Phase 3 (no pagination, no parallelism pressure)
+    const LIGHTWEIGHT_REPORTS: ReportType[] = ["revenueCategories"];
 
     const SCRAPE_START = 15;
     const SCRAPE_END = 45;
@@ -890,8 +903,9 @@ export class UnionClient {
         }
       }
 
-      const pct = SCRAPE_START + ((i + batch.length) / reportTypes.length) * SCRAPE_RANGE;
-      this.progress(`Downloaded ${Object.keys(files).length}/${reportTypes.length} reports`, Math.round(pct));
+      const totalReportCount = reportTypes.length + LIGHTWEIGHT_REPORTS.length;
+      const pct = SCRAPE_START + ((i + batch.length) / totalReportCount) * SCRAPE_RANGE;
+      this.progress(`Downloaded ${Object.keys(files).length}/${totalReportCount} reports`, Math.round(pct));
     }
 
     // Phase 2: Scrape reports that don't support CSV fetch — parallel batches of 3
@@ -935,7 +949,12 @@ export class UnionClient {
               );
               console.log(`[scraper] ${rt}: OK (serial scrape fallback)`);
             } catch (fallbackErr) {
-              throw new Error(`Failed to download ${rt}: ${fallbackErr instanceof Error ? fallbackErr.message : fallbackErr}`);
+              // fullRegistrations is optional — don't fail the pipeline if it can't be downloaded
+              if (rt === "fullRegistrations") {
+                console.warn(`[scraper] ${rt}: serial scrape also failed — skipping (non-fatal)`);
+              } else {
+                throw new Error(`Failed to download ${rt}: ${fallbackErr instanceof Error ? fallbackErr.message : fallbackErr}`);
+              }
             }
           }
         }
@@ -943,8 +962,30 @@ export class UnionClient {
         const batchElapsed = ((Date.now() - t0) / 1000).toFixed(1);
         console.log(`[scraper] Scrape batch [${batch.join(", ")}]: ${batchElapsed}s`);
 
-        const pct = SCRAPE_START + ((Object.keys(files).length) / reportTypes.length) * SCRAPE_RANGE;
-        this.progress(`Downloaded ${Object.keys(files).length}/${reportTypes.length} reports`, Math.round(pct));
+        const totalReports = reportTypes.length + LIGHTWEIGHT_REPORTS.length;
+        const pct = SCRAPE_START + ((Object.keys(files).length) / totalReports) * SCRAPE_RANGE;
+        this.progress(`Scraping ${batch.join(", ")} (${Object.keys(files).length}/${totalReports} done)`, Math.round(pct));
+      }
+    }
+
+    // Phase 3: Scrape lightweight single-page reports (no pagination competition)
+    const lightweightToScrape = LIGHTWEIGHT_REPORTS.filter((rt) => !files[rt]);
+
+    if (lightweightToScrape.length > 0) {
+      console.log(`[scraper] Phase 3: Scraping ${lightweightToScrape.length} lightweight reports: ${lightweightToScrape.join(", ")}`);
+      for (const rt of lightweightToScrape) {
+        try {
+          files[rt] = await withTabTimeout(
+            this.scrapeReportInTab(rt, dateRange),
+            `Lightweight scrape: ${rt}`,
+            undefined,
+            120_000 // 2-minute timeout — plenty for a single-page table
+          );
+          console.log(`[scraper] ${rt}: OK (lightweight scrape)`);
+        } catch (err) {
+          console.warn(`[scraper] ${rt}: lightweight scrape failed — ${err instanceof Error ? err.message : err}`);
+          // Non-fatal: pipeline continues without this data
+        }
       }
     }
 
