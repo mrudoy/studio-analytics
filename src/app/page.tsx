@@ -125,6 +125,21 @@ interface ReturningNonMemberData {
   otherBreakdownTop5?: { passName: string; count: number }[];
 }
 
+interface ChurnRateData {
+  monthly: {
+    month: string;
+    memberRate: number;
+    sky3Rate: number;
+    memberActiveStart: number;
+    sky3ActiveStart: number;
+    memberCanceled: number;
+    sky3Canceled: number;
+  }[];
+  avgMemberRate: number;
+  avgSky3Rate: number;
+  atRisk: number;
+}
+
 interface TrendsData {
   weekly: TrendRowData[];
   monthly: TrendRowData[];
@@ -133,6 +148,7 @@ interface TrendsData {
   dropIns: DropInData | null;
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
+  churnRates: ChurnRateData | null;
 }
 
 type DashboardLoadState =
@@ -1557,6 +1573,167 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
   );
 }
 
+// ─── Churn Rate Card ────────────────────────────────────────
+
+function ChurnRateCard({ churn }: { churn: ChurnRateData }) {
+  const completedMonths = churn.monthly.filter(
+    (_, i) => i < churn.monthly.length - 1
+  );
+  const currentMonth = churn.monthly[churn.monthly.length - 1];
+
+  // Industry benchmark: 5-7% is healthy for fitness
+  const getBenchmarkColor = (rate: number) => {
+    if (rate <= 7) return COLORS.success;
+    if (rate <= 12) return COLORS.warning;
+    return COLORS.error;
+  };
+
+  const formatMonth = (m: string) => {
+    const [y, mo] = m.split("-");
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return months[parseInt(mo) - 1] + " " + y.slice(2);
+  };
+
+  // Max rate for bar scaling
+  const maxRate = Math.max(
+    ...churn.monthly.map((m) => Math.max(m.memberRate, m.sky3Rate)),
+    1
+  );
+
+  return (
+    <div
+      className="rounded-xl p-5"
+      style={{
+        backgroundColor: "var(--st-surface)",
+        border: "1px solid var(--st-border)",
+        fontFamily: FONT_SANS,
+      }}
+    >
+      {/* Header with averages */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 style={{ fontFamily: FONT_BRAND, fontSize: "1.3rem", fontWeight: 600, color: "var(--st-text)" }}>
+          Churn Rates
+        </h3>
+        <div className="flex items-center gap-3">
+          {churn.atRisk > 0 && (
+            <span
+              className="rounded-full px-2.5 py-0.5"
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                color: COLORS.warning,
+                backgroundColor: COLORS.warning + "15",
+              }}
+            >
+              {churn.atRisk} at-risk
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Average rate pills */}
+      <div className="flex gap-3 mb-5">
+        <div
+          className="flex-1 rounded-lg p-3"
+          style={{ backgroundColor: COLORS.member + "08", border: `1px solid ${COLORS.member}20` }}
+        >
+          <div style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" }}>
+            Members avg monthly
+          </div>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span style={{ fontSize: "1.6rem", fontWeight: 700, color: getBenchmarkColor(churn.avgMemberRate) }}>
+              {churn.avgMemberRate.toFixed(1)}%
+            </span>
+            <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>
+              ({currentMonth?.memberCanceled ?? 0} canceled MTD)
+            </span>
+          </div>
+        </div>
+        <div
+          className="flex-1 rounded-lg p-3"
+          style={{ backgroundColor: COLORS.sky3 + "08", border: `1px solid ${COLORS.sky3}20` }}
+        >
+          <div style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" }}>
+            SKY3 avg monthly
+          </div>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span style={{ fontSize: "1.6rem", fontWeight: 700, color: getBenchmarkColor(churn.avgSky3Rate) }}>
+              {churn.avgSky3Rate.toFixed(1)}%
+            </span>
+            <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>
+              ({currentMonth?.sky3Canceled ?? 0} canceled MTD)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly bar chart */}
+      <div style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)", fontWeight: 500, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+        Monthly Churn Rate
+      </div>
+      <div className="space-y-2">
+        {completedMonths.map((m) => (
+          <div key={m.month} className="flex items-center gap-2" style={{ fontSize: "0.75rem" }}>
+            <span style={{ width: "44px", color: "var(--st-text-secondary)", fontWeight: 500, flexShrink: 0 }}>
+              {formatMonth(m.month)}
+            </span>
+            <div className="flex-1 flex flex-col gap-0.5">
+              {/* Members bar */}
+              <div className="flex items-center gap-1.5">
+                <div
+                  style={{
+                    height: "6px",
+                    width: `${(m.memberRate / maxRate) * 100}%`,
+                    minWidth: m.memberRate > 0 ? "4px" : "0",
+                    backgroundColor: COLORS.member,
+                    borderRadius: "3px",
+                    opacity: 0.7,
+                  }}
+                />
+                <span style={{ fontSize: "0.65rem", color: COLORS.member, fontWeight: 600, flexShrink: 0 }}>
+                  {m.memberRate.toFixed(1)}%
+                </span>
+              </div>
+              {/* SKY3 bar */}
+              <div className="flex items-center gap-1.5">
+                <div
+                  style={{
+                    height: "6px",
+                    width: `${(m.sky3Rate / maxRate) * 100}%`,
+                    minWidth: m.sky3Rate > 0 ? "4px" : "0",
+                    backgroundColor: COLORS.sky3,
+                    borderRadius: "3px",
+                    opacity: 0.7,
+                  }}
+                />
+                <span style={{ fontSize: "0.65rem", color: COLORS.sky3, fontWeight: 600, flexShrink: 0 }}>
+                  {m.sky3Rate.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex gap-4 mt-3 pt-3" style={{ borderTop: "1px solid var(--st-border)" }}>
+        <div className="flex items-center gap-1.5">
+          <div style={{ width: "8px", height: "8px", borderRadius: "2px", backgroundColor: COLORS.member, opacity: 0.7 }} />
+          <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>Members</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div style={{ width: "8px", height: "8px", borderRadius: "2px", backgroundColor: COLORS.sky3, opacity: 0.7 }} />
+          <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>SKY3</span>
+        </div>
+        <div className="flex-1" />
+        <span style={{ fontSize: "0.65rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+          Industry healthy: 5-7%
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
 
 function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firstVisits: FirstVisitData | null; returningNonMembers: ReturningNonMemberData | null; dropIns: DropInData | null }) {
@@ -2296,6 +2473,11 @@ function DashboardView() {
           weeklyKeyChurn={(r) => r.skyTingTvChurn}
           weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
         />
+
+        {/* ━━ Churn Rates ━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {trends?.churnRates && (
+          <ChurnRateCard churn={trends.churnRates} />
+        )}
 
         {/* ━━ Non Members (First Visits + Returning Non-Members + Drop-Ins) ━━━━━ */}
         {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) && (

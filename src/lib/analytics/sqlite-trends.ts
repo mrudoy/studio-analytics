@@ -37,7 +37,9 @@ import type {
   DropInData,
   FirstVisitData,
   ReturningNonMemberData,
+  ChurnRateData,
 } from "../sheets/read-dashboard";
+import { getDatabase } from "../db/database";
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -406,10 +408,19 @@ export function computeTrendsFromSQLite(): TrendsData | null {
     }
   }
 
+  // ── 8. Churn rates ──────────────────────────────────────────
+  let churnRates: ChurnRateData | null = null;
+  try {
+    churnRates = computeChurnRates();
+  } catch (err) {
+    console.warn("[sqlite-trends] Failed to compute churn rates:", err);
+  }
+
   console.log(
     `[sqlite-trends] Computed from SQLite: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins MTD=${dropIns.currentMonthTotal}` : "") +
-    (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "")
+    (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
+    (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "")
   );
 
   return {
@@ -420,5 +431,145 @@ export function computeTrendsFromSQLite(): TrendsData | null {
     dropIns,
     firstVisits,
     returningNonMembers,
+    churnRates,
+  };
+}
+
+// ── Churn Rate Computation ─────────────────────────────────
+
+/**
+ * Compute proper monthly churn rates: cancellations / active-at-start-of-month.
+ *
+ * "Active at start of month M" = created before M AND
+ *   (still currently active OR canceled on/after month M start).
+ *
+ * This reconstructs historical active counts from the snapshot data.
+ */
+function computeChurnRates(): ChurnRateData | null {
+  const db = getDatabase();
+
+  const allRows = db.prepare(
+    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at FROM auto_renews`
+  ).all() as { plan_name: string; plan_state: string; plan_price: number; canceled_at: string | null; created_at: string }[];
+
+  if (allRows.length === 0) return null;
+
+  const categorized = allRows.map((r) => ({
+    ...r,
+    category: getCategory(r.plan_name),
+  }));
+
+  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
+
+  // Generate last 6 completed months + current month
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(
+      d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0")
+    );
+  }
+
+  const results: ChurnRateData["monthly"] = [];
+
+  for (const month of months) {
+    const monthStart = month + "-01";
+    const [yearStr, moStr] = month.split("-");
+    const nextMonth = new Date(parseInt(yearStr), parseInt(moStr), 1);
+    const monthEnd =
+      nextMonth.getFullYear() +
+      "-" +
+      String(nextMonth.getMonth() + 1).padStart(2, "0") +
+      "-01";
+
+    for (const cat of ["MEMBER", "SKY3"] as const) {
+      const catRows = categorized.filter((r) => r.category === cat);
+
+      // Active at start of month: created before monthStart AND
+      //   (still in an active state OR canceled on/after monthStart)
+      const activeAtStart = catRows.filter((r) => {
+        if (r.created_at >= monthStart) return false;
+        if (ACTIVE_STATES.includes(r.plan_state)) return true;
+        if (r.canceled_at && r.canceled_at >= monthStart) return true;
+        return false;
+      });
+
+      // Canceled during this month
+      const canceledInMonth = catRows.filter(
+        (r) =>
+          r.canceled_at &&
+          r.canceled_at >= monthStart &&
+          r.canceled_at < monthEnd
+      );
+
+      const existing = results.find((r) => r.month === month);
+      if (existing) {
+        if (cat === "SKY3") {
+          existing.sky3Rate =
+            activeAtStart.length > 0
+              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
+              : 0;
+          existing.sky3ActiveStart = activeAtStart.length;
+          existing.sky3Canceled = canceledInMonth.length;
+        } else {
+          existing.memberRate =
+            activeAtStart.length > 0
+              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
+              : 0;
+          existing.memberActiveStart = activeAtStart.length;
+          existing.memberCanceled = canceledInMonth.length;
+        }
+      } else {
+        results.push({
+          month,
+          memberRate:
+            cat === "MEMBER" && activeAtStart.length > 0
+              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
+              : 0,
+          sky3Rate:
+            cat === "SKY3" && activeAtStart.length > 0
+              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
+              : 0,
+          memberActiveStart: cat === "MEMBER" ? activeAtStart.length : 0,
+          sky3ActiveStart: cat === "SKY3" ? activeAtStart.length : 0,
+          memberCanceled: cat === "MEMBER" ? canceledInMonth.length : 0,
+          sky3Canceled: cat === "SKY3" ? canceledInMonth.length : 0,
+        });
+      }
+    }
+  }
+
+  // Averages (exclude current partial month)
+  const completedMonths = results.slice(0, -1);
+  const avgMemberRate =
+    completedMonths.length > 0
+      ? Math.round(
+          (completedMonths.reduce((s, r) => s + r.memberRate, 0) /
+            completedMonths.length) *
+            10
+        ) / 10
+      : 0;
+  const avgSky3Rate =
+    completedMonths.length > 0
+      ? Math.round(
+          (completedMonths.reduce((s, r) => s + r.sky3Rate, 0) /
+            completedMonths.length) *
+            10
+        ) / 10
+      : 0;
+
+  // At-risk count
+  const atRiskRow = db
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM auto_renews WHERE plan_state IN ('Past Due', 'Invalid', 'Pending Cancel')`
+    )
+    .get() as { cnt: number };
+
+  return {
+    monthly: results,
+    avgMemberRate,
+    avgSky3Rate,
+    atRisk: atRiskRow.cnt,
   };
 }

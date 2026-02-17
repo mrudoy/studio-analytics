@@ -201,6 +201,24 @@ export interface ReturningNonMemberData {
   otherBreakdownTop5: { passName: string; count: number }[];
 }
 
+export interface ChurnRateData {
+  /** Monthly churn rates for recent months */
+  monthly: {
+    month: string;
+    memberRate: number;
+    sky3Rate: number;
+    memberActiveStart: number;
+    sky3ActiveStart: number;
+    memberCanceled: number;
+    sky3Canceled: number;
+  }[];
+  /** Average monthly churn rate (last 6 months) */
+  avgMemberRate: number;
+  avgSky3Rate: number;
+  /** At-risk subscribers (Past Due + Invalid + Pending Cancel) */
+  atRisk: number;
+}
+
 export interface TrendsData {
   weekly: TrendRowData[];
   monthly: TrendRowData[];
@@ -209,6 +227,7 @@ export interface TrendsData {
   dropIns: DropInData | null;
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
+  churnRates: ChurnRateData | null;
 }
 
 // cachedTrends declared at top of file alongside cached
@@ -465,7 +484,7 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
     ? { currentWeekTotal: rnmCurrentWeekTotal, currentWeekSegments: rnmCurrentWeekSegments, completedWeeks: rnmCompletedWeeks, aggregateSegments: rnmAggregateSegments, otherBreakdownTop5: [] }
     : null;
 
-  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns, firstVisits, returningNonMembers };
+  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns, firstVisits, returningNonMembers, churnRates: null };
   cachedTrends = { data, fetchedAt: Date.now() };
 
   console.log(

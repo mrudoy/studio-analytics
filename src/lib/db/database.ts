@@ -134,6 +134,41 @@ export function getDatabase(): Database.Database {
       created_at TEXT,
       imported_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Full customer profiles from Union.fit customer export (CRM backbone)
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      union_id TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      email TEXT UNIQUE,
+      phone TEXT,
+      role TEXT,
+      total_spent REAL DEFAULT 0,
+      ltv REAL DEFAULT 0,
+      order_count INTEGER DEFAULT 0,
+      current_free_pass INTEGER DEFAULT 0,
+      current_free_auto_renew INTEGER DEFAULT 0,
+      current_paid_pass INTEGER DEFAULT 0,
+      current_paid_auto_renew INTEGER DEFAULT 0,
+      current_payment_plan INTEGER DEFAULT 0,
+      livestream_registrations INTEGER DEFAULT 0,
+      inperson_registrations INTEGER DEFAULT 0,
+      replay_registrations INTEGER DEFAULT 0,
+      livestream_redeemed INTEGER DEFAULT 0,
+      inperson_redeemed INTEGER DEFAULT 0,
+      replay_redeemed INTEGER DEFAULT 0,
+      instagram TEXT,
+      notes TEXT,
+      birthday TEXT,
+      how_heard TEXT,
+      goals TEXT,
+      neighborhood TEXT,
+      inspiration TEXT,
+      practice_frequency TEXT,
+      created_at TEXT,
+      imported_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Indexes for performance
@@ -150,6 +185,8 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_newcust_email ON new_customers(email);
     CREATE INDEX IF NOT EXISTS idx_fv_email ON first_visits(email);
     CREATE INDEX IF NOT EXISTS idx_reg_email ON registrations(email);
+    CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+    CREATE INDEX IF NOT EXISTS idx_ar_email ON auto_renews(customer_email);
   `);
 
   // Unique indexes for dedup (INSERT OR IGNORE)
