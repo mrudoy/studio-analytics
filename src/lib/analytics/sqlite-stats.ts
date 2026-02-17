@@ -6,7 +6,7 @@
  * have enough data (caller falls back to Sheets).
  */
 
-import { getSubscriptionStats, hasSubscriptionData } from "../db/subscription-store";
+import { getAutoRenewStats, hasAutoRenewData } from "../db/auto-renew-store";
 import { getLatestPeriod, getRevenueForPeriod } from "../db/revenue-store";
 import type { DashboardStats } from "../sheets/read-dashboard";
 
@@ -14,21 +14,21 @@ import type { DashboardStats } from "../sheets/read-dashboard";
  * Attempt to build DashboardStats entirely from SQLite.
  *
  * Requirements to return non-null:
- *   - Subscription data exists and has active subscriptions
+ *   - Auto-renew data exists and has active auto-renews
  *
  * Revenue data is optional — if revenue_categories exist we include them,
  * otherwise we return 0 for revenue fields (better than blocking everything).
  */
 export function computeStatsFromSQLite(): DashboardStats | null {
-  // ── Guard: need subscription data ─────────────────────────
-  if (!hasSubscriptionData()) {
-    console.log("[sqlite-stats] No subscription data in SQLite — skipping");
+  // ── Guard: need auto-renew data ──────────────────────────
+  if (!hasAutoRenewData()) {
+    console.log("[sqlite-stats] No auto-renew data in SQLite — skipping");
     return null;
   }
 
-  const subStats = getSubscriptionStats();
+  const subStats = getAutoRenewStats();
   if (!subStats) {
-    console.log("[sqlite-stats] No active subscriptions — skipping");
+    console.log("[sqlite-stats] No active auto-renews — skipping");
     return null;
   }
 
@@ -66,7 +66,7 @@ export function computeStatsFromSQLite(): DashboardStats | null {
   // ── Build DashboardStats ──────────────────────────────────
   const stats: DashboardStats = {
     lastUpdated: new Date().toISOString(),
-    dateRange: null, // SQLite doesn't store a date range for subscriptions snapshots
+    dateRange: null, // SQLite doesn't store a date range for auto-renew snapshots
     mrr: subStats.mrr,
     activeSubscribers: subStats.active,
     arpu: subStats.arpu,

@@ -50,13 +50,13 @@ export function getDatabase(): Database.Database {
       uploaded_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Subscription snapshots from Union.fit CSV exports
-    CREATE TABLE IF NOT EXISTS subscriptions (
+    -- Auto-renew snapshots from Union.fit CSV exports
+    CREATE TABLE IF NOT EXISTS auto_renews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       snapshot_id TEXT,
-      subscription_name TEXT,
-      subscription_state TEXT,
-      subscription_price REAL,
+      plan_name TEXT,
+      plan_state TEXT,
+      plan_price REAL,
       customer_name TEXT,
       customer_email TEXT,
       created_at TEXT,
@@ -66,7 +66,7 @@ export function getDatabase(): Database.Database {
       canceled_by TEXT,
       admin TEXT,
       current_state TEXT,
-      current_subscription TEXT,
+      current_plan TEXT,
       imported_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -138,9 +138,9 @@ export function getDatabase(): Database.Database {
 
   // Indexes for performance
   db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_sub_state ON subscriptions(subscription_state);
-    CREATE INDEX IF NOT EXISTS idx_sub_created ON subscriptions(created_at);
-    CREATE INDEX IF NOT EXISTS idx_sub_canceled ON subscriptions(canceled_at);
+    CREATE INDEX IF NOT EXISTS idx_ar_state ON auto_renews(plan_state);
+    CREATE INDEX IF NOT EXISTS idx_ar_created ON auto_renews(created_at);
+    CREATE INDEX IF NOT EXISTS idx_ar_canceled ON auto_renews(canceled_at);
     CREATE INDEX IF NOT EXISTS idx_fv_attended ON first_visits(attended_at);
     CREATE INDEX IF NOT EXISTS idx_reg_attended ON registrations(attended_at);
     CREATE INDEX IF NOT EXISTS idx_reg_subscription ON registrations(subscription);
@@ -165,12 +165,19 @@ export function getDatabase(): Database.Database {
   } catch {
     // Column already exists
   }
+  // Migration: rename old "subscriptions" table to "auto_renews"
   try {
-    db.exec(`ALTER TABLE subscriptions ADD COLUMN snapshot_id TEXT`);
-    console.log(`[db] Migration: added snapshot_id column to subscriptions`);
+    db.exec(`ALTER TABLE subscriptions RENAME TO auto_renews`);
+    console.log(`[db] Migration: renamed subscriptions → auto_renews`);
   } catch {
-    // Column already exists
+    // Table already renamed or doesn't exist
   }
+  // Migration: rename old column names
+  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN subscription_name TO plan_name`); } catch { /* already renamed */ }
+  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN subscription_state TO plan_state`); } catch { /* already renamed */ }
+  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN subscription_price TO plan_price`); } catch { /* already renamed */ }
+  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN current_subscription TO current_plan`); } catch { /* already renamed */ }
+  try { db.exec(`ALTER TABLE auto_renews ADD COLUMN snapshot_id TEXT`); } catch { /* already exists */ }
 
   console.log(`[db] SQLite database initialized at ${DB_PATH}`);
   return db;

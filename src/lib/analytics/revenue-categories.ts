@@ -15,16 +15,16 @@ export interface RevenueCategoryAnalysis {
   /** Drop-in revenue (category name contains "Drop-in") */
   dropInRevenue: number;
   dropInNetRevenue: number;
-  /** Subscription-related revenue (SKY UNLIMITED, SKY3, SKY TING TV, etc.) */
-  subscriptionRevenue: number;
-  subscriptionNetRevenue: number;
+  /** Auto-renew revenue (SKY UNLIMITED, SKY3, SKY TING TV, etc.) */
+  autoRenewRevenue: number;
+  autoRenewNetRevenue: number;
   /** Workshop revenue */
   workshopRevenue: number;
   /** Everything else */
   otherRevenue: number;
 }
 
-const SUBSCRIPTION_PATTERNS = [
+const AUTO_RENEW_PATTERNS = [
   /sky\s*unlimited/i,
   /sky\s*3/i,
   /sky\s*ting\s*tv/i,
@@ -58,8 +58,8 @@ export function analyzeRevenueCategories(
   let totalRefunded = 0;
   let dropInRevenue = 0;
   let dropInNetRevenue = 0;
-  let subscriptionRevenue = 0;
-  let subscriptionNetRevenue = 0;
+  let autoRenewRevenue = 0;
+  let autoRenewNetRevenue = 0;
   let workshopRevenue = 0;
   let otherRevenue = 0;
 
@@ -74,9 +74,9 @@ export function analyzeRevenueCategories(
     if (matchesAny(name, DROP_IN_PATTERNS)) {
       dropInRevenue += row.revenue;
       dropInNetRevenue += row.netRevenue;
-    } else if (matchesAny(name, SUBSCRIPTION_PATTERNS)) {
-      subscriptionRevenue += row.revenue;
-      subscriptionNetRevenue += row.netRevenue;
+    } else if (matchesAny(name, AUTO_RENEW_PATTERNS)) {
+      autoRenewRevenue += row.revenue;
+      autoRenewNetRevenue += row.netRevenue;
     } else if (matchesAny(name, WORKSHOP_PATTERNS)) {
       workshopRevenue += row.revenue;
     } else {
@@ -103,8 +103,8 @@ export function analyzeRevenueCategories(
     totalRefunded: Math.round(totalRefunded * 100) / 100,
     dropInRevenue: Math.round(dropInRevenue * 100) / 100,
     dropInNetRevenue: Math.round(dropInNetRevenue * 100) / 100,
-    subscriptionRevenue: Math.round(subscriptionRevenue * 100) / 100,
-    subscriptionNetRevenue: Math.round(subscriptionNetRevenue * 100) / 100,
+    autoRenewRevenue: Math.round(autoRenewRevenue * 100) / 100,
+    autoRenewNetRevenue: Math.round(autoRenewNetRevenue * 100) / 100,
     workshopRevenue: Math.round(workshopRevenue * 100) / 100,
     otherRevenue: Math.round(otherRevenue * 100) / 100,
   };

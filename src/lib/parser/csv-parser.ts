@@ -22,7 +22,7 @@ const COLUMN_ALIASES: Record<string, string> = {
   orderId: "orderId",
   salesChannel: "salesChannel",
   currentState: "currentState",
-  currentSubscription: "currentSubscription",
+  currentSubscription: "currentPlan",
   // Revenue categories CSV → schema fields
   // CSV has "refunded_union_fees" → "refundedUnionFees", but schema uses "unionFeesRefunded"
   refundedUnionFees: "unionFeesRefunded",

@@ -307,7 +307,7 @@ export async function writeRevenueCategoriesTab(
     { Category: "TOTAL", Revenue: analysis.totalRevenue, "Net Revenue": analysis.totalNetRevenue, Fees: analysis.totalFees, Refunded: analysis.totalRefunded },
     { Category: "", Revenue: "", "Net Revenue": "", Fees: "", Refunded: "" },
     // Breakdown by type
-    { Category: "Subscriptions", Revenue: analysis.subscriptionRevenue, "Net Revenue": analysis.subscriptionNetRevenue, Fees: "", Refunded: "" },
+    { Category: "Auto-Renews", Revenue: analysis.autoRenewRevenue, "Net Revenue": analysis.autoRenewNetRevenue, Fees: "", Refunded: "" },
     { Category: "Drop-Ins", Revenue: analysis.dropInRevenue, "Net Revenue": analysis.dropInNetRevenue, Fees: "", Refunded: "" },
     { Category: "Workshops", Revenue: analysis.workshopRevenue, "Net Revenue": "", Fees: "", Refunded: "" },
     { Category: "Other", Revenue: analysis.otherRevenue, "Net Revenue": "", Fees: "", Refunded: "" },

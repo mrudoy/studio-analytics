@@ -1,8 +1,8 @@
-import type { SubscriptionCategory } from "@/types/union-data";
+import type { AutoRenewCategory } from "@/types/union-data";
 
 /**
- * Mapping of Union.fit auto-renew plan names to subscription categories.
- * Source: uploaded CSV "union subscriptions by category"
+ * Mapping of Union.fit auto-renew plan names to categories.
+ * Source: uploaded CSV "union auto-renews by category"
  */
 const MEMBER_PLANS = [
   "SKY UNLIMITED",
@@ -53,7 +53,7 @@ const SKY3_PLANS = [
 ];
 
 // Build a lookup map for O(1) lookups (case-insensitive)
-const planCategoryMap = new Map<string, SubscriptionCategory>();
+const planCategoryMap = new Map<string, AutoRenewCategory>();
 
 for (const plan of MEMBER_PLANS) {
   planCategoryMap.set(plan.toUpperCase(), "MEMBER");
@@ -66,10 +66,10 @@ for (const plan of SKY3_PLANS) {
 }
 
 /**
- * Get the subscription category for a given plan name.
+ * Get the auto-renew category for a given plan name.
  * Uses case-insensitive matching with fuzzy fallback.
  */
-export function getCategory(planName: string): SubscriptionCategory {
+export function getCategory(planName: string): AutoRenewCategory {
   const upper = planName.trim().toUpperCase();
 
   // Exact match
@@ -91,7 +91,7 @@ export function getCategory(planName: string): SubscriptionCategory {
 }
 
 /**
- * Detect whether a subscription plan bills annually (vs monthly).
+ * Detect whether an auto-renew plan bills annually (vs monthly).
  * Annual plans store the full yearly price, so MRR = price / 12.
  *
  * Known annual plans from the SKY TING pricing page:

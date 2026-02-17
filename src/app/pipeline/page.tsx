@@ -64,11 +64,11 @@ const REPORT_LABELS: Record<ReportType, string> = {
   orders: "Orders / Transactions",
   firstVisits: "First Visits",
   allRegistrations: "All Registrations",
-  canceledAutoRenews: "Canceled Subscriptions",
-  activeAutoRenews: "Active Subscriptions",
-  pausedAutoRenews: "Paused Subscriptions",
-  trialingAutoRenews: "Trialing Subscriptions",
-  newAutoRenews: "New Subscriptions",
+  canceledAutoRenews: "Canceled Auto-Renews",
+  activeAutoRenews: "Active Auto-Renews",
+  pausedAutoRenews: "Paused Auto-Renews",
+  trialingAutoRenews: "Trialing Auto-Renews",
+  newAutoRenews: "New Auto-Renews",
   revenueCategories: "Revenue Categories",
   fullRegistrations: "Full Registrations",
 };
@@ -108,7 +108,7 @@ function detectReportType(headers: string[]): { type: ReportType | null; confide
     return { type: "allRegistrations", confidence: "high" };
   }
 
-  // Auto-renew: has subscription-like columns
+  // Auto-renew: has auto-renew columns
   const isAutoRenew =
     (h.has("subscriptionname") || (h.has("name") && h.has("state") && h.has("price"))) &&
     !h.has("attendee") && !h.has("role");

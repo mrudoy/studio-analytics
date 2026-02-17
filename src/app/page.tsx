@@ -45,8 +45,8 @@ interface RevenueCategoryData {
   totalRefunded: number;
   dropInRevenue: number;
   dropInNetRevenue: number;
-  subscriptionRevenue: number;
-  subscriptionNetRevenue: number;
+  autoRenewRevenue: number;
+  autoRenewNetRevenue: number;
   workshopRevenue: number;
   otherRevenue: number;
 }
@@ -600,30 +600,24 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
     );
   }
 
+  const bgColor = delta === 0
+    ? "rgba(128, 128, 128, 0.1)"
+    : isGood
+      ? "rgba(74, 124, 89, 0.1)"
+      : "rgba(160, 64, 64, 0.1)";
+
   return (
-    <div className="flex items-center gap-2 mt-1.5" style={{ fontFamily: FONT_SANS }}>
-      <span
-        className="inline-flex items-center gap-1"
-        style={{ color, fontWeight: 700, fontSize: "1.05rem", letterSpacing: "-0.01em" }}
-      >
-        <span style={{ fontSize: "0.7rem" }}>{arrow}</span>
+    <div
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 mt-1.5"
+      style={{ color, fontFamily: FONT_SANS, backgroundColor: bgColor }}
+    >
+      <span style={{ fontSize: "0.65rem", fontWeight: 700 }}>{arrow}</span>
+      <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
       </span>
       {deltaPercent != null && (
-        <span
-          className="inline-flex items-center rounded-full px-2 py-0.5"
-          style={{
-            color,
-            backgroundColor: delta === 0
-              ? "rgba(128, 128, 128, 0.1)"
-              : isGood
-                ? "rgba(74, 124, 89, 0.1)"
-                : "rgba(160, 64, 64, 0.1)",
-            fontWeight: 600,
-            fontSize: "0.9rem",
-          }}
-        >
-          {formatDeltaPercent(deltaPercent)}
+        <span style={{ fontWeight: 600, fontSize: "0.85rem", opacity: 0.8 }}>
+          ({formatDeltaPercent(deltaPercent)})
         </span>
       )}
     </div>
@@ -694,6 +688,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
 
   return (
     <div className="flex flex-col items-center gap-2" style={{ fontSize: "0.85rem" }}>
+      {/* Combined freshness badge: Updated time + next refresh countdown */}
       <div
         className="inline-flex items-center gap-2 rounded-full px-4 py-1.5"
         style={{
@@ -713,37 +708,17 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
         <span style={{ color: "var(--st-text-secondary)", fontWeight: 400 }}>
           {formatDateTime(lastUpdated)}
         </span>
+        {countdown && refreshState !== "running" && (
+          <>
+            <span style={{ color: "var(--st-border)", fontWeight: 300 }}>|</span>
+            <span style={{ color: "var(--st-text-secondary)", fontWeight: 400 }}>
+              Next in {countdown}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="inline-flex items-center gap-3">
-        {dataSource && (
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
-            style={{
-              color: dataSource === "sqlite" ? "var(--st-success)" : "var(--st-text-secondary)",
-              backgroundColor: dataSource === "sqlite" ? "rgba(74, 124, 89, 0.06)" : "transparent",
-              border: `1px solid ${dataSource === "sqlite" ? "rgba(74, 124, 89, 0.15)" : "var(--st-border)"}`,
-              fontFamily: FONT_SANS,
-              fontWeight: 500,
-              fontSize: "0.8rem",
-            }}
-          >
-            {dataSource === "sqlite" ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <ellipse cx="12" cy="5" rx="9" ry="3" />
-                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-            )}
-            {sourceLabel}
-          </span>
-        )}
-
         {spreadsheetUrl && (
           <a
             href={spreadsheetUrl}
@@ -819,12 +794,6 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
       {refreshState === "running" && (
         <p style={{ fontFamily: FONT_SANS, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginTop: "0.25rem" }}>
           Pipeline running — this takes 5-15 min. Reload page after.
-        </p>
-      )}
-
-      {countdown && refreshState !== "running" && (
-        <p style={{ fontFamily: FONT_SANS, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginTop: "0.25rem" }}>
-          Next auto-refresh in {countdown}
         </p>
       )}
     </div>
@@ -1257,9 +1226,9 @@ const CATEGORY_COLORS = [
 ];
 
 function RevenueCategoriesCard({ data }: { data: RevenueCategoryData }) {
-  // Top-level breakdown: Subscriptions, Drop-Ins, Workshops, Other
+  // Top-level breakdown: Auto-Renews, Drop-Ins, Workshops, Other
   const breakdownSegments = [
-    { value: data.subscriptionRevenue, color: COLORS.member, label: "Subscriptions" },
+    { value: data.autoRenewRevenue, color: COLORS.member, label: "Auto-Renews" },
     { value: data.dropInRevenue, color: COLORS.warning, label: "Drop-Ins" },
     { value: data.workshopRevenue, color: COLORS.sky3, label: "Workshops" },
     { value: data.otherRevenue, color: COLORS.tv, label: "Other" },
@@ -2282,8 +2251,8 @@ function DashboardView() {
           <RevenueCategoriesCard data={data.revenueCategories} />
         )}
 
-        {/* ━━ Subscriptions ━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        <SectionHeader>Subscriptions</SectionHeader>
+        {/* ━━ Auto-Renews ━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        <SectionHeader>Auto-Renews</SectionHeader>
 
         {/* Members */}
         <CategoryDetail

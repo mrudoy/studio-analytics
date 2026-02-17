@@ -57,7 +57,7 @@ export interface AutoRenew {
   created?: string;    // "Created" column on active/new reports
 }
 
-export type SubscriptionCategory = "MEMBER" | "SKY3" | "SKY_TING_TV" | "UNKNOWN";
+export type AutoRenewCategory = "MEMBER" | "SKY3" | "SKY_TING_TV" | "UNKNOWN";
 
 export interface FullRegistration {
   eventName: string;

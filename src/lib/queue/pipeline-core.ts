@@ -54,9 +54,9 @@ import {
   lockPeriod,
 } from "../db/revenue-store";
 import {
-  saveSubscriptions,
-  type SubscriptionRow,
-} from "../db/subscription-store";
+  saveAutoRenews,
+  type AutoRenewRow,
+} from "../db/auto-renew-store";
 import {
   saveRegistrations,
   saveFirstVisits,
@@ -283,34 +283,34 @@ export async function runPipelineFromFiles(
     }
   }
 
-  // Save subscriptions to SQLite (all auto-renew reports merged)
-  const allSubsForDb = [
+  // Save auto-renews to SQLite (all auto-renew reports merged)
+  const allAutoRenewsForDb = [
     ...activeResult.data,
     ...pausedResult.data,
     ...trialingResult.data,
     ...newAutoRenewsResult.data,
     ...canceledResult.data,
   ];
-  if (allSubsForDb.length > 0) {
-    progress("Saving subscriptions to database", 74);
+  if (allAutoRenewsForDb.length > 0) {
+    progress("Saving auto-renews to database", 74);
     try {
       const snapshotId = `pipeline-${Date.now()}`;
-      const subRows: SubscriptionRow[] = allSubsForDb.map((ar) => ({
-        subscriptionName: ar.name,
-        subscriptionState: ar.state,
-        subscriptionPrice: ar.price,
+      const arRows: AutoRenewRow[] = allAutoRenewsForDb.map((ar) => ({
+        planName: ar.name,
+        planState: ar.state,
+        planPrice: ar.price,
         customerName: ar.customer,
         customerEmail: ar.email || "",
         createdAt: ar.created || "",
         canceledAt: ar.canceledAt || undefined,
       }));
-      saveSubscriptions(snapshotId, subRows);
-      console.log(`[pipeline-core] Saved ${subRows.length} subscriptions to SQLite (snapshot: ${snapshotId})`);
+      saveAutoRenews(snapshotId, arRows);
+      console.log(`[pipeline-core] Saved ${arRows.length} auto-renews to SQLite (snapshot: ${snapshotId})`);
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save subscriptions to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save auto-renews to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`Subscription SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
+      allWarnings.push(`Auto-renew SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
     }
   }
 

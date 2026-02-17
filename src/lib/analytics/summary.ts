@@ -3,7 +3,7 @@ import { getCategory, isAnnualPlan } from "./categories";
 import { parseDate, getMonthKey } from "./date-utils";
 
 /**
- * Only count subscriptions in these states for active subscriber totals and MRR.
+ * Only count auto-renews in these states for active subscriber totals and MRR.
  * "Valid Now" = actively billing, "Paused" = on hold but still a subscriber.
  * "In Trial" / "Trialing" = trial period, counted as active (matches Union.fit behavior).
  * Excluded: "Pending Cancellation", "Past Due"
@@ -79,7 +79,7 @@ export function computeSummary(activeAutoRenews: AutoRenew[], orders: Order[] = 
   // Log filtered-out states for visibility
   if (Object.keys(skippedStates).length > 0) {
     const total = Object.values(skippedStates).reduce((a, b) => a + b, 0);
-    console.log(`[summary] Filtered out ${total} subscriptions by state: ${JSON.stringify(skippedStates)}`);
+    console.log(`[summary] Filtered out ${total} auto-renews by state: ${JSON.stringify(skippedStates)}`);
   }
 
   // Log unknown plan names for debugging

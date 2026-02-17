@@ -1,9 +1,10 @@
 /**
- * Import the BEST available data from all sources into SQLite.
+ * Import the latest email CSV attachments directly into SQLite.
  *
- * Picks the largest/newest file for each report type.
+ * This is simpler than the full pipeline — it just parses the raw CSVs
+ * and inserts into the correct SQLite tables using the store modules.
  *
- * Usage: npx tsx scripts/import-best-data.ts
+ * Usage: npx tsx scripts/import-email-csvs.ts
  */
 import * as dotenv from "dotenv";
 dotenv.config();
@@ -26,14 +27,14 @@ function parseCSVFile(filePath: string): Record<string, string>[] {
 }
 
 /**
- * Find the LARGEST file matching a pattern (more rows = wider date range).
+ * Find the most recent file matching a pattern in a directory.
  */
-function findLargestFile(dir: string, pattern: RegExp): string | null {
+function findLatestFile(dir: string, pattern: RegExp): string | null {
   try {
     const files = readdirSync(dir)
       .filter(f => pattern.test(f))
-      .map(f => ({ name: f, size: statSync(join(dir, f)).size }))
-      .sort((a, b) => b.size - a.size); // Largest first
+      .map(f => ({ name: f, mtime: statSync(join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
     return files.length > 0 ? join(dir, files[0].name) : null;
   } catch {
     return null;
@@ -41,17 +42,18 @@ function findLargestFile(dir: string, pattern: RegExp): string | null {
 }
 
 function main() {
-  console.log("=== Import Best Available Data into SQLite ===\n");
+  console.log("=== Import Email CSVs into SQLite ===\n");
 
+  // Initialize DB
   const db = getDatabase();
   console.log("Database initialized.\n");
 
-  // ── 1. Auto-Renews — pick the largest file (most complete date range) ──
-  const subsFile = findLargestFile(EMAIL_DIR, /union-sky-ting-subscriptions/i);
+  // ── 1. Auto-Renews (from email) ──
+  const subsFile = findLatestFile(EMAIL_DIR, /union-sky-ting-subscriptions/i);
   if (subsFile) {
     console.log("Auto-Renews:", subsFile.split("/").pop());
     const rows = parseCSVFile(subsFile);
-    const snapshotId = "backfill-best-" + Date.now();
+    const snapshotId = "backfill-2025-" + Date.now();
     const arRows: AutoRenewRow[] = rows.map(r => ({
       planName: r.subscription_name || "",
       planState: r.subscription_state || "",
@@ -64,14 +66,17 @@ function main() {
     saveAutoRenews(snapshotId, arRows);
     console.log("  Saved", arRows.length, "auto-renews");
 
+    // Show date range
     const dates = arRows.map(r => r.createdAt).filter(Boolean).sort();
     if (dates.length > 0) {
       console.log("  Range:", dates[0], "->", dates[dates.length - 1]);
     }
+  } else {
+    console.log("Auto-Renews: (no file found)");
   }
 
-  // ── 2. First Visits — pick the largest (widest date range) ──
-  const fvFile = findLargestFile(EMAIL_DIR, /first-visit/i);
+  // ── 2. First Visits (from email) ──
+  const fvFile = findLatestFile(EMAIL_DIR, /first-visit/i);
   if (fvFile) {
     console.log("\nFirst Visits:", fvFile.split("/").pop());
     const rows = parseCSVFile(fvFile);
@@ -97,10 +102,12 @@ function main() {
     if (dates.length > 0) {
       console.log("  Range:", dates[0], "->", dates[dates.length - 1]);
     }
+  } else {
+    console.log("\nFirst Visits: (no file found)");
   }
 
-  // ── 3. Full Registrations — pick the largest ──
-  const regFile = findLargestFile(EMAIL_DIR, /registration-export(?!.*first)/i);
+  // ── 3. Full Registrations (from email) ──
+  const regFile = findLatestFile(EMAIL_DIR, /registration-export(?!.*first)/i);
   if (regFile) {
     console.log("\nFull Registrations:", regFile.split("/").pop());
     const rows = parseCSVFile(regFile);
@@ -126,10 +133,12 @@ function main() {
     if (dates.length > 0) {
       console.log("  Range:", dates[0], "->", dates[dates.length - 1]);
     }
+  } else {
+    console.log("\nFull Registrations: (no file found)");
   }
 
   // ── 4. Orders (from data/downloads) ──
-  const ordersFile = findLargestFile(DOWNLOADS_DIR, /orders/i);
+  const ordersFile = findLatestFile(DOWNLOADS_DIR, /orders/i);
   if (ordersFile) {
     console.log("\nOrders:", ordersFile.split("/").pop());
     const rows = parseCSVFile(ordersFile);
@@ -148,10 +157,12 @@ function main() {
     if (dates.length > 0) {
       console.log("  Range:", dates[0], "->", dates[dates.length - 1]);
     }
+  } else {
+    console.log("\nOrders: (no file found)");
   }
 
   // ── 5. New Customers (from data/downloads) ──
-  const custFile = findLargestFile(DOWNLOADS_DIR, /newCustomers|customer/i);
+  const custFile = findLatestFile(DOWNLOADS_DIR, /newCustomers|customer/i);
   if (custFile) {
     console.log("\nNew Customers:", custFile.split("/").pop());
     const rows = parseCSVFile(custFile);
@@ -169,32 +180,16 @@ function main() {
     if (dates.length > 0) {
       console.log("  Range:", dates[0], "->", dates[dates.length - 1]);
     }
+  } else {
+    console.log("\nNew Customers: (no file found)");
   }
 
   // ── Summary ──
-  console.log("\n=== Final Data Summary ===");
-  const checks = [
-    { table: "subscriptions", col: "created_at" },
-    { table: "first_visits", col: "attended_at" },
-    { table: "registrations", col: "attended_at" },
-    { table: "orders", col: "created_at" },
-    { table: "new_customers", col: "created_at" },
-    { table: "revenue_categories", col: "period_start" },
-  ];
-
-  for (const { table, col } of checks) {
-    try {
-      const row = db.prepare(
-        "SELECT COUNT(*) as count, MIN(" + col + ") as earliest, MAX(" + col + ") as latest FROM " + table + " WHERE " + col + " IS NOT NULL AND " + col + " <> ''"
-      ).get() as { count: number; earliest: string; latest: string };
-      if (row.count > 0) {
-        console.log("  " + table + ": " + row.count + " rows | " + row.earliest + " -> " + row.latest);
-      } else {
-        console.log("  " + table + ": (empty)");
-      }
-    } catch {
-      console.log("  " + table + ": (error)");
-    }
+  console.log("\n=== Import Summary ===");
+  const tables = ["subscriptions", "first_visits", "registrations", "orders", "new_customers"];
+  for (const table of tables) {
+    const row = db.prepare("SELECT COUNT(*) as count FROM " + table).get() as { count: number };
+    console.log("  " + table + ": " + row.count + " rows");
   }
 }
 

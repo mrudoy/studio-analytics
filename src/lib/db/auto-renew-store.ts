@@ -1,13 +1,13 @@
 import { getDatabase } from "./database";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
-import type { SubscriptionCategory } from "@/types/union-data";
+import type { AutoRenewCategory } from "@/types/union-data";
 
 // ── Types ────────────────────────────────────────────────────
 
-export interface SubscriptionRow {
-  subscriptionName: string;
-  subscriptionState: string;
-  subscriptionPrice: number;
+export interface AutoRenewRow {
+  planName: string;
+  planState: string;
+  planPrice: number;
   customerName: string;
   customerEmail: string;
   createdAt: string;
@@ -17,26 +17,26 @@ export interface SubscriptionRow {
   canceledBy?: string;
   admin?: string;
   currentState?: string;
-  currentSubscription?: string;
+  currentPlan?: string;
 }
 
-export interface StoredSubscription {
+export interface StoredAutoRenew {
   id: number;
   snapshotId: string | null;
-  subscriptionName: string;
-  subscriptionState: string;
-  subscriptionPrice: number;
+  planName: string;
+  planState: string;
+  planPrice: number;
   customerName: string;
   customerEmail: string;
   createdAt: string;
   canceledAt: string | null;
-  category: SubscriptionCategory;
+  category: AutoRenewCategory;
   isAnnual: boolean;
   /** Monthly rate: price / 12 for annual plans, price for monthly */
   monthlyRate: number;
 }
 
-export interface SubscriptionStats {
+export interface AutoRenewStats {
   active: {
     member: number;
     sky3: number;
@@ -62,33 +62,33 @@ export interface SubscriptionStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save a batch of subscriptions from a CSV import.
+ * Save a batch of auto-renews from a CSV import.
  * Replaces all existing data (full snapshot).
  */
-export function saveSubscriptions(
+export function saveAutoRenews(
   snapshotId: string,
-  rows: SubscriptionRow[]
+  rows: AutoRenewRow[]
 ): void {
   const db = getDatabase();
 
   const insert = db.prepare(`
-    INSERT INTO subscriptions (
-      snapshot_id, subscription_name, subscription_state, subscription_price,
+    INSERT INTO auto_renews (
+      snapshot_id, plan_name, plan_state, plan_price,
       customer_name, customer_email, created_at, order_id, sales_channel,
-      canceled_at, canceled_by, admin, current_state, current_subscription
+      canceled_at, canceled_by, admin, current_state, current_plan
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const insertMany = db.transaction((items: SubscriptionRow[]) => {
+  const insertMany = db.transaction((items: AutoRenewRow[]) => {
     // Clear existing data for clean import
-    db.exec("DELETE FROM subscriptions");
+    db.exec("DELETE FROM auto_renews");
 
     for (const row of items) {
       insert.run(
         snapshotId,
-        row.subscriptionName,
-        row.subscriptionState,
-        row.subscriptionPrice,
+        row.planName,
+        row.planState,
+        row.planPrice,
         row.customerName,
         row.customerEmail,
         row.createdAt,
@@ -98,41 +98,41 @@ export function saveSubscriptions(
         row.canceledBy || null,
         row.admin || null,
         row.currentState || null,
-        row.currentSubscription || null
+        row.currentPlan || null
       );
     }
   });
 
   insertMany(rows);
-  console.log(`[subscription-store] Saved ${rows.length} subscriptions (snapshot: ${snapshotId})`);
+  console.log(`[auto-renew-store] Saved ${rows.length} auto-renews (snapshot: ${snapshotId})`);
 }
 
 // ── Read Operations ──────────────────────────────────────────
 
-interface RawSubscriptionRow {
+interface RawAutoRenewRow {
   id: number;
   snapshot_id: string | null;
-  subscription_name: string;
-  subscription_state: string;
-  subscription_price: number;
+  plan_name: string;
+  plan_state: string;
+  plan_price: number;
   customer_name: string;
   customer_email: string;
   created_at: string;
   canceled_at: string | null;
 }
 
-function mapRow(raw: RawSubscriptionRow): StoredSubscription {
-  const name = raw.subscription_name || "";
+function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
+  const name = raw.plan_name || "";
   const cat = getCategory(name);
   const annual = isAnnualPlan(name);
-  const price = raw.subscription_price || 0;
+  const price = raw.plan_price || 0;
 
   return {
     id: raw.id,
     snapshotId: raw.snapshot_id,
-    subscriptionName: name,
-    subscriptionState: raw.subscription_state || "",
-    subscriptionPrice: price,
+    planName: name,
+    planState: raw.plan_state || "",
+    planPrice: price,
     customerName: raw.customer_name || "",
     customerEmail: raw.customer_email || "",
     createdAt: raw.created_at || "",
@@ -144,87 +144,87 @@ function mapRow(raw: RawSubscriptionRow): StoredSubscription {
 }
 
 /**
- * Get all active subscriptions (subscription_state = 'Valid Now').
+ * Get all active auto-renews (plan_state = 'Valid Now').
  */
-export function getActiveSubscriptions(): StoredSubscription[] {
+export function getActiveAutoRenews(): StoredAutoRenew[] {
   const db = getDatabase();
   const rows = db.prepare(
-    `SELECT id, snapshot_id, subscription_name, subscription_state, subscription_price,
+    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
-     FROM subscriptions
-     WHERE subscription_state = 'Valid Now'
-     ORDER BY subscription_name`
-  ).all() as RawSubscriptionRow[];
+     FROM auto_renews
+     WHERE plan_state = 'Valid Now'
+     ORDER BY plan_name`
+  ).all() as RawAutoRenewRow[];
 
   return rows.map(mapRow);
 }
 
 /**
- * Get subscriptions created within a date range (new subscriptions).
+ * Get auto-renews created within a date range (new auto-renews).
  */
-export function getNewSubscriptions(startDate: string, endDate: string): StoredSubscription[] {
+export function getNewAutoRenews(startDate: string, endDate: string): StoredAutoRenew[] {
   const db = getDatabase();
   const rows = db.prepare(
-    `SELECT id, snapshot_id, subscription_name, subscription_state, subscription_price,
+    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
-     FROM subscriptions
+     FROM auto_renews
      WHERE created_at >= ? AND created_at < ?
      ORDER BY created_at`
-  ).all(startDate, endDate) as RawSubscriptionRow[];
+  ).all(startDate, endDate) as RawAutoRenewRow[];
 
   return rows.map(mapRow);
 }
 
 /**
- * Get subscriptions canceled within a date range.
+ * Get auto-renews canceled within a date range.
  */
-export function getCanceledSubscriptions(startDate: string, endDate: string): StoredSubscription[] {
+export function getCanceledAutoRenews(startDate: string, endDate: string): StoredAutoRenew[] {
   const db = getDatabase();
   const rows = db.prepare(
-    `SELECT id, snapshot_id, subscription_name, subscription_state, subscription_price,
+    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
-     FROM subscriptions
+     FROM auto_renews
      WHERE canceled_at IS NOT NULL AND canceled_at >= ? AND canceled_at < ?
      ORDER BY canceled_at`
-  ).all(startDate, endDate) as RawSubscriptionRow[];
+  ).all(startDate, endDate) as RawAutoRenewRow[];
 
   return rows.map(mapRow);
 }
 
 /**
- * Get all subscriptions (any state).
+ * Get all auto-renews (any state).
  */
-export function getAllSubscriptions(): StoredSubscription[] {
+export function getAllAutoRenews(): StoredAutoRenew[] {
   const db = getDatabase();
   const rows = db.prepare(
-    `SELECT id, snapshot_id, subscription_name, subscription_state, subscription_price,
+    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
-     FROM subscriptions
-     ORDER BY subscription_name`
-  ).all() as RawSubscriptionRow[];
+     FROM auto_renews
+     ORDER BY plan_name`
+  ).all() as RawAutoRenewRow[];
 
   return rows.map(mapRow);
 }
 
 /**
- * Compute aggregate subscription stats: active counts, MRR, ARPU by category.
+ * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
  */
-export function getSubscriptionStats(): SubscriptionStats | null {
-  const active = getActiveSubscriptions();
+export function getAutoRenewStats(): AutoRenewStats | null {
+  const active = getActiveAutoRenews();
   if (active.length === 0) return null;
 
   const counts = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
   const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
 
-  for (const sub of active) {
-    const key = sub.category === "MEMBER" ? "member"
-      : sub.category === "SKY3" ? "sky3"
-      : sub.category === "SKY_TING_TV" ? "skyTingTv"
+  for (const ar of active) {
+    const key = ar.category === "MEMBER" ? "member"
+      : ar.category === "SKY3" ? "sky3"
+      : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
 
     counts[key]++;
-    mrr[key] += sub.monthlyRate;
+    mrr[key] += ar.monthlyRate;
   }
 
   // Round MRR values
@@ -255,12 +255,12 @@ export function getSubscriptionStats(): SubscriptionStats | null {
 }
 
 /**
- * Check if subscription data exists in the database.
+ * Check if auto-renew data exists in the database.
  */
-export function hasSubscriptionData(): boolean {
+export function hasAutoRenewData(): boolean {
   const db = getDatabase();
   const row = db.prepare(
-    `SELECT COUNT(*) as count FROM subscriptions`
+    `SELECT COUNT(*) as count FROM auto_renews`
   ).get() as { count: number };
   return row.count > 0;
 }

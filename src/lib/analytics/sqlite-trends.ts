@@ -6,7 +6,7 @@
  * have enough data (caller falls back to Sheets).
  *
  * Data sources:
- *   - subscriptions table  → weekly/monthly trends, pacing, projection
+ *   - auto_renews table    → weekly/monthly trends, pacing, projection
  *   - registrations table  → drop-in analytics
  *   - first_visits table   → first visit stats, returning non-members
  */
@@ -14,11 +14,11 @@
 import { getCategory, isAnnualPlan } from "./categories";
 import { parseDate, getWeekKey, getMonthKey } from "./date-utils";
 import {
-  getNewSubscriptions,
-  getCanceledSubscriptions,
-  getSubscriptionStats,
-  hasSubscriptionData,
-} from "../db/subscription-store";
+  getNewAutoRenews,
+  getCanceledAutoRenews,
+  getAutoRenewStats,
+  hasAutoRenewData,
+} from "../db/auto-renew-store";
 import {
   getDropInsByWeek,
   getDropInStats,
@@ -102,12 +102,12 @@ function bucketToTrendRow(period: string, type: string, b: PeriodBucket, prev: P
 // ── Main ────────────────────────────────────────────────────
 
 export function computeTrendsFromSQLite(): TrendsData | null {
-  if (!hasSubscriptionData()) {
-    console.log("[sqlite-trends] No subscription data in SQLite — skipping");
+  if (!hasAutoRenewData()) {
+    console.log("[sqlite-trends] No auto-renew data in SQLite — skipping");
     return null;
   }
 
-  // ── 1. Build weekly/monthly buckets from subscription data ──
+  // ── 1. Build weekly/monthly buckets from auto-renew data ──
   const now = new Date();
   const currentMonthKey = getMonthKey(now);
   const currentWeekKey = getWeekKey(now);
@@ -118,8 +118,8 @@ export function computeTrendsFromSQLite(): TrendsData | null {
   const startDate = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
   const endDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate() + 1).padStart(2, "0")}`;
 
-  const newSubs = getNewSubscriptions(startDate, endDate);
-  const canceledSubs = getCanceledSubscriptions(startDate, endDate);
+  const newSubs = getNewAutoRenews(startDate, endDate);
+  const canceledSubs = getCanceledAutoRenews(startDate, endDate);
 
   const weeklyBuckets = new Map<string, PeriodBucket>();
   const monthlyBuckets = new Map<string, PeriodBucket>();
@@ -205,7 +205,7 @@ export function computeTrendsFromSQLite(): TrendsData | null {
 
   // ── 4. Annual projection ─────────────────────────────────
   let projection: ProjectionData | null = null;
-  const subStats = getSubscriptionStats();
+  const subStats = getAutoRenewStats();
 
   if (subStats) {
     const currentMRR = subStats.mrr.total;
