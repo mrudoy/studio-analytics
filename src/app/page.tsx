@@ -1522,9 +1522,14 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
             Visits
           </span>
         </div>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
-          {formatNumber(dropIns.currentMonthTotal)}
-        </span>
+        <div className="flex flex-col items-end">
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+            {formatNumber(dropIns.currentMonthTotal)}
+          </span>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.7rem", color: "var(--st-text-secondary)", marginTop: "0.25rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Month to Date
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
