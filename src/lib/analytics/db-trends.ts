@@ -283,9 +283,10 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
         // Determine how many months the data actually spans
         // Check if any period covers a full year (e.g. 2025-01-01 to 2025-12-31)
         const spansFullYear = priorYearPeriods.some((p) => {
-          const start = new Date(p.periodStart);
-          const end = new Date(p.periodEnd);
+          const start = new Date(p.periodStart + "T00:00:00");
+          const end = new Date(p.periodEnd + "T00:00:00");
           const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+          console.log(`[db-trends] Period span check: ${p.periodStart} to ${p.periodEnd}, start=${start.toISOString()}, end=${end.toISOString()}, months=${months}`);
           return months >= 11; // covers 11+ months = full year
         });
 
@@ -306,8 +307,8 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
           console.log(`[db-trends] Prior year ${priorYear}: ${coveredMonths} months, $${Math.round(totalNet).toLocaleString()} actual, $${priorYearActualRevenue?.toLocaleString()} annualized`);
         }
       }
-    } catch {
-      // revenue_categories may not exist yet
+    } catch (err) {
+      console.warn(`[db-trends] Failed to compute prior year actual revenue:`, err instanceof Error ? err.message : err);
     }
 
     // MRR-based estimate as fallback

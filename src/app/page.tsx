@@ -726,8 +726,8 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
 
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
-        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.8rem", whiteSpace: "nowrap", backgroundColor: compactBg }}
+        className="inline-flex items-center rounded-full px-2 py-0.5"
+        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.8rem", whiteSpace: "nowrap", backgroundColor: compactBg, gap: "2px" }}
       >
         <span style={{ fontSize: "0.55rem" }}>{arrow}</span>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
@@ -744,8 +744,8 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
 
   return (
     <div
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 mt-1.5"
-      style={{ color, fontFamily: FONT_SANS, backgroundColor: bgColor }}
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 mt-1.5"
+      style={{ color, fontFamily: FONT_SANS, backgroundColor: bgColor, gap: "3px" }}
     >
       <span style={{ fontSize: "0.65rem", fontWeight: 700 }}>{arrow}</span>
       <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>
