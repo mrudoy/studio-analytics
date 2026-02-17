@@ -1778,162 +1778,212 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
   );
 }
 
-// ─── Churn Rate Card ────────────────────────────────────────
+// ─── Churn Section ──────────────────────────────────────────
 
-function ChurnRateCard({ churn }: { churn: ChurnRateData }) {
-  const completedMonths = churn.monthly.filter(
-    (_, i) => i < churn.monthly.length - 1
-  );
-  const currentMonth = churn.monthly[churn.monthly.length - 1];
+function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
+  const categories = [
+    { key: "member" as const, label: "Members", color: COLORS.member, data: churnRates.byCategory.member },
+    { key: "sky3" as const, label: "SKY3", color: COLORS.sky3, data: churnRates.byCategory.sky3 },
+    { key: "tv" as const, label: "SKY TING TV", color: COLORS.tv, data: churnRates.byCategory.skyTingTv },
+  ];
 
-  // Industry benchmark: 5-7% is healthy for fitness
-  const getBenchmarkColor = (rate: number) => {
-    if (rate <= 7) return COLORS.success;
-    if (rate <= 12) return COLORS.warning;
-    return COLORS.error;
-  };
+  // Get completed months from the first category (they all share the same months)
+  const firstCat = churnRates.byCategory.member;
+  const completedMonths = firstCat?.monthly?.slice(0, -1).slice(-6) ?? [];
 
-  const formatMonth = (m: string) => {
-    const [y, mo] = m.split("-");
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return months[parseInt(mo) - 1] + " " + y.slice(2);
-  };
-
-  // Max rate for bar scaling
+  // Max rate across ALL categories for bar scaling
   const maxRate = Math.max(
-    ...churn.monthly.map((m) => Math.max(m.memberRate, m.sky3Rate)),
+    ...categories.flatMap((c) =>
+      (c.data?.monthly?.slice(0, -1).slice(-6) ?? []).map((m) => m.userChurnRate)
+    ),
     1
   );
 
+  // Total at-risk across all categories
+  const totalAtRisk = categories.reduce((sum, c) => sum + (c.data?.atRiskCount ?? 0), 0);
+
   return (
-    <div
-      className="rounded-xl p-5"
-      style={{
-        backgroundColor: "var(--st-surface)",
-        border: "1px solid var(--st-border)",
-        fontFamily: FONT_SANS,
-      }}
-    >
-      {/* Header with averages */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 style={{ fontFamily: FONT_BRAND, fontSize: "1.3rem", fontWeight: 600, color: "var(--st-text)" }}>
-          Churn Rates
-        </h3>
-        <div className="flex items-center gap-3">
-          {churn.atRisk > 0 && (
-            <span
-              className="rounded-full px-2.5 py-0.5"
+    <div className="space-y-5">
+      <SectionHeader subtitle={totalAtRisk > 0 ? `${totalAtRisk} at-risk subscribers` : undefined}>
+        Churn
+      </SectionHeader>
+
+      {/* ── Overview: 3 tiles ── */}
+      <div className="grid grid-cols-3 gap-3">
+        {categories.map(({ label, color, data }) => {
+          if (!data) return <div key={label} />;
+          return (
+            <div
+              key={label}
+              className="rounded-xl p-4"
               style={{
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                color: COLORS.warning,
-                backgroundColor: COLORS.warning + "15",
+                backgroundColor: "var(--st-surface)",
+                border: "1px solid var(--st-border)",
+                fontFamily: FONT_SANS,
               }}
             >
-              {churn.atRisk} at-risk
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Average rate pills */}
-      <div className="flex gap-3 mb-5">
-        <div
-          className="flex-1 rounded-lg p-3"
-          style={{ backgroundColor: COLORS.member + "08", border: `1px solid ${COLORS.member}20` }}
-        >
-          <div style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" }}>
-            Members avg monthly
-          </div>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span style={{ fontSize: "1.6rem", fontWeight: 700, color: getBenchmarkColor(churn.avgMemberRate) }}>
-              {churn.avgMemberRate.toFixed(1)}%
-            </span>
-            <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>
-              ({currentMonth?.memberCanceled ?? 0} canceled MTD)
-            </span>
-          </div>
-        </div>
-        <div
-          className="flex-1 rounded-lg p-3"
-          style={{ backgroundColor: COLORS.sky3 + "08", border: `1px solid ${COLORS.sky3}20` }}
-        >
-          <div style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" }}>
-            SKY3 avg monthly
-          </div>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span style={{ fontSize: "1.6rem", fontWeight: 700, color: getBenchmarkColor(churn.avgSky3Rate) }}>
-              {churn.avgSky3Rate.toFixed(1)}%
-            </span>
-            <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>
-              ({currentMonth?.sky3Canceled ?? 0} canceled MTD)
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Monthly bar chart */}
-      <div style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)", fontWeight: 500, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-        Monthly Churn Rate
-      </div>
-      <div className="space-y-2">
-        {completedMonths.map((m) => (
-          <div key={m.month} className="flex items-center gap-2" style={{ fontSize: "0.75rem" }}>
-            <span style={{ width: "44px", color: "var(--st-text-secondary)", fontWeight: 500, flexShrink: 0 }}>
-              {formatMonth(m.month)}
-            </span>
-            <div className="flex-1 flex flex-col gap-0.5">
-              {/* Members bar */}
-              <div className="flex items-center gap-1.5">
-                <div
-                  style={{
-                    height: "6px",
-                    width: `${(m.memberRate / maxRate) * 100}%`,
-                    minWidth: m.memberRate > 0 ? "4px" : "0",
-                    backgroundColor: COLORS.member,
-                    borderRadius: "3px",
-                    opacity: 0.7,
-                  }}
-                />
-                <span style={{ fontSize: "0.65rem", color: COLORS.member, fontWeight: 600, flexShrink: 0 }}>
-                  {m.memberRate.toFixed(1)}%
+              {/* Category label */}
+              <div className="flex items-center gap-2 mb-3">
+                <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: color }} />
+                <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text)" }}>
+                  {label}
                 </span>
               </div>
-              {/* SKY3 bar */}
-              <div className="flex items-center gap-1.5">
-                <div
-                  style={{
-                    height: "6px",
-                    width: `${(m.sky3Rate / maxRate) * 100}%`,
-                    minWidth: m.sky3Rate > 0 ? "4px" : "0",
-                    backgroundColor: COLORS.sky3,
-                    borderRadius: "3px",
-                    opacity: 0.7,
-                  }}
-                />
-                <span style={{ fontSize: "0.65rem", color: COLORS.sky3, fontWeight: 600, flexShrink: 0 }}>
-                  {m.sky3Rate.toFixed(1)}%
+
+              {/* User churn rate (primary metric) */}
+              <div style={{ marginBottom: "0.5rem" }}>
+                <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 2 }}>
+                  User Churn (avg/mo)
+                </div>
+                <span style={{ fontSize: "1.5rem", fontWeight: 700, color: churnBenchmarkColor(data.avgUserChurnRate) }}>
+                  {data.avgUserChurnRate.toFixed(1)}%
                 </span>
+              </div>
+
+              {/* MRR churn + at-risk row */}
+              <div className="flex items-center gap-3">
+                <div>
+                  <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 1 }}>
+                    MRR Churn
+                  </div>
+                  <span style={{ fontSize: "0.95rem", fontWeight: 600, color: churnBenchmarkColor(data.avgMrrChurnRate) }}>
+                    {data.avgMrrChurnRate.toFixed(1)}%
+                  </span>
+                </div>
+                {data.atRiskCount > 0 && (
+                  <div style={{ marginLeft: "auto" }}>
+                    <span
+                      className="rounded-full px-2 py-0.5"
+                      style={{
+                        fontSize: "0.7rem",
+                        fontWeight: 600,
+                        color: COLORS.warning,
+                        backgroundColor: COLORS.warning + "15",
+                      }}
+                    >
+                      {data.atRiskCount} at-risk
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-4 mt-3 pt-3" style={{ borderTop: "1px solid var(--st-border)" }}>
-        <div className="flex items-center gap-1.5">
-          <div style={{ width: "8px", height: "8px", borderRadius: "2px", backgroundColor: COLORS.member, opacity: 0.7 }} />
-          <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>Members</span>
+      {/* ── Monthly Trend Chart ── */}
+      <div
+        className="rounded-xl p-5"
+        style={{
+          backgroundColor: "var(--st-surface)",
+          border: "1px solid var(--st-border)",
+          fontFamily: FONT_SANS,
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div style={{ fontSize: "0.72rem", color: "var(--st-text-secondary)", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+            Monthly User Churn Rate
+          </div>
+          <span style={{ fontSize: "0.65rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+            Healthy: 5-7%
+          </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div style={{ width: "8px", height: "8px", borderRadius: "2px", backgroundColor: COLORS.sky3, opacity: 0.7 }} />
-          <span style={{ fontSize: "0.7rem", color: "var(--st-text-secondary)" }}>SKY3</span>
+
+        {/* Grouped bar chart — one row per month, bars for each category */}
+        <div className="space-y-3">
+          {completedMonths.map((m) => {
+            const memberM = churnRates.byCategory.member?.monthly?.find((x) => x.month === m.month);
+            const sky3M = churnRates.byCategory.sky3?.monthly?.find((x) => x.month === m.month);
+            const tvM = churnRates.byCategory.skyTingTv?.monthly?.find((x) => x.month === m.month);
+
+            return (
+              <div key={m.month}>
+                <div style={{ fontSize: "0.72rem", color: "var(--st-text-secondary)", fontWeight: 500, marginBottom: 4 }}>
+                  {formatMonthLabel(m.month)}
+                </div>
+                <div className="flex flex-col gap-1">
+                  {/* Members bar */}
+                  {memberM && (
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 48, fontSize: "0.65rem", color: COLORS.member, fontWeight: 500, flexShrink: 0 }}>Members</div>
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <div style={{
+                          height: 8,
+                          width: `${Math.max((memberM.userChurnRate / maxRate) * 100, memberM.userChurnRate > 0 ? 2 : 0)}%`,
+                          backgroundColor: COLORS.member,
+                          borderRadius: 4,
+                          opacity: 0.75,
+                        }} />
+                        <span style={{ fontSize: "0.7rem", color: COLORS.member, fontWeight: 600, flexShrink: 0 }}>
+                          {memberM.userChurnRate.toFixed(1)}%
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", flexShrink: 0 }}>
+                        {memberM.canceledCount}/{memberM.activeAtStart}
+                      </span>
+                    </div>
+                  )}
+                  {/* SKY3 bar */}
+                  {sky3M && (
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 48, fontSize: "0.65rem", color: COLORS.sky3, fontWeight: 500, flexShrink: 0 }}>SKY3</div>
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <div style={{
+                          height: 8,
+                          width: `${Math.max((sky3M.userChurnRate / maxRate) * 100, sky3M.userChurnRate > 0 ? 2 : 0)}%`,
+                          backgroundColor: COLORS.sky3,
+                          borderRadius: 4,
+                          opacity: 0.75,
+                        }} />
+                        <span style={{ fontSize: "0.7rem", color: COLORS.sky3, fontWeight: 600, flexShrink: 0 }}>
+                          {sky3M.userChurnRate.toFixed(1)}%
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", flexShrink: 0 }}>
+                        {sky3M.canceledCount}/{sky3M.activeAtStart}
+                      </span>
+                    </div>
+                  )}
+                  {/* TV bar */}
+                  {tvM && (
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 48, fontSize: "0.65rem", color: COLORS.tv, fontWeight: 500, flexShrink: 0 }}>TV</div>
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <div style={{
+                          height: 8,
+                          width: `${Math.max((tvM.userChurnRate / maxRate) * 100, tvM.userChurnRate > 0 ? 2 : 0)}%`,
+                          backgroundColor: COLORS.tv,
+                          borderRadius: 4,
+                          opacity: 0.75,
+                        }} />
+                        <span style={{ fontSize: "0.7rem", color: COLORS.tv, fontWeight: 600, flexShrink: 0 }}>
+                          {tvM.userChurnRate.toFixed(1)}%
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", flexShrink: 0 }}>
+                        {tvM.canceledCount}/{tvM.activeAtStart}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <div className="flex-1" />
-        <span style={{ fontSize: "0.65rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
-          Industry healthy: 5-7%
-        </span>
+
+        {/* MEMBER annual vs monthly breakdown for last completed month */}
+        {(() => {
+          const memberMonthly = churnRates.byCategory.member?.monthly ?? [];
+          const lastCompleted = memberMonthly.length >= 2 ? memberMonthly[memberMonthly.length - 2] : null;
+          if (!lastCompleted?.annualActiveAtStart) return null;
+          return (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--st-border)" }}>
+              <div style={{ fontSize: "0.65rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+                Members last month: Annual {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned, Monthly {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -2801,7 +2851,12 @@ function DashboardView() {
           churnData={trends?.churnRates?.byCategory?.skyTingTv}
         />
 
-        {/* Churn is now inline in each CategoryDetail card above */}
+        {/* ━━ Churn ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {trends?.churnRates ? (
+          <ChurnSection churnRates={trends.churnRates} />
+        ) : (
+          <NoData label="Churn" />
+        )}
 
         {/* ━━ Non Members (First Visits + Returning Non-Members + Drop-Ins) ━━━━━ */}
         {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
