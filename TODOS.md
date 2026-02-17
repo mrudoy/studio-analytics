@@ -12,9 +12,19 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [x] 2025 revenue: sum all periods in prior year instead of annualizing first match
 - [ ] "pipeline and database should be flexible" — user wants the data pipeline and DB layer to be more adaptable/extensible
 - [x] ~~Prevent data display bugs from reaching prod~~ — all major sections now show "No data available" instead of hiding silently
+- [ ] Upload 2025 revenue CSV to prod once Railway DATABASE_URL env var is fixed (file: `union-revenue-categories-sky-ting-20260217-1703.csv`)
+- [ ] User note: email is the atomic unit for a user (for churn/subscriber identity)
+- [ ] User note: prefer line charts or bars for churn over time (no pie charts)
+- [ ] Churn visualization: consider adding line chart or bar chart for churn trend over time (user preference)
 
 ## Done
 
+- [x] Inline per-category churn into CategoryDetail cards (user churn %, MRR churn %, at-risk, monthly bars, MEMBER annual/monthly split) — `c77eca0`
+- [x] Fix TrendRow last-child bottom border (isLast prop)
+- [x] Fix KPI hero spacing (gap-1.5, marginTop 3px)
+- [x] Drop partial week bars from charts
+- [x] Fix WoW metrics to use completed weeks
+- [x] Normalize all date fields to YYYY-MM-DD (migration 002)
 - [x] Migrate from SQLite to PostgreSQL (Feb 2025)
 - [x] Health endpoint with DB + Redis checks
 - [x] Graceful shutdown + pool error handling
