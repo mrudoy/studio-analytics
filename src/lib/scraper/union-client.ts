@@ -1,8 +1,13 @@
-import { chromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium as pwChromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium as stealthChromium } from "playwright-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { join } from "path";
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from "fs";
 import { SELECTORS, REPORT_URLS, ReportType } from "./selectors";
 import type { DownloadedFiles } from "@/types/union-data";
+
+// Apply stealth plugin to playwright-extra chromium
+stealthChromium.use(StealthPlugin());
 
 const BASE_URL = "https://www.union.fit";
 const ORG_SLUG = "sky-ting";
@@ -81,10 +86,11 @@ export class UnionClient {
       mkdirSync(DOWNLOADS_DIR, { recursive: true });
     }
 
-    // Must use headed Chromium — Cloudflare blocks headless browsers.
-    // Position window off-screen so it doesn't steal focus during pipeline runs.
+    // Use playwright-extra with stealth plugin to bypass Cloudflare detection.
+    // Must use headed mode (Xvfb on Railway) — Cloudflare blocks headless browsers.
+    // Position window off-screen so it doesn't steal focus during local runs.
     try {
-      this.browser = await chromium.launch({
+      this.browser = await stealthChromium.launch({
         headless: false,
         args: [
           "--no-sandbox",
@@ -92,17 +98,39 @@ export class UnionClient {
           "--disable-blink-features=AutomationControlled",
           "--disable-gpu",
           "--disable-dev-shm-usage",
+          "--disable-infobars",
           "--window-position=-2400,-2400",
           "--window-size=1440,900",
         ],
       });
     } catch (err) {
-      throw new Error(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`);
+      // Fall back to standard Playwright if stealth fails (e.g. compatibility issues)
+      console.warn("[scraper] Stealth launch failed, falling back to standard Playwright:", err);
+      this.browser = await pwChromium.launch({
+        headless: false,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-blink-features=AutomationControlled",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-infobars",
+          "--window-position=-2400,-2400",
+          "--window-size=1440,900",
+        ],
+      });
     }
+
+    // Real Chrome user agent to avoid detection
+    const userAgent =
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
     this.context = await this.browser.newContext({
       acceptDownloads: true,
       viewport: { width: 1440, height: 900 },
+      userAgent,
+      locale: "en-US",
+      timezoneId: "America/New_York",
     });
 
     // Load saved cookies if they exist
@@ -117,6 +145,29 @@ export class UnionClient {
     }
 
     this.page = await this.context.newPage();
+
+    // Additional anti-detection: patch navigator properties
+    await this.page.addInitScript(() => {
+      // Remove webdriver flag
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+      // Ensure chrome object exists (Cloudflare checks for it)
+      if (!(window as unknown as Record<string, unknown>).chrome) {
+        (window as unknown as Record<string, unknown>).chrome = {
+          runtime: {},
+          loadTimes: function () {},
+          csi: function () {},
+          app: { isInstalled: false },
+        };
+      }
+      // Fake plugins array (headless usually has empty plugins)
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      // Fake languages
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["en-US", "en"],
+      });
+    });
   }
 
   /**
@@ -128,9 +179,9 @@ export class UnionClient {
       mkdirSync(DOWNLOADS_DIR, { recursive: true });
     }
 
-    // Use Playwright's bundled Chromium in headed mode — visible to user for Cloudflare verification
+    // Use stealth Chromium in headed mode — visible to user for Cloudflare verification
     try {
-      this.browser = await chromium.launch({
+      this.browser = await stealthChromium.launch({
         headless: false,
         args: [
           "--no-sandbox",
@@ -138,19 +189,58 @@ export class UnionClient {
           "--disable-blink-features=AutomationControlled",
           "--disable-gpu",
           "--disable-dev-shm-usage",
+          "--disable-infobars",
         ],
         slowMo: 100,
       });
     } catch (err) {
-      throw new Error(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`);
+      // Fall back to standard Playwright if stealth fails
+      console.warn("[scraper] Stealth launch failed, falling back to standard Playwright:", err);
+      this.browser = await pwChromium.launch({
+        headless: false,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-blink-features=AutomationControlled",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-infobars",
+        ],
+        slowMo: 100,
+      });
     }
+
+    const userAgent =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
     this.context = await this.browser.newContext({
       acceptDownloads: true,
       viewport: { width: 1440, height: 900 },
+      userAgent,
+      locale: "en-US",
+      timezoneId: "America/New_York",
     });
 
     this.page = await this.context.newPage();
+
+    // Anti-detection scripts
+    await this.page.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+      if (!(window as unknown as Record<string, unknown>).chrome) {
+        (window as unknown as Record<string, unknown>).chrome = {
+          runtime: {},
+          loadTimes: function () {},
+          csi: function () {},
+          app: { isInstalled: false },
+        };
+      }
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["en-US", "en"],
+      });
+    });
   }
 
   /**
@@ -175,20 +265,8 @@ export class UnionClient {
     await this.page.goto(`${BASE_URL}/signin`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {}); // Wait for JS hydration
 
-    // Check if we hit a Cloudflare challenge
-    const pageContent = await this.page.content();
-    if (pageContent.includes("Verify you are human") || pageContent.includes("cf-challenge") || pageContent.includes("cf-turnstile")) {
-      this.progress("Cloudflare challenge detected - waiting for it to resolve...");
-      try {
-        await this.page.waitForURL((url) => !url.pathname.includes("challenge"), { timeout: 30000 });
-        await this.page.waitForTimeout(2000);
-      } catch {
-        await this.screenshotOnError("cloudflare-blocked");
-        throw new Error(
-          "Cloudflare bot protection is blocking access. Please use the 'Test Connection' button in Settings to authenticate in a visible browser first."
-        );
-      }
-    }
+    // Check for and handle Cloudflare challenge with extended patience
+    await this.handleCloudflareChallenge();
 
     // Check if already logged in (redirected to dashboard or admin area)
     const currentUrl = this.page.url();
@@ -204,14 +282,24 @@ export class UnionClient {
       await this.page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15000 });
     } catch {
       await this.screenshotOnError("no-login-form");
+      const content = await this.page.content();
+      const hasCf = content.includes("cf-") || content.includes("Cloudflare") || content.includes("Verify you are human");
       throw new Error(
-        `Login form not found. Page may be blocked by Cloudflare. Current URL: ${this.page.url()}. Use 'Test Connection' in Settings to authenticate manually first.`
+        `Login form not found${hasCf ? " (Cloudflare still blocking)" : ""}. Current URL: ${this.page.url()}. Use 'Test Connection' in Settings to authenticate manually first.`
       );
     }
 
+    // Add small random delays between actions to appear more human-like
+    await this.page.waitForTimeout(500 + Math.random() * 1000);
+
     this.progress("Filling login credentials");
-    await this.page.fill('input[type="email"], input[name="email"]', email);
-    await this.page.fill('input[type="password"]', password);
+    // Type slowly instead of instant fill to avoid bot detection
+    await this.page.click('input[type="email"], input[name="email"]');
+    await this.page.keyboard.type(email, { delay: 50 + Math.random() * 80 });
+    await this.page.waitForTimeout(300 + Math.random() * 500);
+    await this.page.click('input[type="password"]');
+    await this.page.keyboard.type(password, { delay: 50 + Math.random() * 80 });
+    await this.page.waitForTimeout(300 + Math.random() * 500);
 
     this.progress("Submitting login form");
     const signInButton = this.page.locator(
@@ -233,6 +321,57 @@ export class UnionClient {
 
     this.progress("Successfully logged in");
     await this.saveCookies();
+  }
+
+  /**
+   * Handle Cloudflare challenge with patience — wait up to 45 seconds for
+   * the challenge to auto-resolve (stealth plugin helps with Turnstile).
+   */
+  private async handleCloudflareChallenge(): Promise<void> {
+    if (!this.page) return;
+
+    const isCloudflare = (content: string) =>
+      content.includes("Verify you are human") ||
+      content.includes("cf-challenge") ||
+      content.includes("cf-turnstile") ||
+      content.includes("challenge-platform") ||
+      content.includes("Just a moment");
+
+    let content = await this.page.content();
+    if (!isCloudflare(content)) return;
+
+    this.progress("Cloudflare challenge detected — waiting for auto-resolution...");
+    const startWait = Date.now();
+    const maxWait = 45000; // 45 seconds
+
+    while (Date.now() - startWait < maxWait) {
+      await this.page.waitForTimeout(2000);
+      content = await this.page.content();
+      if (!isCloudflare(content)) {
+        this.progress("Cloudflare challenge resolved!");
+        await this.page.waitForTimeout(1000); // Let page settle
+        return;
+      }
+
+      // Try clicking the Turnstile checkbox if it appeared
+      try {
+        const turnstileFrame = this.page.frameLocator('iframe[src*="challenges.cloudflare.com"]');
+        const checkbox = turnstileFrame.locator('input[type="checkbox"], .cb-lb');
+        if (await checkbox.isVisible({ timeout: 500 }).catch(() => false)) {
+          this.progress("Clicking Cloudflare Turnstile checkbox...");
+          await checkbox.click();
+          await this.page.waitForTimeout(3000);
+        }
+      } catch {
+        // No turnstile checkbox found, keep waiting
+      }
+    }
+
+    // Still blocked after max wait
+    await this.screenshotOnError("cloudflare-blocked");
+    throw new Error(
+      "Cloudflare bot protection is blocking access after 45s. Please use the 'Test Connection' button in Settings to authenticate in a visible browser first."
+    );
   }
 
   /**
