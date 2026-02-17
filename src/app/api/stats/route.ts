@@ -110,7 +110,30 @@ export async function GET() {
       console.warn("[api/stats] Failed to load revenue categories from database:", dbErr);
     }
 
-    // ── 5. Return response ──────────────────────────────────
+    // ── 5. Patch prior year revenue if missing from projection ──
+    // The projection may have null priorYearActualRevenue if getAllPeriods()
+    // failed inside computeTrendsFromDB. Fall back to revenueCategories data.
+    if (trends?.projection && !trends.projection.priorYearActualRevenue && revenueCategories) {
+      const priorYear = trends.projection.year - 1;
+      const start = revenueCategories.periodStart || "";
+      const end = revenueCategories.periodEnd || "";
+      if (start.startsWith(String(priorYear)) && revenueCategories.totalNetRevenue > 0) {
+        // Check if period spans full year
+        const s = new Date(start + "T00:00:00");
+        const e = new Date(end + "T00:00:00");
+        const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+        const actualRev = months >= 11
+          ? Math.round(revenueCategories.totalNetRevenue)
+          : Math.round(revenueCategories.totalNetRevenue); // single period = use as-is
+        trends.projection.priorYearActualRevenue = actualRev;
+        if (!trends.projection.priorYearRevenue || trends.projection.priorYearRevenue < actualRev) {
+          trends.projection.priorYearRevenue = actualRev;
+        }
+        console.log(`[api/stats] Patched priorYearActualRevenue=$${actualRev} from revenueCategories`);
+      }
+    }
+
+    // ── 6. Return response ──────────────────────────────────
     return NextResponse.json({
       ...(stats || {}),
       trends,
