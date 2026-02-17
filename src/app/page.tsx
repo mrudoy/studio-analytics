@@ -1928,13 +1928,12 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   pacingNew?: (p: PacingData) => { actual: number; paced: number };
   pacingChurn?: (p: PacingData) => { actual: number; paced: number };
 }) {
-  const latestW = weekly.length >= 2 ? weekly[weekly.length - 1] : null;
-  const prevW = weekly.length >= 2 ? weekly[weekly.length - 2] : null;
+  // Drop current partial week — use only completed weeks for all weekly metrics
+  const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+  const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
+  const prevW = completedWeekly.length >= 2 ? completedWeekly[completedWeekly.length - 2] : null;
   const latestM = monthly.length >= 1 ? monthly[monthly.length - 1] : null;
   const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
-
-  // Build weekly new sign-ups for mini chart (drop current partial week)
-  const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const weeklyNewBars: BarChartData[] = completedWeekly.slice(-6).map((w) => ({
     label: formatWeekLabel(w.period),
     value: weeklyKeyNew(w),
@@ -1970,7 +1969,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
         </div>
 
         {/* Right: Key metrics */}
-        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+        <div>
           {latestW && (
             <>
               <TrendRow
@@ -2022,7 +2021,9 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
 function FinancialHealthSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
   const pacing = trends?.pacing;
   const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
-  const latestW = trends && trends.weekly.length >= 2 ? trends.weekly[trends.weekly.length - 1] : null;
+  // Use last completed week (not current partial week) for WoW metrics
+  const completedW = trends && trends.weekly.length > 1 ? trends.weekly.slice(0, -1) : trends?.weekly || [];
+  const latestW = completedW.length >= 1 ? completedW[completedW.length - 1] : null;
   const latestM = trends && trends.monthly.length >= 1 ? trends.monthly[trends.monthly.length - 1] : null;
 
   // Revenue bar chart from monthly data
