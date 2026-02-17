@@ -605,12 +605,18 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
   const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "";
 
   if (compact) {
+    const compactBg = delta === 0
+      ? "rgba(128, 128, 128, 0.1)"
+      : isGood
+        ? "rgba(74, 124, 89, 0.1)"
+        : "rgba(160, 64, 64, 0.1)";
+
     return (
       <span
-        className="inline-flex items-center gap-1"
-        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.9rem", whiteSpace: "nowrap" }}
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
+        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.8rem", whiteSpace: "nowrap", backgroundColor: compactBg }}
       >
-        <span style={{ fontSize: "0.6rem" }}>{arrow}</span>
+        <span style={{ fontSize: "0.55rem" }}>{arrow}</span>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
         {deltaPercent != null && <span style={{ opacity: 0.75 }}>({formatDeltaPercent(deltaPercent)})</span>}
       </span>

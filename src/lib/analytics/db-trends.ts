@@ -303,6 +303,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
       priorYearRevenue = priorYearActualRevenue;
     }
 
+    // Fallback: if we still have no prior year estimate, use current MRR * 12
+    if (priorYearRevenue === 0 && currentMRR > 0) {
+      priorYearRevenue = currentMRR * 12;
+    }
+
     // Compute non-MRR revenue ratio from actual data
     // (drop-ins, workshops, retail, teacher training, etc.)
     // If we have actual prior year revenue > MRR-based estimate, the ratio tells us
