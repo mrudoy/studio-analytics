@@ -32,6 +32,12 @@ h1, h2, h3, .font-heading {
   letter-spacing: -0.03em;
 }
 
+/* Spin animation for refresh button */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Shrink hero card values on mobile so numbers don't overflow */
 @media (max-width: 639px) {
   .stat-hero-value {

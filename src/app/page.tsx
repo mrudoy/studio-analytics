@@ -632,7 +632,55 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
 
 // ─── Freshness Badge ─────────────────────────────────────────
 
+function useNextRunCountdown() {
+  const [nextRun, setNextRun] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/schedule").then((r) => r.json()).then((data) => {
+      if (data.nextRun) setNextRun(data.nextRun);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!nextRun) return;
+    function tick() {
+      const diff = nextRun! - Date.now();
+      if (diff <= 0) { setCountdown("running soon"); return; }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      setCountdown(h > 0 ? `${h}h ${m}m` : `${m}m`);
+    }
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [nextRun]);
+
+  return countdown;
+}
+
 function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "sqlite" | "sheets" | "hybrid" }) {
+  const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const countdown = useNextRunCountdown();
+
+  async function triggerRefresh() {
+    setRefreshState("running");
+    try {
+      const res = await fetch("/api/pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (res.status === 409) {
+        setRefreshState("running"); // already running
+        return;
+      }
+      if (!res.ok) throw new Error("Failed");
+      setRefreshState("done");
+      // Auto-reset after 60s so user knows it ran
+      setTimeout(() => setRefreshState("idle"), 60_000);
+    } catch {
+      setRefreshState("error");
+      setTimeout(() => setRefreshState("idle"), 5_000);
+    }
+  }
+
   if (!lastUpdated) return null;
 
   const date = new Date(lastUpdated);
@@ -728,7 +776,57 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
             Google Sheet
           </a>
         )}
+
+        <button
+          onClick={triggerRefresh}
+          disabled={refreshState === "running"}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors"
+          style={{
+            color: refreshState === "running" ? "var(--st-text-secondary)" : refreshState === "done" ? "var(--st-success)" : refreshState === "error" ? "var(--st-error)" : "var(--st-text-secondary)",
+            border: `1px solid ${refreshState === "done" ? "rgba(74, 124, 89, 0.3)" : "var(--st-border)"}`,
+            fontFamily: FONT_SANS,
+            fontWeight: 500,
+            fontSize: "0.8rem",
+            cursor: refreshState === "running" ? "wait" : "pointer",
+            opacity: refreshState === "running" ? 0.6 : 1,
+            background: "transparent",
+          }}
+          onMouseOver={(e) => {
+            if (refreshState === "idle") {
+              e.currentTarget.style.borderColor = "var(--st-border-hover)";
+              e.currentTarget.style.color = "var(--st-text-primary)";
+            }
+          }}
+          onMouseOut={(e) => {
+            if (refreshState === "idle") {
+              e.currentTarget.style.borderColor = "var(--st-border)";
+              e.currentTarget.style.color = "var(--st-text-secondary)";
+            }
+          }}
+        >
+          <svg
+            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ animation: refreshState === "running" ? "spin 1s linear infinite" : "none" }}
+          >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          {refreshState === "running" ? "Refreshing..." : refreshState === "done" ? "Queued" : refreshState === "error" ? "Failed" : "Refresh Data"}
+        </button>
       </div>
+
+      {refreshState === "running" && (
+        <p style={{ fontFamily: FONT_SANS, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginTop: "0.25rem" }}>
+          Pipeline running — this takes 5-15 min. Reload page after.
+        </p>
+      )}
+
+      {countdown && refreshState !== "running" && (
+        <p style={{ fontFamily: FONT_SANS, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginTop: "0.25rem" }}>
+          Next auto-refresh in {countdown}
+        </p>
+      )}
     </div>
   );
 }
