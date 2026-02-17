@@ -16,27 +16,27 @@ export async function GET() {
     const spreadsheetId =
       settings?.analyticsSpreadsheetId || process.env.ANALYTICS_SPREADSHEET_ID;
 
-    // ── 1. Try SQLite first ─────────────────────────────────
+    // ── 1. Try database first ─────────────────────────────────
     let stats: DashboardStats | null = null;
     let trends: TrendsData | null = null;
     let dataSource: "sqlite" | "sheets" | "hybrid" = "sheets";
 
     try {
-      stats = computeStatsFromSQLite();
+      stats = await computeStatsFromSQLite();
       if (stats) {
-        console.log("[api/stats] Loaded stats from SQLite");
+        console.log("[api/stats] Loaded stats from database");
       }
     } catch (err) {
-      console.warn("[api/stats] SQLite stats failed, will try Sheets:", err);
+      console.warn("[api/stats] Database stats failed, will try Sheets:", err);
     }
 
     try {
-      trends = computeTrendsFromSQLite();
+      trends = await computeTrendsFromSQLite();
       if (trends) {
-        console.log("[api/stats] Loaded trends from SQLite");
+        console.log("[api/stats] Loaded trends from database");
       }
     } catch (err) {
-      console.warn("[api/stats] SQLite trends failed, will try Sheets:", err);
+      console.warn("[api/stats] Database trends failed, will try Sheets:", err);
     }
 
     // ── 2. Fall back to Sheets if needed ────────────────────
@@ -44,20 +44,20 @@ export async function GET() {
       if (!spreadsheetId) {
         if (!stats) {
           return NextResponse.json(
-            { error: "No data available — SQLite empty and analytics spreadsheet not configured" },
+            { error: "No data available — database empty and analytics spreadsheet not configured" },
             { status: 503 }
           );
         }
-        // We have stats from SQLite but no trends and no Sheets — return what we have
+        // We have stats from database but no trends and no Sheets — return what we have
       } else {
         try {
           if (!stats) {
             stats = await readDashboardStats(spreadsheetId);
-            console.log("[api/stats] Loaded stats from Sheets (SQLite had no data)");
+            console.log("[api/stats] Loaded stats from Sheets (database had no data)");
           }
           if (!trends) {
             trends = await readTrendsData(spreadsheetId);
-            console.log("[api/stats] Loaded trends from Sheets (SQLite had no data)");
+            console.log("[api/stats] Loaded trends from Sheets (database had no data)");
           }
         } catch (sheetsErr) {
           console.warn("[api/stats] Sheets fallback also failed:", sheetsErr);
@@ -81,12 +81,12 @@ export async function GET() {
       dataSource = "sheets";
     }
 
-    // ── 4. Revenue categories always from SQLite ────────────
+    // ── 4. Revenue categories from database ───────────────────
     let revenueCategories = null;
     try {
-      const latestPeriod = getLatestPeriod();
+      const latestPeriod = await getLatestPeriod();
       if (latestPeriod) {
-        const rows = getRevenueForPeriod(latestPeriod.periodStart, latestPeriod.periodEnd);
+        const rows = await getRevenueForPeriod(latestPeriod.periodStart, latestPeriod.periodEnd);
         if (rows.length > 0) {
           const asRevenueCategory: RevenueCategory[] = rows.map((r) => ({
             revenueCategory: r.category,
@@ -107,7 +107,7 @@ export async function GET() {
         }
       }
     } catch (dbErr) {
-      console.warn("[api/stats] Failed to load revenue categories from SQLite:", dbErr);
+      console.warn("[api/stats] Failed to load revenue categories from database:", dbErr);
     }
 
     // ── 5. Return response ──────────────────────────────────

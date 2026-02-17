@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
     // Save to uploaded_data table
     const period = periodStart && periodEnd ? `${periodStart} - ${periodEnd}` : null;
-    const uploadId = saveUploadedData(filename, dataType, period, content);
+    const uploadId = await saveUploadedData(filename, dataType, period, content);
 
     let parsedCount = 0;
     const warnings: string[] = [];
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     if (dataType === "revenue_categories" && periodStart && periodEnd) {
       const result = parseCSV<RevenueCategory>(savedPath, RevenueCategorySchema);
       if (result.data.length > 0) {
-        saveRevenueCategories(periodStart, periodEnd, result.data);
+        await saveRevenueCategories(periodStart, periodEnd, result.data);
         parsedCount = result.data.length;
       }
       warnings.push(...result.warnings);

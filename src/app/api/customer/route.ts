@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     // Full profile lookup by email
     if (email) {
-      const profile = getCustomerByEmail(email);
+      const profile = await getCustomerByEmail(email);
       if (!profile) {
         return NextResponse.json(
           { error: `No customer found with email: ${email}` },
@@ -33,13 +33,13 @@ export async function GET(request: NextRequest) {
 
     // Search by name or email
     if (query) {
-      const results = searchFullCustomers(query, 20);
+      const results = await searchFullCustomers(query, 20);
       return NextResponse.json({ results, count: results.length });
     }
 
     // Summary
-    const hasData = hasFullCustomerData();
-    const count = hasData ? getFullCustomerCount() : 0;
+    const hasData = await hasFullCustomerData();
+    const count = hasData ? await getFullCustomerCount() : 0;
     return NextResponse.json({
       hasData,
       customerCount: count,

@@ -1,4 +1,4 @@
-import { getDatabase } from "./database";
+import { getPool } from "./database";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
 
 // ── Types ────────────────────────────────────────────────────
@@ -38,23 +38,32 @@ export interface CustomerStats {
 /**
  * Save new customers (additive — appends new rows, never deletes existing).
  */
-export function saveCustomers(rows: CustomerRow[]): void {
-  const db = getDatabase();
-  const before = (db.prepare("SELECT COUNT(*) as count FROM new_customers").get() as { count: number }).count;
+export async function saveCustomers(rows: CustomerRow[]): Promise<void> {
+  const pool = getPool();
+  const beforeResult = await pool.query("SELECT COUNT(*) as count FROM new_customers");
+  const before = Number(beforeResult.rows[0].count);
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO new_customers (name, email, role, order_count, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((items: CustomerRow[]) => {
-    for (const r of items) {
-      insert.run(r.name, r.email, r.role, r.orders, r.created);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const r of rows) {
+      await client.query(
+        `INSERT INTO new_customers (name, email, role, order_count, created_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (email) DO NOTHING`,
+        [r.name, r.email, r.role, r.orders, r.created]
+      );
     }
-  });
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 
-  insertMany(rows);
-  const after = (db.prepare("SELECT COUNT(*) as count FROM new_customers").get() as { count: number }).count;
+  const afterResult = await pool.query("SELECT COUNT(*) as count FROM new_customers");
+  const after = Number(afterResult.rows[0].count);
   console.log(`[customer-store] Customers: ${before} -> ${after} (+${after - before} new)`);
 }
 
@@ -63,116 +72,125 @@ export function saveCustomers(rows: CustomerRow[]): void {
 /**
  * Get customers created within a date range.
  */
-export function getCustomers(startDate?: string, endDate?: string): StoredCustomer[] {
-  const db = getDatabase();
+export async function getCustomers(startDate?: string, endDate?: string): Promise<StoredCustomer[]> {
+  const pool = getPool();
   let query = `
     SELECT id, name, email, role, order_count, created_at
     FROM new_customers
     WHERE created_at IS NOT NULL AND created_at != ''
   `;
   const params: string[] = [];
+  let paramIdx = 1;
 
   if (startDate) {
-    query += ` AND created_at >= ?`;
+    query += ` AND created_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    query += ` AND created_at < ?`;
+    query += ` AND created_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   query += ` ORDER BY created_at DESC`;
 
-  const rows = db.prepare(query).all(...params) as {
-    id: number; name: string; email: string; role: string;
-    order_count: number; created_at: string;
-  }[];
+  const { rows } = await pool.query(query, params);
 
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    email: r.email,
-    role: r.role,
-    orderCount: r.order_count,
-    createdAt: r.created_at,
+  return rows.map((r: Record<string, unknown>) => ({
+    id: r.id as number,
+    name: r.name as string,
+    email: r.email as string,
+    role: r.role as string,
+    orderCount: r.order_count as number,
+    createdAt: r.created_at as string,
   }));
 }
 
 /**
  * Get new customers grouped by week.
  */
-export function getNewCustomersByWeek(startDate?: string, endDate?: string): { week: string; count: number }[] {
-  const db = getDatabase();
+export async function getNewCustomersByWeek(startDate?: string, endDate?: string): Promise<{ week: string; count: number }[]> {
+  const pool = getPool();
   let query = `
-    SELECT strftime('%Y-W%W', created_at) as week, COUNT(*) as count
+    SELECT TO_CHAR(created_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
     FROM new_customers
     WHERE created_at IS NOT NULL AND created_at != ''
   `;
   const params: string[] = [];
+  let paramIdx = 1;
 
   if (startDate) {
-    query += ` AND created_at >= ?`;
+    query += ` AND created_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    query += ` AND created_at < ?`;
+    query += ` AND created_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   query += ` GROUP BY week ORDER BY week`;
 
-  return db.prepare(query).all(...params) as { week: string; count: number }[];
+  const { rows } = await pool.query(query, params);
+  return rows.map((r: Record<string, unknown>) => ({
+    week: r.week as string,
+    count: Number(r.count),
+  }));
 }
 
 /**
  * Get aggregate customer stats.
  */
-export function getCustomerStats(): CustomerStats | null {
-  const db = getDatabase();
+export async function getCustomerStats(): Promise<CustomerStats | null> {
+  const pool = getPool();
   const now = new Date();
   const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonthStart = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}-01`;
 
-  const totalRow = db.prepare(
+  const totalResult = await pool.query(
     `SELECT COUNT(*) as count FROM new_customers`
-  ).get() as { count: number };
+  );
+  if (Number(totalResult.rows[0].count) === 0) return null;
 
-  if (totalRow.count === 0) return null;
+  const currentResult = await pool.query(
+    `SELECT COUNT(*) as count FROM new_customers WHERE created_at >= $1`,
+    [currentMonthStart]
+  );
 
-  const currentRow = db.prepare(
-    `SELECT COUNT(*) as count FROM new_customers WHERE created_at >= ?`
-  ).get(currentMonthStart) as { count: number };
-
-  const prevRow = db.prepare(
-    `SELECT COUNT(*) as count FROM new_customers WHERE created_at >= ? AND created_at < ?`
-  ).get(prevMonthStart, currentMonthStart) as { count: number };
+  const prevResult = await pool.query(
+    `SELECT COUNT(*) as count FROM new_customers WHERE created_at >= $1 AND created_at < $2`,
+    [prevMonthStart, currentMonthStart]
+  );
 
   const daysElapsed = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-  const byRole = db.prepare(
+  const roleResult = await pool.query(
     `SELECT role, COUNT(*) as count FROM new_customers GROUP BY role ORDER BY count DESC`
-  ).all() as { role: string; count: number }[];
+  );
+
+  const currentCount = Number(currentResult.rows[0].count);
 
   return {
-    totalCustomers: totalRow.count,
-    currentMonthNew: currentRow.count,
-    previousMonthNew: prevRow.count,
+    totalCustomers: Number(totalResult.rows[0].count),
+    currentMonthNew: currentCount,
+    previousMonthNew: Number(prevResult.rows[0].count),
     currentMonthPaced: daysElapsed > 0
-      ? Math.round((currentRow.count / daysElapsed) * daysInMonth)
+      ? Math.round((currentCount / daysElapsed) * daysInMonth)
       : 0,
-    byRole,
+    byRole: roleResult.rows.map((r: Record<string, unknown>) => ({
+      role: r.role as string,
+      count: Number(r.count),
+    })),
   };
 }
 
 /**
  * Check if customer data exists.
  */
-export function hasCustomerData(): boolean {
-  const db = getDatabase();
-  const row = db.prepare(`SELECT COUNT(*) as count FROM new_customers`).get() as { count: number };
-  return row.count > 0;
+export async function hasCustomerData(): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM new_customers`);
+  return Number(rows[0].count) > 0;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -250,61 +268,96 @@ export interface CustomerProfile {
 
 /**
  * Save full customer profiles from Union.fit customer export CSV.
- * Uses INSERT OR REPLACE on email (unique key).
+ * Uses INSERT ... ON CONFLICT (email) DO UPDATE SET for upsert.
  */
-export function saveFullCustomers(rows: FullCustomerRow[]): void {
-  const db = getDatabase();
+export async function saveFullCustomers(rows: FullCustomerRow[]): Promise<void> {
+  const pool = getPool();
+  const client = await pool.connect();
 
-  const upsert = db.prepare(`
-    INSERT OR REPLACE INTO customers (
-      union_id, first_name, last_name, email, phone, role,
-      total_spent, ltv, order_count,
-      current_free_pass, current_free_auto_renew,
-      current_paid_pass, current_paid_auto_renew, current_payment_plan,
-      livestream_registrations, inperson_registrations, replay_registrations,
-      livestream_redeemed, inperson_redeemed, replay_redeemed,
-      instagram, notes, birthday, how_heard, goals, neighborhood,
-      inspiration, practice_frequency, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((items: FullCustomerRow[]) => {
-    for (const row of items) {
-      upsert.run(
-        row.unionId,
-        row.firstName,
-        row.lastName,
-        row.email,
-        row.phone || null,
-        row.role || null,
-        row.totalSpent,
-        row.ltv,
-        row.orderCount,
-        row.currentFreePass ? 1 : 0,
-        row.currentFreeAutoRenew ? 1 : 0,
-        row.currentPaidPass ? 1 : 0,
-        row.currentPaidAutoRenew ? 1 : 0,
-        row.currentPaymentPlan ? 1 : 0,
-        row.livestreamRegistrations,
-        row.inpersonRegistrations,
-        row.replayRegistrations,
-        row.livestreamRedeemed,
-        row.inpersonRedeemed,
-        row.replayRedeemed,
-        row.instagram || null,
-        row.notes || null,
-        row.birthday || null,
-        row.howHeard || null,
-        row.goals || null,
-        row.neighborhood || null,
-        row.inspiration || null,
-        row.practiceFrequency || null,
-        row.createdAt,
+  try {
+    await client.query("BEGIN");
+    for (const row of rows) {
+      await client.query(
+        `INSERT INTO customers (
+          union_id, first_name, last_name, email, phone, role,
+          total_spent, ltv, order_count,
+          current_free_pass, current_free_auto_renew,
+          current_paid_pass, current_paid_auto_renew, current_payment_plan,
+          livestream_registrations, inperson_registrations, replay_registrations,
+          livestream_redeemed, inperson_redeemed, replay_redeemed,
+          instagram, notes, birthday, how_heard, goals, neighborhood,
+          inspiration, practice_frequency, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+        ON CONFLICT (email) DO UPDATE SET
+          union_id = EXCLUDED.union_id,
+          first_name = EXCLUDED.first_name,
+          last_name = EXCLUDED.last_name,
+          phone = EXCLUDED.phone,
+          role = EXCLUDED.role,
+          total_spent = EXCLUDED.total_spent,
+          ltv = EXCLUDED.ltv,
+          order_count = EXCLUDED.order_count,
+          current_free_pass = EXCLUDED.current_free_pass,
+          current_free_auto_renew = EXCLUDED.current_free_auto_renew,
+          current_paid_pass = EXCLUDED.current_paid_pass,
+          current_paid_auto_renew = EXCLUDED.current_paid_auto_renew,
+          current_payment_plan = EXCLUDED.current_payment_plan,
+          livestream_registrations = EXCLUDED.livestream_registrations,
+          inperson_registrations = EXCLUDED.inperson_registrations,
+          replay_registrations = EXCLUDED.replay_registrations,
+          livestream_redeemed = EXCLUDED.livestream_redeemed,
+          inperson_redeemed = EXCLUDED.inperson_redeemed,
+          replay_redeemed = EXCLUDED.replay_redeemed,
+          instagram = EXCLUDED.instagram,
+          notes = EXCLUDED.notes,
+          birthday = EXCLUDED.birthday,
+          how_heard = EXCLUDED.how_heard,
+          goals = EXCLUDED.goals,
+          neighborhood = EXCLUDED.neighborhood,
+          inspiration = EXCLUDED.inspiration,
+          practice_frequency = EXCLUDED.practice_frequency,
+          created_at = EXCLUDED.created_at`,
+        [
+          row.unionId,
+          row.firstName,
+          row.lastName,
+          row.email,
+          row.phone || null,
+          row.role || null,
+          row.totalSpent,
+          row.ltv,
+          row.orderCount,
+          row.currentFreePass ? 1 : 0,
+          row.currentFreeAutoRenew ? 1 : 0,
+          row.currentPaidPass ? 1 : 0,
+          row.currentPaidAutoRenew ? 1 : 0,
+          row.currentPaymentPlan ? 1 : 0,
+          row.livestreamRegistrations,
+          row.inpersonRegistrations,
+          row.replayRegistrations,
+          row.livestreamRedeemed,
+          row.inpersonRedeemed,
+          row.replayRedeemed,
+          row.instagram || null,
+          row.notes || null,
+          row.birthday || null,
+          row.howHeard || null,
+          row.goals || null,
+          row.neighborhood || null,
+          row.inspiration || null,
+          row.practiceFrequency || null,
+          row.createdAt,
+        ]
       );
     }
-  });
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 
-  insertMany(rows);
   console.log(`[customer-store] Saved ${rows.length} full customer profiles to CRM`);
 }
 
@@ -312,31 +365,35 @@ export function saveFullCustomers(rows: FullCustomerRow[]): void {
  * Look up a customer by email (the unique identifier).
  * Returns a full profile with auto-renew plans and recent classes.
  */
-export function getCustomerByEmail(email: string): CustomerProfile | null {
-  const db = getDatabase();
+export async function getCustomerByEmail(email: string): Promise<CustomerProfile | null> {
+  const pool = getPool();
 
-  const raw = db.prepare(`
-    SELECT * FROM customers WHERE LOWER(email) = LOWER(?)
-  `).get(email) as Record<string, unknown> | undefined;
+  const { rows: customerRows } = await pool.query(
+    `SELECT * FROM customers WHERE LOWER(email) = LOWER($1)`,
+    [email]
+  );
 
-  if (!raw) return null;
+  if (customerRows.length === 0) return null;
+  const raw = customerRows[0] as Record<string, unknown>;
 
   // Get their auto-renew plans
-  const arRows = db.prepare(`
-    SELECT plan_name, plan_state, plan_price, created_at, canceled_at
-    FROM auto_renews
-    WHERE LOWER(customer_email) = LOWER(?)
-    ORDER BY created_at DESC
-  `).all(email) as { plan_name: string; plan_state: string; plan_price: number; created_at: string; canceled_at: string | null }[];
+  const { rows: arRows } = await pool.query(
+    `SELECT plan_name, plan_state, plan_price, created_at, canceled_at
+     FROM auto_renews
+     WHERE LOWER(customer_email) = LOWER($1)
+     ORDER BY created_at DESC`,
+    [email]
+  );
 
   // Get their recent classes (last 20)
-  const classRows = db.prepare(`
-    SELECT event_name, attended_at, pass
-    FROM registrations
-    WHERE LOWER(email) = LOWER(?)
-    ORDER BY attended_at DESC
-    LIMIT 20
-  `).all(email) as { event_name: string; attended_at: string; pass: string }[];
+  const { rows: classRows } = await pool.query(
+    `SELECT event_name, attended_at, pass
+     FROM registrations
+     WHERE LOWER(email) = LOWER($1)
+     ORDER BY attended_at DESC
+     LIMIT 20`,
+    [email]
+  );
 
   return {
     unionId: raw.union_id as string,
@@ -357,19 +414,19 @@ export function getCustomerByEmail(email: string): CustomerProfile | null {
     livestreamRegistrations: raw.livestream_registrations as number,
     replayRegistrations: raw.replay_registrations as number,
     createdAt: raw.created_at as string,
-    autoRenews: arRows.map((r) => ({
-      planName: r.plan_name,
-      planState: r.plan_state,
-      planPrice: r.plan_price,
-      createdAt: r.created_at,
-      canceledAt: r.canceled_at,
-      category: getCategory(r.plan_name),
-      isAnnual: isAnnualPlan(r.plan_name),
+    autoRenews: arRows.map((r: Record<string, unknown>) => ({
+      planName: r.plan_name as string,
+      planState: r.plan_state as string,
+      planPrice: r.plan_price as number,
+      createdAt: r.created_at as string,
+      canceledAt: r.canceled_at as string | null,
+      category: getCategory(r.plan_name as string),
+      isAnnual: isAnnualPlan(r.plan_name as string),
     })),
-    recentClasses: classRows.map((r) => ({
-      eventName: r.event_name,
-      attendedAt: r.attended_at,
-      pass: r.pass,
+    recentClasses: classRows.map((r: Record<string, unknown>) => ({
+      eventName: r.event_name as string,
+      attendedAt: r.attended_at as string,
+      pass: r.pass as string,
     })),
   };
 }
@@ -377,39 +434,40 @@ export function getCustomerByEmail(email: string): CustomerProfile | null {
 /**
  * Search customers by name or email (partial match).
  */
-export function searchFullCustomers(query: string, limit = 20): { email: string; name: string; totalSpent: number; role: string }[] {
-  const db = getDatabase();
+export async function searchFullCustomers(query: string, limit = 20): Promise<{ email: string; name: string; totalSpent: number; role: string }[]> {
+  const pool = getPool();
   const q = `%${query}%`;
-  const rows = db.prepare(`
-    SELECT email, first_name || ' ' || last_name as name, total_spent, role
-    FROM customers
-    WHERE LOWER(email) LIKE LOWER(?) OR LOWER(first_name || ' ' || last_name) LIKE LOWER(?)
-    ORDER BY total_spent DESC
-    LIMIT ?
-  `).all(q, q, limit) as { email: string; name: string; total_spent: number; role: string }[];
+  const { rows } = await pool.query(
+    `SELECT email, first_name || ' ' || last_name as name, total_spent, role
+     FROM customers
+     WHERE email ILIKE $1 OR (first_name || ' ' || last_name) ILIKE $2
+     ORDER BY total_spent DESC
+     LIMIT $3`,
+    [q, q, limit]
+  );
 
-  return rows.map((r) => ({
-    email: r.email,
-    name: r.name,
-    totalSpent: r.total_spent,
-    role: r.role,
+  return rows.map((r: Record<string, unknown>) => ({
+    email: r.email as string,
+    name: r.name as string,
+    totalSpent: r.total_spent as number,
+    role: r.role as string,
   }));
 }
 
 /**
  * Check if full customer profiles exist.
  */
-export function hasFullCustomerData(): boolean {
-  const db = getDatabase();
-  const row = db.prepare(`SELECT COUNT(*) as count FROM customers`).get() as { count: number };
-  return row.count > 0;
+export async function hasFullCustomerData(): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM customers`);
+  return Number(rows[0].count) > 0;
 }
 
 /**
  * Get total full customer count.
  */
-export function getFullCustomerCount(): number {
-  const db = getDatabase();
-  const row = db.prepare(`SELECT COUNT(*) as count FROM customers`).get() as { count: number };
-  return row.count;
+export async function getFullCustomerCount(): Promise<number> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM customers`);
+  return Number(rows[0].count);
 }

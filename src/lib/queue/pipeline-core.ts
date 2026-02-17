@@ -259,31 +259,31 @@ export async function runPipelineFromFiles(
     console.log(`[pipeline-core] fullRegistrations not available — skipping returning non-members analysis`);
   }
 
-  // Save revenue categories to SQLite
+  // Save revenue categories to database
   if (revenueCatResult.data.length > 0) {
     progress("Saving revenue categories to database", 74);
     const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
     const periodStart = drParts[0] || new Date().toISOString().slice(0, 10);
     const periodEnd = drParts[1] || new Date().toISOString().slice(0, 10);
     try {
-      saveRevenueCategories(periodStart, periodEnd, revenueCatResult.data);
-      console.log(`[pipeline-core] Saved ${revenueCatResult.data.length} revenue categories to SQLite`);
+      await saveRevenueCategories(periodStart, periodEnd, revenueCatResult.data);
+      console.log(`[pipeline-core] Saved ${revenueCatResult.data.length} revenue categories to database`);
 
       const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       const periodEndDate = new Date(periodEnd);
       if (!isNaN(periodEndDate.getTime()) && periodEndDate < currentMonthStart) {
-        lockPeriod(periodStart, periodEnd);
+        await lockPeriod(periodStart, periodEnd);
         console.log(`[pipeline-core] Auto-locked completed period ${periodStart} – ${periodEnd}`);
       }
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save revenue categories to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save revenue categories to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown error"}`);
+      allWarnings.push(`Database save failed: ${dbErr instanceof Error ? dbErr.message : "unknown error"}`);
     }
   }
 
-  // Save auto-renews to SQLite (all auto-renew reports merged)
+  // Save auto-renews to database (all auto-renew reports merged)
   const allAutoRenewsForDb = [
     ...activeResult.data,
     ...pausedResult.data,
@@ -304,17 +304,17 @@ export async function runPipelineFromFiles(
         createdAt: ar.created || "",
         canceledAt: ar.canceledAt || undefined,
       }));
-      saveAutoRenews(snapshotId, arRows);
-      console.log(`[pipeline-core] Saved ${arRows.length} auto-renews to SQLite (snapshot: ${snapshotId})`);
+      await saveAutoRenews(snapshotId, arRows);
+      console.log(`[pipeline-core] Saved ${arRows.length} auto-renews to database (snapshot: ${snapshotId})`);
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save auto-renews to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save auto-renews to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`Auto-renew SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
+      allWarnings.push(`Auto-renew Database save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
     }
   }
 
-  // Save full registrations to SQLite
+  // Save full registrations to database
   if (files.fullRegistrations) {
     try {
       const fullRegsForDb = parseCSV<FullRegistration>(files.fullRegistrations, FullRegistrationSchema);
@@ -335,18 +335,18 @@ export async function runPipelineFromFiles(
           subscription: String(r.subscription),
           revenue: r.revenue,
         }));
-        saveRegistrations(regRows);
-        console.log(`[pipeline-core] Saved ${regRows.length} registrations to SQLite`);
+        await saveRegistrations(regRows);
+        console.log(`[pipeline-core] Saved ${regRows.length} registrations to database`);
       }
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save registrations to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save registrations to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`Registration SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
+      allWarnings.push(`Registration Database save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
     }
   }
 
-  // Save first visits to SQLite
+  // Save first visits to database
   if (firstVisitsResult.data.length > 0 && files.firstVisits) {
     progress("Saving first visits to database", 74);
     try {
@@ -366,17 +366,17 @@ export async function runPipelineFromFiles(
         subscription: "false",
         revenue: 0,
       }));
-      saveFirstVisits(fvRows);
-      console.log(`[pipeline-core] Saved ${fvRows.length} first visits to SQLite`);
+      await saveFirstVisits(fvRows);
+      console.log(`[pipeline-core] Saved ${fvRows.length} first visits to database`);
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save first visits to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save first visits to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`First visits SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
+      allWarnings.push(`First visits Database save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
     }
   }
 
-  // Save orders to SQLite
+  // Save orders to database
   if (ordersResult.data.length > 0) {
     progress("Saving orders to database", 74);
     try {
@@ -388,17 +388,17 @@ export async function runPipelineFromFiles(
         payment: o.payment,
         total: o.total,
       }));
-      saveOrders(orderRows);
-      console.log(`[pipeline-core] Saved ${orderRows.length} orders to SQLite`);
+      await saveOrders(orderRows);
+      console.log(`[pipeline-core] Saved ${orderRows.length} orders to database`);
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save orders to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save orders to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`Orders SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
+      allWarnings.push(`Orders Database save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
     }
   }
 
-  // Save new customers to SQLite
+  // Save new customers to database
   if (newCustomersResult.data.length > 0) {
     progress("Saving customers to database", 74);
     try {
@@ -409,13 +409,13 @@ export async function runPipelineFromFiles(
         orders: c.orders,
         created: c.created,
       }));
-      saveCustomers(custRows);
-      console.log(`[pipeline-core] Saved ${custRows.length} customers to SQLite`);
+      await saveCustomers(custRows);
+      console.log(`[pipeline-core] Saved ${custRows.length} customers to database`);
     } catch (dbErr) {
       console.warn(
-        `[pipeline-core] Failed to save customers to SQLite: ${dbErr instanceof Error ? dbErr.message : dbErr}`
+        `[pipeline-core] Failed to save customers to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
       );
-      allWarnings.push(`Customers SQLite save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
+      allWarnings.push(`Customers Database save failed: ${dbErr instanceof Error ? dbErr.message : "unknown"}`);
     }
   }
 
@@ -477,10 +477,10 @@ export async function runPipelineFromFiles(
     }
   }
 
-  // Save pipeline run to SQLite
+  // Save pipeline run to database
   try {
     const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
-    savePipelineRun(drParts[0] || "", drParts[1] || "", recordCounts, Date.now() - startTime);
+    await savePipelineRun(drParts[0] || "", drParts[1] || "", recordCounts, Date.now() - startTime);
   } catch {
     /* non-critical */
   }

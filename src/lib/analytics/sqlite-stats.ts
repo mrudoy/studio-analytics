@@ -1,8 +1,8 @@
 /**
- * Compute DashboardStats from SQLite data.
+ * Compute DashboardStats from PostgreSQL data.
  *
  * Returns the same shape as readDashboardStats() from Sheets so the
- * dashboard components need zero changes. Returns null if SQLite doesn't
+ * dashboard components need zero changes. Returns null if the database doesn't
  * have enough data (caller falls back to Sheets).
  */
 
@@ -11,7 +11,7 @@ import { getLatestPeriod, getRevenueForPeriod } from "../db/revenue-store";
 import type { DashboardStats } from "../sheets/read-dashboard";
 
 /**
- * Attempt to build DashboardStats entirely from SQLite.
+ * Attempt to build DashboardStats entirely from PostgreSQL.
  *
  * Requirements to return non-null:
  *   - Auto-renew data exists and has active auto-renews
@@ -19,14 +19,14 @@ import type { DashboardStats } from "../sheets/read-dashboard";
  * Revenue data is optional — if revenue_categories exist we include them,
  * otherwise we return 0 for revenue fields (better than blocking everything).
  */
-export function computeStatsFromSQLite(): DashboardStats | null {
+export async function computeStatsFromSQLite(): Promise<DashboardStats | null> {
   // ── Guard: need auto-renew data ──────────────────────────
-  if (!hasAutoRenewData()) {
-    console.log("[sqlite-stats] No auto-renew data in SQLite — skipping");
+  if (!(await hasAutoRenewData())) {
+    console.log("[sqlite-stats] No auto-renew data — skipping");
     return null;
   }
 
-  const subStats = getAutoRenewStats();
+  const subStats = await getAutoRenewStats();
   if (!subStats) {
     console.log("[sqlite-stats] No active auto-renews — skipping");
     return null;
@@ -37,9 +37,9 @@ export function computeStatsFromSQLite(): DashboardStats | null {
   let previousMonthRevenue = 0;
 
   try {
-    const latestPeriod = getLatestPeriod();
+    const latestPeriod = await getLatestPeriod();
     if (latestPeriod) {
-      const rows = getRevenueForPeriod(latestPeriod.periodStart, latestPeriod.periodEnd);
+      const rows = await getRevenueForPeriod(latestPeriod.periodStart, latestPeriod.periodEnd);
       const totalNet = rows.reduce((sum, r) => sum + r.netRevenue, 0);
       currentMonthRevenue = Math.round(totalNet * 100) / 100;
 
@@ -51,7 +51,7 @@ export function computeStatsFromSQLite(): DashboardStats | null {
       const prevEndDate = new Date(now.getFullYear(), now.getMonth(), 1);
       const prevEnd = `${prevEndDate.getFullYear()}-${String(prevEndDate.getMonth() + 1).padStart(2, "0")}-01`;
 
-      const prevRows = getRevenueForPeriod(prevStart, prevEnd);
+      const prevRows = await getRevenueForPeriod(prevStart, prevEnd);
       if (prevRows.length > 0) {
         previousMonthRevenue = Math.round(
           prevRows.reduce((sum, r) => sum + r.netRevenue, 0) * 100
@@ -66,7 +66,7 @@ export function computeStatsFromSQLite(): DashboardStats | null {
   // ── Build DashboardStats ──────────────────────────────────
   const stats: DashboardStats = {
     lastUpdated: new Date().toISOString(),
-    dateRange: null, // SQLite doesn't store a date range for auto-renew snapshots
+    dateRange: null,
     mrr: subStats.mrr,
     activeSubscribers: subStats.active,
     arpu: subStats.arpu,
@@ -75,7 +75,7 @@ export function computeStatsFromSQLite(): DashboardStats | null {
   };
 
   console.log(
-    `[sqlite-stats] Computed from SQLite: ${subStats.active.total} subscribers, ` +
+    `[sqlite-stats] Computed: ${subStats.active.total} subscribers, ` +
     `$${subStats.mrr.total} MRR, $${currentMonthRevenue} current month revenue`
   );
 

@@ -1,5 +1,5 @@
 /**
- * Import the BEST available data from all sources into SQLite.
+ * Import the BEST available data from all sources into PostgreSQL.
  *
  * Picks the largest/newest file for each report type.
  *
@@ -11,7 +11,7 @@ dotenv.config();
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import Papa from "papaparse";
-import { getDatabase } from "../src/lib/db/database";
+import { getPool, initDatabase } from "../src/lib/db/database";
 import { saveAutoRenews, type AutoRenewRow } from "../src/lib/db/auto-renew-store";
 import { saveRegistrations, saveFirstVisits, type RegistrationRow } from "../src/lib/db/registration-store";
 import { saveOrders, type OrderRow } from "../src/lib/db/order-store";
@@ -40,10 +40,11 @@ function findLargestFile(dir: string, pattern: RegExp): string | null {
   }
 }
 
-function main() {
-  console.log("=== Import Best Available Data into SQLite ===\n");
+async function main() {
+  console.log("=== Import Best Available Data into Database ===\n");
 
-  const db = getDatabase();
+  await initDatabase();
+  const pool = getPool();
   console.log("Database initialized.\n");
 
   // ── 1. Auto-Renews — pick the largest file (most complete date range) ──
@@ -61,7 +62,7 @@ function main() {
       createdAt: r.created_at || "",
       canceledAt: r.canceled_at || undefined,
     }));
-    saveAutoRenews(snapshotId, arRows);
+    await saveAutoRenews(snapshotId, arRows);
     console.log("  Saved", arRows.length, "auto-renews");
 
     const dates = arRows.map(r => r.createdAt).filter(Boolean).sort();
@@ -90,7 +91,7 @@ function main() {
       subscription: r.subscription || "false",
       revenue: r.revenue ? parseFloat(r.revenue) : 0,
     }));
-    saveFirstVisits(fvRows);
+    await saveFirstVisits(fvRows);
     console.log("  Saved", fvRows.length, "first visits");
 
     const dates = fvRows.map(r => r.attendedAt).filter(Boolean).sort();
@@ -119,7 +120,7 @@ function main() {
       subscription: r.subscription || "false",
       revenue: r.revenue ? parseFloat(r.revenue) : 0,
     }));
-    saveRegistrations(regRows);
+    await saveRegistrations(regRows);
     console.log("  Saved", regRows.length, "registrations");
 
     const dates = regRows.map(r => r.attendedAt).filter(Boolean).sort();
@@ -141,7 +142,7 @@ function main() {
       payment: r.payment || r.Payment || "",
       total: parseFloat((r.total || r.Total || "0").replace(/[$,]/g, "")) || 0,
     }));
-    saveOrders(orderRows);
+    await saveOrders(orderRows);
     console.log("  Saved", orderRows.length, "orders");
 
     const dates = orderRows.map(r => r.created).filter(Boolean).sort();
@@ -162,7 +163,7 @@ function main() {
       orders: parseInt(r.orders || r.Orders || "0") || 0,
       created: r.created || r.Created || "",
     }));
-    saveCustomers(custRows);
+    await saveCustomers(custRows);
     console.log("  Saved", custRows.length, "customers");
 
     const dates = custRows.map(r => r.created).filter(Boolean).sort();
@@ -184,18 +185,23 @@ function main() {
 
   for (const { table, col } of checks) {
     try {
-      const row = db.prepare(
-        "SELECT COUNT(*) as count, MIN(" + col + ") as earliest, MAX(" + col + ") as latest FROM " + table + " WHERE " + col + " IS NOT NULL AND " + col + " <> ''"
-      ).get() as { count: number; earliest: string; latest: string };
-      if (row.count > 0) {
-        console.log("  " + table + ": " + row.count + " rows | " + row.earliest + " -> " + row.latest);
+      const { rows } = await pool.query(
+        `SELECT COUNT(*) as count, MIN(${col}) as earliest, MAX(${col}) as latest FROM ${table} WHERE ${col} IS NOT NULL AND ${col} <> ''`
+      );
+      if (Number(rows[0].count) > 0) {
+        console.log(`  ${table}: ${rows[0].count} rows | ${rows[0].earliest} -> ${rows[0].latest}`);
       } else {
-        console.log("  " + table + ": (empty)");
+        console.log(`  ${table}: (empty)`);
       }
     } catch {
-      console.log("  " + table + ": (error)");
+      console.log(`  ${table}: (error)`);
     }
   }
+
+  await pool.end();
 }
 
-main();
+main().catch(err => {
+  console.error("Import failed:", err);
+  process.exit(1);
+});

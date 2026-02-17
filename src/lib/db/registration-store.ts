@@ -1,4 +1,4 @@
-import { getDatabase } from "./database";
+import { getPool } from "./database";
 import { isDropInOrIntro } from "../analytics/categories";
 
 // ── Types ────────────────────────────────────────────────────
@@ -57,64 +57,82 @@ export interface AttendanceStats {
 /**
  * Save registrations (additive — appends new rows, never deletes existing).
  */
-export function saveRegistrations(rows: RegistrationRow[]): void {
-  const db = getDatabase();
-  const before = (db.prepare("SELECT COUNT(*) as count FROM registrations").get() as { count: number }).count;
+export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> {
+  const pool = getPool();
+  const beforeResult = await pool.query("SELECT COUNT(*) as count FROM registrations");
+  const before = Number(beforeResult.rows[0].count);
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO registrations (
-      event_name, performance_starts_at, location_name, video_name, teacher_name,
-      first_name, last_name, email, registered_at, attended_at,
-      registration_type, state, pass, subscription, revenue
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((items: RegistrationRow[]) => {
-    for (const r of items) {
-      insert.run(
-        r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
-        r.teacherName, r.firstName, r.lastName, r.email,
-        r.registeredAt || null, r.attendedAt,
-        r.registrationType, r.state, r.pass, r.subscription,
-        r.revenue
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const r of rows) {
+      await client.query(
+        `INSERT INTO registrations (
+          event_name, performance_starts_at, location_name, video_name, teacher_name,
+          first_name, last_name, email, registered_at, attended_at,
+          registration_type, state, pass, subscription, revenue
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ON CONFLICT (email, attended_at) DO NOTHING`,
+        [
+          r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
+          r.teacherName, r.firstName, r.lastName, r.email,
+          r.registeredAt || null, r.attendedAt,
+          r.registrationType, r.state, r.pass, r.subscription,
+          r.revenue,
+        ]
       );
     }
-  });
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 
-  insertMany(rows);
-  const after = (db.prepare("SELECT COUNT(*) as count FROM registrations").get() as { count: number }).count;
+  const afterResult = await pool.query("SELECT COUNT(*) as count FROM registrations");
+  const after = Number(afterResult.rows[0].count);
   console.log(`[registration-store] Registrations: ${before} -> ${after} (+${after - before} new)`);
 }
 
 /**
  * Save first visits (additive — appends new rows, never deletes existing).
  */
-export function saveFirstVisits(rows: RegistrationRow[]): void {
-  const db = getDatabase();
-  const before = (db.prepare("SELECT COUNT(*) as count FROM first_visits").get() as { count: number }).count;
+export async function saveFirstVisits(rows: RegistrationRow[]): Promise<void> {
+  const pool = getPool();
+  const beforeResult = await pool.query("SELECT COUNT(*) as count FROM first_visits");
+  const before = Number(beforeResult.rows[0].count);
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO first_visits (
-      event_name, performance_starts_at, location_name, video_name, teacher_name,
-      first_name, last_name, email, registered_at, attended_at,
-      registration_type, state, pass, subscription, revenue
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((items: RegistrationRow[]) => {
-    for (const r of items) {
-      insert.run(
-        r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
-        r.teacherName, r.firstName, r.lastName, r.email,
-        r.registeredAt || null, r.attendedAt,
-        r.registrationType, r.state, r.pass, r.subscription,
-        r.revenue
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const r of rows) {
+      await client.query(
+        `INSERT INTO first_visits (
+          event_name, performance_starts_at, location_name, video_name, teacher_name,
+          first_name, last_name, email, registered_at, attended_at,
+          registration_type, state, pass, subscription, revenue
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ON CONFLICT (email, attended_at) DO NOTHING`,
+        [
+          r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
+          r.teacherName, r.firstName, r.lastName, r.email,
+          r.registeredAt || null, r.attendedAt,
+          r.registrationType, r.state, r.pass, r.subscription,
+          r.revenue,
+        ]
       );
     }
-  });
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 
-  insertMany(rows);
-  const after = (db.prepare("SELECT COUNT(*) as count FROM first_visits").get() as { count: number }).count;
+  const afterResult = await pool.query("SELECT COUNT(*) as count FROM first_visits");
+  const after = Number(afterResult.rows[0].count);
   console.log(`[registration-store] First visits: ${before} -> ${after} (+${after - before} new)`);
 }
 
@@ -123,60 +141,66 @@ export function saveFirstVisits(rows: RegistrationRow[]): void {
 /**
  * Get drop-in (non-subscriber) visits grouped by ISO week.
  */
-export function getDropInsByWeek(startDate?: string, endDate?: string): WeeklyCount[] {
-  const db = getDatabase();
+export async function getDropInsByWeek(startDate?: string, endDate?: string): Promise<WeeklyCount[]> {
+  const pool = getPool();
   let query = `
-    SELECT strftime('%Y-W%W', attended_at) as week, COUNT(*) as count
+    SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
     FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND (subscription = 'false' OR subscription IS NULL)
   `;
   const params: string[] = [];
+  let paramIdx = 1;
 
   if (startDate) {
-    query += ` AND attended_at >= ?`;
+    query += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    query += ` AND attended_at < ?`;
+    query += ` AND attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   query += ` GROUP BY week ORDER BY week`;
 
-  return db.prepare(query).all(...params) as WeeklyCount[];
+  const { rows } = await pool.query(query, params);
+  return rows.map((r: Record<string, unknown>) => ({
+    week: r.week as string,
+    count: Number(r.count),
+  }));
 }
 
 /**
  * Get first visits grouped by ISO week with segment breakdown.
  * Segments: introWeek (Intro passes), dropIn (drop-in/5-pack), guest (guest passes), other
  */
-export function getFirstVisitsByWeek(startDate?: string, endDate?: string): WeeklySegmentedCount[] {
-  const db = getDatabase();
+export async function getFirstVisitsByWeek(startDate?: string, endDate?: string): Promise<WeeklySegmentedCount[]> {
+  const pool = getPool();
   let query = `
-    SELECT strftime('%Y-W%W', attended_at) as week, pass, COUNT(*) as count
+    SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, pass, COUNT(*) as count
     FROM first_visits
     WHERE attended_at IS NOT NULL AND attended_at != ''
   `;
   const params: string[] = [];
+  let paramIdx = 1;
 
   if (startDate) {
-    query += ` AND attended_at >= ?`;
+    query += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    query += ` AND attended_at < ?`;
+    query += ` AND attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   query += ` GROUP BY week, pass ORDER BY week`;
 
-  const rawRows = db.prepare(query).all(...params) as { week: string; pass: string; count: number }[];
+  const { rows: rawRows } = await pool.query(query, params);
 
   // Aggregate by week with segment classification
   const weekMap = new Map<string, WeeklySegmentedCount>();
 
-  for (const row of rawRows) {
+  for (const row of rawRows as { week: string; pass: string; count: string | number }[]) {
     if (!weekMap.has(row.week)) {
       weekMap.set(row.week, {
         week: row.week,
@@ -185,17 +209,18 @@ export function getFirstVisitsByWeek(startDate?: string, endDate?: string): Week
       });
     }
     const entry = weekMap.get(row.week)!;
-    entry.count += row.count;
+    const cnt = Number(row.count);
+    entry.count += cnt;
 
     const passUpper = (row.pass || "").toUpperCase();
     if (passUpper.includes("INTRO")) {
-      entry.segments.introWeek += row.count;
+      entry.segments.introWeek += cnt;
     } else if (passUpper.includes("GUEST") || passUpper.includes("COMMUNITY")) {
-      entry.segments.guest += row.count;
+      entry.segments.guest += cnt;
     } else if (isDropInOrIntro(row.pass || "")) {
-      entry.segments.dropIn += row.count;
+      entry.segments.dropIn += cnt;
     } else {
-      entry.segments.other += row.count;
+      entry.segments.other += cnt;
     }
   }
 
@@ -205,59 +230,68 @@ export function getFirstVisitsByWeek(startDate?: string, endDate?: string): Week
 /**
  * Get total registrations grouped by ISO week.
  */
-export function getRegistrationsByWeek(startDate?: string, endDate?: string): WeeklyCount[] {
-  const db = getDatabase();
+export async function getRegistrationsByWeek(startDate?: string, endDate?: string): Promise<WeeklyCount[]> {
+  const pool = getPool();
   let query = `
-    SELECT strftime('%Y-W%W', attended_at) as week, COUNT(*) as count
+    SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
     FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
   `;
   const params: string[] = [];
+  let paramIdx = 1;
 
   if (startDate) {
-    query += ` AND attended_at >= ?`;
+    query += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    query += ` AND attended_at < ?`;
+    query += ` AND attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   query += ` GROUP BY week ORDER BY week`;
 
-  return db.prepare(query).all(...params) as WeeklyCount[];
+  const { rows } = await pool.query(query, params);
+  return rows.map((r: Record<string, unknown>) => ({
+    week: r.week as string,
+    count: Number(r.count),
+  }));
 }
 
 /**
  * Get drop-in attendance stats (MTD, previous month, weekly average).
  */
-export function getDropInStats(): AttendanceStats | null {
-  const db = getDatabase();
+export async function getDropInStats(): Promise<AttendanceStats | null> {
+  const pool = getPool();
   const now = new Date();
   const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonthStart = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}-01`;
 
   // Current month total
-  const currentRow = db.prepare(`
-    SELECT COUNT(*) as count FROM registrations
-    WHERE attended_at >= ? AND (subscription = 'false' OR subscription IS NULL)
-      AND attended_at IS NOT NULL AND attended_at != ''
-  `).get(currentMonthStart) as { count: number };
+  const currentResult = await pool.query(
+    `SELECT COUNT(*) as count FROM registrations
+     WHERE attended_at >= $1 AND (subscription = 'false' OR subscription IS NULL)
+       AND attended_at IS NOT NULL AND attended_at != ''`,
+    [currentMonthStart]
+  );
+  const currentCount = Number(currentResult.rows[0].count);
 
-  if (currentRow.count === 0) {
+  if (currentCount === 0) {
     // Check if we have any registration data at all
-    const anyData = db.prepare(`SELECT COUNT(*) as count FROM registrations`).get() as { count: number };
-    if (anyData.count === 0) return null;
+    const anyResult = await pool.query(`SELECT COUNT(*) as count FROM registrations`);
+    if (Number(anyResult.rows[0].count) === 0) return null;
   }
 
   // Previous month total
-  const prevRow = db.prepare(`
-    SELECT COUNT(*) as count FROM registrations
-    WHERE attended_at >= ? AND attended_at < ?
-      AND (subscription = 'false' OR subscription IS NULL)
-      AND attended_at IS NOT NULL AND attended_at != ''
-  `).get(prevMonthStart, currentMonthStart) as { count: number };
+  const prevResult = await pool.query(
+    `SELECT COUNT(*) as count FROM registrations
+     WHERE attended_at >= $1 AND attended_at < $2
+       AND (subscription = 'false' OR subscription IS NULL)
+       AND attended_at IS NOT NULL AND attended_at != ''`,
+    [prevMonthStart, currentMonthStart]
+  );
+  const prevCount = Number(prevResult.rows[0].count);
 
   // Days in month calculation
   const daysElapsed = now.getDate();
@@ -268,27 +302,29 @@ export function getDropInStats(): AttendanceStats | null {
   sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
   const sixWeeksAgoStr = sixWeeksAgo.toISOString().split("T")[0];
 
-  const weeklyRows = db.prepare(`
-    SELECT strftime('%Y-W%W', attended_at) as week, COUNT(*) as count
-    FROM registrations
-    WHERE attended_at >= ? AND (subscription = 'false' OR subscription IS NULL)
-      AND attended_at IS NOT NULL AND attended_at != ''
-    GROUP BY week
-    ORDER BY week
-  `).all(sixWeeksAgoStr) as WeeklyCount[];
+  const weeklyResult = await pool.query(
+    `SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
+     FROM registrations
+     WHERE attended_at >= $1 AND (subscription = 'false' OR subscription IS NULL)
+       AND attended_at IS NOT NULL AND attended_at != ''
+     GROUP BY week
+     ORDER BY week`,
+    [sixWeeksAgoStr]
+  );
+  const weeklyRows = weeklyResult.rows as { week: string; count: string | number }[];
 
   const weeklyAvg = weeklyRows.length > 0
-    ? Math.round(weeklyRows.reduce((sum, w) => sum + w.count, 0) / weeklyRows.length)
+    ? Math.round(weeklyRows.reduce((sum, w) => sum + Number(w.count), 0) / weeklyRows.length)
     : 0;
 
   return {
-    currentMonthTotal: currentRow.count,
+    currentMonthTotal: currentCount,
     currentMonthDaysElapsed: daysElapsed,
     currentMonthDaysInMonth: daysInMonth,
     currentMonthPaced: daysElapsed > 0
-      ? Math.round((currentRow.count / daysElapsed) * daysInMonth)
+      ? Math.round((currentCount / daysElapsed) * daysInMonth)
       : 0,
-    previousMonthTotal: prevRow.count,
+    previousMonthTotal: prevCount,
     weeklyAvg6w: weeklyAvg,
   };
 }
@@ -296,19 +332,19 @@ export function getDropInStats(): AttendanceStats | null {
 /**
  * Check if registration data exists.
  */
-export function hasRegistrationData(): boolean {
-  const db = getDatabase();
-  const row = db.prepare(`SELECT COUNT(*) as count FROM registrations`).get() as { count: number };
-  return row.count > 0;
+export async function hasRegistrationData(): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM registrations`);
+  return Number(rows[0].count) > 0;
 }
 
 /**
  * Check if first visit data exists.
  */
-export function hasFirstVisitData(): boolean {
-  const db = getDatabase();
-  const row = db.prepare(`SELECT COUNT(*) as count FROM first_visits`).get() as { count: number };
-  return row.count > 0;
+export async function hasFirstVisitData(): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM first_visits`);
+  return Number(rows[0].count) > 0;
 }
 
 // ── Unique Visitor Queries ──────────────────────────────────
@@ -370,55 +406,61 @@ function classifySourceRows(
  * Get unique first-time visitors per week (Monday-based weeks).
  * Returns COUNT(DISTINCT email) grouped by week start date.
  */
-export function getFirstTimeUniqueVisitorsByWeek(
+export async function getFirstTimeUniqueVisitorsByWeek(
   startDate?: string,
   endDate?: string
-): UniqueVisitorWeek[] {
-  const db = getDatabase();
+): Promise<UniqueVisitorWeek[]> {
+  const pool = getPool();
   const params: string[] = [];
+  let paramIdx = 1;
   let dateFilter = "";
 
   if (startDate) {
-    dateFilter += ` AND attended_at >= ?`;
+    dateFilter += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    dateFilter += ` AND attended_at < ?`;
+    dateFilter += ` AND attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   const query = `
-    SELECT date(substr(attended_at, 1, 19), 'weekday 0', '-6 days') as weekStart,
-           COUNT(DISTINCT email) as uniqueVisitors
+    SELECT DATE_TRUNC('week', attended_at::date)::date::text as "weekStart",
+           COUNT(DISTINCT email) as "uniqueVisitors"
     FROM first_visits
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND email IS NOT NULL AND email != ''
       ${dateFilter}
-    GROUP BY weekStart
-    ORDER BY weekStart
+    GROUP BY "weekStart"
+    ORDER BY "weekStart"
   `;
 
-  return db.prepare(query).all(...params) as UniqueVisitorWeek[];
+  const { rows } = await pool.query(query, params);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    uniqueVisitors: Number(r.uniqueVisitors),
+  }));
 }
 
 /**
  * Get source breakdown for first-time visitors (unique people).
  * Each person is attributed to one source based on their FIRST visit's pass type.
  */
-export function getFirstTimeSourceBreakdown(
+export async function getFirstTimeSourceBreakdown(
   startDate?: string,
   endDate?: string
-): SourceBreakdown {
-  const db = getDatabase();
+): Promise<SourceBreakdown> {
+  const pool = getPool();
   const params: string[] = [];
+  let paramIdx = 1;
   let dateFilter = "";
 
   if (startDate) {
-    dateFilter += ` AND attended_at >= ?`;
+    dateFilter += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    dateFilter += ` AND attended_at < ?`;
+    dateFilter += ` AND attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
@@ -440,37 +482,41 @@ export function getFirstTimeSourceBreakdown(
     GROUP BY fv.pass
   `;
 
-  const rows = db.prepare(query).all(...params) as { pass: string; cnt: number }[];
-  return classifySourceRows(rows, true);
+  const { rows } = await pool.query(query, params);
+  return classifySourceRows(
+    rows.map((r: Record<string, unknown>) => ({ pass: r.pass as string, cnt: Number(r.cnt) })),
+    true
+  );
 }
 
 /**
  * Get unique returning non-member visitors per week (Monday-based weeks).
  * Returning = non-subscriber emails that are NOT in the first_visits table for the same window.
  */
-export function getReturningUniqueVisitorsByWeek(
+export async function getReturningUniqueVisitorsByWeek(
   startDate?: string,
   endDate?: string
-): UniqueVisitorWeek[] {
-  const db = getDatabase();
+): Promise<UniqueVisitorWeek[]> {
+  const pool = getPool();
   const params: string[] = [];
+  let paramIdx = 1;
   let fvDateFilter = "";
   let regDateFilter = "";
 
   if (startDate) {
-    fvDateFilter += ` AND attended_at >= ?`;
+    fvDateFilter += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
-    regDateFilter += ` AND r.attended_at >= ?`;
+    regDateFilter += ` AND r.attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    regDateFilter += ` AND r.attended_at < ?`;
+    regDateFilter += ` AND r.attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
   const query = `
-    SELECT date(substr(r.attended_at, 1, 19), 'weekday 0', '-6 days') as weekStart,
-           COUNT(DISTINCT r.email) as uniqueVisitors
+    SELECT DATE_TRUNC('week', r.attended_at::date)::date::text as "weekStart",
+           COUNT(DISTINCT r.email) as "uniqueVisitors"
     FROM registrations r
     WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
       AND r.email IS NOT NULL AND r.email != ''
@@ -482,34 +528,39 @@ export function getReturningUniqueVisitorsByWeek(
           ${fvDateFilter}
       )
       ${regDateFilter}
-    GROUP BY weekStart
-    ORDER BY weekStart
+    GROUP BY "weekStart"
+    ORDER BY "weekStart"
   `;
 
-  return db.prepare(query).all(...params) as UniqueVisitorWeek[];
+  const { rows } = await pool.query(query, params);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    uniqueVisitors: Number(r.uniqueVisitors),
+  }));
 }
 
 /**
  * Get source breakdown for returning non-members (unique people).
  * Each person is attributed to one source based on their MOST RECENT visit's pass type.
  */
-export function getReturningSourceBreakdown(
+export async function getReturningSourceBreakdown(
   startDate?: string,
   endDate?: string
-): SourceBreakdown {
-  const db = getDatabase();
+): Promise<SourceBreakdown> {
+  const pool = getPool();
   const params: string[] = [];
+  let paramIdx = 1;
   let fvDateFilter = "";
   let regDateFilter = "";
 
   if (startDate) {
-    fvDateFilter += ` AND attended_at >= ?`;
+    fvDateFilter += ` AND attended_at >= $${paramIdx++}`;
     params.push(startDate);
-    regDateFilter += ` AND r.attended_at >= ?`;
+    regDateFilter += ` AND r.attended_at >= $${paramIdx++}`;
     params.push(startDate);
   }
   if (endDate) {
-    regDateFilter += ` AND r.attended_at < ?`;
+    regDateFilter += ` AND r.attended_at < $${paramIdx++}`;
     params.push(endDate);
   }
 
@@ -539,6 +590,9 @@ export function getReturningSourceBreakdown(
     GROUP BY q.pass
   `;
 
-  const rows = db.prepare(query).all(...params) as { pass: string; cnt: number }[];
-  return classifySourceRows(rows, false);
+  const { rows } = await pool.query(query, params);
+  return classifySourceRows(
+    rows.map((r: Record<string, unknown>) => ({ pass: r.pass as string, cnt: Number(r.cnt) })),
+    false
+  );
 }

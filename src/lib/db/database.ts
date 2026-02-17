@@ -1,21 +1,48 @@
-import Database from "better-sqlite3";
-import { join } from "path";
+import { Pool } from "pg";
 
-const DB_PATH = join(process.cwd(), "data", "studio-analytics.db");
+// Singleton pool with HMR guard for Next.js dev mode
+const globalForDb = globalThis as unknown as { pgPool?: Pool };
 
-let db: Database.Database | null = null;
+export function getPool(): Pool {
+  if (globalForDb.pgPool) return globalForDb.pgPool;
 
-export function getDatabase(): Database.Database {
-  if (db) return db;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL environment variable is required. " +
+      "Example: postgresql://postgres:postgres@localhost:5432/studio_analytics"
+    );
+  }
 
-  db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  const pool = new Pool({
+    connectionString,
+    max: 10,
+    // Railway Postgres requires SSL
+    ssl: connectionString.includes("railway")
+      ? { rejectUnauthorized: false }
+      : undefined,
+  });
 
-  // Create tables on first use
-  db.exec(`
+  pool.on("error", (err) => {
+    console.error("[db] Unexpected pool error:", err);
+  });
+
+  globalForDb.pgPool = pool;
+  console.log("[db] PostgreSQL pool created");
+  return pool;
+}
+
+/**
+ * Initialize database schema. Must be called once on app startup
+ * (e.g. from instrumentation.ts) before any store functions.
+ */
+export async function initDatabase(): Promise<void> {
+  const pool = getPool();
+
+  // Create all tables
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS revenue_categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       period_start TEXT NOT NULL,
       period_end TEXT NOT NULL,
       category TEXT NOT NULL,
@@ -28,13 +55,13 @@ export function getDatabase(): Database.Database {
       union_fees_refunded REAL DEFAULT 0,
       net_revenue REAL DEFAULT 0,
       locked INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(period_start, period_end, category)
     );
 
     CREATE TABLE IF NOT EXISTS pipeline_runs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ran_at TEXT DEFAULT (datetime('now')),
+      id SERIAL PRIMARY KEY,
+      ran_at TIMESTAMPTZ DEFAULT NOW(),
       date_range_start TEXT,
       date_range_end TEXT,
       record_counts TEXT,
@@ -42,17 +69,16 @@ export function getDatabase(): Database.Database {
     );
 
     CREATE TABLE IF NOT EXISTS uploaded_data (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       filename TEXT NOT NULL,
       data_type TEXT NOT NULL,
       period TEXT,
       content TEXT NOT NULL,
-      uploaded_at TEXT DEFAULT (datetime('now'))
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Auto-renew snapshots from Union.fit CSV exports
     CREATE TABLE IF NOT EXISTS auto_renews (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       snapshot_id TEXT,
       plan_name TEXT,
       plan_state TEXT,
@@ -67,12 +93,11 @@ export function getDatabase(): Database.Database {
       admin TEXT,
       current_state TEXT,
       current_plan TEXT,
-      imported_at TEXT DEFAULT (datetime('now'))
+      imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- First visit registrations from Union.fit CSV exports
     CREATE TABLE IF NOT EXISTS first_visits (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       event_name TEXT,
       performance_starts_at TEXT,
       location_name TEXT,
@@ -88,12 +113,11 @@ export function getDatabase(): Database.Database {
       pass TEXT,
       subscription TEXT,
       revenue REAL,
-      imported_at TEXT DEFAULT (datetime('now'))
+      imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Full registrations from Union.fit CSV exports
     CREATE TABLE IF NOT EXISTS registrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       event_name TEXT,
       performance_starts_at TEXT,
       location_name TEXT,
@@ -109,35 +133,32 @@ export function getDatabase(): Database.Database {
       pass TEXT,
       subscription TEXT,
       revenue REAL,
-      imported_at TEXT DEFAULT (datetime('now'))
+      imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Orders from Union.fit Sales By Service CSV exports
     CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       created_at TEXT,
       code TEXT,
       customer TEXT,
       order_type TEXT,
       payment TEXT,
       total REAL DEFAULT 0,
-      imported_at TEXT DEFAULT (datetime('now'))
+      imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- New customers from Union.fit Customers CSV exports
     CREATE TABLE IF NOT EXISTS new_customers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT,
       email TEXT,
       role TEXT,
       order_count INTEGER DEFAULT 0,
       created_at TEXT,
-      imported_at TEXT DEFAULT (datetime('now'))
+      imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Full customer profiles from Union.fit customer export (CRM backbone)
     CREATE TABLE IF NOT EXISTS customers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       union_id TEXT,
       first_name TEXT,
       last_name TEXT,
@@ -167,12 +188,12 @@ export function getDatabase(): Database.Database {
       inspiration TEXT,
       practice_frequency TEXT,
       created_at TEXT,
-      imported_at TEXT DEFAULT (datetime('now'))
+      imported_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
 
-  // Indexes for performance
-  db.exec(`
+  // Performance indexes
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_ar_state ON auto_renews(plan_state);
     CREATE INDEX IF NOT EXISTS idx_ar_created ON auto_renews(created_at);
     CREATE INDEX IF NOT EXISTS idx_ar_canceled ON auto_renews(canceled_at);
@@ -189,33 +210,11 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_ar_email ON auto_renews(customer_email);
   `);
 
-  // Unique indexes for dedup (INSERT OR IGNORE)
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fv_dedup ON first_visits(email, attended_at)`); } catch { /* already exists or conflict */ }
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_dedup ON registrations(email, attended_at)`); } catch { /* already exists or conflict */ }
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_dedup ON orders(code)`); } catch { /* already exists or conflict */ }
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_newcust_dedup ON new_customers(email)`); } catch { /* already exists or conflict */ }
+  // Unique indexes for dedup (used with ON CONFLICT DO NOTHING)
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fv_dedup ON first_visits(email, attended_at)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_dedup ON registrations(email, attended_at)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_dedup ON orders(code)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_newcust_dedup ON new_customers(email)`);
 
-  // Migrations: add columns that may not exist yet in older databases
-  try {
-    db.exec(`ALTER TABLE revenue_categories ADD COLUMN other_fees REAL DEFAULT 0`);
-    console.log(`[db] Migration: added other_fees column to revenue_categories`);
-  } catch {
-    // Column already exists
-  }
-  // Migration: rename old "subscriptions" table to "auto_renews"
-  try {
-    db.exec(`ALTER TABLE subscriptions RENAME TO auto_renews`);
-    console.log(`[db] Migration: renamed subscriptions → auto_renews`);
-  } catch {
-    // Table already renamed or doesn't exist
-  }
-  // Migration: rename old column names
-  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN subscription_name TO plan_name`); } catch { /* already renamed */ }
-  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN subscription_state TO plan_state`); } catch { /* already renamed */ }
-  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN subscription_price TO plan_price`); } catch { /* already renamed */ }
-  try { db.exec(`ALTER TABLE auto_renews RENAME COLUMN current_subscription TO current_plan`); } catch { /* already renamed */ }
-  try { db.exec(`ALTER TABLE auto_renews ADD COLUMN snapshot_id TEXT`); } catch { /* already exists */ }
-
-  console.log(`[db] SQLite database initialized at ${DB_PATH}`);
-  return db;
+  console.log("[db] PostgreSQL schema initialized");
 }

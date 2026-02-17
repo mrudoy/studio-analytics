@@ -1,8 +1,8 @@
 /**
- * Compute TrendsData from SQLite data.
+ * Compute TrendsData from PostgreSQL data.
  *
  * Returns the same shape as readTrendsData() from Sheets so the
- * dashboard components need zero changes. Returns null if SQLite doesn't
+ * dashboard components need zero changes. Returns null if the database doesn't
  * have enough data (caller falls back to Sheets).
  *
  * Data sources:
@@ -39,7 +39,7 @@ import type {
   ReturningNonMemberData,
   ChurnRateData,
 } from "../sheets/read-dashboard";
-import { getDatabase } from "../db/database";
+import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -104,9 +104,9 @@ function bucketToTrendRow(period: string, type: string, b: PeriodBucket, prev: P
 
 // ── Main ────────────────────────────────────────────────────
 
-export function computeTrendsFromSQLite(): TrendsData | null {
-  if (!hasAutoRenewData()) {
-    console.log("[sqlite-trends] No auto-renew data in SQLite — skipping");
+export async function computeTrendsFromSQLite(): Promise<TrendsData | null> {
+  if (!(await hasAutoRenewData())) {
+    console.log("[sqlite-trends] No auto-renew data — skipping");
     return null;
   }
 
@@ -121,8 +121,8 @@ export function computeTrendsFromSQLite(): TrendsData | null {
   const startDate = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
   const endDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate() + 1).padStart(2, "0")}`;
 
-  const newSubs = getNewAutoRenews(startDate, endDate);
-  const canceledSubs = getCanceledAutoRenews(startDate, endDate);
+  const newSubs = await getNewAutoRenews(startDate, endDate);
+  const canceledSubs = await getCanceledAutoRenews(startDate, endDate);
 
   const weeklyBuckets = new Map<string, PeriodBucket>();
   const monthlyBuckets = new Map<string, PeriodBucket>();
@@ -208,7 +208,7 @@ export function computeTrendsFromSQLite(): TrendsData | null {
 
   // ── 4. Annual projection ─────────────────────────────────
   let projection: ProjectionData | null = null;
-  const subStats = getAutoRenewStats();
+  const subStats = await getAutoRenewStats();
 
   if (subStats) {
     const currentMRR = subStats.mrr.total;
@@ -268,7 +268,7 @@ export function computeTrendsFromSQLite(): TrendsData | null {
 
     // Try to find actual revenue from revenue_categories table
     try {
-      const allPeriods = getAllPeriods();
+      const allPeriods = await getAllPeriods();
       // Find the longest period that starts in the prior year
       for (const p of allPeriods) {
         if (p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0) {
@@ -355,13 +355,13 @@ export function computeTrendsFromSQLite(): TrendsData | null {
   // ── 5. Drop-in data ──────────────────────────────────────
   let dropIns: DropInData | null = null;
 
-  if (hasRegistrationData()) {
-    const dropInStats = getDropInStats();
+  if (await hasRegistrationData()) {
+    const dropInStats = await getDropInStats();
     if (dropInStats) {
       // Get weekly breakdown from registrations
       const eightWeeksAgo = new Date(now);
       eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-      const dropInWeeks = getDropInsByWeek(
+      const dropInWeeks = await getDropInsByWeek(
         eightWeeksAgo.toISOString().split("T")[0]
       );
 
@@ -380,13 +380,13 @@ export function computeTrendsFromSQLite(): TrendsData | null {
   // ── 6. First visit data (unique visitors) ──────────────
   let firstVisits: FirstVisitData | null = null;
 
-  if (hasFirstVisitData()) {
+  if (await hasFirstVisitData()) {
     const fiveWeeksAgo = new Date(now);
     fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
     const startStr = fiveWeeksAgo.toISOString().split("T")[0];
 
-    const uvWeeks = getFirstTimeUniqueVisitorsByWeek(startStr);
-    const sourceBreakdown = getFirstTimeSourceBreakdown(startStr);
+    const uvWeeks = await getFirstTimeUniqueVisitorsByWeek(startStr);
+    const sourceBreakdown = await getFirstTimeSourceBreakdown(startStr);
 
     if (uvWeeks.length > 0) {
       const sortedWeeks = [...uvWeeks].sort((a, b) =>
@@ -418,14 +418,14 @@ export function computeTrendsFromSQLite(): TrendsData | null {
   // ── 7. Returning non-members (unique visitors) ─────────
   let returningNonMembers: ReturningNonMemberData | null = null;
 
-  if (hasRegistrationData()) {
+  if (await hasRegistrationData()) {
     try {
       const fiveWeeksAgo = new Date(now);
       fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
       const startStr = fiveWeeksAgo.toISOString().split("T")[0];
 
-      const uvWeeks = getReturningUniqueVisitorsByWeek(startStr);
-      const sourceBreakdown = getReturningSourceBreakdown(startStr);
+      const uvWeeks = await getReturningUniqueVisitorsByWeek(startStr);
+      const sourceBreakdown = await getReturningSourceBreakdown(startStr);
 
       if (uvWeeks.length > 0) {
         const sortedWeeks = [...uvWeeks].sort((a, b) =>
@@ -460,13 +460,13 @@ export function computeTrendsFromSQLite(): TrendsData | null {
   // ── 8. Churn rates ──────────────────────────────────────────
   let churnRates: ChurnRateData | null = null;
   try {
-    churnRates = computeChurnRates();
+    churnRates = await computeChurnRates();
   } catch (err) {
     console.warn("[sqlite-trends] Failed to compute churn rates:", err);
   }
 
   console.log(
-    `[sqlite-trends] Computed from SQLite: ${weekly.length} weekly, ${monthly.length} monthly periods` +
+    `[sqlite-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins MTD=${dropIns.currentMonthTotal}` : "") +
     (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
     (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "")
@@ -494,18 +494,22 @@ export function computeTrendsFromSQLite(): TrendsData | null {
  *
  * This reconstructs historical active counts from the snapshot data.
  */
-function computeChurnRates(): ChurnRateData | null {
-  const db = getDatabase();
+async function computeChurnRates(): Promise<ChurnRateData | null> {
+  const pool = getPool();
 
-  const allRows = db.prepare(
+  const { rows: allRows } = await pool.query(
     `SELECT plan_name, plan_state, plan_price, canceled_at, created_at FROM auto_renews`
-  ).all() as { plan_name: string; plan_state: string; plan_price: number; canceled_at: string | null; created_at: string }[];
+  );
 
   if (allRows.length === 0) return null;
 
-  const categorized = allRows.map((r) => ({
-    ...r,
-    category: getCategory(r.plan_name),
+  const categorized = allRows.map((r: Record<string, unknown>) => ({
+    plan_name: r.plan_name as string,
+    plan_state: r.plan_state as string,
+    plan_price: r.plan_price as number,
+    canceled_at: r.canceled_at as string | null,
+    created_at: r.created_at as string,
+    category: getCategory(r.plan_name as string),
   }));
 
   const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
@@ -609,16 +613,15 @@ function computeChurnRates(): ChurnRateData | null {
       : 0;
 
   // At-risk count
-  const atRiskRow = db
-    .prepare(
-      `SELECT COUNT(*) as cnt FROM auto_renews WHERE plan_state IN ('Past Due', 'Invalid', 'Pending Cancel')`
-    )
-    .get() as { cnt: number };
+  const atRiskResult = await pool.query(
+    `SELECT COUNT(*) as cnt FROM auto_renews WHERE plan_state IN ('Past Due', 'Invalid', 'Pending Cancel')`
+  );
+  const atRisk = Number(atRiskResult.rows[0].cnt);
 
   return {
     monthly: results,
     avgMemberRate,
     avgSky3Rate,
-    atRisk: atRiskRow.cnt,
+    atRisk,
   };
 }

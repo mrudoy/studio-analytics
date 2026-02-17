@@ -1,4 +1,4 @@
-import { getDatabase } from "./database";
+import { getPool } from "./database";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
 import type { AutoRenewCategory } from "@/types/union-data";
 
@@ -65,45 +65,51 @@ export interface AutoRenewStats {
  * Save a batch of auto-renews from a CSV import.
  * Replaces all existing data (full snapshot).
  */
-export function saveAutoRenews(
+export async function saveAutoRenews(
   snapshotId: string,
   rows: AutoRenewRow[]
-): void {
-  const db = getDatabase();
+): Promise<void> {
+  const pool = getPool();
+  const client = await pool.connect();
 
-  const insert = db.prepare(`
-    INSERT INTO auto_renews (
-      snapshot_id, plan_name, plan_state, plan_price,
-      customer_name, customer_email, created_at, order_id, sales_channel,
-      canceled_at, canceled_by, admin, current_state, current_plan
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((items: AutoRenewRow[]) => {
+  try {
+    await client.query("BEGIN");
     // Clear existing data for clean import
-    db.exec("DELETE FROM auto_renews");
+    await client.query("DELETE FROM auto_renews");
 
-    for (const row of items) {
-      insert.run(
-        snapshotId,
-        row.planName,
-        row.planState,
-        row.planPrice,
-        row.customerName,
-        row.customerEmail,
-        row.createdAt,
-        row.orderId || null,
-        row.salesChannel || null,
-        row.canceledAt || null,
-        row.canceledBy || null,
-        row.admin || null,
-        row.currentState || null,
-        row.currentPlan || null
+    for (const row of rows) {
+      await client.query(
+        `INSERT INTO auto_renews (
+          snapshot_id, plan_name, plan_state, plan_price,
+          customer_name, customer_email, created_at, order_id, sales_channel,
+          canceled_at, canceled_by, admin, current_state, current_plan
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [
+          snapshotId,
+          row.planName,
+          row.planState,
+          row.planPrice,
+          row.customerName,
+          row.customerEmail,
+          row.createdAt,
+          row.orderId || null,
+          row.salesChannel || null,
+          row.canceledAt || null,
+          row.canceledBy || null,
+          row.admin || null,
+          row.currentState || null,
+          row.currentPlan || null,
+        ]
       );
     }
-  });
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 
-  insertMany(rows);
   console.log(`[auto-renew-store] Saved ${rows.length} auto-renews (snapshot: ${snapshotId})`);
 }
 
@@ -146,72 +152,74 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 /**
  * Get all active auto-renews (plan_state = 'Valid Now').
  */
-export function getActiveAutoRenews(): StoredAutoRenew[] {
-  const db = getDatabase();
-  const rows = db.prepare(
+export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
      WHERE plan_state = 'Valid Now'
      ORDER BY plan_name`
-  ).all() as RawAutoRenewRow[];
+  );
 
-  return rows.map(mapRow);
+  return (rows as RawAutoRenewRow[]).map(mapRow);
 }
 
 /**
  * Get auto-renews created within a date range (new auto-renews).
  */
-export function getNewAutoRenews(startDate: string, endDate: string): StoredAutoRenew[] {
-  const db = getDatabase();
-  const rows = db.prepare(
+export async function getNewAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
-     WHERE created_at >= ? AND created_at < ?
-     ORDER BY created_at`
-  ).all(startDate, endDate) as RawAutoRenewRow[];
+     WHERE created_at >= $1 AND created_at < $2
+     ORDER BY created_at`,
+    [startDate, endDate]
+  );
 
-  return rows.map(mapRow);
+  return (rows as RawAutoRenewRow[]).map(mapRow);
 }
 
 /**
  * Get auto-renews canceled within a date range.
  */
-export function getCanceledAutoRenews(startDate: string, endDate: string): StoredAutoRenew[] {
-  const db = getDatabase();
-  const rows = db.prepare(
+export async function getCanceledAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
-     WHERE canceled_at IS NOT NULL AND canceled_at >= ? AND canceled_at < ?
-     ORDER BY canceled_at`
-  ).all(startDate, endDate) as RawAutoRenewRow[];
+     WHERE canceled_at IS NOT NULL AND canceled_at >= $1 AND canceled_at < $2
+     ORDER BY canceled_at`,
+    [startDate, endDate]
+  );
 
-  return rows.map(mapRow);
+  return (rows as RawAutoRenewRow[]).map(mapRow);
 }
 
 /**
  * Get all auto-renews (any state).
  */
-export function getAllAutoRenews(): StoredAutoRenew[] {
-  const db = getDatabase();
-  const rows = db.prepare(
+export async function getAllAutoRenews(): Promise<StoredAutoRenew[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
      ORDER BY plan_name`
-  ).all() as RawAutoRenewRow[];
+  );
 
-  return rows.map(mapRow);
+  return (rows as RawAutoRenewRow[]).map(mapRow);
 }
 
 /**
  * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
  */
-export function getAutoRenewStats(): AutoRenewStats | null {
-  const active = getActiveAutoRenews();
+export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
+  const active = await getActiveAutoRenews();
   if (active.length === 0) return null;
 
   const counts = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
@@ -257,10 +265,10 @@ export function getAutoRenewStats(): AutoRenewStats | null {
 /**
  * Check if auto-renew data exists in the database.
  */
-export function hasAutoRenewData(): boolean {
-  const db = getDatabase();
-  const row = db.prepare(
+export async function hasAutoRenewData(): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query(
     `SELECT COUNT(*) as count FROM auto_renews`
-  ).get() as { count: number };
-  return row.count > 0;
+  );
+  return Number(rows[0].count) > 0;
 }

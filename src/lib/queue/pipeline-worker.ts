@@ -61,7 +61,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
 
   // Build date range if not provided
   if (!dateRange) {
-    dateRange = buildDateRange();
+    dateRange = await buildDateRange();
   }
 
   // ── Try email pipeline first (if robot email is configured) ──
@@ -132,13 +132,13 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
  * If we have historical data, only fetch from last month forward.
  * First run = full 12 months.
  */
-function buildDateRange(): string {
+async function buildDateRange(): Promise<string> {
   const now = new Date();
   const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
   let startDate: Date;
 
   try {
-    const latestPeriod = getLatestPeriod();
+    const latestPeriod = await getLatestPeriod();
     if (latestPeriod) {
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       startDate = lastMonth;
@@ -149,7 +149,7 @@ function buildDateRange(): string {
     }
   } catch {
     startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-    console.log(`[pipeline] SQLite not available, defaulting to last 12 months`);
+    console.log(`[pipeline] Database not available, defaulting to last 12 months`);
   }
 
   const startStr = `${startDate.getMonth() + 1}/${startDate.getDate()}/${startDate.getFullYear()}`;
