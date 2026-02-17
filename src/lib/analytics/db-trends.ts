@@ -377,6 +377,52 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     };
   }
 
+  // If no auto-renew data but we have revenue_categories, build minimal projection
+  if (!projection) {
+    const currentYear = now.getFullYear();
+    const priorYear = currentYear - 1;
+    let priorYearActual: number | null = null;
+
+    try {
+      const allPeriods = await getAllPeriods();
+      const priorYearPeriods = allPeriods.filter(
+        (p) => p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0
+      );
+      if (priorYearPeriods.length > 0) {
+        const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
+        const spansFullYear = priorYearPeriods.some((p) => {
+          const start = new Date(p.periodStart + "T00:00:00");
+          const end = new Date(p.periodEnd + "T00:00:00");
+          const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+          return months >= 11;
+        });
+        if (spansFullYear) {
+          priorYearActual = Math.round(totalNet);
+        } else {
+          const coveredMonths = new Set(priorYearPeriods.map((p) => p.periodStart.slice(0, 7))).size;
+          if (coveredMonths > 0) {
+            priorYearActual = Math.round(totalNet / coveredMonths * 12);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[db-trends] Fallback revenue lookup failed:`, err instanceof Error ? err.message : err);
+    }
+
+    if (priorYearActual) {
+      console.log(`[db-trends] No auto-renew data, but found ${priorYear} revenue: $${priorYearActual.toLocaleString()}`);
+      projection = {
+        year: currentYear,
+        projectedAnnualRevenue: 0, // No MRR data to project
+        currentMRR: 0,
+        projectedYearEndMRR: 0,
+        monthlyGrowthRate: 0,
+        priorYearRevenue: priorYearActual,
+        priorYearActualRevenue: priorYearActual,
+      };
+    }
+  }
+
   // ── 5. Drop-in data ──────────────────────────────────────
   let dropIns: DropInData | null = null;
 
