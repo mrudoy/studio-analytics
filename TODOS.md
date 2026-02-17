@@ -18,6 +18,13 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] Churn visualization: consider adding line chart or bar chart for churn trend over time (user preference)
 - [x] ~~Pipeline completeness checker~~ — `validateCompleteness()` added to pipeline-core.ts, results shown on completion
 - [x] ~~Pipeline progress UI~~ — real-time progress %, ETA, step label in both PipelineView and dashboard FreshnessBadge
+- [ ] Cloudflare blocking pipeline on Railway — stealth plugin didn't help. Solution: run pipeline locally (Playwright works on local machine), write data to Railway DB. Need `.env.production.local` with Railway DATABASE_URL.
+- [x] ~~Fix churn date parsing~~ — `computeChurnRates()` was doing raw string comparisons on CSV dates. Now uses `parseDate()` to normalize to YYYY-MM-DD (`749db51`)
+- [x] ~~Churn section UI~~ — dedicated ChurnSection with 3-tile overview + monthly grouped bar chart (`4a5f9e2`)
+- [ ] Churn section shows "No data available" on prod — auto_renews table is empty because pipeline hasn't run against prod DB. Need to run pipeline locally with Railway DATABASE_URL.
+- [x] ~~Auto-renew upload endpoint~~ — `/api/upload` now accepts `type=auto_renews` to upload auto-renew CSVs directly
+- [ ] Gmail-only pipeline (`gmail-pipeline.ts`) — reads CSVs from Gmail without browser trigger. For future use when emails are pre-triggered.
+- [ ] User note: NO SCRAPING — pipeline triggers CSV downloads via Playwright locally, emails arrive, data gets processed. Browser part must run locally (not Railway).
 
 ### Revenue Category Terms Rule
 **RULE**: Only use defined business category labels. Any raw Union.fit category name that doesn't match a known pattern MUST be flagged as "Other" and logged so we can ask the user how to classify it. Never invent or guess new category names. The defined labels are:

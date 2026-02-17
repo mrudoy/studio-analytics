@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
 import { saveUploadedData, saveRevenueCategories } from "@/lib/db/revenue-store";
+import { saveAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
-import { RevenueCategorySchema } from "@/lib/parser/schemas";
+import { RevenueCategorySchema, AutoRenewSchema } from "@/lib/parser/schemas";
 import { writeFileSync } from "fs";
 import { join } from "path";
 import { mkdirSync, existsSync } from "fs";
-import type { RevenueCategory } from "@/types/union-data";
+import type { RevenueCategory, AutoRenew } from "@/types/union-data";
 
 const UPLOAD_DIR = join(process.cwd(), "data", "uploads");
+
+/**
+ * Auto-renew data types that can be uploaded.
+ * Multiple files can be uploaded for different states (active, canceled, etc.)
+ * and they'll all be merged into the auto_renews table.
+ */
+const AUTO_RENEW_TYPES = [
+  "auto_renews",
+  "active_auto_renews",
+  "canceled_auto_renews",
+  "paused_auto_renews",
+  "trialing_auto_renews",
+  "new_auto_renews",
+];
 
 export async function POST(request: Request) {
   try {
@@ -44,12 +59,33 @@ export async function POST(request: Request) {
     let parsedCount = 0;
     const warnings: string[] = [];
 
-    // If it's a revenue_categories upload, also parse and insert into revenue_categories table
+    // ── Revenue categories upload ────────────────────────────
     if (dataType === "revenue_categories" && periodStart && periodEnd) {
       const result = parseCSV<RevenueCategory>(savedPath, RevenueCategorySchema);
       if (result.data.length > 0) {
         await saveRevenueCategories(periodStart, periodEnd, result.data);
         parsedCount = result.data.length;
+      }
+      warnings.push(...result.warnings);
+    }
+
+    // ── Auto-renew CSV upload ────────────────────────────────
+    if (AUTO_RENEW_TYPES.includes(dataType)) {
+      const result = parseCSV<AutoRenew>(savedPath, AutoRenewSchema);
+      if (result.data.length > 0) {
+        const snapshotId = `upload-${Date.now()}`;
+        const arRows: AutoRenewRow[] = result.data.map((ar) => ({
+          planName: ar.name,
+          planState: ar.state,
+          planPrice: ar.price,
+          customerName: ar.customer,
+          customerEmail: ar.email || "",
+          createdAt: ar.created || "",
+          canceledAt: ar.canceledAt || undefined,
+        }));
+        await saveAutoRenews(snapshotId, arRows);
+        parsedCount = arRows.length;
+        console.log(`[api/upload] Saved ${arRows.length} auto-renews from ${filename} (snapshot: ${snapshotId})`);
       }
       warnings.push(...result.warnings);
     }
