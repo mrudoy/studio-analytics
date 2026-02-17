@@ -203,8 +203,40 @@ export interface ReturningNonMemberData {
   otherBreakdownTop5: { passName: string; count: number }[];
 }
 
+/** Per-category churn data for a single month */
+export interface CategoryMonthlyChurn {
+  month: string;
+  userChurnRate: number;         // count-based: canceledCount / activeAtStart * 100
+  mrrChurnRate: number;          // revenue-based: canceledMRR / activeMRR * 100
+  activeAtStart: number;
+  activeMrrAtStart: number;
+  canceledCount: number;
+  canceledMrr: number;
+  // MEMBER-only: annual vs monthly breakdown
+  annualCanceledCount?: number;
+  annualActiveAtStart?: number;
+  monthlyCanceledCount?: number;
+  monthlyActiveAtStart?: number;
+}
+
+/** Churn summary for one auto-renew category */
+export interface CategoryChurnData {
+  category: "MEMBER" | "SKY3" | "SKY_TING_TV";
+  monthly: CategoryMonthlyChurn[];
+  avgUserChurnRate: number;
+  avgMrrChurnRate: number;
+  atRiskCount: number;
+}
+
 export interface ChurnRateData {
-  /** Monthly churn rates for recent months */
+  /** Per-category churn data */
+  byCategory: {
+    member: CategoryChurnData;
+    sky3: CategoryChurnData;
+    skyTingTv: CategoryChurnData;
+  };
+  totalAtRisk: number;
+  /** Legacy flat fields (backward compat) */
   monthly: {
     month: string;
     memberRate: number;
@@ -214,10 +246,8 @@ export interface ChurnRateData {
     memberCanceled: number;
     sky3Canceled: number;
   }[];
-  /** Average monthly churn rate (last 6 months) */
   avgMemberRate: number;
   avgSky3Rate: number;
-  /** At-risk subscribers (Past Due + Invalid + Pending Cancel) */
   atRisk: number;
 }
 

@@ -126,7 +126,35 @@ interface ReturningNonMemberData {
   otherBreakdownTop5?: { passName: string; count: number }[];
 }
 
+interface CategoryMonthlyChurn {
+  month: string;
+  userChurnRate: number;
+  mrrChurnRate: number;
+  activeAtStart: number;
+  activeMrrAtStart: number;
+  canceledCount: number;
+  canceledMrr: number;
+  annualCanceledCount?: number;
+  annualActiveAtStart?: number;
+  monthlyCanceledCount?: number;
+  monthlyActiveAtStart?: number;
+}
+
+interface CategoryChurnData {
+  category: "MEMBER" | "SKY3" | "SKY_TING_TV";
+  monthly: CategoryMonthlyChurn[];
+  avgUserChurnRate: number;
+  avgMrrChurnRate: number;
+  atRiskCount: number;
+}
+
 interface ChurnRateData {
+  byCategory: {
+    member: CategoryChurnData;
+    sky3: CategoryChurnData;
+    skyTingTv: CategoryChurnData;
+  };
+  totalAtRisk: number;
   monthly: {
     month: string;
     memberRate: number;
@@ -187,6 +215,12 @@ const COLORS = {
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
+
+function churnBenchmarkColor(rate: number): string {
+  if (rate <= 7) return COLORS.success;
+  if (rate <= 12) return COLORS.warning;
+  return COLORS.error;
+}
 
 function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
@@ -1046,7 +1080,7 @@ function NoData({ label }: { label: string }) {
 
 // ─── Trend Row (compact, inline) ─────────────────────────────
 
-function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, isCurrency = false, sublabel }: {
+function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, isCurrency = false, sublabel, isLast = false }: {
   label: string;
   value: string;
   delta: number | null;
@@ -1054,9 +1088,10 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
   isPositiveGood?: boolean;
   isCurrency?: boolean;
   sublabel?: string;
+  isLast?: boolean;
 }) {
   return (
-    <div style={{ padding: "0.65rem 0", borderBottom: "1px solid var(--st-border)" }}>
+    <div style={{ padding: "0.65rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
       <div className="flex items-center justify-between">
         <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.88rem", color: "var(--st-text-secondary)" }}>
           {label}
@@ -1121,7 +1156,7 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
               {tile.value}
             </p>
             {(tile.sublabel || tile.delta != null) && (
-              <div className="flex items-center gap-2" style={{ marginTop: "6px" }}>
+              <div className="flex items-center gap-1.5" style={{ marginTop: "3px" }}>
                 {tile.delta != null && (
                   <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
                 )}
@@ -1847,6 +1882,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
             delta={null}
             deltaPercent={null}
             sublabel="6-week rolling"
+            isLast
           />
         </div>
       </div>
@@ -1915,7 +1951,7 @@ function SubscriberOverview({ data, trends }: { data: DashboardStats; trends?: T
 
 // ─── Category Detail Section (Members / SKY3 / TV) ──────────
 
-function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn }: {
+function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData }: {
   title: string;
   color: string;
   count: number;
@@ -1927,6 +1963,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   weeklyKeyNet: (r: TrendRowData) => number;
   pacingNew?: (p: PacingData) => { actual: number; paced: number };
   pacingChurn?: (p: PacingData) => { actual: number; paced: number };
+  churnData?: CategoryChurnData;
 }) {
   // Drop current partial week — use only completed weeks for all weekly metrics
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
@@ -1990,6 +2027,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
                 value={formatDelta(weeklyKeyNet(latestW)) || "0"}
                 delta={null}
                 deltaPercent={null}
+                isLast
               />
             </>
           )}
@@ -2012,6 +2050,90 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
           )}
         </div>
       </div>
+
+      {/* ─── Churn Section ─── */}
+      {churnData && (
+        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
+          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.82rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Churn
+          </p>
+
+          {/* Metric pills */}
+          <div className="flex gap-3 mb-3">
+            <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
+              <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+                User Churn (avg/mo)
+              </div>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "1.3rem", fontWeight: 700, color: churnBenchmarkColor(churnData.avgUserChurnRate) }}>
+                {churnData.avgUserChurnRate.toFixed(1)}%
+              </span>
+            </div>
+
+            <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
+              <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+                MRR Churn (avg/mo)
+              </div>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "1.3rem", fontWeight: 700, color: churnBenchmarkColor(churnData.avgMrrChurnRate) }}>
+                {churnData.avgMrrChurnRate.toFixed(1)}%
+              </span>
+            </div>
+
+            {churnData.atRiskCount > 0 && (
+              <div className="rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)", minWidth: "60px", textAlign: "center" }}>
+                <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+                  At Risk
+                </div>
+                <span style={{ fontFamily: FONT_SANS, fontSize: "1.3rem", fontWeight: 700, color: COLORS.warning }}>
+                  {churnData.atRiskCount}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Monthly trend bars (last 6 completed months) */}
+          {(() => {
+            const completed = churnData.monthly.slice(0, -1).slice(-6);
+            const maxRate = Math.max(...completed.map((m) => m.userChurnRate), 1);
+            return (
+              <div className="space-y-1">
+                {completed.map((m) => (
+                  <div key={m.month} className="flex items-center gap-2" style={{ fontSize: "0.75rem" }}>
+                    <span style={{ width: "38px", color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500, flexShrink: 0 }}>
+                      {formatMonthLabel(m.month)}
+                    </span>
+                    <div className="flex-1 flex items-center gap-1.5">
+                      <div style={{
+                        height: "6px",
+                        width: `${Math.max((m.userChurnRate / maxRate) * 100, m.userChurnRate > 0 ? 3 : 0)}%`,
+                        backgroundColor: color,
+                        borderRadius: "3px",
+                        opacity: 0.7,
+                      }} />
+                      <span style={{ fontSize: "0.65rem", color, fontFamily: FONT_SANS, fontWeight: 600, flexShrink: 0 }}>
+                        {m.userChurnRate.toFixed(1)}%
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 400, flexShrink: 0 }}>
+                      {m.canceledCount}/{m.activeAtStart}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* MEMBER-only: annual vs monthly breakdown */}
+          {churnData.category === "MEMBER" && (() => {
+            const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
+            if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
+            return (
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.7rem", color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "6px" }}>
+                Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned (last completed month)
+              </p>
+            );
+          })()}
+        </div>
+      )}
     </Card>
   );
 }
@@ -2152,6 +2274,7 @@ function FinancialHealthSection({ data, trends }: { data: DashboardStats; trends
                 delta={null}
                 deltaPercent={null}
                 isPositiveGood={false}
+                isLast={!latestM}
               />
             </>
           )}
@@ -2171,6 +2294,7 @@ function FinancialHealthSection({ data, trends }: { data: DashboardStats; trends
                 delta={null}
                 deltaPercent={null}
                 isPositiveGood={false}
+                isLast
               />
             </>
           )}
@@ -2497,6 +2621,7 @@ function DashboardView() {
           weeklyKeyNet={(r) => r.netMemberGrowth}
           pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
           pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+          churnData={trends?.churnRates?.byCategory?.member}
         />
 
         {/* SKY3 */}
@@ -2512,6 +2637,7 @@ function DashboardView() {
           weeklyKeyNet={(r) => r.netSky3Growth}
           pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
           pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+          churnData={trends?.churnRates?.byCategory?.sky3}
         />
 
         {/* SKY TING TV */}
@@ -2525,14 +2651,10 @@ function DashboardView() {
           weeklyKeyNew={(r) => r.newSkyTingTv}
           weeklyKeyChurn={(r) => r.skyTingTvChurn}
           weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+          churnData={trends?.churnRates?.byCategory?.skyTingTv}
         />
 
-        {/* ━━ Churn Rates ━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {trends?.churnRates ? (
-          <ChurnRateCard churn={trends.churnRates} />
-        ) : (
-          <NoData label="Churn Rates" />
-        )}
+        {/* Churn is now inline in each CategoryDetail card above */}
 
         {/* ━━ Non Members (First Visits + Returning Non-Members + Drop-Ins) ━━━━━ */}
         {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (

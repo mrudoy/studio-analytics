@@ -38,6 +38,8 @@ import type {
   FirstVisitData,
   ReturningNonMemberData,
   ChurnRateData,
+  CategoryChurnData,
+  CategoryMonthlyChurn,
 } from "../sheets/read-dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -495,12 +497,15 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
 // ── Churn Rate Computation ─────────────────────────────────
 
 /**
- * Compute proper monthly churn rates: cancellations / active-at-start-of-month.
+ * Compute per-category monthly churn rates.
+ *
+ * For each of MEMBER, SKY3, SKY_TING_TV:
+ *   - User churn: canceledCount / activeAtStart
+ *   - MRR churn:  canceledMRR / activeMRR (uses monthlyRate = price/12 for annual)
+ *   - MEMBER-only: annual vs monthly billing breakdown
  *
  * "Active at start of month M" = created before M AND
  *   (still currently active OR canceled on/after month M start).
- *
- * This reconstructs historical active counts from the snapshot data.
  */
 async function computeChurnRates(): Promise<ChurnRateData | null> {
   const pool = getPool();
@@ -511,44 +516,49 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
 
   if (allRows.length === 0) return null;
 
-  const categorized = allRows.map((r: Record<string, unknown>) => ({
-    plan_name: r.plan_name as string,
-    plan_state: r.plan_state as string,
-    plan_price: r.plan_price as number,
-    canceled_at: r.canceled_at as string | null,
-    created_at: r.created_at as string,
-    category: getCategory(r.plan_name as string),
-  }));
+  const categorized = allRows.map((r: Record<string, unknown>) => {
+    const name = r.plan_name as string;
+    const annual = isAnnualPlan(name);
+    const price = (r.plan_price as number) || 0;
+    return {
+      plan_name: name,
+      plan_state: r.plan_state as string,
+      plan_price: price,
+      canceled_at: r.canceled_at as string | null,
+      created_at: r.created_at as string,
+      category: getCategory(name),
+      isAnnual: annual,
+      monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
+    };
+  });
 
   const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
+  const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
+  const CATEGORIES = ["MEMBER", "SKY3", "SKY_TING_TV"] as const;
 
   // Generate last 6 completed months + current month
   const now = new Date();
   const months: string[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(
-      d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0")
-    );
+    months.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
   }
 
-  const results: ChurnRateData["monthly"] = [];
+  // Build per-category churn data
+  const catResults: Record<string, CategoryChurnData> = {};
 
-  for (const month of months) {
-    const monthStart = month + "-01";
-    const [yearStr, moStr] = month.split("-");
-    const nextMonth = new Date(parseInt(yearStr), parseInt(moStr), 1);
-    const monthEnd =
-      nextMonth.getFullYear() +
-      "-" +
-      String(nextMonth.getMonth() + 1).padStart(2, "0") +
-      "-01";
+  for (const cat of CATEGORIES) {
+    const catRows = categorized.filter((r) => r.category === cat);
+    const monthlyChurn: CategoryMonthlyChurn[] = [];
 
-    for (const cat of ["MEMBER", "SKY3"] as const) {
-      const catRows = categorized.filter((r) => r.category === cat);
+    for (const month of months) {
+      const monthStart = month + "-01";
+      const [yearStr, moStr] = month.split("-");
+      const nextMonth = new Date(parseInt(yearStr), parseInt(moStr), 1);
+      const monthEnd = nextMonth.getFullYear() + "-" +
+        String(nextMonth.getMonth() + 1).padStart(2, "0") + "-01";
 
-      // Active at start of month: created before monthStart AND
-      //   (still in an active state OR canceled on/after monthStart)
+      // Active at start of month
       const activeAtStart = catRows.filter((r) => {
         if (r.created_at >= monthStart) return false;
         if (ACTIVE_STATES.includes(r.plan_state)) return true;
@@ -556,80 +566,93 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
         return false;
       });
 
+      const activeMrrAtStart = activeAtStart.reduce((s, r) => s + r.monthlyRate, 0);
+
       // Canceled during this month
-      const canceledInMonth = catRows.filter(
-        (r) =>
-          r.canceled_at &&
-          r.canceled_at >= monthStart &&
-          r.canceled_at < monthEnd
+      const canceledInMonth = catRows.filter((r) =>
+        r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd
       );
 
-      const existing = results.find((r) => r.month === month);
-      if (existing) {
-        if (cat === "SKY3") {
-          existing.sky3Rate =
-            activeAtStart.length > 0
-              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
-              : 0;
-          existing.sky3ActiveStart = activeAtStart.length;
-          existing.sky3Canceled = canceledInMonth.length;
-        } else {
-          existing.memberRate =
-            activeAtStart.length > 0
-              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
-              : 0;
-          existing.memberActiveStart = activeAtStart.length;
-          existing.memberCanceled = canceledInMonth.length;
-        }
-      } else {
-        results.push({
-          month,
-          memberRate:
-            cat === "MEMBER" && activeAtStart.length > 0
-              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
-              : 0,
-          sky3Rate:
-            cat === "SKY3" && activeAtStart.length > 0
-              ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
-              : 0,
-          memberActiveStart: cat === "MEMBER" ? activeAtStart.length : 0,
-          sky3ActiveStart: cat === "SKY3" ? activeAtStart.length : 0,
-          memberCanceled: cat === "MEMBER" ? canceledInMonth.length : 0,
-          sky3Canceled: cat === "SKY3" ? canceledInMonth.length : 0,
-        });
+      const canceledMrr = canceledInMonth.reduce((s, r) => s + r.monthlyRate, 0);
+
+      const entry: CategoryMonthlyChurn = {
+        month,
+        userChurnRate: activeAtStart.length > 0
+          ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
+          : 0,
+        mrrChurnRate: activeMrrAtStart > 0
+          ? Math.round((canceledMrr / activeMrrAtStart) * 1000) / 10
+          : 0,
+        activeAtStart: activeAtStart.length,
+        activeMrrAtStart: Math.round(activeMrrAtStart * 100) / 100,
+        canceledCount: canceledInMonth.length,
+        canceledMrr: Math.round(canceledMrr * 100) / 100,
+      };
+
+      // MEMBER-only: annual vs monthly breakdown
+      if (cat === "MEMBER") {
+        const annualActive = activeAtStart.filter((r) => r.isAnnual);
+        const monthlyActive = activeAtStart.filter((r) => !r.isAnnual);
+        const annualCanceled = canceledInMonth.filter((r) => r.isAnnual);
+        const monthlyCanceled = canceledInMonth.filter((r) => !r.isAnnual);
+        entry.annualActiveAtStart = annualActive.length;
+        entry.annualCanceledCount = annualCanceled.length;
+        entry.monthlyActiveAtStart = monthlyActive.length;
+        entry.monthlyCanceledCount = monthlyCanceled.length;
       }
+
+      monthlyChurn.push(entry);
     }
+
+    // Averages (exclude current partial month)
+    const completed = monthlyChurn.slice(0, -1);
+    const avgUser = completed.length > 0
+      ? Math.round((completed.reduce((s, r) => s + r.userChurnRate, 0) / completed.length) * 10) / 10
+      : 0;
+    const avgMrr = completed.length > 0
+      ? Math.round((completed.reduce((s, r) => s + r.mrrChurnRate, 0) / completed.length) * 10) / 10
+      : 0;
+
+    // At-risk per category (in-memory)
+    const atRiskCount = catRows.filter((r) => AT_RISK_STATES.includes(r.plan_state)).length;
+
+    catResults[cat] = {
+      category: cat,
+      monthly: monthlyChurn,
+      avgUserChurnRate: avgUser,
+      avgMrrChurnRate: avgMrr,
+      atRiskCount,
+    };
   }
 
-  // Averages (exclude current partial month)
-  const completedMonths = results.slice(0, -1);
-  const avgMemberRate =
-    completedMonths.length > 0
-      ? Math.round(
-          (completedMonths.reduce((s, r) => s + r.memberRate, 0) /
-            completedMonths.length) *
-            10
-        ) / 10
-      : 0;
-  const avgSky3Rate =
-    completedMonths.length > 0
-      ? Math.round(
-          (completedMonths.reduce((s, r) => s + r.sky3Rate, 0) /
-            completedMonths.length) *
-            10
-        ) / 10
-      : 0;
+  const totalAtRisk = CATEGORIES.reduce((s, c) => s + catResults[c].atRiskCount, 0);
 
-  // At-risk count
-  const atRiskResult = await pool.query(
-    `SELECT COUNT(*) as cnt FROM auto_renews WHERE plan_state IN ('Past Due', 'Invalid', 'Pending Cancel')`
-  );
-  const atRisk = Number(atRiskResult.rows[0].cnt);
+  // Legacy backward-compat monthly array
+  const legacyMonthly = months.map((month) => {
+    const mem = catResults.MEMBER.monthly.find((m) => m.month === month)!;
+    const sky3 = catResults.SKY3.monthly.find((m) => m.month === month)!;
+    return {
+      month,
+      memberRate: mem.userChurnRate,
+      sky3Rate: sky3.userChurnRate,
+      memberActiveStart: mem.activeAtStart,
+      sky3ActiveStart: sky3.activeAtStart,
+      memberCanceled: mem.canceledCount,
+      sky3Canceled: sky3.canceledCount,
+    };
+  });
 
   return {
-    monthly: results,
-    avgMemberRate,
-    avgSky3Rate,
-    atRisk,
+    byCategory: {
+      member: catResults.MEMBER,
+      sky3: catResults.SKY3,
+      skyTingTv: catResults.SKY_TING_TV,
+    },
+    totalAtRisk,
+    // Legacy flat fields
+    monthly: legacyMonthly,
+    avgMemberRate: catResults.MEMBER.avgUserChurnRate,
+    avgSky3Rate: catResults.SKY3.avgUserChurnRate,
+    atRisk: totalAtRisk,
   };
 }
