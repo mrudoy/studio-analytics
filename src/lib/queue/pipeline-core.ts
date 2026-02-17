@@ -37,7 +37,7 @@ import {
   writeRevenueCategoriesTab,
 } from "../sheets/templates";
 import { clearDashboardCache } from "../sheets/read-dashboard";
-import type { PipelineResult } from "@/types/pipeline";
+import type { PipelineResult, ValidationResult } from "@/types/pipeline";
 import type {
   NewCustomer,
   Order,
@@ -497,6 +497,14 @@ export async function runPipelineFromFiles(
   // Clear dashboard cache
   clearDashboardCache();
 
+  // Validate completeness
+  const validation = validateCompleteness(recordCounts);
+  if (!validation.passed) {
+    const failed = validation.checks.filter((c) => c.status === "fail").map((c) => c.name);
+    console.warn(`[pipeline] Completeness check failed: missing ${failed.join(", ")}`);
+    allWarnings.push(`Data validation warning: ${failed.join(", ")} returned 0 records`);
+  }
+
   progress("Pipeline complete!", 100);
 
   return {
@@ -506,5 +514,40 @@ export async function runPipelineFromFiles(
     duration: Date.now() - startTime,
     recordCounts,
     warnings: allWarnings,
+    validation,
+  };
+}
+
+// ── Completeness Validation ──────────────────────────────────
+
+function validateCompleteness(recordCounts: Record<string, number>): ValidationResult {
+  const specs = [
+    { name: "Active Auto-Renews", key: "activeAutoRenews", min: 100 },
+    { name: "Canceled Auto-Renews", key: "canceledAutoRenews", min: 0 },
+    { name: "New Auto-Renews", key: "newAutoRenews", min: 0 },
+    { name: "Orders", key: "orders", min: 10 },
+    { name: "New Customers", key: "newCustomers", min: 1 },
+    { name: "First Visits", key: "firstVisits", min: 0 },
+    { name: "Registrations", key: "registrations", min: 0 },
+  ];
+
+  const checks = specs.map((s) => {
+    const count = recordCounts[s.key] || 0;
+    let status: "ok" | "warn" | "fail";
+    if (s.min === 0) {
+      status = "ok"; // optional — any value is fine
+    } else if (count >= s.min) {
+      status = "ok";
+    } else if (count > 0) {
+      status = "warn"; // has data but less than expected
+    } else {
+      status = "fail"; // zero when we expected data
+    }
+    return { name: s.name, count, status };
+  });
+
+  return {
+    passed: checks.every((c) => c.status !== "fail"),
+    checks,
   };
 }

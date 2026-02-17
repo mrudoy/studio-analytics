@@ -188,8 +188,8 @@ type DashboardLoadState =
 
 type JobStatus =
   | { state: "idle" }
-  | { state: "running"; jobId: string; step: string; percent: number }
-  | { state: "complete"; sheetUrl: string; duration: number }
+  | { state: "running"; jobId: string; step: string; percent: number; startedAt?: number }
+  | { state: "complete"; sheetUrl: string; duration: number; recordCounts?: Record<string, number>; validation?: { passed: boolean; checks: { name: string; count: number; status: string }[] }; warnings?: string[] }
   | { state: "error"; message: string };
 
 type AppMode = "loading" | "pipeline" | "dashboard";
@@ -360,10 +360,27 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 //  PIPELINE VIEW (local)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+function formatEta(ms: number): string {
+  if (ms <= 0) return "";
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `~${totalSec}s remaining`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return sec > 0 ? `~${min}m ${sec}s remaining` : `~${min}m remaining`;
+}
+
 function PipelineView() {
   const [status, setStatus] = useState<JobStatus>({ state: "idle" });
   const [hasCredentials, setHasCredentials] = useState<boolean | null>(null);
+  const [now, setNow] = useState(Date.now());
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // ETA ticker: updates every second while running so the countdown is smooth
+  useEffect(() => {
+    if (status.state !== "running") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [status.state]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -406,12 +423,12 @@ function PipelineView() {
 
       es.addEventListener("progress", (e) => {
         const data = JSON.parse(e.data);
-        setStatus({ state: "running", jobId, step: data.step, percent: data.percent });
+        setStatus({ state: "running", jobId, step: data.step, percent: data.percent, startedAt: data.startedAt });
       });
 
       es.addEventListener("complete", (e) => {
         const data = JSON.parse(e.data);
-        setStatus({ state: "complete", sheetUrl: data.sheetUrl, duration: data.duration });
+        setStatus({ state: "complete", sheetUrl: data.sheetUrl, duration: data.duration, recordCounts: data.recordCounts, validation: data.validation, warnings: data.warnings });
         es.close();
       });
 
@@ -500,63 +517,125 @@ function PipelineView() {
             {status.state === "running" ? "Pipeline Running..." : "Run Analytics Pipeline"}
           </button>
 
-          {status.state === "running" && (
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm" style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>
-                <span>{status.step}</span>
-                <span>{status.percent}%</span>
-              </div>
-              <div
-                className="h-1.5 rounded-full overflow-hidden"
-                style={{ backgroundColor: "var(--st-border)" }}
-              >
+          {status.state === "running" && (() => {
+            const elapsed = status.startedAt ? now - status.startedAt : 0;
+            const etaMs = status.percent > 5 && elapsed > 0
+              ? (elapsed / status.percent) * (100 - status.percent)
+              : 0;
+            return (
+              <div className="space-y-3">
+                <div className="flex justify-between items-baseline" style={{ fontFamily: FONT_SANS }}>
+                  <span className="text-sm" style={{ color: "var(--st-text-secondary)" }}>{status.step}</span>
+                  <span className="text-lg font-bold" style={{ color: "var(--st-text-primary)" }}>{status.percent}%</span>
+                </div>
                 <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${status.percent}%`,
-                    backgroundColor: "var(--st-accent)",
-                  }}
-                />
+                  className="h-2 rounded-full overflow-hidden"
+                  style={{ backgroundColor: "var(--st-border)" }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${status.percent}%`,
+                      backgroundColor: "var(--st-accent)",
+                    }}
+                  />
+                </div>
+                {etaMs > 3000 && (
+                  <p className="text-xs text-center" style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, opacity: 0.7 }}>
+                    {formatEta(etaMs)}
+                  </p>
+                )}
+                <button
+                  onClick={resetPipeline}
+                  className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
+                  style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}
+                >
+                  Reset if stuck
+                </button>
               </div>
-              <button
-                onClick={resetPipeline}
-                className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
-                style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}
-              >
-                Reset if stuck
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
           {status.state === "complete" && (
             <div
-              className="rounded-2xl p-5 text-center space-y-3"
+              className="rounded-2xl p-5 space-y-4"
               style={{
-                backgroundColor: "#EFF5F0",
-                border: "1px solid rgba(74, 124, 89, 0.2)",
+                backgroundColor: status.validation && !status.validation.passed ? "#FDF6EC" : "#EFF5F0",
+                border: `1px solid ${status.validation && !status.validation.passed ? "rgba(139, 115, 64, 0.2)" : "rgba(74, 124, 89, 0.2)"}`,
               }}
             >
-              <p className="font-medium" style={{ color: "var(--st-success)", fontFamily: FONT_SANS }}>
-                Pipeline complete
-              </p>
-              <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8, fontFamily: FONT_SANS }}>
-                Finished in {Math.round(status.duration / 1000)}s
-              </p>
-              <a
-                href={status.sheetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-1 px-5 py-2 text-sm font-medium uppercase tracking-wider transition-colors"
-                style={{
-                  backgroundColor: "var(--st-success)",
-                  color: "#fff",
-                  borderRadius: "var(--st-radius-pill)",
-                  fontFamily: FONT_SANS,
-                  letterSpacing: "0.06em",
-                }}
-              >
-                Open Google Sheet
-              </a>
+              <div className="text-center space-y-1">
+                <p className="font-medium" style={{ color: "var(--st-success)", fontFamily: FONT_SANS }}>
+                  Pipeline complete
+                </p>
+                <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8, fontFamily: FONT_SANS }}>
+                  Finished in {Math.round(status.duration / 1000)}s
+                </p>
+              </div>
+
+              {/* Validation warning */}
+              {status.validation && !status.validation.passed && (
+                <p className="text-xs text-center font-medium" style={{ color: COLORS.warning, fontFamily: FONT_SANS }}>
+                  Some data may be missing or incomplete
+                </p>
+              )}
+
+              {/* Record counts table */}
+              {status.validation?.checks && (
+                <div className="rounded-lg overflow-hidden" style={{ border: "1px solid rgba(0,0,0,0.06)" }}>
+                  {status.validation.checks.map((check, i) => (
+                    <div
+                      key={check.name}
+                      className="flex items-center justify-between px-3 py-1.5 text-xs"
+                      style={{
+                        fontFamily: FONT_SANS,
+                        backgroundColor: i % 2 === 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.3)",
+                      }}
+                    >
+                      <span style={{ color: "var(--st-text-secondary)" }}>{check.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span style={{ fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                          {check.count.toLocaleString()}
+                        </span>
+                        <span style={{
+                          color: check.status === "ok" ? COLORS.success : check.status === "warn" ? COLORS.warning : COLORS.error,
+                          fontSize: "0.7rem",
+                        }}>
+                          {check.status === "ok" ? "\u2713" : check.status === "warn" ? "\u26A0" : "\u2717"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Warnings */}
+              {status.warnings && status.warnings.length > 0 && (
+                <details className="text-xs" style={{ fontFamily: FONT_SANS, color: COLORS.warning }}>
+                  <summary className="cursor-pointer font-medium">{status.warnings.length} warning{status.warnings.length > 1 ? "s" : ""}</summary>
+                  <ul className="mt-1 ml-4 space-y-0.5 list-disc" style={{ color: "var(--st-text-secondary)" }}>
+                    {status.warnings.slice(0, 10).map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                </details>
+              )}
+
+              <div className="text-center">
+                <a
+                  href={status.sheetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block px-5 py-2 text-sm font-medium uppercase tracking-wider transition-colors"
+                  style={{
+                    backgroundColor: "var(--st-success)",
+                    color: "#fff",
+                    borderRadius: "var(--st-radius-pill)",
+                    fontFamily: FONT_SANS,
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Open Google Sheet
+                </a>
+              </div>
             </div>
           )}
 

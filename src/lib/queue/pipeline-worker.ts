@@ -28,8 +28,10 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
+let pipelineStartedAt = 0;
+
 function updateProgress(job: Job, step: string, percent: number) {
-  job.updateProgress({ step, percent });
+  job.updateProgress({ step, percent, startedAt: pipelineStartedAt });
 }
 
 async function runPipeline(job: Job): Promise<PipelineResult> {
@@ -41,6 +43,8 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
 }
 
 async function runPipelineInner(job: Job): Promise<PipelineResult> {
+  pipelineStartedAt = Date.now();
+
   // Step 1: Load credentials
   updateProgress(job, "Loading credentials", 5);
   const settings = loadSettings();

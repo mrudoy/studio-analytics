@@ -1,6 +1,18 @@
 export interface PipelineProgress {
   step: string;
   percent: number;
+  startedAt?: number;
+}
+
+export interface ValidationCheck {
+  name: string;
+  count: number;
+  status: "ok" | "warn" | "fail";
+}
+
+export interface ValidationResult {
+  passed: boolean;
+  checks: ValidationCheck[];
 }
 
 export interface PipelineResult {
@@ -18,6 +30,7 @@ export interface PipelineResult {
     newAutoRenews: number;
   };
   warnings: string[];
+  validation?: ValidationResult;
 }
 
 export interface PipelineJobData {

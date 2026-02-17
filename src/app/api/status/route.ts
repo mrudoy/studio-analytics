@@ -45,12 +45,13 @@ export async function GET(request: NextRequest) {
           }
 
           const state = await job.getState();
-          const progress = job.progress as { step?: string; percent?: number } | undefined;
+          const progress = job.progress as { step?: string; percent?: number; startedAt?: number } | undefined;
 
           if (state === "active" || state === "waiting" || state === "delayed") {
             send("progress", {
               step: progress?.step || "Processing...",
               percent: progress?.percent || 0,
+              startedAt: progress?.startedAt || 0,
             });
           } else if (state === "completed") {
             const result = job.returnvalue;
@@ -58,6 +59,9 @@ export async function GET(request: NextRequest) {
               sheetUrl: result?.sheetUrl || "",
               rawDataSheetUrl: result?.rawDataSheetUrl || "",
               duration: result?.duration || 0,
+              recordCounts: result?.recordCounts || {},
+              validation: result?.validation || null,
+              warnings: result?.warnings || [],
             });
             clearInterval(interval);
             closeStream();

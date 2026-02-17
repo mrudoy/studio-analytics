@@ -12,10 +12,12 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [x] 2025 revenue: sum all periods in prior year instead of annualizing first match
 - [ ] "pipeline and database should be flexible" — user wants the data pipeline and DB layer to be more adaptable/extensible
 - [x] ~~Prevent data display bugs from reaching prod~~ — all major sections now show "No data available" instead of hiding silently
-- [ ] Upload 2025 revenue CSV to prod once Railway DATABASE_URL env var is fixed (file: `union-revenue-categories-sky-ting-20260217-1703.csv`)
+- [x] ~~Upload 2025 revenue CSV to prod~~ — uploaded 55 categories, $2.2M net, zero warnings
 - [ ] User note: email is the atomic unit for a user (for churn/subscriber identity)
 - [ ] User note: prefer line charts or bars for churn over time (no pie charts)
 - [ ] Churn visualization: consider adding line chart or bar chart for churn trend over time (user preference)
+- [ ] Pipeline completeness checker — after each run, validate all expected tables populated with non-zero row counts, compare to previous run, fail loudly on silent data loss
+- [ ] Pipeline progress UI — when user clicks "Run Pipeline Now", show real-time progress % and per-report status (not just a spinner)
 
 ## Done
 
