@@ -263,8 +263,13 @@ export async function runPipelineFromFiles(
   if (revenueCatResult.data.length > 0) {
     progress("Saving revenue categories to database", 74);
     const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
-    const periodStart = drParts[0] || new Date().toISOString().slice(0, 10);
-    const periodEnd = drParts[1] || new Date().toISOString().slice(0, 10);
+    // Normalize to YYYY-MM-DD (input can be M/D/YYYY from union.fit date range)
+    const toISO = (s: string): string => {
+      const d = new Date(s);
+      return !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : s;
+    };
+    const periodStart = toISO(drParts[0] || new Date().toISOString().slice(0, 10));
+    const periodEnd = toISO(drParts[1] || new Date().toISOString().slice(0, 10));
     try {
       await saveRevenueCategories(periodStart, periodEnd, revenueCatResult.data);
       console.log(`[pipeline-core] Saved ${revenueCatResult.data.length} revenue categories to database`);
