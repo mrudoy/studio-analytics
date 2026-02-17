@@ -148,6 +148,8 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(order_type);
     CREATE INDEX IF NOT EXISTS idx_newcust_created ON new_customers(created_at);
     CREATE INDEX IF NOT EXISTS idx_newcust_email ON new_customers(email);
+    CREATE INDEX IF NOT EXISTS idx_fv_email ON first_visits(email);
+    CREATE INDEX IF NOT EXISTS idx_reg_email ON registrations(email);
   `);
 
   // Migrations: add columns that may not exist yet in older databases

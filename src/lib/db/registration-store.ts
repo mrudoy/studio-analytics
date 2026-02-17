@@ -306,3 +306,235 @@ export function hasFirstVisitData(): boolean {
   const row = db.prepare(`SELECT COUNT(*) as count FROM first_visits`).get() as { count: number };
   return row.count > 0;
 }
+
+// ── Unique Visitor Queries ──────────────────────────────────
+
+export interface UniqueVisitorWeek {
+  weekStart: string; // Monday date, e.g. "2025-01-13"
+  uniqueVisitors: number;
+}
+
+export interface SourceBreakdown {
+  introWeek: number;
+  dropIn: number;
+  guest: number;
+  other: number;
+  otherBreakdownTop5: { passName: string; count: number }[];
+}
+
+/**
+ * Classify pass/count rows into source segments.
+ * When includeIntroWeek is false, intro passes are counted as "other".
+ */
+function classifySourceRows(
+  rows: { pass: string; cnt: number }[],
+  includeIntroWeek: boolean
+): SourceBreakdown {
+  const result: SourceBreakdown = {
+    introWeek: 0,
+    dropIn: 0,
+    guest: 0,
+    other: 0,
+    otherBreakdownTop5: [],
+  };
+  const otherPasses = new Map<string, number>();
+
+  for (const row of rows) {
+    const passUpper = (row.pass || "").toUpperCase();
+    if (includeIntroWeek && passUpper.includes("INTRO")) {
+      result.introWeek += row.cnt;
+    } else if (passUpper.includes("GUEST") || passUpper.includes("COMMUNITY")) {
+      result.guest += row.cnt;
+    } else if (isDropInOrIntro(row.pass || "")) {
+      result.dropIn += row.cnt;
+    } else {
+      result.other += row.cnt;
+      const key = row.pass || "(empty)";
+      otherPasses.set(key, (otherPasses.get(key) || 0) + row.cnt);
+    }
+  }
+
+  result.otherBreakdownTop5 = Array.from(otherPasses.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([passName, count]) => ({ passName, count }));
+
+  return result;
+}
+
+/**
+ * Get unique first-time visitors per week (Monday-based weeks).
+ * Returns COUNT(DISTINCT email) grouped by week start date.
+ */
+export function getFirstTimeUniqueVisitorsByWeek(
+  startDate?: string,
+  endDate?: string
+): UniqueVisitorWeek[] {
+  const db = getDatabase();
+  const params: string[] = [];
+  let dateFilter = "";
+
+  if (startDate) {
+    dateFilter += ` AND attended_at >= ?`;
+    params.push(startDate);
+  }
+  if (endDate) {
+    dateFilter += ` AND attended_at < ?`;
+    params.push(endDate);
+  }
+
+  const query = `
+    SELECT date(substr(attended_at, 1, 19), 'weekday 0', '-6 days') as weekStart,
+           COUNT(DISTINCT email) as uniqueVisitors
+    FROM first_visits
+    WHERE attended_at IS NOT NULL AND attended_at != ''
+      AND email IS NOT NULL AND email != ''
+      ${dateFilter}
+    GROUP BY weekStart
+    ORDER BY weekStart
+  `;
+
+  return db.prepare(query).all(...params) as UniqueVisitorWeek[];
+}
+
+/**
+ * Get source breakdown for first-time visitors (unique people).
+ * Each person is attributed to one source based on their FIRST visit's pass type.
+ */
+export function getFirstTimeSourceBreakdown(
+  startDate?: string,
+  endDate?: string
+): SourceBreakdown {
+  const db = getDatabase();
+  const params: string[] = [];
+  let dateFilter = "";
+
+  if (startDate) {
+    dateFilter += ` AND attended_at >= ?`;
+    params.push(startDate);
+  }
+  if (endDate) {
+    dateFilter += ` AND attended_at < ?`;
+    params.push(endDate);
+  }
+
+  // For each email, find their earliest visit in the window, get that visit's pass
+  const query = `
+    WITH first_per_email AS (
+      SELECT email, MIN(attended_at) as first_at
+      FROM first_visits
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        ${dateFilter}
+      GROUP BY email
+    )
+    SELECT fv.pass, COUNT(*) as cnt
+    FROM first_per_email fpe
+    JOIN first_visits fv
+      ON fv.email = fpe.email
+      AND fv.attended_at = fpe.first_at
+    GROUP BY fv.pass
+  `;
+
+  const rows = db.prepare(query).all(...params) as { pass: string; cnt: number }[];
+  return classifySourceRows(rows, true);
+}
+
+/**
+ * Get unique returning non-member visitors per week (Monday-based weeks).
+ * Returning = non-subscriber emails that are NOT in the first_visits table for the same window.
+ */
+export function getReturningUniqueVisitorsByWeek(
+  startDate?: string,
+  endDate?: string
+): UniqueVisitorWeek[] {
+  const db = getDatabase();
+  const params: string[] = [];
+  let fvDateFilter = "";
+  let regDateFilter = "";
+
+  if (startDate) {
+    fvDateFilter += ` AND attended_at >= ?`;
+    params.push(startDate);
+    regDateFilter += ` AND r.attended_at >= ?`;
+    params.push(startDate);
+  }
+  if (endDate) {
+    regDateFilter += ` AND r.attended_at < ?`;
+    params.push(endDate);
+  }
+
+  const query = `
+    SELECT date(substr(r.attended_at, 1, 19), 'weekday 0', '-6 days') as weekStart,
+           COUNT(DISTINCT r.email) as uniqueVisitors
+    FROM registrations r
+    WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+      AND r.email IS NOT NULL AND r.email != ''
+      AND (r.subscription = 'false' OR r.subscription IS NULL)
+      AND r.email NOT IN (
+        SELECT DISTINCT email FROM first_visits
+        WHERE attended_at IS NOT NULL AND attended_at != ''
+          AND email IS NOT NULL AND email != ''
+          ${fvDateFilter}
+      )
+      ${regDateFilter}
+    GROUP BY weekStart
+    ORDER BY weekStart
+  `;
+
+  return db.prepare(query).all(...params) as UniqueVisitorWeek[];
+}
+
+/**
+ * Get source breakdown for returning non-members (unique people).
+ * Each person is attributed to one source based on their MOST RECENT visit's pass type.
+ */
+export function getReturningSourceBreakdown(
+  startDate?: string,
+  endDate?: string
+): SourceBreakdown {
+  const db = getDatabase();
+  const params: string[] = [];
+  let fvDateFilter = "";
+  let regDateFilter = "";
+
+  if (startDate) {
+    fvDateFilter += ` AND attended_at >= ?`;
+    params.push(startDate);
+    regDateFilter += ` AND r.attended_at >= ?`;
+    params.push(startDate);
+  }
+  if (endDate) {
+    regDateFilter += ` AND r.attended_at < ?`;
+    params.push(endDate);
+  }
+
+  const query = `
+    WITH qualifying AS (
+      SELECT r.email, r.attended_at, r.pass
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.email NOT IN (
+          SELECT DISTINCT email FROM first_visits
+          WHERE attended_at IS NOT NULL AND attended_at != ''
+            AND email IS NOT NULL AND email != ''
+            ${fvDateFilter}
+        )
+        ${regDateFilter}
+    ),
+    most_recent AS (
+      SELECT email, MAX(attended_at) as last_at
+      FROM qualifying
+      GROUP BY email
+    )
+    SELECT q.pass, COUNT(*) as cnt
+    FROM most_recent mr
+    JOIN qualifying q ON q.email = mr.email AND q.attended_at = mr.last_at
+    GROUP BY q.pass
+  `;
+
+  const rows = db.prepare(query).all(...params) as { pass: string; cnt: number }[];
+  return classifySourceRows(rows, false);
+}

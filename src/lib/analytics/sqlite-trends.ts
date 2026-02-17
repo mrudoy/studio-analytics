@@ -11,9 +11,8 @@
  *   - first_visits table   → first visit stats, returning non-members
  */
 
-import { getCategory, isAnnualPlan, isDropInOrIntro } from "./categories";
+import { getCategory, isAnnualPlan } from "./categories";
 import { parseDate, getWeekKey, getMonthKey } from "./date-utils";
-import { getDatabase } from "../db/database";
 import {
   getNewSubscriptions,
   getCanceledSubscriptions,
@@ -22,11 +21,13 @@ import {
 } from "../db/subscription-store";
 import {
   getDropInsByWeek,
-  getFirstVisitsByWeek,
   getDropInStats,
-  getRegistrationsByWeek,
   hasRegistrationData,
   hasFirstVisitData,
+  getFirstTimeUniqueVisitorsByWeek,
+  getFirstTimeSourceBreakdown,
+  getReturningUniqueVisitorsByWeek,
+  getReturningSourceBreakdown,
 } from "../db/registration-store";
 import type {
   TrendsData,
@@ -35,7 +36,6 @@ import type {
   ProjectionData,
   DropInData,
   FirstVisitData,
-  FirstVisitSegment,
   ReturningNonMemberData,
 } from "../sheets/read-dashboard";
 
@@ -326,134 +326,80 @@ export function computeTrendsFromSQLite(): TrendsData | null {
     }
   }
 
-  // ── 6. First visit data ──────────────────────────────────
+  // ── 6. First visit data (unique visitors) ──────────────
   let firstVisits: FirstVisitData | null = null;
 
   if (hasFirstVisitData()) {
-    const eightWeeksAgo = new Date(now);
-    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-    const fvWeeks = getFirstVisitsByWeek(
-      eightWeeksAgo.toISOString().split("T")[0]
-    );
+    const fiveWeeksAgo = new Date(now);
+    fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
+    const startStr = fiveWeeksAgo.toISOString().split("T")[0];
 
-    if (fvWeeks.length > 0) {
-      // Separate current week from completed weeks
-      // Current week key uses the registration-store's strftime format: YYYY-WNN
-      const sortedWeeks = [...fvWeeks].sort((a, b) => a.week.localeCompare(b.week));
+    const uvWeeks = getFirstTimeUniqueVisitorsByWeek(startStr);
+    const sourceBreakdown = getFirstTimeSourceBreakdown(startStr);
+
+    if (uvWeeks.length > 0) {
+      const sortedWeeks = [...uvWeeks].sort((a, b) =>
+        a.weekStart.localeCompare(b.weekStart)
+      );
       const lastWeek = sortedWeeks[sortedWeeks.length - 1];
       const completedWeeks = sortedWeeks.slice(0, -1).slice(-4);
-
-      // Aggregate segments across the display window
-      const aggregateSegments: Record<FirstVisitSegment, number> = {
-        introWeek: 0, dropIn: 0, guest: 0, other: 0,
-      };
-      for (const wk of [...completedWeeks, lastWeek]) {
-        aggregateSegments.introWeek += wk.segments.introWeek;
-        aggregateSegments.dropIn += wk.segments.dropIn;
-        aggregateSegments.guest += wk.segments.guest;
-        aggregateSegments.other += wk.segments.other;
-      }
+      const zeroSeg = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
 
       firstVisits = {
-        currentWeekTotal: lastWeek.count,
-        currentWeekSegments: lastWeek.segments,
+        currentWeekTotal: lastWeek.uniqueVisitors,
+        currentWeekSegments: { ...zeroSeg },
         completedWeeks: completedWeeks.map((w) => ({
-          week: w.week,
-          count: w.count,
-          segments: w.segments,
+          week: w.weekStart,
+          uniqueVisitors: w.uniqueVisitors,
+          segments: { ...zeroSeg },
         })),
-        aggregateSegments,
+        aggregateSegments: {
+          introWeek: sourceBreakdown.introWeek,
+          dropIn: sourceBreakdown.dropIn,
+          guest: sourceBreakdown.guest,
+          other: sourceBreakdown.other,
+        },
+        otherBreakdownTop5: sourceBreakdown.otherBreakdownTop5,
       };
     }
   }
 
-  // ── 7. Returning non-members ─────────────────────────────
-  // For returning non-members, we need registrations of non-subscribers
-  // who have visited before (not first visits). This requires joining
-  // registrations with first_visits or looking at repeat visits.
-  // For now, we return null — this can be computed from registrations table
-  // by finding non-subscriber emails that appear more than once.
+  // ── 7. Returning non-members (unique visitors) ─────────
   let returningNonMembers: ReturningNonMemberData | null = null;
 
   if (hasRegistrationData()) {
     try {
-      const db = getDatabase();
-      const eightWeeksAgo = new Date(now);
-      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-      const startStr = eightWeeksAgo.toISOString().split("T")[0];
+      const fiveWeeksAgo = new Date(now);
+      fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
+      const startStr = fiveWeeksAgo.toISOString().split("T")[0];
 
-      // Find non-subscriber registrations for emails that have visited before
-      // (i.e., their earliest attended_at is before the current period)
-      const rnmRows = db.prepare(`
-        SELECT strftime('%Y-W%W', r.attended_at) as week, r.pass, COUNT(*) as count
-        FROM registrations r
-        WHERE r.attended_at >= ?
-          AND r.attended_at IS NOT NULL AND r.attended_at != ''
-          AND (r.subscription = 'false' OR r.subscription IS NULL)
-          AND r.email NOT IN (
-            SELECT DISTINCT email FROM first_visits
-            WHERE attended_at >= ?
-              AND attended_at IS NOT NULL AND attended_at != ''
-          )
-        GROUP BY week, r.pass
-        ORDER BY week
-      `).all(startStr, startStr) as { week: string; pass: string; count: number }[];
+      const uvWeeks = getReturningUniqueVisitorsByWeek(startStr);
+      const sourceBreakdown = getReturningSourceBreakdown(startStr);
 
-      if (rnmRows.length > 0) {
-        // Aggregate by week with segments
-        const weekMap = new Map<string, { count: number; segments: Record<FirstVisitSegment, number> }>();
+      if (uvWeeks.length > 0) {
+        const sortedWeeks = [...uvWeeks].sort((a, b) =>
+          a.weekStart.localeCompare(b.weekStart)
+        );
+        const lastWeek = sortedWeeks[sortedWeeks.length - 1];
+        const completedWeeks = sortedWeeks.slice(0, -1).slice(-4);
+        const zeroSeg = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
 
-        for (const row of rnmRows) {
-          if (!weekMap.has(row.week)) {
-            weekMap.set(row.week, {
-              count: 0,
-              segments: { introWeek: 0, dropIn: 0, guest: 0, other: 0 },
-            });
-          }
-          const entry = weekMap.get(row.week)!;
-          entry.count += row.count;
-
-          const passUpper = (row.pass || "").toUpperCase();
-          if (passUpper.includes("INTRO")) {
-            entry.segments.introWeek += row.count;
-          } else if (passUpper.includes("GUEST") || passUpper.includes("COMMUNITY")) {
-            entry.segments.guest += row.count;
-          } else if (isDropInOrIntro(row.pass || "")) {
-            entry.segments.dropIn += row.count;
-          } else {
-            entry.segments.other += row.count;
-          }
-        }
-
-        const sortedRnm = Array.from(weekMap.entries())
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([week, data]) => ({ week, ...data }));
-
-        if (sortedRnm.length > 0) {
-          const lastRnm = sortedRnm[sortedRnm.length - 1];
-          const completedRnm = sortedRnm.slice(0, -1).slice(-4);
-
-          const aggSeg: Record<FirstVisitSegment, number> = {
-            introWeek: 0, dropIn: 0, guest: 0, other: 0,
-          };
-          for (const wk of [...completedRnm, lastRnm]) {
-            aggSeg.introWeek += wk.segments.introWeek;
-            aggSeg.dropIn += wk.segments.dropIn;
-            aggSeg.guest += wk.segments.guest;
-            aggSeg.other += wk.segments.other;
-          }
-
-          returningNonMembers = {
-            currentWeekTotal: lastRnm.count,
-            currentWeekSegments: lastRnm.segments,
-            completedWeeks: completedRnm.map((w) => ({
-              week: w.week,
-              count: w.count,
-              segments: w.segments,
-            })),
-            aggregateSegments: aggSeg,
-          };
-        }
+        returningNonMembers = {
+          currentWeekTotal: lastWeek.uniqueVisitors,
+          currentWeekSegments: { ...zeroSeg },
+          completedWeeks: completedWeeks.map((w) => ({
+            week: w.weekStart,
+            uniqueVisitors: w.uniqueVisitors,
+            segments: { ...zeroSeg },
+          })),
+          aggregateSegments: {
+            introWeek: sourceBreakdown.introWeek,
+            dropIn: sourceBreakdown.dropIn,
+            guest: sourceBreakdown.guest,
+            other: sourceBreakdown.other,
+          },
+          otherBreakdownTop5: sourceBreakdown.otherBreakdownTop5,
+        };
       }
     } catch (err) {
       console.warn("[sqlite-trends] Failed to compute returning non-members:", err);

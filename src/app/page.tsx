@@ -112,15 +112,17 @@ type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
 interface FirstVisitData {
   currentWeekTotal: number;
   currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
   aggregateSegments: Record<FirstVisitSegment, number>;
+  otherBreakdownTop5?: { passName: string; count: number }[];
 }
 
 interface ReturningNonMemberData {
   currentWeekTotal: number;
   currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
   aggregateSegments: Record<FirstVisitSegment, number>;
+  otherBreakdownTop5?: { passName: string; count: number }[];
 }
 
 interface TrendsData {
@@ -1283,12 +1285,13 @@ const SEGMENT_COLORS: Record<FirstVisitSegment, string> = {
 
 function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
   const weeklyBars: BarChartData[] = firstVisits.completedWeeks.map((w) => {
-    return { label: formatWeekRange(w.week), value: w.count, color: COLORS.teal };
+    return { label: formatWeekRange(w.week), value: w.uniqueVisitors, color: COLORS.teal };
   });
 
   const segments: FirstVisitSegment[] = ["introWeek", "dropIn", "guest", "other"];
   const agg = firstVisits.aggregateSegments;
   const aggTotal = agg.introWeek + agg.dropIn + agg.guest + agg.other;
+  const otherTop5 = firstVisits.otherBreakdownTop5 || [];
 
   return (
     <Card padding="1.5rem">
@@ -1305,7 +1308,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
             {formatNumber(firstVisits.currentWeekTotal)}
           </span>
           <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            This Week (to date)
+            Unique This Week
           </p>
         </div>
       </div>
@@ -1314,7 +1317,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
         {/* Left: Weekly bar chart — last 4 completed weeks */}
         <div>
           <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-            Weekly — Last 4 Weeks
+            Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
             <MiniBarChart data={weeklyBars} height={64} />
@@ -1347,6 +1350,23 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
               );
             })}
           </div>
+          {otherTop5.length > 0 && (
+            <div style={{ marginTop: "0.5rem", paddingLeft: "1rem" }}>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
+                Other includes:
+              </p>
+              {otherTop5.map((item, i) => (
+                <div key={i} className="flex items-center justify-between" style={{ padding: "0.15rem 0" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                    {item.passName}
+                  </span>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                    {item.count}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </Card>
@@ -1369,7 +1389,7 @@ const RNM_SEGMENT_LABELS: Record<string, string> = {
 
 function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers: ReturningNonMemberData }) {
   const weeklyBars: BarChartData[] = returningNonMembers.completedWeeks.map((w) => {
-    return { label: formatWeekRange(w.week), value: w.count, color: COLORS.copper };
+    return { label: formatWeekRange(w.week), value: w.uniqueVisitors, color: COLORS.copper };
   });
 
   // 3 buckets only (no Intro Week — it's merged into Other in the analytics)
@@ -1381,6 +1401,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
     guest: agg.guest,
     other: agg.other + agg.introWeek,
   };
+  const otherTop5 = returningNonMembers.otherBreakdownTop5 || [];
 
   return (
     <Card padding="1.5rem">
@@ -1397,7 +1418,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
             {formatNumber(returningNonMembers.currentWeekTotal)}
           </span>
           <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            This Week (to date)
+            Unique This Week
           </p>
         </div>
       </div>
@@ -1406,7 +1427,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
         {/* Left: Weekly bar chart */}
         <div>
           <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-            Weekly — Last 4 Weeks
+            Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
             <MiniBarChart data={weeklyBars} height={64} />
@@ -1435,6 +1456,23 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
               </div>
             ))}
           </div>
+          {otherTop5.length > 0 && (
+            <div style={{ marginTop: "0.5rem", paddingLeft: "1rem" }}>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
+                Other includes:
+              </p>
+              {otherTop5.map((item, i) => (
+                <div key={i} className="flex items-center justify-between" style={{ padding: "0.15rem 0" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                    {item.passName}
+                  </span>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                    {item.count}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </Card>

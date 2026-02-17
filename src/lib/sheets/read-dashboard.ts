@@ -188,15 +188,17 @@ export type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
 export interface FirstVisitData {
   currentWeekTotal: number;
   currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
   aggregateSegments: Record<FirstVisitSegment, number>;
+  otherBreakdownTop5: { passName: string; count: number }[];
 }
 
 export interface ReturningNonMemberData {
   currentWeekTotal: number;
   currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[];
+  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
   aggregateSegments: Record<FirstVisitSegment, number>;
+  otherBreakdownTop5: { passName: string; count: number }[];
 }
 
 export interface TrendsData {
@@ -271,11 +273,11 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
   const dropInWeeklyBreakdown: { week: string; count: number }[] = [];
   let fvCurrentWeekTotal = 0;
   let fvCurrentWeekSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
-  const fvCompletedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[] = [];
+  const fvCompletedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[] = [];
   let fvAggregateSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
   let rnmCurrentWeekTotal = 0;
   let rnmCurrentWeekSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
-  const rnmCompletedWeeks: { week: string; count: number; segments: Record<FirstVisitSegment, number> }[] = [];
+  const rnmCompletedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[] = [];
   let rnmAggregateSegments: Record<FirstVisitSegment, number> = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
 
   for (const row of rows) {
@@ -389,7 +391,7 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
     } else if (type === "FirstVisitWeek") {
       fvCompletedWeeks.push({
         week: period,
-        count: parseNum(row.get("New Members")),
+        uniqueVisitors: parseNum(row.get("New Members")),
         segments: {
           introWeek: parseNum(row.get("New SKY3")),
           dropIn: parseNum(row.get("New SKY TING TV")),
@@ -408,7 +410,7 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
     } else if (type === "ReturningNonMemberWeek") {
       rnmCompletedWeeks.push({
         week: period,
-        count: parseNum(row.get("New Members")),
+        uniqueVisitors: parseNum(row.get("New Members")),
         segments: {
           introWeek: parseNum(row.get("New SKY3")),
           dropIn: parseNum(row.get("New SKY TING TV")),
@@ -455,12 +457,12 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
 
   // Build first visit data (null if no first visit rows were found)
   const firstVisits: FirstVisitData | null = fvCurrentWeekTotal > 0 || fvCompletedWeeks.length > 0
-    ? { currentWeekTotal: fvCurrentWeekTotal, currentWeekSegments: fvCurrentWeekSegments, completedWeeks: fvCompletedWeeks, aggregateSegments: fvAggregateSegments }
+    ? { currentWeekTotal: fvCurrentWeekTotal, currentWeekSegments: fvCurrentWeekSegments, completedWeeks: fvCompletedWeeks, aggregateSegments: fvAggregateSegments, otherBreakdownTop5: [] }
     : null;
 
   // Build returning non-members data (null if no rows were found)
   const returningNonMembers: ReturningNonMemberData | null = rnmCurrentWeekTotal > 0 || rnmCompletedWeeks.length > 0
-    ? { currentWeekTotal: rnmCurrentWeekTotal, currentWeekSegments: rnmCurrentWeekSegments, completedWeeks: rnmCompletedWeeks, aggregateSegments: rnmAggregateSegments }
+    ? { currentWeekTotal: rnmCurrentWeekTotal, currentWeekSegments: rnmCurrentWeekSegments, completedWeeks: rnmCompletedWeeks, aggregateSegments: rnmAggregateSegments, otherBreakdownTop5: [] }
     : null;
 
   const data: TrendsData = { weekly, monthly, pacing, projection, dropIns, firstVisits, returningNonMembers };
