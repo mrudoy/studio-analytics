@@ -24,6 +24,20 @@ const migrations: Migration[] = [
     name: "001_initial_schema",
     up: "SELECT 1; -- Initial schema created by initDatabase()",
   },
+  // Fix period dates stored as M/D/YYYY → normalize to YYYY-MM-DD
+  // e.g. "1/1/2025" → "2025-01-01", "12/31/2025" → "2025-12-31"
+  {
+    name: "002_normalize_period_dates",
+    up: `
+      UPDATE revenue_categories
+      SET period_start = TO_CHAR(TO_DATE(period_start, 'MM/DD/YYYY'), 'YYYY-MM-DD')
+      WHERE period_start ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$';
+
+      UPDATE revenue_categories
+      SET period_end = TO_CHAR(TO_DATE(period_end, 'MM/DD/YYYY'), 'YYYY-MM-DD')
+      WHERE period_end ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$';
+    `,
+  },
 ];
 
 /**
