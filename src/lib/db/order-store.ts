@@ -39,31 +39,26 @@ export interface OrderStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save orders (full replace). Replaces all existing data.
+ * Save orders (additive — appends new rows, never deletes existing).
  */
 export function saveOrders(rows: OrderRow[]): void {
   const db = getDatabase();
+  const before = (db.prepare("SELECT COUNT(*) as count FROM orders").get() as { count: number }).count;
+
   const insert = db.prepare(`
-    INSERT INTO orders (created_at, code, customer, order_type, payment, total)
+    INSERT OR IGNORE INTO orders (created_at, code, customer, order_type, payment, total)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   const insertMany = db.transaction((items: OrderRow[]) => {
-    db.exec("DELETE FROM orders");
     for (const r of items) {
-      insert.run(
-        r.created,
-        r.code,
-        r.customer,
-        r.type,
-        r.payment,
-        r.total
-      );
+      insert.run(r.created, r.code, r.customer, r.type, r.payment, r.total);
     }
   });
 
   insertMany(rows);
-  console.log(`[order-store] Saved ${rows.length} orders`);
+  const after = (db.prepare("SELECT COUNT(*) as count FROM orders").get() as { count: number }).count;
+  console.log(`[order-store] Orders: ${before} -> ${after} (+${after - before} new)`);
 }
 
 // ── Read Operations ──────────────────────────────────────────

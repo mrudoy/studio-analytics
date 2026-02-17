@@ -152,6 +152,12 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_reg_email ON registrations(email);
   `);
 
+  // Unique indexes for dedup (INSERT OR IGNORE)
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fv_dedup ON first_visits(email, attended_at)`); } catch { /* already exists or conflict */ }
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_dedup ON registrations(email, attended_at)`); } catch { /* already exists or conflict */ }
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_dedup ON orders(code)`); } catch { /* already exists or conflict */ }
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_newcust_dedup ON new_customers(email)`); } catch { /* already exists or conflict */ }
+
   // Migrations: add columns that may not exist yet in older databases
   try {
     db.exec(`ALTER TABLE revenue_categories ADD COLUMN other_fees REAL DEFAULT 0`);

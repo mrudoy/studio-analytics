@@ -35,24 +35,26 @@ export interface CustomerStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save new customers (full replace). Replaces all existing data.
+ * Save new customers (additive — appends new rows, never deletes existing).
  */
 export function saveCustomers(rows: CustomerRow[]): void {
   const db = getDatabase();
+  const before = (db.prepare("SELECT COUNT(*) as count FROM new_customers").get() as { count: number }).count;
+
   const insert = db.prepare(`
-    INSERT INTO new_customers (name, email, role, order_count, created_at)
+    INSERT OR IGNORE INTO new_customers (name, email, role, order_count, created_at)
     VALUES (?, ?, ?, ?, ?)
   `);
 
   const insertMany = db.transaction((items: CustomerRow[]) => {
-    db.exec("DELETE FROM new_customers");
     for (const r of items) {
       insert.run(r.name, r.email, r.role, r.orders, r.created);
     }
   });
 
   insertMany(rows);
-  console.log(`[customer-store] Saved ${rows.length} customers`);
+  const after = (db.prepare("SELECT COUNT(*) as count FROM new_customers").get() as { count: number }).count;
+  console.log(`[customer-store] Customers: ${before} -> ${after} (+${after - before} new)`);
 }
 
 // ── Read Operations ──────────────────────────────────────────

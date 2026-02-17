@@ -55,12 +55,14 @@ export interface AttendanceStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save registrations (full roster). Replaces all existing data.
+ * Save registrations (additive — appends new rows, never deletes existing).
  */
 export function saveRegistrations(rows: RegistrationRow[]): void {
   const db = getDatabase();
+  const before = (db.prepare("SELECT COUNT(*) as count FROM registrations").get() as { count: number }).count;
+
   const insert = db.prepare(`
-    INSERT INTO registrations (
+    INSERT OR IGNORE INTO registrations (
       event_name, performance_starts_at, location_name, video_name, teacher_name,
       first_name, last_name, email, registered_at, attended_at,
       registration_type, state, pass, subscription, revenue
@@ -68,7 +70,6 @@ export function saveRegistrations(rows: RegistrationRow[]): void {
   `);
 
   const insertMany = db.transaction((items: RegistrationRow[]) => {
-    db.exec("DELETE FROM registrations");
     for (const r of items) {
       insert.run(
         r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
@@ -81,16 +82,19 @@ export function saveRegistrations(rows: RegistrationRow[]): void {
   });
 
   insertMany(rows);
-  console.log(`[registration-store] Saved ${rows.length} registrations`);
+  const after = (db.prepare("SELECT COUNT(*) as count FROM registrations").get() as { count: number }).count;
+  console.log(`[registration-store] Registrations: ${before} -> ${after} (+${after - before} new)`);
 }
 
 /**
- * Save first visits. Replaces all existing data.
+ * Save first visits (additive — appends new rows, never deletes existing).
  */
 export function saveFirstVisits(rows: RegistrationRow[]): void {
   const db = getDatabase();
+  const before = (db.prepare("SELECT COUNT(*) as count FROM first_visits").get() as { count: number }).count;
+
   const insert = db.prepare(`
-    INSERT INTO first_visits (
+    INSERT OR IGNORE INTO first_visits (
       event_name, performance_starts_at, location_name, video_name, teacher_name,
       first_name, last_name, email, registered_at, attended_at,
       registration_type, state, pass, subscription, revenue
@@ -98,7 +102,6 @@ export function saveFirstVisits(rows: RegistrationRow[]): void {
   `);
 
   const insertMany = db.transaction((items: RegistrationRow[]) => {
-    db.exec("DELETE FROM first_visits");
     for (const r of items) {
       insert.run(
         r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
@@ -111,7 +114,8 @@ export function saveFirstVisits(rows: RegistrationRow[]): void {
   });
 
   insertMany(rows);
-  console.log(`[registration-store] Saved ${rows.length} first visits`);
+  const after = (db.prepare("SELECT COUNT(*) as count FROM first_visits").get() as { count: number }).count;
+  console.log(`[registration-store] First visits: ${before} -> ${after} (+${after - before} new)`);
 }
 
 // ── Read Operations ──────────────────────────────────────────
