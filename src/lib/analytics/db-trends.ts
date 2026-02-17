@@ -577,6 +577,21 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
 
   if (allRows.length === 0) return null;
 
+  /**
+   * Normalize a raw date string from the database to YYYY-MM-DD.
+   * The CSV may store dates in various formats:
+   *   "2024-01-28 22:46:51 -0500"  (direct CSV)
+   *   "1/28/2024"                   (HTML-scraped)
+   *   "Jan 28, 2024"               (other)
+   * We use parseDate() from date-utils to handle all of these.
+   */
+  function toDateStr(raw: string | null | undefined): string | null {
+    if (!raw || raw.trim() === "") return null;
+    const d = parseDate(raw);
+    if (!d) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
   const categorized = allRows.map((r: Record<string, unknown>) => {
     const name = r.plan_name as string;
     const annual = isAnnualPlan(name);
@@ -585,13 +600,21 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       plan_name: name,
       plan_state: r.plan_state as string,
       plan_price: price,
-      canceled_at: r.canceled_at as string | null,
-      created_at: r.created_at as string,
+      canceled_at: toDateStr(r.canceled_at as string | null),
+      created_at: toDateStr(r.created_at as string | null),
       category: getCategory(name),
       isAnnual: annual,
       monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
     };
   });
+
+  // Log date parsing diagnostics
+  const withCreated = categorized.filter((r) => r.created_at !== null);
+  const withCanceled = categorized.filter((r) => r.canceled_at !== null);
+  console.log(`[churn] Parsed dates: ${withCreated.length}/${categorized.length} have created_at, ${withCanceled.length}/${categorized.length} have canceled_at`);
+  if (withCreated.length > 0) {
+    console.log(`[churn] Sample created_at: "${allRows[0].created_at}" -> "${categorized[0].created_at}"`);
+  }
 
   const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
   const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
@@ -619,9 +642,10 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       const monthEnd = nextMonth.getFullYear() + "-" +
         String(nextMonth.getMonth() + 1).padStart(2, "0") + "-01";
 
-      // Active at start of month
+      // Active at start of month: created before month start AND
+      // (still active OR canceled on/after month start)
       const activeAtStart = catRows.filter((r) => {
-        if (r.created_at >= monthStart) return false;
+        if (!r.created_at || r.created_at >= monthStart) return false;
         if (ACTIVE_STATES.includes(r.plan_state)) return true;
         if (r.canceled_at && r.canceled_at >= monthStart) return true;
         return false;
