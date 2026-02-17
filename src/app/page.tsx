@@ -1104,14 +1104,16 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
             <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.5rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, whiteSpace: "nowrap" }}>
               {tile.value}
             </p>
-            {tile.sublabel && (
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
-                {tile.sublabel}
-              </p>
-            )}
-            {tile.delta != null && (
-              <div style={{ marginTop: "4px" }}>
-                <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
+            {(tile.sublabel || tile.delta != null) && (
+              <div className="flex items-center gap-2" style={{ marginTop: "6px" }}>
+                {tile.delta != null && (
+                  <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
+                )}
+                {tile.sublabel && (
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
+                    {tile.sublabel}
+                  </span>
+                )}
               </div>
             )}
           </div>
