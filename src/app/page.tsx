@@ -791,10 +791,30 @@ function useNextRunCountdown() {
 
 function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
   const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [pipelineStep, setPipelineStep] = useState("");
+  const [pipelinePercent, setPipelinePercent] = useState(0);
+  const [pipelineStartedAt, setPipelineStartedAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const eventSourceRef = useRef<EventSource | null>(null);
   const countdown = useNextRunCountdown();
+
+  // ETA ticker — update every second while running
+  useEffect(() => {
+    if (refreshState !== "running") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [refreshState]);
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => { eventSourceRef.current?.close(); };
+  }, []);
 
   async function triggerRefresh() {
     setRefreshState("running");
+    setPipelineStep("Starting...");
+    setPipelinePercent(0);
+    setPipelineStartedAt(0);
     try {
       const res = await fetch("/api/pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       if (res.status === 409) {
@@ -802,14 +822,48 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
         return;
       }
       if (!res.ok) throw new Error("Failed");
-      setRefreshState("done");
-      // Auto-reset after 60s so user knows it ran
-      setTimeout(() => setRefreshState("idle"), 60_000);
+      const { jobId } = await res.json();
+
+      // Connect to SSE for live progress
+      eventSourceRef.current?.close();
+      const es = new EventSource(`/api/status?jobId=${jobId}`);
+      eventSourceRef.current = es;
+
+      es.addEventListener("progress", (e) => {
+        const data = JSON.parse(e.data);
+        setPipelineStep(data.step || "Processing...");
+        setPipelinePercent(data.percent || 0);
+        if (data.startedAt) setPipelineStartedAt(data.startedAt);
+      });
+
+      es.addEventListener("complete", () => {
+        es.close();
+        setRefreshState("done");
+        setPipelineStep("");
+        setPipelinePercent(100);
+        // Reload dashboard data after short delay
+        setTimeout(() => window.location.reload(), 2000);
+      });
+
+      es.addEventListener("error", (e) => {
+        try {
+          const data = JSON.parse((e as MessageEvent).data);
+          setPipelineStep(data.message || "Error");
+        } catch { /* SSE error */ }
+        es.close();
+        setRefreshState("error");
+        setTimeout(() => setRefreshState("idle"), 8_000);
+      });
     } catch {
       setRefreshState("error");
       setTimeout(() => setRefreshState("idle"), 5_000);
     }
   }
+
+  const elapsed = pipelineStartedAt ? now - pipelineStartedAt : 0;
+  const etaMs = pipelinePercent > 5 && elapsed > 0
+    ? (elapsed / pipelinePercent) * (100 - pipelinePercent)
+    : 0;
 
   if (!lastUpdated) return null;
 
@@ -932,9 +986,23 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
       </div>
 
       {refreshState === "running" && (
-        <p style={{ fontFamily: FONT_SANS, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginTop: "0.25rem" }}>
-          Pipeline running — this takes 5-15 min. Reload page after.
-        </p>
+        <div style={{ marginTop: "0.5rem", maxWidth: "340px", width: "100%" }}>
+          <div className="flex justify-between items-baseline" style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", marginBottom: "4px" }}>
+            <span style={{ color: "var(--st-text-secondary)" }}>{pipelineStep}</span>
+            <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{pipelinePercent}%</span>
+          </div>
+          <div className="rounded-full overflow-hidden" style={{ height: "6px", backgroundColor: "var(--st-border)" }}>
+            <div
+              className="rounded-full transition-all duration-500"
+              style={{ height: "100%", width: `${pipelinePercent}%`, backgroundColor: "var(--st-accent)" }}
+            />
+          </div>
+          {etaMs > 3000 && (
+            <p style={{ fontFamily: FONT_SANS, fontSize: "0.68rem", color: "var(--st-text-secondary)", opacity: 0.7, marginTop: "3px", textAlign: "center" }}>
+              {formatEta(etaMs)}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

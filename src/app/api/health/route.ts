@@ -38,39 +38,6 @@ export async function GET() {
     };
   }
 
-  // Debug: revenue_categories periods
-  let dbDebug: Record<string, unknown> = {};
-  try {
-    const pool = getPool();
-    const { rows: periods } = await pool.query(
-      `SELECT period_start, period_end, COUNT(*) as cnt, SUM(net_revenue) as total_net
-       FROM revenue_categories GROUP BY period_start, period_end ORDER BY period_end DESC LIMIT 5`
-    );
-    dbDebug.revenuePeriods = periods;
-
-    // Also check auto_renews count
-    const { rows: arCount } = await pool.query(`SELECT COUNT(*) as cnt FROM auto_renews`);
-    dbDebug.autoRenewCount = arCount[0]?.cnt;
-
-    // Check what getAllPeriods would return
-    const { rows: allP } = await pool.query(
-      `SELECT period_start, period_end, MAX(locked) as locked, COUNT(*) as category_count,
-              SUM(revenue) as total_revenue, SUM(net_revenue) as total_net_revenue
-       FROM revenue_categories
-       GROUP BY period_start, period_end
-       ORDER BY period_end DESC`
-    );
-    dbDebug.allPeriods = allP.map((r: Record<string, unknown>) => ({
-      periodStart: r.period_start,
-      periodEnd: r.period_end,
-      categoryCount: Number(r.category_count),
-      totalRevenue: Number(r.total_revenue),
-      totalNetRevenue: Number(r.total_net_revenue),
-    }));
-  } catch (err) {
-    dbDebug.error = err instanceof Error ? err.message : "Unknown";
-  }
-
   const allOk = Object.values(checks).every((c) => c.status === "ok");
 
   return NextResponse.json(
@@ -78,7 +45,6 @@ export async function GET() {
       status: allOk ? "healthy" : "degraded",
       uptime: Math.round(process.uptime()),
       checks,
-      dbDebug,
     },
     { status: allOk ? 200 : 503 }
   );

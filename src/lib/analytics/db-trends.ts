@@ -279,18 +279,32 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
       console.log(`[db-trends] Prior year ${priorYear} filter: ${priorYearPeriods.length} matching periods`);
       if (priorYearPeriods.length > 0) {
         const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
-        // Calculate how many months are covered
-        const coveredMonths = new Set(
-          priorYearPeriods.map((p) => p.periodStart.slice(0, 7))
-        ).size;
-        if (coveredMonths >= 10) {
-          // Close to a full year — use total as-is (or extrapolate the gap)
-          priorYearActualRevenue = Math.round(totalNet / coveredMonths * 12);
-        } else if (coveredMonths > 0) {
-          // Partial year — extrapolate
-          priorYearActualRevenue = Math.round(totalNet / coveredMonths * 12);
+
+        // Determine how many months the data actually spans
+        // Check if any period covers a full year (e.g. 2025-01-01 to 2025-12-31)
+        const spansFullYear = priorYearPeriods.some((p) => {
+          const start = new Date(p.periodStart);
+          const end = new Date(p.periodEnd);
+          const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+          return months >= 11; // covers 11+ months = full year
+        });
+
+        if (spansFullYear) {
+          // Data covers full year — use actual total, no extrapolation
+          priorYearActualRevenue = Math.round(totalNet);
+          console.log(`[db-trends] Prior year ${priorYear}: full-year period detected, using actual total $${priorYearActualRevenue.toLocaleString()}`);
+        } else {
+          // Calculate covered months from unique period-start months
+          const coveredMonths = new Set(
+            priorYearPeriods.map((p) => p.periodStart.slice(0, 7))
+          ).size;
+          if (coveredMonths >= 10) {
+            priorYearActualRevenue = Math.round(totalNet / coveredMonths * 12);
+          } else if (coveredMonths > 0) {
+            priorYearActualRevenue = Math.round(totalNet / coveredMonths * 12);
+          }
+          console.log(`[db-trends] Prior year ${priorYear}: ${coveredMonths} months, $${Math.round(totalNet).toLocaleString()} actual, $${priorYearActualRevenue?.toLocaleString()} annualized`);
         }
-        console.log(`[db-trends] Prior year ${priorYear}: ${coveredMonths} months, $${Math.round(totalNet).toLocaleString()} actual, $${priorYearActualRevenue?.toLocaleString()} annualized`);
       }
     } catch {
       // revenue_categories may not exist yet

@@ -16,8 +16,13 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] User note: email is the atomic unit for a user (for churn/subscriber identity)
 - [ ] User note: prefer line charts or bars for churn over time (no pie charts)
 - [ ] Churn visualization: consider adding line chart or bar chart for churn trend over time (user preference)
-- [ ] Pipeline completeness checker — after each run, validate all expected tables populated with non-zero row counts, compare to previous run, fail loudly on silent data loss
-- [ ] Pipeline progress UI — when user clicks "Run Pipeline Now", show real-time progress % and per-report status (not just a spinner)
+- [x] ~~Pipeline completeness checker~~ — `validateCompleteness()` added to pipeline-core.ts, results shown on completion
+- [x] ~~Pipeline progress UI~~ — real-time progress %, ETA, step label in both PipelineView and dashboard FreshnessBadge
+
+### Revenue Category Terms Rule
+**RULE**: Only use defined business category labels. Any raw Union.fit category name that doesn't match a known pattern MUST be flagged as "Other" and logged so we can ask the user how to classify it. Never invent or guess new category names. The defined labels are:
+- Members, SKY3 / Packs, SKY TING TV, Drop-Ins, Intro / Trial, Workshops, Wellness / Spa, Teacher Training, Retail / Merch, Privates, Donations, Rentals, Retreats, Community
+- Anything else → "Other" (flag for review)
 
 ## Done
 
