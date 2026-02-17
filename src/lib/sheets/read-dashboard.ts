@@ -171,6 +171,8 @@ export interface ProjectionData {
   projectedYearEndMRR: number;
   monthlyGrowthRate: number;
   priorYearRevenue: number;
+  /** Actual total revenue from revenue_categories table for the prior calendar year */
+  priorYearActualRevenue: number | null;
 }
 
 export interface DropInData {
@@ -380,6 +382,7 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
         projectedYearEndMRR: 0,
         monthlyGrowthRate: growthMatch ? parseFloat(growthMatch[1]) : 0,
         priorYearRevenue: 0,
+        priorYearActualRevenue: null,
       };
     } else if (type === "DropIn") {
       // Parse aggregated drop-in rows

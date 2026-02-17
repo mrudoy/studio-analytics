@@ -19,6 +19,8 @@ const MEMBER_PLANS = [
   "SKY TING In Person Membership",
   "SKY VIRGIN MEMBERSHIP",
   "TING FAM",
+  "SKY TING Monthly Membership",
+  "Founding Member Annual",
 ];
 
 const SKY_TING_TV_PLANS = [
@@ -50,6 +52,8 @@ const SKY3_PLANS = [
   "SKYHIGH3",
   "SKY5",
   "SKY5 NEW",
+  "5 Pack",
+  "5-Pack",
 ];
 
 // Build a lookup map for O(1) lookups (case-insensitive)
@@ -77,7 +81,7 @@ export function getCategory(planName: string): AutoRenewCategory {
   if (exact) return exact;
 
   // Fuzzy match: check if the plan name contains a known category keyword
-  if (upper.includes("SKY3") || upper.includes("SKY5") || upper.includes("SKYHIGH")) return "SKY3";
+  if (upper.includes("SKY3") || upper.includes("SKY5") || upper.includes("SKYHIGH") || upper.includes("5 PACK") || upper.includes("5-PACK")) return "SKY3";
   if (upper.includes("SKY TING TV") || upper.includes("SKYTING TV")) return "SKY_TING_TV";
   if (
     upper.includes("UNLIMITED") ||
@@ -114,12 +118,14 @@ export function isAnnualPlan(planName: string): boolean {
 
 /**
  * Check if a pass/plan name represents a non-membership visit type
- * (drop-in, intro, guest, community pass, etc.).
+ * (drop-in, droplet, intro, guest, community pass, etc.).
  *
  * Based on the marketing team's conversion funnel methodology:
  *   Intro Week, Exclusive Intro Week, Guest pass, Member guest,
  *   Community Day, On Running Guest, Poker chip, Teacher's guest,
- *   5 pack, drop-in
+ *   Droplet, drop-in
+ *
+ * Note: 5 Packs are classified as SKY3 (not drop-in).
  */
 export function isDropInOrIntro(passName: string): boolean {
   const upper = passName.trim().toUpperCase();
@@ -127,6 +133,7 @@ export function isDropInOrIntro(passName: string): boolean {
     upper.includes("DROP-IN") ||
     upper.includes("DROP IN") ||
     upper.includes("DROPIN") ||
+    upper.includes("DROPLET") ||
     upper.includes("INTRO") ||
     upper.includes("TRIAL") ||
     upper.includes("FIRST") ||
@@ -135,8 +142,6 @@ export function isDropInOrIntro(passName: string): boolean {
     upper.includes("GUEST") ||
     upper.includes("COMMUNITY DAY") ||
     upper.includes("POKER CHIP") ||
-    upper.includes("5 PACK") ||
-    upper.includes("5-PACK") ||
     upper.includes("ON RUNNING")
   );
 }

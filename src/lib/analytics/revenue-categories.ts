@@ -27,6 +27,7 @@ export interface RevenueCategoryAnalysis {
 const AUTO_RENEW_PATTERNS = [
   /sky\s*unlimited/i,
   /sky\s*3/i,
+  /sky\s*5/i,
   /sky\s*ting\s*tv/i,
   /all\s*access/i,
   /digital\s*all/i,
@@ -34,9 +35,16 @@ const AUTO_RENEW_PATTERNS = [
   /10member/i,
   /10skyting/i,
   /community/i,
+  /5[\s-]*pack/i,
+  /founding\s*member/i,
+  /sky\s*ting\s*monthly\s*membership/i,
+  /sky\s*ting\s*in\s*person\s*membership/i,
+  /ting\s*fam/i,
+  /sky\s*virgin/i,
+  /skyhigh/i,
 ];
 
-const DROP_IN_PATTERNS = [/drop[\s-]*in/i];
+const DROP_IN_PATTERNS = [/drop[\s-]*in/i, /droplet/i];
 const WORKSHOP_PATTERNS = [/workshop/i];
 
 function matchesAny(name: string, patterns: RegExp[]): boolean {

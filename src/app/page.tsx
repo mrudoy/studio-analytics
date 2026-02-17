@@ -95,6 +95,7 @@ interface ProjectionData {
   projectedYearEndMRR: number;
   monthlyGrowthRate: number;
   priorYearRevenue: number;
+  priorYearActualRevenue: number | null;
 }
 
 interface DropInData {
@@ -1035,23 +1036,23 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
   sublabel?: string;
 }) {
   return (
-    <div className="flex items-center justify-between" style={{ padding: "0.65rem 0", borderBottom: "1px solid var(--st-border)" }}>
-      <div>
+    <div style={{ padding: "0.65rem 0", borderBottom: "1px solid var(--st-border)" }}>
+      <div className="flex items-center justify-between">
         <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.88rem", color: "var(--st-text-secondary)" }}>
           {label}
         </span>
-        {sublabel && (
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.92rem", color: "var(--st-accent)", marginLeft: "6px" }}>
-            {sublabel}
+        <div className="flex items-center gap-3">
+          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.25rem", color: "var(--st-text-primary)" }}>
+            {value}
           </span>
-        )}
+          <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} compact />
+        </div>
       </div>
-      <div className="flex items-center gap-3">
-        <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.25rem", color: "var(--st-text-primary)" }}>
-          {value}
-        </span>
-        <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} compact />
-      </div>
+      {sublabel && (
+        <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", fontStyle: "italic" }}>
+          {sublabel}
+        </p>
+      )}
     </div>
   );
 }
@@ -1810,7 +1811,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
             value={String(dropIns.currentMonthTotal)}
             delta={prevDelta}
             deltaPercent={null}
-            sublabel={isPacing ? `proj. ${dropIns.currentMonthPaced}` : undefined}
+            sublabel={isPacing ? `Projected month-end: ${dropIns.currentMonthPaced}` : undefined}
           />
           <TrendRow
             label="Last Month"
@@ -1976,11 +1977,11 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
               </p>
               <div className="flex gap-4">
                 <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", color: "var(--st-text-primary)" }}>
-                  <b>{pacingNew(pacing!).actual}</b> new <span style={{ color: "var(--st-text-secondary)" }}>(proj. {pacingNew(pacing!).paced})</span>
+                  <b>{pacingNew(pacing!).actual}</b> new <span style={{ color: "var(--st-text-secondary)", fontSize: "0.78rem", fontStyle: "italic" }}>/ {pacingNew(pacing!).paced} projected</span>
                 </span>
                 {pacingChurn && (
                   <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", color: "var(--st-text-primary)" }}>
-                    <b>{pacingChurn(pacing!).actual}</b> churn <span style={{ color: "var(--st-text-secondary)" }}>(proj. {pacingChurn(pacing!).paced})</span>
+                    <b>{pacingChurn(pacing!).actual}</b> churn <span style={{ color: "var(--st-text-secondary)", fontSize: "0.78rem", fontStyle: "italic" }}>/ {pacingChurn(pacing!).paced} projected</span>
                   </span>
                 )}
               </div>
@@ -2137,7 +2138,7 @@ function FinancialHealthSection({ data, trends }: { data: DashboardStats; trends
                 delta={latestM.deltaRevenue}
                 deltaPercent={latestM.deltaPctRevenue}
                 isCurrency
-                sublabel={isPacing ? `proj: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
+                sublabel={isPacing ? `Projected month-end: ${formatCurrency(pacing!.revenuePaced)}` : undefined}
               />
               <TrendRow
                 label="Revenue Lost (MoM)"
@@ -2193,12 +2194,16 @@ function DropInsSection({ dropIns }: { dropIns: DropInData }) {
 // ─── Revenue Forecast Section ────────────────────────────────
 
 function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
-  const yoyChange = projection.priorYearRevenue > 0
-    ? ((projection.projectedAnnualRevenue - projection.priorYearRevenue) / projection.priorYearRevenue * 100).toFixed(1)
+  // Use actual prior year revenue if available
+  const priorYearRev = projection.priorYearActualRevenue || projection.priorYearRevenue;
+  const isActualPrior = !!projection.priorYearActualRevenue;
+
+  const yoyChange = priorYearRev > 0
+    ? ((projection.projectedAnnualRevenue - priorYearRev) / priorYearRev * 100).toFixed(1)
     : null;
 
-  // Visual comparison bars for prior vs projected
-  const maxRev = Math.max(projection.projectedAnnualRevenue, projection.priorYearRevenue, 1);
+  // Visual comparison bars
+  const maxRev = Math.max(projection.projectedAnnualRevenue, priorYearRev, 1);
 
   return (
     <div className="space-y-5">
@@ -2215,17 +2220,17 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
               {formatCurrency(projection.projectedAnnualRevenue)}
             </p>
             <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.92rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
-              Based on {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
+              Based on {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth + non-subscription revenue
             </p>
             {yoyChange && (
               <div className="mt-3">
                 <DeltaBadge
-                  delta={Math.round(projection.projectedAnnualRevenue - projection.priorYearRevenue)}
+                  delta={Math.round(projection.projectedAnnualRevenue - priorYearRev)}
                   deltaPercent={Math.round(Number(yoyChange))}
                   isCurrency
                 />
                 <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
-                  vs {projection.year - 1}
+                  vs {projection.year - 1}{isActualPrior ? " actual" : " est."}
                 </p>
               </div>
             )}
@@ -2242,27 +2247,27 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
             <ForecastMetric label="Year-End MRR" value={formatCurrency(projection.projectedYearEndMRR)} />
 
             {/* Visual comparison */}
-            {projection.priorYearRevenue > 0 && (
+            {priorYearRev > 0 && (
               <div style={{ marginTop: "1rem" }}>
                 <div className="flex items-center gap-3 mb-2">
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-secondary)", width: "40px" }}>
-                    {projection.year - 1}
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-secondary)", width: "55px" }}>
+                    {projection.year - 1}{isActualPrior ? "" : " est"}
                   </span>
                   <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
-                    <div style={{ width: `${(projection.priorYearRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: "var(--st-text-secondary)", opacity: 0.3, borderRadius: "9999px" }} />
+                    <div style={{ width: `${(priorYearRev / maxRev) * 100}%`, height: "100%", backgroundColor: "var(--st-text-secondary)", opacity: 0.3, borderRadius: "9999px" }} />
                   </div>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 600, color: "var(--st-text-secondary)", minWidth: "60px", textAlign: "right" }}>
-                    {formatCompactCurrency(projection.priorYearRevenue)}
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 600, color: "var(--st-text-secondary)", minWidth: "70px", textAlign: "right" }}>
+                    {formatCompactCurrency(priorYearRev)}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-primary)", width: "40px" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-primary)", width: "55px" }}>
                     {projection.year}
                   </span>
                   <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
                     <div style={{ width: `${(projection.projectedAnnualRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: COLORS.member, opacity: 0.7, borderRadius: "9999px" }} />
                   </div>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 700, color: "var(--st-text-primary)", minWidth: "60px", textAlign: "right" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 700, color: "var(--st-text-primary)", minWidth: "70px", textAlign: "right" }}>
                     {formatCompactCurrency(projection.projectedAnnualRevenue)}
                   </span>
                 </div>

@@ -40,6 +40,7 @@ import type {
   ChurnRateData,
 } from "../sheets/read-dashboard";
 import { getDatabase } from "../db/database";
+import { getAllPeriods } from "../db/revenue-store";
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -260,9 +261,35 @@ export function computeTrendsFromSQLite(): TrendsData | null {
       }
     }
 
-    // Prior year revenue estimate
+    // Prior year revenue: prefer actual from revenue_categories, fall back to MRR estimate
     const priorYear = currentYear - 1;
     let priorYearRevenue = 0;
+    let priorYearActualRevenue: number | null = null;
+
+    // Try to find actual revenue from revenue_categories table
+    try {
+      const allPeriods = getAllPeriods();
+      // Find the longest period that starts in the prior year
+      for (const p of allPeriods) {
+        if (p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0) {
+          // Normalize to 12 months if the period is longer or shorter
+          const pStart = new Date(p.periodStart);
+          const pEnd = new Date(p.periodEnd);
+          const periodDays = (pEnd.getTime() - pStart.getTime()) / (1000 * 60 * 60 * 24);
+          if (periodDays > 0) {
+            const annualized = p.totalNetRevenue / periodDays * 365;
+            priorYearActualRevenue = Math.round(annualized);
+          } else {
+            priorYearActualRevenue = Math.round(p.totalNetRevenue);
+          }
+          break;
+        }
+      }
+    } catch {
+      // revenue_categories may not exist yet
+    }
+
+    // MRR-based estimate as fallback
     const priorMonths = mrrSeries.filter((e) => e.month.startsWith(String(priorYear)));
     if (priorMonths.length > 0) {
       const total = priorMonths.reduce((sum, e) => sum + e.mrr, 0);
@@ -271,35 +298,57 @@ export function computeTrendsFromSQLite(): TrendsData | null {
         : total;
     }
 
-    // Project annual revenue
-    let projectedAnnualRevenue = 0;
+    // Use actual if available
+    if (priorYearActualRevenue && priorYearActualRevenue > priorYearRevenue) {
+      priorYearRevenue = priorYearActualRevenue;
+    }
+
+    // Compute non-MRR revenue ratio from actual data
+    // (drop-ins, workshops, retail, teacher training, etc.)
+    // If we have actual prior year revenue > MRR-based estimate, the ratio tells us
+    // how much total revenue exceeds subscription-only revenue
+    const mrrBasedPriorTotal = priorMonths.length > 0
+      ? (priorMonths.length < 12
+        ? (priorMonths.reduce((s, e) => s + e.mrr, 0) / priorMonths.length) * 12
+        : priorMonths.reduce((s, e) => s + e.mrr, 0))
+      : 0;
+    const nonMrrMultiplier = (priorYearActualRevenue && mrrBasedPriorTotal > 0)
+      ? priorYearActualRevenue / mrrBasedPriorTotal
+      : 1;
+
+    // Project annual revenue (MRR-based, then scaled by non-MRR multiplier)
+    let projectedMrrRevenue = 0;
     let projectedMRR = currentMRR;
 
     // Completed months this year
     for (const mo of completedMonthKeys) {
       if (mo.startsWith(String(currentYear))) {
         const entry = mrrSeries.find((s) => s.month === mo);
-        projectedAnnualRevenue += entry ? entry.mrr : currentMRR;
+        projectedMrrRevenue += entry ? entry.mrr : currentMRR;
       }
     }
 
     // Paced current month
-    projectedAnnualRevenue += pacing.revenuePaced > 0 ? pacing.revenuePaced : currentMRR;
+    projectedMrrRevenue += pacing.revenuePaced > 0 ? pacing.revenuePaced : currentMRR;
 
     // Remaining months with growth
     const remainingMonths = 11 - currentMonth;
     for (let i = 0; i < remainingMonths; i++) {
       projectedMRR = projectedMRR * (1 + monthlyGrowthRate);
-      projectedAnnualRevenue += projectedMRR;
+      projectedMrrRevenue += projectedMRR;
     }
+
+    // Scale by non-MRR multiplier to account for drop-ins, workshops, retail, etc.
+    const projectedAnnualRevenue = Math.round(projectedMrrRevenue * nonMrrMultiplier);
 
     projection = {
       year: currentYear,
-      projectedAnnualRevenue: Math.round(projectedAnnualRevenue),
+      projectedAnnualRevenue,
       currentMRR: Math.round(currentMRR * 100) / 100,
       projectedYearEndMRR: Math.round(projectedMRR * 100) / 100,
       monthlyGrowthRate: Math.round(monthlyGrowthRate * 10000) / 100,
       priorYearRevenue: Math.round(priorYearRevenue),
+      priorYearActualRevenue,
     };
   }
 
