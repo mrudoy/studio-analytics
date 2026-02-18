@@ -1116,36 +1116,114 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const fmt = formatValue || ((v: number) => String(v));
 
-  // Reserve space for labels; actual bar area is the remaining height
-  const labelSpace = showValues ? 36 : 18; // value label + date label
-  const barAreaHeight = Math.max(height - labelSpace, 30);
+  // SVG-based bar chart with Y-axis gridlines
+  const marginLeft = 52;
+  const marginRight = 12;
+  const marginTop = 8;
+  const marginBottom = 28;
+  const chartHeight = height;
+  const barAreaHeight = chartHeight - marginTop - marginBottom;
+  const barGap = data.length > 8 ? 4 : 6;
+
+  // Generate nice Y-axis gridlines
+  const niceMax = (() => {
+    const raw = max;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+    const normalized = raw / magnitude;
+    if (normalized <= 1.5) return 1.5 * magnitude;
+    if (normalized <= 2) return 2 * magnitude;
+    if (normalized <= 3) return 3 * magnitude;
+    if (normalized <= 5) return 5 * magnitude;
+    return 10 * magnitude;
+  })();
+  const gridCount = 3;
+  const gridLines = Array.from({ length: gridCount + 1 }, (_, i) => (niceMax / gridCount) * i);
 
   return (
-    <div className="flex items-end gap-2" style={{ height: `${height}px` }}>
-      {data.map((d, i) => {
-        const fraction = Math.abs(d.value) / max;
-        const barHeight = Math.max(Math.round(fraction * barAreaHeight), 6);
-        return (
-          <div key={i} className="flex flex-col items-center justify-end flex-1" style={{ minWidth: 0, height: "100%" }}>
-            {showValues && (
-              <span style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "0.92rem", marginBottom: "3px", lineHeight: 1 }}>
-                {fmt(d.value)}
-              </span>
-            )}
-            <div
-              className="w-full rounded-t"
-              style={{
-                height: `${barHeight}px`,
-                backgroundColor: d.color || "var(--st-accent)",
-                opacity: 0.75,
-              }}
-            />
-            <span style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.7rem", marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", lineHeight: 1 }}>
-              {d.label}
-            </span>
-          </div>
-        );
-      })}
+    <div style={{ width: "100%", position: "relative" }}>
+      <svg
+        viewBox={`0 0 500 ${chartHeight}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ width: "100%", height: "auto", display: "block" }}
+      >
+        {/* Y-axis gridlines and labels */}
+        {gridLines.map((val, i) => {
+          const y = marginTop + barAreaHeight - (val / niceMax) * barAreaHeight;
+          return (
+            <g key={`grid-${i}`}>
+              <line
+                x1={marginLeft}
+                x2={500 - marginRight}
+                y1={y}
+                y2={y}
+                stroke="var(--st-border)"
+                strokeWidth={i === 0 ? 1.2 : 0.8}
+                strokeDasharray={i === 0 ? "none" : "3,3"}
+              />
+              <text
+                x={marginLeft - 6}
+                y={y + 1}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fill="var(--st-text-secondary)"
+                fontFamily={FONT_SANS}
+                fontSize="10"
+                fontWeight="500"
+              >
+                {formatCompactCurrency(val)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Bars */}
+        {data.map((d, i) => {
+          const barWidth = (500 - marginLeft - marginRight - barGap * (data.length - 1)) / data.length;
+          const x = marginLeft + i * (barWidth + barGap);
+          const fraction = Math.abs(d.value) / niceMax;
+          const barH = Math.max(Math.round(fraction * barAreaHeight), 3);
+          const y = marginTop + barAreaHeight - barH;
+          return (
+            <g key={i}>
+              <rect
+                x={x}
+                y={y}
+                width={barWidth}
+                height={barH}
+                rx={2}
+                fill={d.color || "var(--st-accent)"}
+                opacity={0.8}
+              />
+              {/* Value label above bar — only show on every other bar if >8 bars */}
+              {showValues && (data.length <= 8 || i % 2 === (data.length % 2 === 0 ? 1 : 0)) && (
+                <text
+                  x={x + barWidth / 2}
+                  y={y - 4}
+                  textAnchor="middle"
+                  fill="var(--st-text-primary)"
+                  fontFamily={FONT_SANS}
+                  fontSize={data.length > 10 ? "8.5" : "9.5"}
+                  fontWeight="600"
+                >
+                  {fmt(d.value)}
+                </text>
+              )}
+              {/* Month label below */}
+              <text
+                x={x + barWidth / 2}
+                y={chartHeight - marginBottom + 14}
+                textAnchor="middle"
+                fill="var(--st-text-secondary)"
+                fontFamily={FONT_SANS}
+                fontSize={data.length > 10 ? "8.5" : "9.5"}
+                fontWeight="500"
+              >
+                {d.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -1345,6 +1423,16 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 
 // ─── Revenue Section (weekly + monthly, hard separation) ─────
 
+function formatShortMonth(period: string): string {
+  const [year, month] = period.split("-");
+  const d = new Date(parseInt(year), parseInt(month) - 1);
+  if (isNaN(d.getTime())) return period;
+  const mon = d.toLocaleDateString("en-US", { month: "short" });
+  const yr = year.slice(2); // "25", "26"
+  // Always show abbreviated year to avoid confusion across year boundaries
+  return `${mon} '${yr}`;
+}
+
 function RevenueSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
   // Only show completed months (exclude current calendar month)
   const nowDate = new Date();
@@ -1353,7 +1441,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
   // Use actual monthly revenue data for the bar chart (last 12 months)
   const revenueMonthlyBars: BarChartData[] = monthlyRevenue.slice(-12).map((m) => ({
-    label: formatMonthLabel(m.month),
+    label: formatShortMonth(m.month),
     value: m.gross,
     color: COLORS.member,
   }));
@@ -1373,11 +1461,12 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
     <div className="space-y-5">
       <SectionHeader>Revenue</SectionHeader>
 
+      {/* Summary cards — 2 column */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {/* Left: Current month */}
+        {/* Left: Latest completed month */}
         <Card padding="1.5rem">
           <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "2px" }}>
-            {currentMonth ? formatMonthLabel(currentMonth.month) : "Current Month"} Gross Revenue
+            {currentMonth ? formatMonthLabel(currentMonth.month) : "Latest Month"} Gross Revenue
           </p>
 
           {currentMonth ? (
@@ -1400,18 +1489,39 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           )}
         </Card>
 
-        {/* Right: Monthly Revenue Trend */}
+        {/* Right: Gross vs Net for latest month */}
+        {currentMonth && (
+          <Card padding="1.5rem">
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "2px" }}>
+              {formatMonthLabel(currentMonth.month)} Breakdown
+            </p>
+            <div style={{ marginTop: "12px" }}>
+              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
+                <span style={{ color: "var(--st-text-secondary)", fontWeight: 500 }}>Gross</span>
+                <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{formatCurrency(currentMonth.gross)}</span>
+              </div>
+              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
+                <span style={{ color: "var(--st-text-secondary)", fontWeight: 500 }}>Net</span>
+                <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{formatCurrency(currentMonth.net)}</span>
+              </div>
+              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", padding: "6px 0" }}>
+                <span style={{ color: "var(--st-text-secondary)", fontWeight: 500 }}>Fees + Refunds</span>
+                <span style={{ color: "var(--st-error)", fontWeight: 600 }}>-{formatCurrency(currentMonth.gross - currentMonth.net)}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* Full-width monthly trend chart */}
+      {revenueMonthlyBars.length > 0 && (
         <Card padding="1.5rem">
           <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
             Monthly Revenue Trend (Gross)
           </p>
-          {revenueMonthlyBars.length > 0 ? (
-            <MiniBarChart data={revenueMonthlyBars} height={100} formatValue={formatCompactCurrency} />
-          ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No monthly data yet</p>
-          )}
+          <MiniBarChart data={revenueMonthlyBars} height={180} formatValue={formatCompactCurrency} />
         </Card>
-      </div>
+      )}
     </div>
   );
 }
@@ -2923,12 +3033,7 @@ function DashboardView() {
         {/* ━━ MRR Breakdown ━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <MRRBreakdown data={data} />
 
-        {/* ━━ Revenue Categories ━━━━━━━━━━━━━━━━━━━━ */}
-        {data.revenueCategories ? (
-          <RevenueCategoriesCard data={data.revenueCategories} />
-        ) : (
-          <NoData label="Revenue Categories" />
-        )}
+        {/* Revenue Categories removed — user never requested this section */}
 
         {/* ━━ Auto-Renews ━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <SectionHeader>Auto-Renews</SectionHeader>
