@@ -1121,8 +1121,8 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
 
   const marginLeft = compact ? 4 : 52;
   const marginRight = compact ? 4 : 12;
-  const marginTop = showValues ? 16 : 6;
-  const marginBottom = 22;
+  const marginTop = compact ? (showValues ? 14 : 4) : (showValues ? 16 : 6);
+  const marginBottom = compact ? 16 : 22;
   const chartHeight = height;
   const barAreaHeight = Math.max(chartHeight - marginTop - marginBottom, 20);
   const barGap = data.length > 8 ? 3 : 6;
@@ -1223,7 +1223,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
                   textAnchor="middle"
                   fill="var(--st-text-primary)"
                   fontFamily={FONT_SANS}
-                  fontSize={compact ? "9" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
+                  fontSize={compact ? "10" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
                   fontWeight="600"
                 >
                   {fmt(d.value)}
@@ -1232,11 +1232,11 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
               {/* Label below */}
               <text
                 x={x + barWidth / 2}
-                y={chartHeight - marginBottom + 14}
+                y={chartHeight - marginBottom + 12}
                 textAnchor="middle"
                 fill="var(--st-text-secondary)"
                 fontFamily={FONT_SANS}
-                fontSize={compact ? "8.5" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
+                fontSize={compact ? "9.5" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
                 fontWeight="500"
               >
                 {d.label}
@@ -1730,7 +1730,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
             Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={64} />
+            <MiniBarChart data={weeklyBars} height={100} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>--</p>
           )}
@@ -1846,7 +1846,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
             Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={64} />
+            <MiniBarChart data={weeklyBars} height={100} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>--</p>
           )}
@@ -2174,7 +2174,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
             Weekly Visits
           </p>
           {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={64} />
+            <MiniBarChart data={weeklyBars} height={100} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>—</p>
           )}
@@ -2263,7 +2263,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
             New Sign-ups — Weekly
           </p>
           {weeklyNewBars.length > 0 ? (
-            <MiniBarChart data={weeklyNewBars} height={64} />
+            <MiniBarChart data={weeklyNewBars} height={100} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>—</p>
           )}

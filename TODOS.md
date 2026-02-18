@@ -10,6 +10,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [x] ~~Push latest changes to prod~~ — pushed `35b140e` to origin/main
 - [x] Compact DeltaBadge -> small rounded pills with tinted background
 - [x] 2025 revenue: sum all periods in prior year instead of annualizing first match
+- [x] ~~Auto-renews UPSERT~~ — converted `saveAutoRenews()` from DELETE+INSERT (destroyed history each run) to INSERT...ON CONFLICT DO UPDATE SET. Dedup key: `(customer_email, plan_name, created_at)`. Mutable fields (plan_state, plan_price, canceled_at, etc.) updated on conflict. Historical records never deleted.
 - [ ] "pipeline and database should be flexible" — user wants the data pipeline and DB layer to be more adaptable/extensible (note: pipeline-core.ts is monolithic but stable; refactor when a specific new report type is needed, not before)
 - [x] ~~Build automated database backup system~~ — `/api/backup` endpoint: GET creates backup (JSON export of all 9 tables), saves to `data/backups/`, prunes to last 7. POST restores from file or inline JSON. `?action=download` returns full backup as file download. `?action=list` shows history.
 - [x] ~~Prevent data display bugs from reaching prod~~ — all major sections now show "No data available" instead of hiding silently

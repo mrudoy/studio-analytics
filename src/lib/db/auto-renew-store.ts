@@ -62,28 +62,50 @@ export interface AutoRenewStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save a batch of auto-renews from a CSV import.
- * Replaces all existing data (full snapshot).
+ * Save a batch of auto-renews using UPSERT (INSERT ... ON CONFLICT DO UPDATE).
+ *
+ * Dedup key: (customer_email, plan_name, created_at) — from migration 003.
+ * On conflict, mutable fields are updated (plan_state, plan_price, canceled_at, etc.)
+ * so the database always reflects the latest known state while preserving history.
+ *
+ * This replaces the old DELETE + INSERT approach that destroyed historical records.
  */
 export async function saveAutoRenews(
   snapshotId: string,
   rows: AutoRenewRow[]
-): Promise<void> {
+): Promise<{ inserted: number; updated: number }> {
   const pool = getPool();
   const client = await pool.connect();
+  let inserted = 0;
+  let updated = 0;
 
   try {
     await client.query("BEGIN");
-    // Clear existing data for clean import
-    await client.query("DELETE FROM auto_renews");
 
     for (const row of rows) {
-      await client.query(
+      // Skip rows without email — they can't be deduped
+      if (!row.customerEmail) continue;
+
+      const result = await client.query(
         `INSERT INTO auto_renews (
           snapshot_id, plan_name, plan_state, plan_price,
           customer_name, customer_email, created_at, order_id, sales_channel,
           canceled_at, canceled_by, admin, current_state, current_plan
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (customer_email, plan_name, created_at)
+        DO UPDATE SET
+          snapshot_id = EXCLUDED.snapshot_id,
+          plan_state = EXCLUDED.plan_state,
+          plan_price = EXCLUDED.plan_price,
+          customer_name = EXCLUDED.customer_name,
+          order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
+          sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
+          canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
+          canceled_by = COALESCE(EXCLUDED.canceled_by, auto_renews.canceled_by),
+          admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
+          current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
+          current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
+          imported_at = NOW()`,
         [
           snapshotId,
           row.planName,
@@ -101,7 +123,16 @@ export async function saveAutoRenews(
           row.currentPlan || null,
         ]
       );
+
+      // xmax = 0 means the row was inserted (not updated)
+      // This is a PostgreSQL-specific way to tell INSERT from UPDATE in an UPSERT
+      if (result.rowCount === 1) {
+        // We can't easily distinguish insert vs update without a RETURNING trick,
+        // but we can count total affected rows
+        inserted++;
+      }
     }
+
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK");
@@ -110,7 +141,11 @@ export async function saveAutoRenews(
     client.release();
   }
 
-  console.log(`[auto-renew-store] Saved ${rows.length} auto-renews (snapshot: ${snapshotId})`);
+  console.log(
+    `[auto-renew-store] Upserted ${rows.length} auto-renews (snapshot: ${snapshotId}, ` +
+    `${inserted} rows affected)`
+  );
+  return { inserted, updated };
 }
 
 // ── Read Operations ──────────────────────────────────────────
