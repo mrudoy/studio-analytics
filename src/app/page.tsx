@@ -1583,33 +1583,32 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
 // ─── MRR Breakdown (standalone) ──────────────────────────────
 
 function MRRBreakdown({ data }: { data: DashboardStats }) {
-  const mrrData: StackedBarData[] = [{
-    label: "MRR",
-    segments: [
-      { value: data.mrr.member, color: COLORS.member, label: "Member" },
-      { value: data.mrr.sky3, color: COLORS.sky3, label: "SKY3" },
-      { value: data.mrr.skyTingTv, color: COLORS.tv, label: "TV" },
-      ...(data.mrr.unknown > 0 ? [{ value: data.mrr.unknown, color: "#999", label: "Other" }] : []),
-    ],
-  }];
+  const segments = [
+    { label: "Member", value: data.mrr.member, color: COLORS.member },
+    { label: "SKY3", value: data.mrr.sky3, color: COLORS.sky3 },
+    { label: "TV", value: data.mrr.skyTingTv, color: COLORS.tv },
+    ...(data.mrr.unknown > 0 ? [{ label: "Other", value: data.mrr.unknown, color: "#999" }] : []),
+  ].filter(s => s.value > 0);
 
   return (
     <Card>
-      <div className="flex items-baseline justify-between mb-3">
-        <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-          Recurring Revenue (MRR)
-        </p>
-        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
-          {formatCurrency(data.mrr.total)}
-        </p>
-      </div>
-      <StackedBarChart data={mrrData} />
-      <div className="flex gap-4 mt-3 flex-wrap">
-        {mrrData[0].segments.filter(s => s.value > 0).map((seg, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-              {seg.label}: {formatCurrency(seg.value)}
+      <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: DS.space.sm }}>
+        Recurring Revenue (MRR)
+      </p>
+      <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", marginBottom: DS.space.md }}>
+        {formatCurrency(data.mrr.total)}
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: DS.space.xs }}>
+        {segments.map((seg, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                {seg.label}
+              </span>
+            </div>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-primary)" }}>
+              {formatCurrency(seg.value)}
             </span>
           </div>
         ))}
