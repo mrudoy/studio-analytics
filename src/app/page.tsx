@@ -1598,17 +1598,6 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
   const currentNet = data.current?.net ?? 0;
   const maxVal = Math.max(priorGross, currentGross, 1);
 
-  const chartHeight = 160;
-  const marginTop = 30;
-  const marginBottom = 36;
-  const barAreaHeight = chartHeight - marginTop - marginBottom;
-  const barWidth = 90;
-  const gap = 50;
-  const totalWidth = barWidth * 2 + gap;
-  const startX = (500 - totalWidth) / 2;
-
-  const priorH = maxVal > 0 ? Math.max((priorGross / maxVal) * barAreaHeight, 4) : 0;
-  const currentH = maxVal > 0 ? Math.max((currentGross / maxVal) * barAreaHeight, 4) : 0;
 
   return (
     <div className="space-y-5">
@@ -1617,59 +1606,50 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
       </SectionHeader>
 
       <Card>
-        <div style={{ width: "100%", position: "relative" }}>
-          <svg viewBox={`0 0 500 ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", display: "block" }}>
-            {/* Baseline */}
-            <line x1={startX - 20} x2={startX + totalWidth + 20} y1={marginTop + barAreaHeight} y2={marginTop + barAreaHeight}
-              stroke="var(--st-border)" strokeWidth={1.2} />
-
-            {/* Prior year bar */}
-            <rect x={startX} y={marginTop + barAreaHeight - priorH} width={barWidth} height={priorH}
-              rx={4} fill="var(--st-text-secondary)" opacity={0.3} />
-            {/* Prior year gross label */}
-            <text x={startX + barWidth / 2} y={marginTop + barAreaHeight - priorH - 14}
-              textAnchor="middle" fill="var(--st-text-primary)" fontFamily={FONT_SANS} fontSize="16" fontWeight="700">
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "2rem", padding: "0.5rem 0" }}>
+          {/* Prior year */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
               {formatCurrency(priorGross)}
-            </text>
-            {/* Prior year net label */}
-            <text x={startX + barWidth / 2} y={marginTop + barAreaHeight - priorH - 1}
-              textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="10" fontWeight="500">
+            </span>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
               Net {formatCurrency(priorNet)}
-            </text>
-            {/* Prior year month label */}
-            <text x={startX + barWidth / 2} y={marginTop + barAreaHeight + 20}
-              textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="13" fontWeight="600">
+            </span>
+            <div style={{
+              width: 40, height: Math.max(Math.round((priorGross / maxVal) * 80), 4),
+              borderRadius: 3, backgroundColor: "var(--st-text-secondary)", opacity: 0.3
+            }} />
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
               {data.monthName} {data.priorYear?.year ?? ""}
-            </text>
-
-            {/* Current year bar */}
-            <rect x={startX + barWidth + gap} y={marginTop + barAreaHeight - currentH} width={barWidth} height={currentH}
-              rx={4} fill="var(--st-accent)" opacity={0.8} />
-            {/* Current year gross label */}
-            <text x={startX + barWidth + gap + barWidth / 2} y={marginTop + barAreaHeight - currentH - 14}
-              textAnchor="middle" fill="var(--st-text-primary)" fontFamily={FONT_SANS} fontSize="16" fontWeight="700">
+            </span>
+          </div>
+          {/* Current year */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
               {formatCurrency(currentGross)}
-            </text>
-            {/* Current year net label */}
-            <text x={startX + barWidth + gap + barWidth / 2} y={marginTop + barAreaHeight - currentH - 1}
-              textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="10" fontWeight="500">
+            </span>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
               Net {formatCurrency(currentNet)}
-            </text>
-            {/* Current year month label */}
-            <text x={startX + barWidth + gap + barWidth / 2} y={marginTop + barAreaHeight + 20}
-              textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="13" fontWeight="600">
+            </span>
+            <div style={{
+              width: 40, height: Math.max(Math.round((currentGross / maxVal) * 80), 4),
+              borderRadius: 3, backgroundColor: "var(--st-accent)", opacity: 0.8
+            }} />
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
               {data.monthName} {data.current?.year ?? ""}
-            </text>
-
-            {/* YoY delta badge */}
-            {data.yoyGrossPct !== null && (
-              <text x={250} y={16}
-                textAnchor="middle" fill={data.yoyGrossChange !== null && data.yoyGrossChange >= 0 ? "var(--st-success)" : "var(--st-error)"} fontFamily={FONT_SANS} fontSize="14" fontWeight="700">
-                {data.yoyGrossPct >= 0 ? "+" : ""}{data.yoyGrossPct}% YoY
-              </text>
-            )}
-          </svg>
+            </span>
+          </div>
         </div>
+        {data.yoyGrossPct !== null && (
+          <div style={{ textAlign: "center", marginTop: "0.25rem" }}>
+            <span style={{
+              fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.bold,
+              color: data.yoyGrossChange !== null && data.yoyGrossChange >= 0 ? "var(--st-success)" : "var(--st-error)"
+            }}>
+              {data.yoyGrossPct >= 0 ? "+" : ""}{data.yoyGrossPct}% YoY
+            </span>
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -2455,68 +2435,51 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
   const priorTotal = priorData.reduce((s, m) => s + m.net, 0);
   const yoyDelta = olderTotal > 0 ? ((priorTotal - olderTotal) / olderTotal * 100) : 0;
 
-  // Two-bar chart
   const maxVal = Math.max(olderTotal, priorTotal, 1);
-  const chartHeight = 160;
-  const marginTop = 24;
-  const marginBottom = 30;
-  const barAreaHeight = chartHeight - marginTop - marginBottom;
-  const barWidth = 90;
-  const gap = 50;
-  const totalWidth = barWidth * 2 + gap;
-  const startX = (500 - totalWidth) / 2;
-
-  const olderH = maxVal > 0 ? Math.max((olderTotal / maxVal) * barAreaHeight, 4) : 0;
-  const priorH = maxVal > 0 ? Math.max((priorTotal / maxVal) * barAreaHeight, 4) : 0;
 
   return (
     <div className="space-y-5">
       <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
 
       <Card>
-        <div style={{ width: "100%", position: "relative" }}>
-          <svg viewBox={`0 0 500 ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", display: "block" }}>
-            {/* Baseline */}
-            <line x1={startX - 20} x2={startX + totalWidth + 20} y1={marginTop + barAreaHeight} y2={marginTop + barAreaHeight}
-              stroke="var(--st-border)" strokeWidth={1.2} />
-
-            {/* Older year bar */}
-            <rect x={startX} y={marginTop + barAreaHeight - olderH} width={barWidth} height={olderH}
-              rx={4} fill="var(--st-text-secondary)" opacity={0.3} />
-            {/* Older year value */}
-            <text x={startX + barWidth / 2} y={marginTop + barAreaHeight - olderH - 8}
-              textAnchor="middle" fill="var(--st-text-primary)" fontFamily={FONT_SANS} fontSize="16" fontWeight="700">
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "2rem", padding: "0.5rem 0" }}>
+          {/* Older year */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
               {formatCurrency(olderTotal)}
-            </text>
-            {/* Older year label */}
-            <text x={startX + barWidth / 2} y={marginTop + barAreaHeight + 22}
-              textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="14" fontWeight="600">
+            </span>
+            <div style={{
+              width: 40, height: Math.max(Math.round((olderTotal / maxVal) * 80), 4),
+              borderRadius: 3, backgroundColor: "var(--st-text-secondary)", opacity: 0.3
+            }} />
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
               {twoYearsAgo}
-            </text>
-
-            {/* Prior year bar */}
-            <rect x={startX + barWidth + gap} y={marginTop + barAreaHeight - priorH} width={barWidth} height={priorH}
-              rx={4} fill="var(--st-accent)" opacity={0.8} />
-            {/* Prior year value */}
-            <text x={startX + barWidth + gap + barWidth / 2} y={marginTop + barAreaHeight - priorH - 8}
-              textAnchor="middle" fill="var(--st-text-primary)" fontFamily={FONT_SANS} fontSize="16" fontWeight="700">
+            </span>
+          </div>
+          {/* Prior year */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
               {formatCurrency(priorTotal)}
-            </text>
-            {/* Prior year label */}
-            <text x={startX + barWidth + gap + barWidth / 2} y={marginTop + barAreaHeight + 22}
-              textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="14" fontWeight="600">
+            </span>
+            <div style={{
+              width: 40, height: Math.max(Math.round((priorTotal / maxVal) * 80), 4),
+              borderRadius: 3, backgroundColor: "var(--st-accent)", opacity: 0.8
+            }} />
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
               {priorYear}
-            </text>
-
-            {/* YoY delta badge between bars */}
-            {olderTotal > 0 && priorTotal > 0 && (
-              <text x={250} y={marginTop + 10}
-                textAnchor="middle" fill={yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)"} fontFamily={FONT_SANS} fontSize="14" fontWeight="700">
-                {yoyDelta >= 0 ? "+" : ""}{yoyDelta.toFixed(1)}% ({yoyDelta >= 0 ? "+" : ""}{formatCurrency(priorTotal - olderTotal)})
-              </text>
-            )}
-          </svg>
+            </span>
+          </div>
         </div>
+        {olderTotal > 0 && priorTotal > 0 && (
+          <div style={{ textAlign: "center", marginTop: "0.25rem" }}>
+            <span style={{
+              fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.bold,
+              color: yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)"
+            }}>
+              {yoyDelta >= 0 ? "+" : ""}{yoyDelta.toFixed(1)}% ({yoyDelta >= 0 ? "+" : ""}{formatCurrency(priorTotal - olderTotal)})
+            </span>
+          </div>
+        )}
       </Card>
     </div>
   );
