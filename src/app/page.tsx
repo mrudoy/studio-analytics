@@ -221,6 +221,43 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
+// ─── Design System Tokens ────────────────────────────────────
+// Strict type scale — only these sizes are allowed
+const DS = {
+  // Typography scale (5 sizes only)
+  text: {
+    xs: "0.7rem",      // uppercase labels, captions, fine print
+    sm: "0.85rem",     // secondary text, sublabels, table content
+    md: "1rem",        // body text, card titles, category names
+    lg: "1.5rem",      // metric values, card hero numbers
+    xl: "2.2rem",      // page-level hero KPIs (only in KPIHeroStrip and CategoryDetail headers)
+  },
+  // Font weights (3 only)
+  weight: {
+    normal: 500,
+    medium: 600,
+    bold: 700,
+  },
+  // Spacing scale
+  space: {
+    xs: "0.25rem",     // tight gaps
+    sm: "0.5rem",      // small inner gaps
+    md: "1rem",        // standard inner padding/gaps
+    lg: "1.25rem",     // card padding (universal)
+    xl: "2rem",        // section spacing
+  },
+  // Card padding — one value everywhere
+  cardPad: "1.25rem",
+  // Uppercase label style
+  label: {
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    letterSpacing: "0.05em",
+    textTransform: "uppercase" as const,
+    color: "var(--st-text-secondary)",
+  },
+} as const;
+
 // ─── Color palette for categories ──────────────────────────
 
 const COLORS = {
@@ -706,8 +743,8 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
         style={{
           color: "var(--st-text-primary)",
           fontFamily: FONT_SANS,
-          fontWeight: 700,
-          fontSize: "1.35rem",
+          fontWeight: DS.weight.bold,
+          fontSize: DS.text.lg,
           letterSpacing: "-0.01em",
           textTransform: "uppercase" as const,
         }}
@@ -715,7 +752,7 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
         {children}
       </h2>
       {subtitle && (
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.92rem", marginTop: "2px" }}>
+        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm, marginTop: "2px" }}>
           {subtitle}
         </p>
       )}
@@ -749,7 +786,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
     return (
       <span
         className="inline-flex items-center rounded-full px-2 py-0.5"
-        style={{ color, fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.8rem", whiteSpace: "nowrap", backgroundColor: compactBg, gap: "2px" }}
+        style={{ color, fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.xs, whiteSpace: "nowrap", backgroundColor: compactBg, gap: "2px" }}
       >
         <span style={{ fontSize: "0.55rem" }}>{arrow}</span>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
@@ -770,11 +807,11 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
       style={{ color, fontFamily: FONT_SANS, backgroundColor: bgColor, gap: "3px" }}
     >
       <span style={{ fontSize: "0.65rem", fontWeight: 700 }}>{arrow}</span>
-      <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>
+      <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, letterSpacing: "-0.01em" }}>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
       </span>
       {deltaPercent != null && (
-        <span style={{ fontWeight: 600, fontSize: "0.85rem", opacity: 0.8 }}>
+        <span style={{ fontWeight: DS.weight.medium, fontSize: DS.text.sm, opacity: 0.8 }}>
           ({formatDeltaPercent(deltaPercent)})
         </span>
       )}
@@ -1084,10 +1121,10 @@ function DonutChart({ segments, size = 160 }: { segments: DonutSegment[]; size?:
           <div key={i} className="flex items-center gap-2.5">
             <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: seg.color, flexShrink: 0, opacity: 0.85 }} />
             <div>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.15rem", color: "var(--st-text-primary)" }}>
+              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
                 {formatNumber(seg.value)}
               </span>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.88rem", color: "var(--st-text-secondary)", marginLeft: "6px" }}>
+              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginLeft: "6px" }}>
                 {seg.label}
               </span>
             </div>
@@ -1267,10 +1304,10 @@ function StackedBarChart({ data, height = 28 }: { data: StackedBarData[]; height
         return (
           <div key={i}>
             <div className="flex items-center justify-between mb-1">
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", fontWeight: 600, color: "var(--st-text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
                 {bar.label}
               </span>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.95rem", fontWeight: 700, color: "var(--st-text-primary)" }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
                 {formatCurrency(total)}
               </span>
             </div>
@@ -1304,14 +1341,14 @@ function StackedBarChart({ data, height = 28 }: { data: StackedBarData[]; height
 function KPIMetric({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
   return (
     <div style={{ padding: "0.5rem 0" }}>
-      <p style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+      <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
         {label}
       </p>
-      <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "2px" }}>
+      <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "2px" }}>
         {value}
       </p>
       {sublabel && (
-        <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.88rem", color: "var(--st-text-secondary)", marginTop: "1px" }}>
+        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "1px" }}>
           {sublabel}
         </p>
       )}
@@ -1321,7 +1358,7 @@ function KPIMetric({ label, value, sublabel }: { label: string; value: string; s
 
 // ─── Card wrapper (used selectively) ─────────────────────────
 
-function Card({ children, padding = "1.5rem" }: { children: React.ReactNode; padding?: string }) {
+function Card({ children, padding = DS.cardPad }: { children: React.ReactNode; padding?: string }) {
   return (
     <div
       className="rounded-2xl"
@@ -1338,8 +1375,8 @@ function Card({ children, padding = "1.5rem" }: { children: React.ReactNode; pad
 
 function NoData({ label }: { label: string }) {
   return (
-    <Card padding="1.5rem">
-      <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
+    <Card>
+      <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
         {label}: <span style={{ opacity: 0.6 }}>No data available</span>
       </p>
     </Card>
@@ -1361,18 +1398,18 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
   return (
     <div style={{ padding: "0.65rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
       <div className="flex items-center justify-between">
-        <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.88rem", color: "var(--st-text-secondary)" }}>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
           {label}
         </span>
         <div className="flex items-center gap-3">
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.25rem", color: "var(--st-text-primary)" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
             {value}
           </span>
           <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} compact />
         </div>
       </div>
       {sublabel && (
-        <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", fontStyle: "italic" }}>
+        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px", fontStyle: "italic" }}>
           {sublabel}
         </p>
       )}
@@ -1385,10 +1422,10 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
 function ForecastMetric({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="flex items-center justify-between" style={{ padding: "0.7rem 0", borderBottom: "1px solid var(--st-border)" }}>
-      <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+      <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
         {label}
       </p>
-      <p style={{ color: color || "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.4rem" }}>
+      <p style={{ color: color || "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg }}>
         {value}
       </p>
     </div>
@@ -1413,14 +1450,14 @@ interface HeroTile {
 
 function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   return (
-    <Card padding="1.75rem">
+    <Card>
       <div className="flex flex-wrap gap-x-6 gap-y-5">
         {tiles.map((tile, i) => (
           <div key={i} style={{ flex: "1 1 140px", minWidth: "140px", borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "0.75rem" : 0 }}>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "4px" }}>
               {tile.label}
             </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.5rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, whiteSpace: "nowrap" }}>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, whiteSpace: "nowrap" }}>
               {tile.value}
             </p>
             {(tile.sublabel || tile.delta != null) && (
@@ -1429,7 +1466,7 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
                   <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
                 )}
                 {tile.sublabel && (
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                     {tile.sublabel}
                   </span>
                 )}
@@ -1485,22 +1522,22 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
       {/* Summary cards — 2 column */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {/* Left: Latest completed month */}
-        <Card padding="1.5rem">
-          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "2px" }}>
+        <Card>
+          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "2px" }}>
             {currentMonth ? formatMonthLabel(currentMonth.month) : "Latest Month"} Gross Revenue
           </p>
 
           {currentMonth ? (
             <>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "8px" }}>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "8px" }}>
                 {formatCurrency(currentMonth.gross)}
               </p>
-              <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+              <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
                 Net: {formatCurrency(currentMonth.net)}
               </p>
               {momDelta != null && prevMonth && (
                 <p style={{ marginTop: "8px" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>vs {formatMonthLabel(prevMonth.month)}: </span>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>vs {formatMonthLabel(prevMonth.month)}: </span>
                   <DeltaBadge delta={momDelta} deltaPercent={momDeltaPct} isCurrency compact />
                 </p>
               )}
@@ -1512,22 +1549,22 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
         {/* Right: Gross vs Net for latest month */}
         {currentMonth && (
-          <Card padding="1.5rem">
-            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "2px" }}>
+          <Card>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "2px" }}>
               {formatMonthLabel(currentMonth.month)} Breakdown
             </p>
             <div style={{ marginTop: "12px" }}>
-              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
-                <span style={{ color: "var(--st-text-secondary)", fontWeight: 500 }}>Gross</span>
-                <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{formatCurrency(currentMonth.gross)}</span>
+              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
+                <span style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>Gross</span>
+                <span style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold }}>{formatCurrency(currentMonth.gross)}</span>
               </div>
-              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
-                <span style={{ color: "var(--st-text-secondary)", fontWeight: 500 }}>Net</span>
-                <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{formatCurrency(currentMonth.net)}</span>
+              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
+                <span style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>Net</span>
+                <span style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold }}>{formatCurrency(currentMonth.net)}</span>
               </div>
-              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: "0.92rem", padding: "6px 0" }}>
-                <span style={{ color: "var(--st-text-secondary)", fontWeight: 500 }}>Fees + Refunds</span>
-                <span style={{ color: "var(--st-error)", fontWeight: 600 }}>-{formatCurrency(currentMonth.gross - currentMonth.net)}</span>
+              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, padding: "6px 0" }}>
+                <span style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>Fees + Refunds</span>
+                <span style={{ color: "var(--st-error)", fontWeight: DS.weight.medium }}>-{formatCurrency(currentMonth.gross - currentMonth.net)}</span>
               </div>
             </div>
           </Card>
@@ -1536,8 +1573,8 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
       {/* Full-width monthly trend chart */}
       {revenueMonthlyBars.length > 0 && (
-        <Card padding="1.5rem">
-          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+        <Card>
+          <p className="mb-3" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Monthly Revenue Trend (Gross)
           </p>
           <MiniBarChart data={revenueMonthlyBars} height={200} formatValue={formatCompactCurrency} />
@@ -1579,7 +1616,7 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
         Year-over-Year
       </SectionHeader>
 
-      <Card padding="1.75rem">
+      <Card>
         <div style={{ width: "100%", position: "relative" }}>
           <svg viewBox={`0 0 500 ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", display: "block" }}>
             {/* Baseline */}
@@ -1652,12 +1689,12 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
   }];
 
   return (
-    <Card padding="1.5rem">
+    <Card>
       <div className="flex items-baseline justify-between mb-3">
-        <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+        <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
           Recurring Revenue (MRR)
         </p>
-        <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.3rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatCurrency(data.mrr.total)}
         </p>
       </div>
@@ -1666,7 +1703,7 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
         {mrrData[0].segments.filter(s => s.value > 0).map((seg, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
-            <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
               {seg.label}: {formatCurrency(seg.value)}
             </span>
           </div>
@@ -1703,20 +1740,20 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
   const otherTop5 = firstVisits.otherBreakdownTop5 || [];
 
   return (
-    <Card padding="1.5rem">
+    <Card>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
             First Visits
           </span>
         </div>
         <div style={{ textAlign: "right" }}>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(firstVisits.currentWeekTotal)}
           </span>
-          <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "2px" }}>
             Unique This Week
           </p>
         </div>
@@ -1725,7 +1762,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {/* Left: Weekly bar chart — last 4 completed weeks */}
         <div>
-          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
@@ -1737,7 +1774,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
 
         {/* Right: Source Mix (aggregate across full window) */}
         <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Source Mix
           </p>
           <div className="flex flex-col gap-1.5">
@@ -1748,14 +1785,14 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
                 <div key={seg} className="flex items-center justify-between" style={{ padding: "0.3rem 0" }}>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full" style={{ width: "7px", height: "7px", backgroundColor: SEGMENT_COLORS[seg] }} />
-                    <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)" }}>
+                    <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                       {SEGMENT_LABELS[seg]}
                     </span>
                   </div>
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
                     {count}
                     {aggTotal > 0 && (
-                      <span style={{ fontWeight: 500, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                      <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
                         {Math.round((count / aggTotal) * 100)}%
                       </span>
                     )}
@@ -1766,15 +1803,15 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
           </div>
           {otherTop5.length > 0 && (
             <div style={{ marginTop: "0.5rem", paddingLeft: "1rem" }}>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
                 Other includes:
               </p>
               {otherTop5.map((item, i) => (
                 <div key={i} className="flex items-center justify-between" style={{ padding: "0.15rem 0" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
                     {item.passName}
                   </span>
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
                     {item.count}
                   </span>
                 </div>
@@ -1819,20 +1856,20 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
   const otherTop5 = returningNonMembers.otherBreakdownTop5 || [];
 
   return (
-    <Card padding="1.5rem">
+    <Card>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
             Returning Non-Members
           </span>
         </div>
         <div style={{ textAlign: "right" }}>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(returningNonMembers.currentWeekTotal)}
           </span>
-          <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "2px" }}>
             Unique This Week
           </p>
         </div>
@@ -1841,7 +1878,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {/* Left: Weekly bar chart */}
         <div>
-          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
@@ -1853,7 +1890,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
 
         {/* Right: Source Mix (aggregate, 3 buckets) */}
         <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Source Mix
           </p>
           <div className="flex flex-col gap-1.5">
@@ -1861,14 +1898,14 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
               <div key={seg} className="flex items-center justify-between" style={{ padding: "0.3rem 0" }}>
                 <div className="flex items-center gap-2">
                   <span className="rounded-full" style={{ width: "7px", height: "7px", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                     {RNM_SEGMENT_LABELS[seg]}
                   </span>
                 </div>
-                <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)" }}>
+                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
                   {aggDisplay[seg] || 0}
                   {rnmAggTotal > 0 && (
-                    <span style={{ fontWeight: 500, fontSize: "0.75rem", color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                    <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
                       {Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%
                     </span>
                   )}
@@ -1878,15 +1915,15 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
           </div>
           {otherTop5.length > 0 && (
             <div style={{ marginTop: "0.5rem", paddingLeft: "1rem" }}>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.72rem", color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
                 Other includes:
               </p>
               {otherTop5.map((item, i) => (
                 <div key={i} className="flex items-center justify-between" style={{ padding: "0.15rem 0" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
                     {item.passName}
                   </span>
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.78rem", color: "var(--st-text-secondary)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
                     {item.count}
                   </span>
                 </div>
@@ -1946,17 +1983,17 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
               {/* Category label */}
               <div className="flex items-center gap-2 mb-3">
                 <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: color }} />
-                <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text)" }}>
+                <span style={{ fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text)" }}>
                   {label}
                 </span>
               </div>
 
               {/* User churn rate (primary metric) */}
               <div style={{ marginBottom: "0.5rem" }}>
-                <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 2 }}>
+                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 2 }}>
                   User Churn (avg/mo)
                 </div>
-                <span style={{ fontSize: "1.5rem", fontWeight: 700, color: churnBenchmarkColor(data.avgUserChurnRate) }}>
+                <span style={{ fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(data.avgUserChurnRate) }}>
                   {data.avgUserChurnRate.toFixed(1)}%
                 </span>
               </div>
@@ -1964,10 +2001,10 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
               {/* MRR churn + at-risk row */}
               <div className="flex items-center gap-3">
                 <div>
-                  <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 1 }}>
+                  <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 1 }}>
                     MRR Churn
                   </div>
-                  <span style={{ fontSize: "0.95rem", fontWeight: 600, color: churnBenchmarkColor(data.avgMrrChurnRate) }}>
+                  <span style={{ fontSize: DS.text.md, fontWeight: DS.weight.medium, color: churnBenchmarkColor(data.avgMrrChurnRate) }}>
                     {data.avgMrrChurnRate.toFixed(1)}%
                   </span>
                 </div>
@@ -1976,8 +2013,8 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
                     <span
                       className="rounded-full px-2 py-0.5"
                       style={{
-                        fontSize: "0.7rem",
-                        fontWeight: 600,
+                        fontSize: DS.text.xs,
+                        fontWeight: DS.weight.medium,
                         color: COLORS.warning,
                         backgroundColor: COLORS.warning + "15",
                       }}
@@ -2002,10 +2039,10 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
         }}
       >
         <div className="flex items-center justify-between mb-4">
-          <div style={{ fontSize: "0.72rem", color: "var(--st-text-secondary)", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+          <div style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Monthly User Churn Rate
           </div>
-          <span style={{ fontSize: "0.65rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+          <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
             Healthy: 5-7%
           </span>
         </div>
@@ -2019,14 +2056,14 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
 
             return (
               <div key={m.month}>
-                <div style={{ fontSize: "0.72rem", color: "var(--st-text-secondary)", fontWeight: 500, marginBottom: 4 }}>
+                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, marginBottom: 4 }}>
                   {formatMonthLabel(m.month)}
                 </div>
                 <div className="flex flex-col gap-1">
                   {/* Members bar */}
                   {memberM && (
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 48, fontSize: "0.65rem", color: COLORS.member, fontWeight: 500, flexShrink: 0 }}>Members</div>
+                      <div style={{ width: 48, fontSize: DS.text.xs, color: COLORS.member, fontWeight: DS.weight.normal, flexShrink: 0 }}>Members</div>
                       <div className="flex-1 flex items-center gap-1.5">
                         <div style={{
                           height: 8,
@@ -2035,11 +2072,11 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
                           borderRadius: 4,
                           opacity: 0.75,
                         }} />
-                        <span style={{ fontSize: "0.7rem", color: COLORS.member, fontWeight: 600, flexShrink: 0 }}>
+                        <span style={{ fontSize: DS.text.xs, color: COLORS.member, fontWeight: DS.weight.medium, flexShrink: 0 }}>
                           {memberM.userChurnRate.toFixed(1)}%
                         </span>
                       </div>
-                      <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", flexShrink: 0 }}>
+                      <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", flexShrink: 0 }}>
                         {memberM.canceledCount}/{memberM.activeAtStart}
                       </span>
                     </div>
@@ -2047,7 +2084,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
                   {/* SKY3 bar */}
                   {sky3M && (
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 48, fontSize: "0.65rem", color: COLORS.sky3, fontWeight: 500, flexShrink: 0 }}>SKY3</div>
+                      <div style={{ width: 48, fontSize: DS.text.xs, color: COLORS.sky3, fontWeight: DS.weight.normal, flexShrink: 0 }}>SKY3</div>
                       <div className="flex-1 flex items-center gap-1.5">
                         <div style={{
                           height: 8,
@@ -2056,11 +2093,11 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
                           borderRadius: 4,
                           opacity: 0.75,
                         }} />
-                        <span style={{ fontSize: "0.7rem", color: COLORS.sky3, fontWeight: 600, flexShrink: 0 }}>
+                        <span style={{ fontSize: DS.text.xs, color: COLORS.sky3, fontWeight: DS.weight.medium, flexShrink: 0 }}>
                           {sky3M.userChurnRate.toFixed(1)}%
                         </span>
                       </div>
-                      <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", flexShrink: 0 }}>
+                      <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", flexShrink: 0 }}>
                         {sky3M.canceledCount}/{sky3M.activeAtStart}
                       </span>
                     </div>
@@ -2068,7 +2105,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
                   {/* TV bar */}
                   {tvM && (
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 48, fontSize: "0.65rem", color: COLORS.tv, fontWeight: 500, flexShrink: 0 }}>TV</div>
+                      <div style={{ width: 48, fontSize: DS.text.xs, color: COLORS.tv, fontWeight: DS.weight.normal, flexShrink: 0 }}>TV</div>
                       <div className="flex-1 flex items-center gap-1.5">
                         <div style={{
                           height: 8,
@@ -2077,11 +2114,11 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
                           borderRadius: 4,
                           opacity: 0.75,
                         }} />
-                        <span style={{ fontSize: "0.7rem", color: COLORS.tv, fontWeight: 600, flexShrink: 0 }}>
+                        <span style={{ fontSize: DS.text.xs, color: COLORS.tv, fontWeight: DS.weight.medium, flexShrink: 0 }}>
                           {tvM.userChurnRate.toFixed(1)}%
                         </span>
                       </div>
-                      <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", flexShrink: 0 }}>
+                      <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", flexShrink: 0 }}>
                         {tvM.canceledCount}/{tvM.activeAtStart}
                       </span>
                     </div>
@@ -2144,23 +2181,23 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
   });
 
   return (
-    <Card padding="1.5rem">
+    <Card>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
             Drop-Ins
           </span>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.82rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
             Visits
           </span>
         </div>
         <div className="flex flex-col items-end">
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(dropIns.currentMonthTotal)}
           </span>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.7rem", color: "var(--st-text-secondary)", marginTop: "0.25rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "0.25rem" }}>
             Month to Date
           </span>
         </div>
@@ -2169,7 +2206,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {/* Left: Weekly visits chart */}
         <div>
-          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Weekly Visits
           </p>
           {weeklyBars.length > 0 ? (
@@ -2241,16 +2278,16 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   }));
 
   return (
-    <Card padding="1.5rem">
+    <Card>
       {/* Header row */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: color, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1rem", color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
             {title}
           </span>
         </div>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
           {formatNumber(count)}
         </span>
       </div>
@@ -2258,7 +2295,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {/* Left: Weekly new sign-ups chart */}
         <div>
-          <p className="uppercase mb-2" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.82rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             New Sign-ups — Weekly
           </p>
           {weeklyNewBars.length > 0 ? (
@@ -2296,16 +2333,16 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
           )}
           {latestM && isPacing && pacingNew && (
             <div style={{ marginTop: "0.5rem", padding: "0.5rem 0", borderTop: "1px solid var(--st-border)" }}>
-              <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.82rem", color: "var(--st-accent)", letterSpacing: "0.06em", marginBottom: "4px" }}>
+              <p style={{ fontFamily: FONT_SANS, ...DS.label, color: "var(--st-accent)", marginBottom: "4px" }}>
                 Month Pacing ({pacing!.daysElapsed}/{pacing!.daysInMonth}d)
               </p>
               <div className="flex gap-4">
-                <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", color: "var(--st-text-primary)" }}>
-                  <b>{pacingNew(pacing!).actual}</b> new <span style={{ color: "var(--st-text-secondary)", fontSize: "0.78rem", fontStyle: "italic" }}>/ {pacingNew(pacing!).paced} projected</span>
+                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+                  <b>{pacingNew(pacing!).actual}</b> new <span style={{ color: "var(--st-text-secondary)", fontSize: DS.text.xs, fontStyle: "italic" }}>/ {pacingNew(pacing!).paced} projected</span>
                 </span>
                 {pacingChurn && (
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", color: "var(--st-text-primary)" }}>
-                    <b>{pacingChurn(pacing!).actual}</b> churn <span style={{ color: "var(--st-text-secondary)", fontSize: "0.78rem", fontStyle: "italic" }}>/ {pacingChurn(pacing!).paced} projected</span>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+                    <b>{pacingChurn(pacing!).actual}</b> churn <span style={{ color: "var(--st-text-secondary)", fontSize: DS.text.xs, fontStyle: "italic" }}>/ {pacingChurn(pacing!).paced} projected</span>
                   </span>
                 )}
               </div>
@@ -2317,36 +2354,36 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
       {/* ─── Churn Section ─── */}
       {churnData && (
         <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
-          <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.82rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <p className="mb-3" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Churn
           </p>
 
           {/* Metric pills */}
           <div className="flex gap-3 mb-3">
             <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
                 User Churn (avg/mo)
               </div>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "1.3rem", fontWeight: 700, color: churnBenchmarkColor(churnData.avgUserChurnRate) }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgUserChurnRate) }}>
                 {churnData.avgUserChurnRate.toFixed(1)}%
               </span>
             </div>
 
             <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
                 MRR Churn (avg/mo)
               </div>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "1.3rem", fontWeight: 700, color: churnBenchmarkColor(churnData.avgMrrChurnRate) }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgMrrChurnRate) }}>
                 {churnData.avgMrrChurnRate.toFixed(1)}%
               </span>
             </div>
 
             {churnData.atRiskCount > 0 && (
               <div className="rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)", minWidth: "60px", textAlign: "center" }}>
-                <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontWeight: 500, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
                   At Risk
                 </div>
-                <span style={{ fontFamily: FONT_SANS, fontSize: "1.3rem", fontWeight: 700, color: COLORS.warning }}>
+                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: COLORS.warning }}>
                   {churnData.atRiskCount}
                 </span>
               </div>
@@ -2360,8 +2397,8 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
             return (
               <div className="space-y-1">
                 {completed.map((m) => (
-                  <div key={m.month} className="flex items-center gap-2" style={{ fontSize: "0.75rem" }}>
-                    <span style={{ width: "38px", color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500, flexShrink: 0 }}>
+                  <div key={m.month} className="flex items-center gap-2" style={{ fontSize: DS.text.xs }}>
+                    <span style={{ width: "38px", color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal, flexShrink: 0 }}>
                       {formatMonthLabel(m.month)}
                     </span>
                     <div className="flex-1 flex items-center gap-1.5">
@@ -2372,11 +2409,11 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
                         borderRadius: "3px",
                         opacity: 0.7,
                       }} />
-                      <span style={{ fontSize: "0.65rem", color, fontFamily: FONT_SANS, fontWeight: 600, flexShrink: 0 }}>
+                      <span style={{ fontSize: DS.text.xs, color, fontFamily: FONT_SANS, fontWeight: DS.weight.medium, flexShrink: 0 }}>
                         {m.userChurnRate.toFixed(1)}%
                       </span>
                     </div>
-                    <span style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 400, flexShrink: 0 }}>
+                    <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal, flexShrink: 0 }}>
                       {m.canceledCount}/{m.activeAtStart}
                     </span>
                   </div>
@@ -2390,7 +2427,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
             const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
             if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
             return (
-              <p style={{ fontFamily: FONT_SANS, fontSize: "0.7rem", color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "6px" }}>
+              <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "6px" }}>
                 Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned (last completed month)
               </p>
             );
@@ -2436,7 +2473,7 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
     <div className="space-y-5">
       <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
 
-      <Card padding="1.75rem">
+      <Card>
         <div style={{ width: "100%", position: "relative" }}>
           <svg viewBox={`0 0 500 ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", display: "block" }}>
             {/* Baseline */}
@@ -2503,21 +2540,21 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Prior year total */}
-        <Card padding="1.75rem">
-          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+        <Card>
+          <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
             {projection.year - 1} Total Revenue{priorYearRev > 0 && !isActualPrior ? " (Est.)" : ""}
           </p>
           {priorYearRev > 0 ? (
             <>
-              <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+              <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
                 {formatCurrency(priorYearRev)}
               </p>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
                 {isActualPrior ? "Actual net revenue" : "Estimated from MRR data"}
               </p>
             </>
           ) : (
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "1rem", color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
               No data available
             </p>
           )}
@@ -2525,23 +2562,23 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
 
         {/* MRR metrics — only if data is sane */}
         {mrrSane ? (
-          <Card padding="1.75rem">
-            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <Card>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
               {projection.year} Subscription MRR
             </p>
-            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
               {formatCurrency(projection.currentMRR)}
             </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
               {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
             </p>
           </Card>
         ) : (
-          <Card padding="1.75rem">
-            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          <Card>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
               {projection.year} MRR
             </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "1rem", color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
               Insufficient subscription data
             </p>
           </Card>
@@ -2596,7 +2633,7 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem" }}>
+          <h1 style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
             Studio Dashboard
           </h1>
           <div className="rounded-2xl p-6" style={{ backgroundColor: "var(--st-bg-card)", border: "1px solid var(--st-border)" }}>
@@ -2614,7 +2651,7 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.4rem" }}>
+          <h1 style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
             Studio Dashboard
           </h1>
           <div className="rounded-2xl p-5 text-center" style={{ backgroundColor: "#F5EFEF", border: "1px solid rgba(160, 64, 64, 0.2)" }}>
@@ -2638,7 +2675,7 @@ function DashboardView() {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-6 sm:p-8 pb-16">
-      <div className="max-w-6xl w-full space-y-10">
+      <div className="max-w-6xl w-full space-y-8">
         {/* ── Header ─────────────────────────────────── */}
         <div className="text-center space-y-3 pt-4">
           <div className="flex justify-center">
@@ -2648,8 +2685,8 @@ function DashboardView() {
             style={{
               color: "var(--st-text-primary)",
               fontFamily: FONT_SANS,
-              fontWeight: 700,
-              fontSize: "2.4rem",
+              fontWeight: DS.weight.bold,
+              fontSize: DS.text.xl,
               letterSpacing: "-0.03em",
             }}
           >
