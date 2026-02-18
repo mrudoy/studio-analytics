@@ -1151,136 +1151,75 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   if (data.length === 0) return null;
   const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const fmt = formatValue || ((v: number) => String(v));
-
-  // For short charts (< 120px), use compact mode: no Y-axis, no gridlines
-  const compact = height < 120;
-
-  const marginLeft = compact ? 4 : 52;
-  const marginRight = compact ? 4 : 12;
-  const marginTop = compact ? (showValues ? 14 : 4) : (showValues ? 16 : 6);
-  const marginBottom = compact ? 16 : 22;
-  const chartHeight = height;
-  const barAreaHeight = Math.max(chartHeight - marginTop - marginBottom, 20);
-  const barGap = data.length > 8 ? 3 : 6;
-
-  // Generate nice Y-axis gridlines (only for tall charts)
-  const niceMax = (() => {
-    const raw = max;
-    if (raw === 0) return 1;
-    const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
-    const normalized = raw / magnitude;
-    if (normalized <= 1.5) return 1.5 * magnitude;
-    if (normalized <= 2) return 2 * magnitude;
-    if (normalized <= 3) return 3 * magnitude;
-    if (normalized <= 5) return 5 * magnitude;
-    return 10 * magnitude;
-  })();
-  const gridCount = compact ? 0 : 3;
-  const gridLines = compact ? [] : Array.from({ length: gridCount + 1 }, (_, i) => (niceMax / gridCount) * i);
-
-  // For gridline labels, use the formatValue function if provided, otherwise format as number
-  const fmtGrid = formatValue || ((v: number) => v >= 1000 ? `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k` : String(Math.round(v)));
-
-  // Scale factor: use niceMax for tall charts with gridlines, raw max for compact
-  const scaleMax = compact ? max : niceMax;
+  const barHeight = height;
 
   return (
-    <div style={{ width: "100%", position: "relative" }}>
-      <svg
-        viewBox={`0 0 500 ${chartHeight}`}
-        preserveAspectRatio="xMidYMid meet"
-        style={{ width: "100%", height: "auto", display: "block" }}
-      >
-        {/* Y-axis gridlines and labels (tall charts only) */}
-        {gridLines.map((val, i) => {
-          const y = marginTop + barAreaHeight - (val / scaleMax) * barAreaHeight;
-          return (
-            <g key={`grid-${i}`}>
-              <line
-                x1={marginLeft}
-                x2={500 - marginRight}
-                y1={y}
-                y2={y}
-                stroke="var(--st-border)"
-                strokeWidth={i === 0 ? 1.2 : 0.8}
-                strokeDasharray={i === 0 ? "none" : "3,3"}
-              />
-              <text
-                x={marginLeft - 6}
-                y={y + 1}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fill="var(--st-text-secondary)"
-                fontFamily={FONT_SANS}
-                fontSize="10"
-                fontWeight="500"
-              >
-                {fmtGrid(val)}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Baseline for compact charts */}
-        {compact && (
-          <line
-            x1={marginLeft}
-            x2={500 - marginRight}
-            y1={marginTop + barAreaHeight}
-            y2={marginTop + barAreaHeight}
-            stroke="var(--st-border)"
-            strokeWidth={1}
-          />
-        )}
-
-        {/* Bars */}
+    <div style={{ width: "100%" }}>
+      {/* Bar area */}
+      <div style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: data.length > 8 ? "2px" : "4px",
+        height: `${barHeight}px`,
+        borderBottom: "1px solid var(--st-border)",
+        paddingBottom: "1px",
+      }}>
         {data.map((d, i) => {
-          const barWidth = (500 - marginLeft - marginRight - barGap * (data.length - 1)) / data.length;
-          const x = marginLeft + i * (barWidth + barGap);
-          const fraction = scaleMax > 0 ? Math.abs(d.value) / scaleMax : 0;
-          const barH = Math.max(Math.round(fraction * barAreaHeight), 3);
-          const y = marginTop + barAreaHeight - barH;
+          const fraction = max > 0 ? Math.abs(d.value) / max : 0;
+          const h = Math.max(Math.round(fraction * (barHeight - (showValues ? 18 : 4))), 3);
           return (
-            <g key={i}>
-              <rect
-                x={x}
-                y={y}
-                width={barWidth}
-                height={barH}
-                rx={2}
-                fill={d.color || "var(--st-accent)"}
-                opacity={0.8}
-              />
-              {/* Value label above bar */}
+            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", minWidth: 0 }}>
               {showValues && (
-                <text
-                  x={x + barWidth / 2}
-                  y={y - 3}
-                  textAnchor="middle"
-                  fill="var(--st-text-primary)"
-                  fontFamily={FONT_SANS}
-                  fontSize={compact ? "10" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
-                  fontWeight="600"
-                >
+                <span style={{
+                  fontFamily: FONT_SANS,
+                  fontSize: "0.6rem",
+                  fontWeight: DS.weight.medium,
+                  color: "var(--st-text-primary)",
+                  marginBottom: "2px",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: "100%",
+                  textAlign: "center",
+                }}>
                   {fmt(d.value)}
-                </text>
+                </span>
               )}
-              {/* Label below */}
-              <text
-                x={x + barWidth / 2}
-                y={chartHeight - marginBottom + 12}
-                textAnchor="middle"
-                fill="var(--st-text-secondary)"
-                fontFamily={FONT_SANS}
-                fontSize={compact ? "9.5" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
-                fontWeight="500"
-              >
-                {d.label}
-              </text>
-            </g>
+              <div style={{
+                width: "100%",
+                maxWidth: "40px",
+                height: `${h}px`,
+                borderRadius: "2px 2px 0 0",
+                backgroundColor: d.color || "var(--st-accent)",
+                opacity: 0.8,
+              }} />
+            </div>
           );
         })}
-      </svg>
+      </div>
+      {/* X-axis labels */}
+      <div style={{
+        display: "flex",
+        gap: data.length > 8 ? "2px" : "4px",
+        marginTop: "4px",
+      }}>
+        {data.map((d, i) => (
+          <div key={i} style={{
+            flex: 1,
+            textAlign: "center",
+            fontFamily: FONT_SANS,
+            fontSize: "0.6rem",
+            fontWeight: DS.weight.normal,
+            color: "var(--st-text-secondary)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            minWidth: 0,
+          }}>
+            {d.label}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1573,10 +1512,10 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
       {/* Full-width monthly trend chart */}
       {revenueMonthlyBars.length > 0 && (
         <Card>
-          <p className="mb-3" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          <p className="mb-3" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
             Monthly Revenue Trend (Gross)
           </p>
-          <MiniBarChart data={revenueMonthlyBars} height={160} formatValue={formatCompactCurrency} />
+          <MiniBarChart data={revenueMonthlyBars} height={140} formatValue={formatCompactCurrency} />
         </Card>
       )}
     </div>
