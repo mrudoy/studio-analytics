@@ -8,6 +8,27 @@ export async function saveRevenueCategories(
 ): Promise<void> {
   const pool = getPool();
 
+  // Guard: reject multi-month periods if monthly data already exists for that year.
+  // This prevents the double-counting bug where a full-year row ($2.2M) is summed
+  // alongside 12 monthly rows ($2.2M) → $4.4M.
+  const isMultiMonth = periodStart.slice(0, 7) !== periodEnd.slice(0, 7);
+  if (isMultiMonth) {
+    const year = periodStart.slice(0, 4);
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM revenue_categories
+       WHERE LEFT(period_start, 4) = $1 AND LEFT(period_start, 7) = LEFT(period_end, 7)
+       LIMIT 1`,
+      [year]
+    );
+    if (existing.length > 0) {
+      console.warn(
+        `[revenue-store] Skipping multi-month period ${periodStart}–${periodEnd}: ` +
+        `monthly data already exists for ${year}. Would cause double-counting.`
+      );
+      return;
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

@@ -73,6 +73,25 @@ const migrations: Migration[] = [
         ON auto_renews(customer_email, plan_name, created_at);
     `,
   },
+  // Delete multi-month revenue_categories rows that overlap with monthly data.
+  // The 2025 full-year row (2025-01-01 → 2025-12-31) was double-counting $2.2M
+  // on top of 12 monthly rows. The 2026 YTD row also overlaps with Jan monthly.
+  // Keep 2024 full-year row since no monthly data exists for that year.
+  {
+    name: "004_remove_overlapping_revenue_periods",
+    up: `
+      -- Delete multi-month periods where monthly data already exists for that year.
+      -- A "multi-month" period is one where the start month ≠ end month.
+      -- Only delete if that year also has at least one "monthly" period.
+      DELETE FROM revenue_categories
+      WHERE LEFT(period_start, 7) != LEFT(period_end, 7)
+        AND LEFT(period_start, 4) IN (
+          SELECT DISTINCT LEFT(period_start, 4)
+          FROM revenue_categories
+          WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+        );
+    `,
+  },
 ];
 
 /**
