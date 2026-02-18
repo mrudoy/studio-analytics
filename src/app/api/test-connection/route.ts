@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { UnionClient } from "@/lib/scraper/union-client";
 import { loadSettings } from "@/lib/crypto/credentials";
+
+// Force dynamic — Playwright can't be loaded during static build phase
+export const dynamic = "force-dynamic";
 
 export async function POST() {
   const settings = loadSettings();
@@ -11,6 +13,7 @@ export async function POST() {
     );
   }
 
+  const { UnionClient } = await import("@/lib/scraper/union-client");
   const client = new UnionClient();
   try {
     await client.initializeHeaded();

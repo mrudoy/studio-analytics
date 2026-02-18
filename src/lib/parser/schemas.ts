@@ -156,3 +156,51 @@ export const AutoRenewSchema = z.object({
   canceledAt: z.string().optional().default(""),
   created: z.string().optional().default(""),
 });
+
+/**
+ * Customer Export schema — matches the Union.fit People > Export CSV.
+ * CSV headers use snake_case which normalizeHeader() converts to camelCase.
+ * 31 columns, keyed by email.
+ */
+const boolStr = z
+  .string()
+  .or(z.boolean())
+  .transform((val) => {
+    if (typeof val === "boolean") return val;
+    return val.trim().toLowerCase() === "true";
+  })
+  .default(false);
+
+export const CustomerExportSchema = z.object({
+  id: z.string().default(""),
+  created: z.string().default(""),
+  firstName: z.string().default(""),
+  lastName: z.string().default(""),
+  role: z.string().default(""),
+  email: z.string().default(""),
+  phone: z.string().or(z.number()).transform((val) => String(val).trim()).default(""),
+  totalSpent: money,
+  orders: z.coerce.number().default(0),
+  currentFreeNonAutoRenewPass: boolStr,
+  currentFreeAutoRenewPass: boolStr,
+  currentPaidNonAutoRenewPass: boolStr,
+  currentPaidAutoRenewPass: boolStr,
+  currentPaymentPlan: boolStr,
+  livestreamRegistrations: z.coerce.number().default(0),
+  inpersonRegistrations: z.coerce.number().default(0),
+  replayRegistrations: z.coerce.number().default(0),
+  livestreamRegistrationsRedeemed: z.coerce.number().default(0),
+  inpersonRegistrationsRedeemed: z.coerce.number().default(0),
+  replayRegistrationsRedeemed: z.coerce.number().default(0),
+  twitter: z.string().optional().default(""),
+  instagram: z.string().optional().default(""),
+  facebook: z.string().optional().default(""),
+  notes: z.string().optional().default(""),
+  ltv: money,
+  birthday: z.string().optional().default(""),
+  howDidYouHearAboutUs: z.string().optional().default(""),
+  whatAreYourGoalsForJoiningSkyTing: z.string().optional().default(""),
+  whatNeighborhoodDoYouLiveIn: z.string().optional().default(""),
+  whatInspiredYouToJoinSkyTing: z.string().optional().default(""),
+  howManyTimesPerWeekDoYouWantToPractice: z.string().optional().default(""),
+});

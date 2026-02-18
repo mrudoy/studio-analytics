@@ -35,6 +35,14 @@ const COLUMN_ALIASES: Record<string, string> = {
   orderTotal: "total",
   amount: "total",
   transactionTotal: "total",
+  // Customer export CSV → schema fields
+  // Union.fit headers have trailing underscores: "how_did_you_hear_about_us_"
+  // normalizeHeader produces lowercase-with-trailing-underscore: "howdidyouhearaboutus_"
+  "howdidyouhearaboutus_": "howDidYouHearAboutUs",
+  "whatareyourgoalsforjoiningskyting_": "whatAreYourGoalsForJoiningSkyTing",
+  "whatneighborhooddoyoulivein_": "whatNeighborhoodDoYouLiveIn",
+  "whatinspiredyoutojoinskyting_": "whatInspiredYouToJoinSkyTing",
+  "howmanytimesperweekdoyouwanttopractice_": "howManyTimesPerWeekDoYouWantToPractice",
 };
 
 /**

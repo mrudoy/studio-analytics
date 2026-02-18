@@ -46,6 +46,33 @@ const migrations: Migration[] = [
       WHERE date_range_end ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$';
     `,
   },
+  // Add fetch_watermarks table for incremental fetch tracking
+  // and unique constraint on auto_renews for UPSERT instead of DELETE+INSERT
+  {
+    name: "003_fetch_watermarks_and_auto_renew_dedup",
+    up: `
+      CREATE TABLE IF NOT EXISTS fetch_watermarks (
+        id SERIAL PRIMARY KEY,
+        report_type TEXT UNIQUE NOT NULL,
+        last_fetched_at TIMESTAMPTZ,
+        high_water_date TEXT,
+        record_count INTEGER DEFAULT 0,
+        notes TEXT
+      );
+
+      -- Remove duplicate auto_renews before adding unique constraint.
+      -- Keep the row with the highest id (most recent import).
+      DELETE FROM auto_renews a
+      USING auto_renews b
+      WHERE a.customer_email = b.customer_email
+        AND a.plan_name = b.plan_name
+        AND a.created_at = b.created_at
+        AND a.id < b.id;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ar_dedup
+        ON auto_renews(customer_email, plan_name, created_at);
+    `,
+  },
 ];
 
 /**

@@ -64,6 +64,7 @@ import {
 } from "../db/registration-store";
 import { saveOrders, type OrderRow } from "../db/order-store";
 import { saveCustomers, type CustomerRow } from "../db/customer-store";
+import { setWatermark } from "../db/watermark-store";
 import { writeFileSync } from "fs";
 import { join } from "path";
 
@@ -273,6 +274,7 @@ export async function runPipelineFromFiles(
     try {
       await saveRevenueCategories(periodStart, periodEnd, revenueCatResult.data);
       console.log(`[pipeline-core] Saved ${revenueCatResult.data.length} revenue categories to database`);
+      await setWatermark("revenueCategories", periodEnd, revenueCatResult.data.length, `pipeline run ${periodStart} to ${periodEnd}`);
 
       const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       const periodEndDate = new Date(periodEnd);
@@ -311,6 +313,11 @@ export async function runPipelineFromFiles(
       }));
       await saveAutoRenews(snapshotId, arRows);
       console.log(`[pipeline-core] Saved ${arRows.length} auto-renews to database (snapshot: ${snapshotId})`);
+      // Watermark: use the latest created_at from auto-renews
+      const latestArDate = arRows.reduce((max, r) => (r.createdAt > max ? r.createdAt : max), "");
+      if (latestArDate) {
+        await setWatermark("autoRenews", latestArDate.slice(0, 10), arRows.length, `pipeline snapshot ${snapshotId}`);
+      }
     } catch (dbErr) {
       console.warn(
         `[pipeline-core] Failed to save auto-renews to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
@@ -342,6 +349,11 @@ export async function runPipelineFromFiles(
         }));
         await saveRegistrations(regRows);
         console.log(`[pipeline-core] Saved ${regRows.length} registrations to database`);
+        // Watermark: use the latest attended_at
+        const latestRegDate = regRows.reduce((max, r) => (r.attendedAt > max ? r.attendedAt : max), "");
+        if (latestRegDate) {
+          await setWatermark("registrations", latestRegDate.slice(0, 10), regRows.length, "pipeline run");
+        }
       }
     } catch (dbErr) {
       console.warn(
@@ -373,6 +385,11 @@ export async function runPipelineFromFiles(
       }));
       await saveFirstVisits(fvRows);
       console.log(`[pipeline-core] Saved ${fvRows.length} first visits to database`);
+      // Watermark: use the latest attended_at
+      const latestFvDate = fvRows.reduce((max, r) => (r.attendedAt > max ? r.attendedAt : max), "");
+      if (latestFvDate) {
+        await setWatermark("firstVisits", latestFvDate.slice(0, 10), fvRows.length, "pipeline run");
+      }
     } catch (dbErr) {
       console.warn(
         `[pipeline-core] Failed to save first visits to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
@@ -395,6 +412,11 @@ export async function runPipelineFromFiles(
       }));
       await saveOrders(orderRows);
       console.log(`[pipeline-core] Saved ${orderRows.length} orders to database`);
+      // Watermark: use the latest created date
+      const latestOrderDate = orderRows.reduce((max, r) => (r.created > max ? r.created : max), "");
+      if (latestOrderDate) {
+        await setWatermark("orders", latestOrderDate.slice(0, 10), orderRows.length, "pipeline run");
+      }
     } catch (dbErr) {
       console.warn(
         `[pipeline-core] Failed to save orders to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`
@@ -416,6 +438,11 @@ export async function runPipelineFromFiles(
       }));
       await saveCustomers(custRows);
       console.log(`[pipeline-core] Saved ${custRows.length} customers to database`);
+      // Watermark: use the latest created date
+      const latestCustDate = custRows.reduce((max, r) => (r.created > max ? r.created : max), "");
+      if (latestCustDate) {
+        await setWatermark("newCustomers", latestCustDate.slice(0, 10), custRows.length, "pipeline run");
+      }
     } catch (dbErr) {
       console.warn(
         `[pipeline-core] Failed to save customers to database: ${dbErr instanceof Error ? dbErr.message : dbErr}`

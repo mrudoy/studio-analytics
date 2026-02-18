@@ -1,14 +1,11 @@
 import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "./connection";
-import { UnionClient } from "../scraper/union-client";
 import { loadSettings } from "../crypto/credentials";
 import { runPipelineFromFiles } from "./pipeline-core";
 import { runEmailPipeline } from "./email-pipeline";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
-import { getLatestPeriod } from "../db/revenue-store";
-import { copyFileSync } from "fs";
-import { join } from "path";
+import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 
 /** Maximum total time the pipeline is allowed to run before being killed. */
 const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
@@ -59,107 +56,95 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     throw new Error("Analytics Spreadsheet ID not configured.");
   }
 
+  // Build date range from job params or per-report watermarks
   let dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
     ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
     : "";
 
-  // Build date range if not provided
   if (!dateRange) {
     dateRange = await buildDateRange();
   }
 
-  // ── Try email pipeline first (if robot email is configured) ──
-  if (settings.robotEmail?.address) {
-    try {
-      updateProgress(job, "Using email-based pipeline", 5);
-      console.log(`[pipeline] Email pipeline mode: robot=${settings.robotEmail.address}`);
-
-      const result = await runEmailPipeline({
-        unionEmail: settings.credentials.email,
-        unionPassword: settings.credentials.password,
-        robotEmail: settings.robotEmail.address,
-        analyticsSheetId,
-        rawDataSheetId,
-        dateRange,
-        onProgress: (step, percent) => updateProgress(job, step, percent),
-      });
-
-      return result;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[pipeline] Email pipeline failed, falling back to direct scraping: ${msg}`);
-      updateProgress(job, "Email pipeline failed, falling back to direct scrape...", 10);
-    }
+  // ── Email pipeline (primary path) ──
+  // All CSV downloads go through: Playwright clicks "Download CSV" button →
+  // Union.fit either downloads directly or emails the CSV → Gmail API picks up emails.
+  // No HTML scraping.
+  if (!settings.robotEmail?.address) {
+    throw new Error(
+      "Robot email not configured. The pipeline requires email-based CSV delivery. " +
+      "Go to Settings to configure the robot email address."
+    );
   }
 
-  // ── Fallback: Direct scraping via Playwright ─────────────────
-  updateProgress(job, "Launching browser (direct scrape)", 10);
-  const client = new UnionClient({
-    onProgress: (step, percent) => updateProgress(job, step, percent),
-  });
+  updateProgress(job, "Starting email-based pipeline", 5);
+  console.log(`[pipeline] Email pipeline mode: robot=${settings.robotEmail.address}`);
 
-  let files;
-  try {
-    await client.initialize();
-    updateProgress(job, "Logging into Union.fit", 15);
-    await client.login(settings.credentials.email, settings.credentials.password);
-
-    updateProgress(job, "Downloading CSV reports", 20);
-    files = await client.downloadAllReports(dateRange);
-    updateProgress(job, "All CSVs downloaded", 45);
-  } finally {
-    await client.cleanup();
-  }
-
-  // Save debug copy of orders CSV before cleanup
-  try {
-    const debugPath = join(process.cwd(), "data", "debug-orders-sample.csv");
-    copyFileSync(files.orders, debugPath);
-    console.log(`[pipeline] Saved debug orders CSV to ${debugPath}`);
-  } catch { /* ignore */ }
-
-  // Steps 3-6: Parse CSVs → Run Analytics → Export to Sheets
-  const result = await runPipelineFromFiles(files, analyticsSheetId, {
+  const result = await runEmailPipeline({
+    unionEmail: settings.credentials.email,
+    unionPassword: settings.credentials.password,
+    robotEmail: settings.robotEmail.address,
+    analyticsSheetId,
     rawDataSheetId,
     dateRange,
     onProgress: (step, percent) => updateProgress(job, step, percent),
   });
 
-  // Cleanup scraped temp files
+  // Cleanup temp files
   cleanupDownloads();
 
   return result;
 }
 
 /**
- * Build date range based on incremental mode.
- * If we have historical data, only fetch from last month forward.
- * First run = full 12 months.
+ * Build date range based on watermarks (incremental fetch).
+ *
+ * Checks watermarks for key report types and uses the oldest high-water mark
+ * as the start date. If no watermarks exist, does a full backfill to 2024-01-01.
  */
 async function buildDateRange(): Promise<string> {
-  const now = new Date();
-  const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-  let startDate: Date;
+  const reportTypes = [
+    "autoRenews",
+    "revenueCategories",
+    "registrations",
+    "orders",
+    "newCustomers",
+    "firstVisits",
+  ];
 
-  try {
-    const latestPeriod = await getLatestPeriod();
-    if (latestPeriod) {
-      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      startDate = lastMonth;
-      console.log(`[pipeline] Incremental mode: have data through ${latestPeriod.periodEnd}, fetching from ${lastMonth.toISOString().slice(0, 10)}`);
-    } else {
-      startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      console.log(`[pipeline] First run: no historical data, fetching last 12 months`);
+  let oldestStart: string | null = null;
+
+  for (const rt of reportTypes) {
+    try {
+      const wm = await getWatermark(rt);
+      const range = buildDateRangeForReport(wm);
+      const startPart = range.split(" - ")[0];
+
+      // Parse to comparable format
+      const parts = startPart.split("/");
+      if (parts.length === 3) {
+        const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+        if (!oldestStart || isoDate < oldestStart) {
+          oldestStart = isoDate;
+        }
+      }
+    } catch {
+      // Skip — watermark table might not exist yet
     }
-  } catch {
-    startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-    console.log(`[pipeline] Database not available, defaulting to last 12 months`);
   }
 
-  const startStr = `${startDate.getMonth() + 1}/${startDate.getDate()}/${startDate.getFullYear()}`;
-  const dateRange = `${startStr} - ${endStr}`;
-  console.log(`[pipeline] Date range: ${dateRange}`);
-  return dateRange;
+  const now = new Date();
+  const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+
+  if (oldestStart) {
+    const d = new Date(oldestStart);
+    const startStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    console.log(`[pipeline] Incremental mode: date range ${startStr} - ${endStr}`);
+    return `${startStr} - ${endStr}`;
+  }
+
+  // Full backfill
+  console.log(`[pipeline] First run: no watermarks, fetching from 1/1/2024`);
+  return `1/1/2024 - ${endStr}`;
 }
 
 // Store on globalThis so the singleton survives Next.js HMR reloads.
