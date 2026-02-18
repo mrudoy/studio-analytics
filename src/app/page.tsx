@@ -1432,34 +1432,13 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
 
   return (
     <div className="space-y-5">
-      <SectionHeader subtitle={`${data.monthName} ${data.current?.year ?? ""} vs. ${data.monthName} ${data.priorYear?.year ?? (data.current ? data.current.year - 1 : "")}`}>
+      <SectionHeader subtitle={`${data.monthName} ${data.priorYear?.year ?? (data.current ? data.current.year - 1 : "")} → ${data.monthName} ${data.current?.year ?? ""}`}>
         Year-over-Year
       </SectionHeader>
 
       <Card padding="1.5rem">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          {/* Current year */}
-          <div>
-            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "6px" }}>
-              {data.monthName} {data.current?.year ?? ""}
-            </p>
-            {hasCurrentData ? (
-              <>
-                <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                  {formatCurrency(data.current!.gross)}
-                </p>
-                <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
-                  Net: {formatCurrency(data.current!.net)}
-                </p>
-              </>
-            ) : (
-              <p style={{ fontFamily: FONT_SANS, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
-                No data yet
-              </p>
-            )}
-          </div>
-
-          {/* Prior year */}
+          {/* Prior year (left) */}
           <div>
             <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "6px" }}>
               {data.monthName} {data.priorYear?.year ?? ""}
@@ -1471,6 +1450,27 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
                 </p>
                 <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
                   Net: {formatCurrency(data.priorYear!.net)}
+                </p>
+              </>
+            ) : (
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
+                No data yet
+              </p>
+            )}
+          </div>
+
+          {/* Current year (middle) */}
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "6px" }}>
+              {data.monthName} {data.current?.year ?? ""}
+            </p>
+            {hasCurrentData ? (
+              <>
+                <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                  {formatCurrency(data.current!.gross)}
+                </p>
+                <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                  Net: {formatCurrency(data.current!.net)}
                 </p>
               </>
             ) : (
