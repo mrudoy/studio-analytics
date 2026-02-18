@@ -33,6 +33,7 @@ interface DashboardStats {
   previousMonthRevenue: number;
   trends?: TrendsData | null;
   revenueCategories?: RevenueCategoryData | null;
+  monthOverMonth?: MonthOverMonthData | null;
 }
 
 interface RevenueCategoryData {
@@ -167,6 +168,26 @@ interface ChurnRateData {
   avgMemberRate: number;
   avgSky3Rate: number;
   atRisk: number;
+}
+
+interface MonthOverMonthPeriod {
+  year: number;
+  periodStart: string;
+  periodEnd: string;
+  gross: number;
+  net: number;
+  categoryCount: number;
+}
+
+interface MonthOverMonthData {
+  month: number;
+  monthName: string;
+  current: MonthOverMonthPeriod | null;
+  priorYear: MonthOverMonthPeriod | null;
+  yoyGrossChange: number | null;
+  yoyNetChange: number | null;
+  yoyGrossPct: number | null;
+  yoyNetPct: number | null;
 }
 
 interface TrendsData {
@@ -1397,6 +1418,98 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+// ─── Month-over-Month YoY Comparison ─────────────────────────
+
+function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
+  const hasCurrentData = data.current !== null;
+  const hasPriorData = data.priorYear !== null;
+
+  if (!hasCurrentData && !hasPriorData) return null;
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader subtitle={`${data.monthName} ${data.current?.year ?? ""} vs. ${data.monthName} ${data.priorYear?.year ?? (data.current ? data.current.year - 1 : "")}`}>
+        Year-over-Year
+      </SectionHeader>
+
+      <Card padding="1.5rem">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {/* Current year */}
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "6px" }}>
+              {data.monthName} {data.current?.year ?? ""}
+            </p>
+            {hasCurrentData ? (
+              <>
+                <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                  {formatCurrency(data.current!.gross)}
+                </p>
+                <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                  Net: {formatCurrency(data.current!.net)}
+                </p>
+              </>
+            ) : (
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
+                No data yet
+              </p>
+            )}
+          </div>
+
+          {/* Prior year */}
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "6px" }}>
+              {data.monthName} {data.priorYear?.year ?? ""}
+            </p>
+            {hasPriorData ? (
+              <>
+                <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                  {formatCurrency(data.priorYear!.gross)}
+                </p>
+                <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                  Net: {formatCurrency(data.priorYear!.net)}
+                </p>
+              </>
+            ) : (
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
+                No data yet
+              </p>
+            )}
+          </div>
+
+          {/* YoY change */}
+          <div>
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.7rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "6px" }}>
+              YoY Change
+            </p>
+            {data.yoyGrossChange !== null && data.yoyGrossPct !== null ? (
+              <>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                  <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "1.8rem", letterSpacing: "-0.02em", lineHeight: 1.1,
+                    color: data.yoyGrossChange >= 0 ? COLORS.success : "var(--st-error)" }}>
+                    {data.yoyGrossPct >= 0 ? "+" : ""}{data.yoyGrossPct}%
+                  </p>
+                </div>
+                <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                  {data.yoyGrossChange >= 0 ? "+" : ""}{formatCurrency(data.yoyGrossChange)} gross
+                </p>
+                {data.yoyNetChange !== null && (
+                  <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
+                    {data.yoyNetChange >= 0 ? "+" : ""}{formatCurrency(data.yoyNetChange)} net
+                  </p>
+                )}
+              </>
+            ) : (
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.9rem", color: "var(--st-text-secondary)" }}>
+                Need both months to compare
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -2791,6 +2904,11 @@ function DashboardView() {
 
         {/* ━━ Revenue ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <RevenueSection data={data} trends={trends} />
+
+        {/* ━━ Year-over-Year ━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {data.monthOverMonth && (
+          <MonthOverMonthSection data={data.monthOverMonth} />
+        )}
 
         {/* ━━ MRR Breakdown ━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <MRRBreakdown data={data} />

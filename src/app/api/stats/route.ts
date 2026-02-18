@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
 import { readDashboardStats, readTrendsData } from "@/lib/sheets/read-dashboard";
 import { getSheetUrl } from "@/lib/sheets/sheets-client";
-import { getLatestPeriod, getRevenueForPeriod } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -133,11 +133,69 @@ export async function GET() {
       }
     }
 
-    // ── 6. Return response ──────────────────────────────────
+    // ── 6. Month-over-month YoY comparison ──────────────────
+    // "Last full month" vs "same month, prior year"
+    let monthOverMonth = null;
+    try {
+      const now = new Date();
+      // Last full month = previous calendar month
+      let lastMonth = now.getMonth(); // 0-indexed current month
+      let lastMonthYear = now.getFullYear();
+      if (lastMonth === 0) {
+        lastMonth = 12;
+        lastMonthYear -= 1;
+      }
+      // lastMonth is now 1-indexed (1=Jan, 12=Dec)
+
+      const current = await getMonthlyRevenue(lastMonthYear, lastMonth);
+      const priorYear = await getMonthlyRevenue(lastMonthYear - 1, lastMonth);
+
+      if (current || priorYear) {
+        const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        monthOverMonth = {
+          month: lastMonth,
+          monthName: monthNames[lastMonth],
+          current: current ? {
+            year: lastMonthYear,
+            periodStart: current.periodStart,
+            periodEnd: current.periodEnd,
+            gross: Math.round(current.totalRevenue * 100) / 100,
+            net: Math.round(current.totalNetRevenue * 100) / 100,
+            categoryCount: current.categoryCount,
+          } : null,
+          priorYear: priorYear ? {
+            year: lastMonthYear - 1,
+            periodStart: priorYear.periodStart,
+            periodEnd: priorYear.periodEnd,
+            gross: Math.round(priorYear.totalRevenue * 100) / 100,
+            net: Math.round(priorYear.totalNetRevenue * 100) / 100,
+            categoryCount: priorYear.categoryCount,
+          } : null,
+          yoyGrossChange: current && priorYear
+            ? Math.round((current.totalRevenue - priorYear.totalRevenue) * 100) / 100
+            : null,
+          yoyNetChange: current && priorYear
+            ? Math.round((current.totalNetRevenue - priorYear.totalNetRevenue) * 100) / 100
+            : null,
+          yoyGrossPct: current && priorYear && priorYear.totalRevenue > 0
+            ? Math.round((current.totalRevenue - priorYear.totalRevenue) / priorYear.totalRevenue * 1000) / 10
+            : null,
+          yoyNetPct: current && priorYear && priorYear.totalNetRevenue > 0
+            ? Math.round((current.totalNetRevenue - priorYear.totalNetRevenue) / priorYear.totalNetRevenue * 1000) / 10
+            : null,
+        };
+        console.log(`[api/stats] MonthOverMonth: ${monthNames[lastMonth]} ${lastMonthYear} vs ${lastMonthYear - 1}`);
+      }
+    } catch (err) {
+      console.warn("[api/stats] Failed to compute month-over-month:", err);
+    }
+
+    // ── 7. Return response ──────────────────────────────────
     return NextResponse.json({
       ...(stats || {}),
       trends,
       revenueCategories,
+      monthOverMonth,
       dataSource,
       spreadsheetUrl: spreadsheetId ? getSheetUrl(spreadsheetId) : undefined,
     });

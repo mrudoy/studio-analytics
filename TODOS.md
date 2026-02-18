@@ -26,6 +26,28 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] Gmail-only pipeline (`gmail-pipeline.ts`) — reads CSVs from Gmail without browser trigger. For future use when emails are pre-triggered.
 - [ ] User note: NO SCRAPING — pipeline triggers CSV downloads via Playwright locally, emails arrive, data gets processed. Browser part must run locally (not Railway).
 
+### Monthly Revenue Rule (NEW)
+**RULE**: Revenue data MUST be stored at monthly granularity so we can do MoM comparisons and growth analysis. Each month gets its own `period_start` / `period_end` (e.g. `2024-01-01` to `2024-01-31`). The report source is "Sales by Revenue Category" (`/reports/revenue`) on Union.fit, pulled once per month with the date range set to that month.
+- User will manually upload historical months (Jan 2024 through present)
+- Pipeline must auto-pull current month's data going forward
+- Annual summary rows (Jan 1 - Dec 31) can coexist since the unique key is `(period_start, period_end, category)`
+
+### Reports We Need to Track
+These are the Union.fit reports the pipeline needs to pull regularly. User uploads historical data manually; pipeline handles ongoing.
+
+| Report | Union.fit Path | Frequency | Granularity | Status |
+|--------|---------------|-----------|-------------|--------|
+| **Revenue by Category** | `/reports/revenue` | Monthly | Per month | Manual backfill in progress |
+| Active Auto-Renews | `/report/subscriptions/list?status=active` | Weekly | Snapshot | In pipeline |
+| Paused Auto-Renews | `/report/subscriptions/list?status=paused` | Weekly | Snapshot | In pipeline |
+| Canceled Auto-Renews | `/report/subscriptions/growth?filter=cancelled` | Weekly | Snapshot | In pipeline |
+| New Auto-Renews | `/report/subscriptions/growth?filter=new` | Weekly | Snapshot | In pipeline |
+| New Customers | `/report/customers/created_within` | Weekly | Date range | In pipeline (empty) |
+| Orders | `/reports/transactions?transaction_type=orders` | Weekly | Date range | In pipeline (empty) |
+| First Visits | `/report/registrations/first_visit` | Weekly | Date range | In pipeline (empty) |
+| All Registrations | `/report/registrations/remaining` | Weekly | Date range | In pipeline (empty) |
+| Customer Export | People > Export | Monthly | Full snapshot | Manual upload done (8,661) |
+
 ### Revenue Category Terms Rule
 **RULE**: Only use defined business category labels. Any raw Union.fit category name that doesn't match a known pattern MUST be flagged as "Other" and logged so we can ask the user how to classify it. Never invent or guess new category names. The defined labels are:
 - Members, SKY3 / Packs, SKY TING TV, Drop-Ins, Intro / Trial, Workshops, Wellness / Spa, Teacher Training, Retail / Merch, Privates, Donations, Rentals, Retreats, Community

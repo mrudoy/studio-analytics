@@ -140,6 +140,59 @@ export async function getAllPeriods(): Promise<{ periodStart: string; periodEnd:
   }));
 }
 
+/**
+ * Get revenue totals for a specific month (period_start = YYYY-MM-01, period_end = YYYY-MM-last).
+ * Returns null if no data for that month.
+ */
+export async function getMonthlyRevenue(year: number, month: number): Promise<{
+  periodStart: string;
+  periodEnd: string;
+  categoryCount: number;
+  totalRevenue: number;
+  totalNetRevenue: number;
+  categories: StoredRevenueRow[];
+} | null> {
+  const pool = getPool();
+  const startStr = `${year}-${String(month).padStart(2, "0")}-01`;
+
+  // Find any period that starts with this month (period_end varies: 28/29/30/31)
+  const { rows } = await pool.query(
+    `SELECT period_start, period_end, category, revenue, union_fees, stripe_fees,
+            other_fees, transfers, refunded, union_fees_refunded, net_revenue, locked
+     FROM revenue_categories
+     WHERE period_start = $1
+       AND period_end LIKE $2
+     ORDER BY revenue DESC`,
+    [startStr, `${year}-${String(month).padStart(2, "0")}-%`]
+  );
+
+  if (rows.length === 0) return null;
+
+  const categories = rows.map((r: Record<string, unknown>) => ({
+    category: r.category as string,
+    revenue: r.revenue as number,
+    unionFees: r.union_fees as number,
+    stripeFees: r.stripe_fees as number,
+    otherFees: r.other_fees as number,
+    transfers: r.transfers as number,
+    refunded: r.refunded as number,
+    unionFeesRefunded: r.union_fees_refunded as number,
+    netRevenue: r.net_revenue as number,
+    periodStart: r.period_start as string,
+    periodEnd: r.period_end as string,
+    locked: r.locked === 1,
+  }));
+
+  return {
+    periodStart: categories[0].periodStart,
+    periodEnd: categories[0].periodEnd,
+    categoryCount: categories.length,
+    totalRevenue: categories.reduce((s: number, c: StoredRevenueRow) => s + c.revenue, 0),
+    totalNetRevenue: categories.reduce((s: number, c: StoredRevenueRow) => s + c.netRevenue, 0),
+    categories,
+  };
+}
+
 export async function savePipelineRun(
   dateRangeStart: string,
   dateRangeEnd: string,
