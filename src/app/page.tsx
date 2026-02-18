@@ -1577,7 +1577,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           <p className="mb-3" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Monthly Revenue Trend (Gross)
           </p>
-          <MiniBarChart data={revenueMonthlyBars} height={200} formatValue={formatCompactCurrency} />
+          <MiniBarChart data={revenueMonthlyBars} height={120} formatValue={formatCompactCurrency} />
         </Card>
       )}
     </div>
@@ -1598,12 +1598,12 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
   const currentNet = data.current?.net ?? 0;
   const maxVal = Math.max(priorGross, currentGross, 1);
 
-  const chartHeight = 260;
-  const marginTop = 40;
-  const marginBottom = 50;
+  const chartHeight = 160;
+  const marginTop = 30;
+  const marginBottom = 36;
   const barAreaHeight = chartHeight - marginTop - marginBottom;
-  const barWidth = 120;
-  const gap = 60;
+  const barWidth = 90;
+  const gap = 50;
   const totalWidth = barWidth * 2 + gap;
   const startX = (500 - totalWidth) / 2;
 
@@ -1766,7 +1766,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
             Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={100} />
+            <MiniBarChart data={weeklyBars} height={70} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
           )}
@@ -1882,7 +1882,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
             Unique Visitors — Last 4 Weeks
           </p>
           {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={100} />
+            <MiniBarChart data={weeklyBars} height={70} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
           )}
@@ -2210,7 +2210,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
             Weekly Visits
           </p>
           {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={100} />
+            <MiniBarChart data={weeklyBars} height={70} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>—</p>
           )}
@@ -2299,7 +2299,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
             New Sign-ups — Weekly
           </p>
           {weeklyNewBars.length > 0 ? (
-            <MiniBarChart data={weeklyNewBars} height={100} />
+            <MiniBarChart data={weeklyNewBars} height={70} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>—</p>
           )}
@@ -2457,12 +2457,12 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
 
   // Two-bar chart
   const maxVal = Math.max(olderTotal, priorTotal, 1);
-  const chartHeight = 260;
-  const marginTop = 28;
-  const marginBottom = 32;
+  const chartHeight = 160;
+  const marginTop = 24;
+  const marginBottom = 30;
   const barAreaHeight = chartHeight - marginTop - marginBottom;
-  const barWidth = 120;
-  const gap = 60;
+  const barWidth = 90;
+  const gap = 50;
   const totalWidth = barWidth * 2 + gap;
   const startX = (500 - totalWidth) / 2;
 
