@@ -1119,11 +1119,11 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   // SVG-based bar chart with Y-axis gridlines
   const marginLeft = 52;
   const marginRight = 12;
-  const marginTop = 8;
+  const marginTop = showValues ? 18 : 8;
   const marginBottom = 28;
   const chartHeight = height;
   const barAreaHeight = chartHeight - marginTop - marginBottom;
-  const barGap = data.length > 8 ? 4 : 6;
+  const barGap = data.length > 8 ? 3 : 6;
 
   // Generate nice Y-axis gridlines
   const niceMax = (() => {
@@ -1194,15 +1194,15 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
                 fill={d.color || "var(--st-accent)"}
                 opacity={0.8}
               />
-              {/* Value label above bar — only show on every other bar if >8 bars */}
-              {showValues && (data.length <= 8 || i % 2 === (data.length % 2 === 0 ? 1 : 0)) && (
+              {/* Value label above bar */}
+              {showValues && (
                 <text
                   x={x + barWidth / 2}
                   y={y - 4}
                   textAnchor="middle"
                   fill="var(--st-text-primary)"
                   fontFamily={FONT_SANS}
-                  fontSize={data.length > 10 ? "8.5" : "9.5"}
+                  fontSize={data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
                   fontWeight="600"
                 >
                   {fmt(d.value)}
@@ -1215,7 +1215,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
                 textAnchor="middle"
                 fill="var(--st-text-secondary)"
                 fontFamily={FONT_SANS}
-                fontSize={data.length > 10 ? "8.5" : "9.5"}
+                fontSize={data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
                 fontWeight="500"
               >
                 {d.label}
@@ -1519,7 +1519,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
             Monthly Revenue Trend (Gross)
           </p>
-          <MiniBarChart data={revenueMonthlyBars} height={180} formatValue={formatCompactCurrency} />
+          <MiniBarChart data={revenueMonthlyBars} height={200} formatValue={formatCompactCurrency} />
         </Card>
       )}
     </div>
