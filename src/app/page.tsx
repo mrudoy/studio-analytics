@@ -226,11 +226,11 @@ const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 const DS = {
   // Typography scale (5 sizes only)
   text: {
-    xs: "0.7rem",      // uppercase labels, captions, fine print
-    sm: "0.85rem",     // secondary text, sublabels, table content
-    md: "1rem",        // body text, card titles, category names
-    lg: "1.5rem",      // metric values, card hero numbers
-    xl: "2.2rem",      // page-level hero KPIs (only in KPIHeroStrip and CategoryDetail headers)
+    xs: "0.75rem",     // uppercase labels, captions, fine print
+    sm: "0.9rem",      // secondary text, sublabels, table content
+    md: "1.05rem",     // body text, card titles, category names
+    lg: "1.75rem",     // metric values, card hero numbers
+    xl: "2.5rem",      // page-level hero KPIs (only in KPIHeroStrip and CategoryDetail headers)
   },
   // Font weights (3 only)
   weight: {
@@ -243,14 +243,14 @@ const DS = {
     xs: "0.25rem",     // tight gaps
     sm: "0.5rem",      // small inner gaps
     md: "1rem",        // standard inner padding/gaps
-    lg: "1.25rem",     // card padding (universal)
+    lg: "1.5rem",      // card padding (universal)
     xl: "2rem",        // section spacing
   },
   // Card padding — one value everywhere
-  cardPad: "1.25rem",
+  cardPad: "1.5rem",
   // Uppercase label style
   label: {
-    fontSize: "0.7rem",
+    fontSize: "0.75rem",
     fontWeight: 600,
     letterSpacing: "0.05em",
     textTransform: "uppercase" as const,
@@ -1172,7 +1172,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
               {showValues && (
                 <span style={{
                   fontFamily: FONT_SANS,
-                  fontSize: "0.6rem",
+                  fontSize: "0.75rem",
                   fontWeight: DS.weight.medium,
                   color: "var(--st-text-primary)",
                   marginBottom: "2px",
@@ -1208,7 +1208,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
             flex: 1,
             textAlign: "center",
             fontFamily: FONT_SANS,
-            fontSize: "0.6rem",
+            fontSize: "0.75rem",
             fontWeight: DS.weight.normal,
             color: "var(--st-text-secondary)",
             whiteSpace: "nowrap",
@@ -1538,7 +1538,7 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
 
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <SectionHeader subtitle={`${data.monthName} ${data.priorYear?.year ?? (data.current ? data.current.year - 1 : "")} → ${data.monthName} ${data.current?.year ?? ""}`}>
         Year-over-Year
       </SectionHeader>
@@ -1880,7 +1880,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
               key={label}
               className="rounded-xl p-3"
               style={{
-                backgroundColor: "var(--st-surface)",
+                backgroundColor: "var(--st-bg-card)",
                 border: "1px solid var(--st-border)",
                 fontFamily: FONT_SANS,
               }}
@@ -1938,7 +1938,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
       <div
         className="rounded-xl p-3"
         style={{
-          backgroundColor: "var(--st-surface)",
+          backgroundColor: "var(--st-bg-card)",
           border: "1px solid var(--st-border)",
           fontFamily: FONT_SANS,
         }}
@@ -2358,7 +2358,7 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
   const maxVal = Math.max(olderTotal, priorTotal, 1);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
 
       <Card>
@@ -2410,7 +2410,7 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
     && projection.projectedYearEndMRR < projection.currentMRR * 20;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <SectionHeader>Revenue</SectionHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2569,174 +2569,147 @@ function DashboardView() {
         <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
       </div>
 
-      {/* ━━ Main grid: 12-column responsive ━━━━━━━━ */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(12, 1fr)",
-        gap: "1rem",
-        maxWidth: "1400px",
-        margin: "0 auto",
-      }}>
-        {/* ── KPI Hero Strip — full width ── */}
-        <div style={{ gridColumn: "1 / -1" }}>
-          <KPIHeroStrip tiles={(() => {
-            const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
-            const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
-            const inStudioNet = latestW
-              ? latestW.netMemberGrowth + latestW.netSky3Growth
-              : null;
-            const digitalNet = latestW
-              ? latestW.newSkyTingTv - latestW.skyTingTvChurn
-              : null;
+      {/* ━━ Single column — centered, Substack-style ━━━━━━━━ */}
+      <div style={{ maxWidth: "720px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
 
-            const nowDate = new Date();
-            const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
-            const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
-            const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
-            const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
-            const heroLabel = latestMonthly
-              ? `${formatMonthLabel(latestMonthly.month)} Revenue`
-              : "Revenue MTD";
-            const heroValue = latestMonthly
-              ? latestMonthly.gross
-              : data.currentMonthRevenue;
-            const heroSublabel = prevMonthly
-              ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
-              : data.previousMonthRevenue > 0
-                ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
-                : undefined;
+        {/* ── KPI Hero Strip ── */}
+        <KPIHeroStrip tiles={(() => {
+          const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
+          const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
+          const inStudioNet = latestW
+            ? latestW.netMemberGrowth + latestW.netSky3Growth
+            : null;
+          const digitalNet = latestW
+            ? latestW.newSkyTingTv - latestW.skyTingTvChurn
+            : null;
 
-            const tiles: HeroTile[] = [
-              {
-                label: heroLabel,
-                value: formatCurrency(heroValue),
-                sublabel: heroSublabel,
-              },
-              {
-                label: "In-Studio Auto-Renews",
-                value: formatNumber(inStudioCount),
-                delta: inStudioNet,
-                sublabel: inStudioNet != null ? "net this week" : undefined,
-              },
-              {
-                label: "Sky Ting TV (Digital)",
-                value: formatNumber(data.activeSubscribers.skyTingTv),
-                delta: digitalNet,
-                sublabel: digitalNet != null ? "net this week" : undefined,
-              },
-            ];
-            return tiles;
-          })()} />
-        </div>
+          const nowDate = new Date();
+          const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+          const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+          const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
+          const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
+          const heroLabel = latestMonthly
+            ? `${formatMonthLabel(latestMonthly.month)} Revenue`
+            : "Revenue MTD";
+          const heroValue = latestMonthly
+            ? latestMonthly.gross
+            : data.currentMonthRevenue;
+          const heroSublabel = prevMonthly
+            ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
+            : data.previousMonthRevenue > 0
+              ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
+              : undefined;
 
-        {/* ── Revenue section — full width ── */}
-        <div style={{ gridColumn: "1 / -1" }}>
-          <RevenueSection data={data} trends={trends} />
-        </div>
+          const tiles: HeroTile[] = [
+            {
+              label: heroLabel,
+              value: formatCurrency(heroValue),
+              sublabel: heroSublabel,
+            },
+            {
+              label: "In-Studio Auto-Renews",
+              value: formatNumber(inStudioCount),
+              delta: inStudioNet,
+              sublabel: inStudioNet != null ? "net this week" : undefined,
+            },
+            {
+              label: "Sky Ting TV (Digital)",
+              value: formatNumber(data.activeSubscribers.skyTingTv),
+              delta: digitalNet,
+              sublabel: digitalNet != null ? "net this week" : undefined,
+            },
+          ];
+          return tiles;
+        })()} />
 
-        {/* ── YoY + MRR side by side ── */}
+        {/* ── Revenue ── */}
+        <RevenueSection data={data} trends={trends} />
+
+        {/* ── Year-over-Year ── */}
         {data.monthOverMonth && (
-          <div className="col-span-12 md:col-span-6">
-            <MonthOverMonthSection data={data.monthOverMonth} />
+          <MonthOverMonthSection data={data.monthOverMonth} />
+        )}
+
+        {/* ── MRR Breakdown ── */}
+        <MRRBreakdown data={data} />
+
+        {/* ── Auto-Renews ── */}
+        <SectionHeader>Auto-Renews</SectionHeader>
+
+        <CategoryDetail
+          title="Members"
+          color={COLORS.member}
+          count={data.activeSubscribers.member}
+          weekly={weekly}
+          monthly={monthly}
+          pacing={pacing}
+          weeklyKeyNew={(r) => r.newMembers}
+          weeklyKeyChurn={(r) => r.memberChurn}
+          weeklyKeyNet={(r) => r.netMemberGrowth}
+          pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
+          pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+          churnData={trends?.churnRates?.byCategory?.member}
+        />
+
+        <CategoryDetail
+          title="SKY3"
+          color={COLORS.sky3}
+          count={data.activeSubscribers.sky3}
+          weekly={weekly}
+          monthly={monthly}
+          pacing={pacing}
+          weeklyKeyNew={(r) => r.newSky3}
+          weeklyKeyChurn={(r) => r.sky3Churn}
+          weeklyKeyNet={(r) => r.netSky3Growth}
+          pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
+          pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+          churnData={trends?.churnRates?.byCategory?.sky3}
+        />
+
+        <CategoryDetail
+          title="SKY TING TV"
+          color={COLORS.tv}
+          count={data.activeSubscribers.skyTingTv}
+          weekly={weekly}
+          monthly={monthly}
+          pacing={pacing}
+          weeklyKeyNew={(r) => r.newSkyTingTv}
+          weeklyKeyChurn={(r) => r.skyTingTvChurn}
+          weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+          churnData={trends?.churnRates?.byCategory?.skyTingTv}
+        />
+
+        {/* ── Churn ── */}
+        {trends?.churnRates ? (
+          <ChurnSection churnRates={trends.churnRates} />
+        ) : (
+          <NoData label="Churn" />
+        )}
+
+        {/* ── Non Members ── */}
+        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
+          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} />
+        ) : (
+          <NoData label="Non-Members (First Visits, Drop-Ins)" />
+        )}
+
+        {/* ── Revenue Projection ── */}
+        {trends?.projection ? (
+          <RevenueProjectionSection projection={trends.projection} />
+        ) : (
+          <div className="space-y-3">
+            <SectionHeader>Revenue</SectionHeader>
+            <NoData label="Revenue Projection" />
           </div>
         )}
-        <div className={data.monthOverMonth ? "col-span-12 md:col-span-6" : "col-span-12"}>
-          <MRRBreakdown data={data} />
-        </div>
 
-        {/* ── Auto-Renews section header — full width ── */}
-        <div style={{ gridColumn: "1 / -1", marginTop: "0.5rem" }}>
-          <SectionHeader>Auto-Renews</SectionHeader>
-        </div>
-
-        {/* ── Category cards — 2-up on medium, 3-up on large ── */}
-        <div className="col-span-12 md:col-span-6 xl:col-span-4">
-          <CategoryDetail
-            title="Members"
-            color={COLORS.member}
-            count={data.activeSubscribers.member}
-            weekly={weekly}
-            monthly={monthly}
-            pacing={pacing}
-            weeklyKeyNew={(r) => r.newMembers}
-            weeklyKeyChurn={(r) => r.memberChurn}
-            weeklyKeyNet={(r) => r.netMemberGrowth}
-            pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
-            pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
-            churnData={trends?.churnRates?.byCategory?.member}
-          />
-        </div>
-
-        <div className="col-span-12 md:col-span-6 xl:col-span-4">
-          <CategoryDetail
-            title="SKY3"
-            color={COLORS.sky3}
-            count={data.activeSubscribers.sky3}
-            weekly={weekly}
-            monthly={monthly}
-            pacing={pacing}
-            weeklyKeyNew={(r) => r.newSky3}
-            weeklyKeyChurn={(r) => r.sky3Churn}
-            weeklyKeyNet={(r) => r.netSky3Growth}
-            pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
-            pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
-            churnData={trends?.churnRates?.byCategory?.sky3}
-          />
-        </div>
-
-        <div className="col-span-12 md:col-span-6 xl:col-span-4">
-          <CategoryDetail
-            title="SKY TING TV"
-            color={COLORS.tv}
-            count={data.activeSubscribers.skyTingTv}
-            weekly={weekly}
-            monthly={monthly}
-            pacing={pacing}
-            weeklyKeyNew={(r) => r.newSkyTingTv}
-            weeklyKeyChurn={(r) => r.skyTingTvChurn}
-            weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
-            churnData={trends?.churnRates?.byCategory?.skyTingTv}
-          />
-        </div>
-
-        {/* ── Churn — full width ── */}
-        <div style={{ gridColumn: "1 / -1" }}>
-          {trends?.churnRates ? (
-            <ChurnSection churnRates={trends.churnRates} />
-          ) : (
-            <NoData label="Churn" />
-          )}
-        </div>
-
-        {/* ── Non Members — full width ── */}
-        <div style={{ gridColumn: "1 / -1" }}>
-          {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
-            <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} />
-          ) : (
-            <NoData label="Non-Members (First Visits, Drop-Ins)" />
-          )}
-        </div>
-
-        {/* ── Revenue Projection + YoY side by side ── */}
-        <div className={data.monthlyRevenue && data.monthlyRevenue.length > 0 ? "col-span-12 md:col-span-6" : "col-span-12"}>
-          {trends?.projection ? (
-            <RevenueProjectionSection projection={trends.projection} />
-          ) : (
-            <div className="space-y-3">
-              <SectionHeader>Revenue</SectionHeader>
-              <NoData label="Revenue Projection" />
-            </div>
-          )}
-        </div>
-
+        {/* ── Year-over-Year Revenue ── */}
         {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <div className="col-span-12 md:col-span-6">
-            <YoYRevenueSection monthlyRevenue={data.monthlyRevenue} />
-          </div>
+          <YoYRevenueSection monthlyRevenue={data.monthlyRevenue} />
         )}
 
-        {/* ── Footer — full width ── */}
-        <div style={{ gridColumn: "1 / -1" }} className="text-center pt-6">
+        {/* ── Footer ── */}
+        <div className="text-center pt-6">
           <div className="flex justify-center gap-8 text-sm" style={{ color: "var(--st-text-secondary)" }}>
             <NavLink href="/settings">Settings</NavLink>
             <NavLink href="/results">Results</NavLink>
