@@ -247,7 +247,7 @@ const DS = {
     xl: "2rem",        // section spacing
   },
   // Card padding — one value everywhere
-  cardPad: "1.25rem",
+  cardPad: "1rem",
   // Uppercase label style
   label: {
     fontSize: "0.7rem",
@@ -741,18 +741,18 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
     <div>
       <h2
         style={{
-          color: "var(--st-text-primary)",
+          color: "var(--st-text-secondary)",
           fontFamily: FONT_SANS,
-          fontWeight: DS.weight.bold,
-          fontSize: DS.text.lg,
-          letterSpacing: "-0.01em",
+          fontWeight: DS.weight.medium,
+          fontSize: DS.text.sm,
+          letterSpacing: "0.05em",
           textTransform: "uppercase" as const,
         }}
       >
         {children}
       </h2>
       {subtitle && (
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm, marginTop: "2px" }}>
+        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.xs, marginTop: "2px", opacity: 0.7 }}>
           {subtitle}
         </p>
       )}
@@ -1516,11 +1516,11 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
     : null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <SectionHeader>Revenue</SectionHeader>
 
       {/* Summary cards — 2 column */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Latest completed month */}
         <Card>
           <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "2px" }}>
@@ -1600,7 +1600,7 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
 
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <SectionHeader subtitle={`${data.monthName} ${data.priorYear?.year ?? (data.current ? data.current.year - 1 : "")} → ${data.monthName} ${data.current?.year ?? ""}`}>
         Year-over-Year
       </SectionHeader>
@@ -1722,15 +1722,15 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
   return (
     <Card>
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-2.5">
-          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.teal, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             First Visits
           </span>
         </div>
         <div style={{ textAlign: "right" }}>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(firstVisits.currentWeekTotal)}
           </span>
           <p style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "2px" }}>
@@ -1739,7 +1739,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Weekly bar chart — last 4 completed weeks */}
         <div>
           <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
@@ -1838,15 +1838,15 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
   return (
     <Card>
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-2.5">
-          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.copper, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Returning Non-Members
           </span>
         </div>
         <div style={{ textAlign: "right" }}>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(returningNonMembers.currentWeekTotal)}
           </span>
           <p style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "2px" }}>
@@ -1855,7 +1855,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Weekly bar chart */}
         <div>
           <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
@@ -1941,7 +1941,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
   const totalAtRisk = categories.reduce((sum, c) => sum + (c.data?.atRiskCount ?? 0), 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <SectionHeader subtitle={totalAtRisk > 0 ? `${totalAtRisk} at-risk subscribers` : undefined}>
         Churn
       </SectionHeader>
@@ -1953,7 +1953,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
           return (
             <div
               key={label}
-              className="rounded-xl p-4"
+              className="rounded-xl p-3"
               style={{
                 backgroundColor: "var(--st-surface)",
                 border: "1px solid var(--st-border)",
@@ -2011,14 +2011,14 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
 
       {/* ── Monthly Trend Chart ── */}
       <div
-        className="rounded-xl p-5"
+        className="rounded-xl p-3"
         style={{
           backgroundColor: "var(--st-surface)",
           border: "1px solid var(--st-border)",
           fontFamily: FONT_SANS,
         }}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <div style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Monthly User Churn Rate
           </div>
@@ -2133,7 +2133,7 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firs
   if (!firstVisits && !returningNonMembers && !dropIns) return null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">Non Members</SectionHeader>
 
       {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
@@ -2163,18 +2163,18 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
   return (
     <Card>
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-2.5">
-          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Drop-Ins
           </span>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
             Visits
           </span>
         </div>
         <div className="flex flex-col items-end">
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(dropIns.currentMonthTotal)}
           </span>
           <span style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "0.25rem" }}>
@@ -2183,7 +2183,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Weekly visits chart */}
         <div>
           <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
@@ -2260,19 +2260,19 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   return (
     <Card>
       {/* Header row */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-2.5">
-          <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: color, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: color, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             {title}
           </span>
         </div>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
           {formatNumber(count)}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Weekly new sign-ups chart */}
         <div>
           <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
@@ -2438,7 +2438,7 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
   const maxVal = Math.max(olderTotal, priorTotal, 1);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
 
       <Card>
@@ -2498,10 +2498,10 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
     && projection.projectedYearEndMRR < projection.currentMRR * 20;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <SectionHeader>Revenue</SectionHeader>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Prior year total */}
         <Card>
           <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
@@ -2509,7 +2509,7 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
           </p>
           {priorYearRev > 0 ? (
             <>
-              <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+              <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "4px" }}>
                 {formatCurrency(priorYearRev)}
               </p>
               <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
@@ -2529,7 +2529,7 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
             <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
               {projection.year} Subscription MRR
             </p>
-            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "4px" }}>
               {formatCurrency(projection.currentMRR)}
             </p>
             <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
@@ -2637,10 +2637,10 @@ function DashboardView() {
   const pacing = trends?.pacing || null;
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 sm:p-8 pb-16">
-      <div className="max-w-6xl w-full space-y-8">
+    <div className="min-h-screen flex flex-col items-center p-4 sm:p-6 pb-16">
+      <div className="max-w-2xl w-full space-y-6">
         {/* ── Header ─────────────────────────────────── */}
-        <div className="text-center space-y-3 pt-4">
+        <div className="text-center space-y-2 pt-2">
           <div className="flex justify-center">
             <SkyTingLogo />
           </div>
@@ -2648,9 +2648,10 @@ function DashboardView() {
             style={{
               color: "var(--st-text-primary)",
               fontFamily: FONT_SANS,
-              fontWeight: DS.weight.bold,
-              fontSize: DS.text.xl,
-              letterSpacing: "-0.03em",
+              fontWeight: DS.weight.medium,
+              fontSize: DS.text.md,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase" as const,
             }}
           >
             Studio Dashboard
@@ -2789,7 +2790,7 @@ function DashboardView() {
         {trends?.projection ? (
           <RevenueProjectionSection projection={trends.projection} />
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-3">
             <SectionHeader>Revenue</SectionHeader>
             <NoData label="Revenue Projection" />
           </div>
