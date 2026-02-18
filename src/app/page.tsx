@@ -2569,8 +2569,8 @@ function DashboardView() {
         <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
       </div>
 
-      {/* ━━ Single column — centered, Substack-style ━━━━━━━━ */}
-      <div style={{ maxWidth: "720px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* ━━ Single column — centered, responsive ━━━━━━━━ */}
+      <div style={{ maxWidth: "1200px", width: "90%", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
 
         {/* ── KPI Hero Strip ── */}
         <KPIHeroStrip tiles={(() => {
