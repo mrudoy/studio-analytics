@@ -2626,19 +2626,17 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
   const priorYearRev = projection.priorYearActualRevenue || projection.priorYearRevenue;
   const isActualPrior = !!projection.priorYearActualRevenue;
 
-  const yoyChange = priorYearRev > 0
-    ? ((projection.projectedAnnualRevenue - priorYearRev) / priorYearRev * 100).toFixed(1)
-    : null;
-
-  // Visual comparison bars
-  const maxRev = Math.max(projection.projectedAnnualRevenue, priorYearRev, 1);
+  // Only show MRR metrics if they look sane (non-zero MRR, growth rate under 50%)
+  const mrrSane = projection.currentMRR > 0
+    && Math.abs(projection.monthlyGrowthRate) < 50
+    && projection.projectedYearEndMRR < projection.currentMRR * 20;
 
   return (
     <div className="space-y-5">
       <SectionHeader>Revenue</SectionHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Prior year (2025) */}
+        {/* Prior year total */}
         <Card padding="1.75rem">
           <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
             {projection.year - 1} Total Revenue{priorYearRev > 0 && !isActualPrior ? " (Est.)" : ""}
@@ -2659,72 +2657,30 @@ function RevenueProjectionSection({ projection }: { projection: ProjectionData }
           )}
         </Card>
 
-        {/* 2026 Forecast */}
-        <Card padding="1.75rem">
-          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-            {projection.year} Forecast
-          </p>
-          <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
-            {formatCurrency(projection.projectedAnnualRevenue)}
-          </p>
-          <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
-            Based on {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
-          </p>
-          {yoyChange && (
-            <div className="mt-2">
-              <DeltaBadge
-                delta={Math.round(projection.projectedAnnualRevenue - priorYearRev)}
-                deltaPercent={Math.round(Number(yoyChange))}
-                isCurrency
-              />
-              <p style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
-                vs {projection.year - 1}
-              </p>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Metrics + visual comparison bar */}
-      <Card padding="1.75rem">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-          <ForecastMetric label="Current MRR" value={formatCurrency(projection.currentMRR)} />
-          <ForecastMetric
-            label="Monthly Growth"
-            value={`${projection.monthlyGrowthRate > 0 ? "+" : ""}${projection.monthlyGrowthRate}%`}
-            color={projection.monthlyGrowthRate >= 0 ? "var(--st-success)" : "var(--st-error)"}
-          />
-          <ForecastMetric label="Year-End MRR (Est.)" value={formatCurrency(projection.projectedYearEndMRR)} />
-        </div>
-
-        {/* Visual comparison bars */}
-        {priorYearRev > 0 && (
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-secondary)", width: "55px" }}>
-                {projection.year - 1}
-              </span>
-              <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
-                <div style={{ width: `${(priorYearRev / maxRev) * 100}%`, height: "100%", backgroundColor: "var(--st-text-secondary)", opacity: 0.3, borderRadius: "9999px" }} />
-              </div>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 600, color: "var(--st-text-secondary)", minWidth: "70px", textAlign: "right" }}>
-                {formatCompactCurrency(priorYearRev)}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", fontWeight: 600, color: "var(--st-text-primary)", width: "55px" }}>
-                {projection.year}
-              </span>
-              <div className="flex-1 rounded-full overflow-hidden" style={{ height: "14px", backgroundColor: "var(--st-border)" }}>
-                <div style={{ width: `${(projection.projectedAnnualRevenue / maxRev) * 100}%`, height: "100%", backgroundColor: COLORS.member, opacity: 0.7, borderRadius: "9999px" }} />
-              </div>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.88rem", fontWeight: 700, color: "var(--st-text-primary)", minWidth: "70px", textAlign: "right" }}>
-                {formatCompactCurrency(projection.projectedAnnualRevenue)}
-              </span>
-            </div>
-          </div>
+        {/* MRR metrics — only if data is sane */}
+        {mrrSane ? (
+          <Card padding="1.75rem">
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              {projection.year} Subscription MRR
+            </p>
+            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2.8rem", color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.1, marginTop: "6px" }}>
+              {formatCurrency(projection.currentMRR)}
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "0.85rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+              {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
+            </p>
+          </Card>
+        ) : (
+          <Card padding="1.75rem">
+            <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+              {projection.year} MRR
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: 500, fontSize: "1rem", color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
+              Insufficient subscription data
+            </p>
+          </Card>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
