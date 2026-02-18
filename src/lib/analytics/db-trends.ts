@@ -278,23 +278,22 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
       );
       console.log(`[db-trends] Prior year ${priorYear} filter: ${priorYearPeriods.length} matching periods`);
       if (priorYearPeriods.length > 0) {
-        const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
-
-        // Determine how many months the data actually spans
-        // Check if any period covers a full year (e.g. 2025-01-01 to 2025-12-31)
-        const spansFullYear = priorYearPeriods.some((p) => {
+        // Check if any single period covers the full year (e.g. 2025-01-01 to 2025-12-31)
+        const fullYearPeriod = priorYearPeriods.find((p) => {
           const start = new Date(p.periodStart + "T00:00:00");
           const end = new Date(p.periodEnd + "T00:00:00");
           const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-          console.log(`[db-trends] Period span check: ${p.periodStart} to ${p.periodEnd}, start=${start.toISOString()}, end=${end.toISOString()}, months=${months}`);
+          console.log(`[db-trends] Period span check: ${p.periodStart} to ${p.periodEnd}, months=${months}`);
           return months >= 11; // covers 11+ months = full year
         });
 
-        if (spansFullYear) {
-          // Data covers full year — use actual total, no extrapolation
-          priorYearActualRevenue = Math.round(totalNet);
-          console.log(`[db-trends] Prior year ${priorYear}: full-year period detected, using actual total $${priorYearActualRevenue.toLocaleString()}`);
+        if (fullYearPeriod) {
+          // Use the full-year period ONLY — do NOT sum with monthly periods (would double-count)
+          priorYearActualRevenue = Math.round(fullYearPeriod.totalNetRevenue);
+          console.log(`[db-trends] Prior year ${priorYear}: full-year period ${fullYearPeriod.periodStart}→${fullYearPeriod.periodEnd}, using $${priorYearActualRevenue.toLocaleString()} (NOT summing ${priorYearPeriods.length} periods to avoid double-count)`);
         } else {
+          // No full-year period — sum monthly periods (no overlap risk)
+          const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
           // Calculate covered months from unique period-start months
           const coveredMonths = new Set(
             priorYearPeriods.map((p) => p.periodStart.slice(0, 7))
@@ -403,16 +402,17 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
         (p) => p.periodStart.startsWith(String(priorYear)) && p.totalNetRevenue > 0
       );
       if (priorYearPeriods.length > 0) {
-        const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
-        const spansFullYear = priorYearPeriods.some((p) => {
+        // Check for a single full-year period — use it exclusively to avoid double-counting
+        const fullYearPeriod = priorYearPeriods.find((p) => {
           const start = new Date(p.periodStart + "T00:00:00");
           const end = new Date(p.periodEnd + "T00:00:00");
           const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
           return months >= 11;
         });
-        if (spansFullYear) {
-          priorYearActual = Math.round(totalNet);
+        if (fullYearPeriod) {
+          priorYearActual = Math.round(fullYearPeriod.totalNetRevenue);
         } else {
+          const totalNet = priorYearPeriods.reduce((sum, p) => sum + p.totalNetRevenue, 0);
           const coveredMonths = new Set(priorYearPeriods.map((p) => p.periodStart.slice(0, 7))).size;
           if (coveredMonths > 0) {
             priorYearActual = Math.round(totalNet / coveredMonths * 12);
