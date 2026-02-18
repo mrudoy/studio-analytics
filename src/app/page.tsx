@@ -1142,6 +1142,14 @@ interface BarChartData {
   color?: string;
 }
 
+/**
+ * Bar chart rule: each bar gets a fixed-width slot (BAR_SLOT_PX).
+ * The chart is only as wide as it needs to be — never stretches to fill the card.
+ * This keeps bars tight and readable regardless of container width.
+ */
+const BAR_SLOT_PX = 48;
+const BAR_GAP_PX = 4;
+
 function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   data: BarChartData[];
   height?: number;
@@ -1152,14 +1160,15 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const fmt = formatValue || ((v: number) => String(v));
   const barHeight = height;
+  const chartWidth = data.length * BAR_SLOT_PX + (data.length - 1) * BAR_GAP_PX;
 
   return (
-    <div style={{ width: "100%" }}>
+    <div style={{ width: `${chartWidth}px`, maxWidth: "100%" }}>
       {/* Bar area */}
       <div style={{
         display: "flex",
         alignItems: "flex-end",
-        gap: data.length > 8 ? "2px" : "4px",
+        gap: `${BAR_GAP_PX}px`,
         height: `${barHeight}px`,
         borderBottom: "1px solid var(--st-border)",
         paddingBottom: "1px",
@@ -1168,7 +1177,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
           const fraction = max > 0 ? Math.abs(d.value) / max : 0;
           const h = Math.max(Math.round(fraction * (barHeight - (showValues ? 18 : 4))), 3);
           return (
-            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", minWidth: 0 }}>
+            <div key={i} style={{ width: `${BAR_SLOT_PX}px`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
               {showValues && (
                 <span style={{
                   fontFamily: FONT_SANS,
@@ -1177,17 +1186,13 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
                   color: "var(--st-text-primary)",
                   marginBottom: "2px",
                   whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "100%",
                   textAlign: "center",
                 }}>
                   {fmt(d.value)}
                 </span>
               )}
               <div style={{
-                width: "100%",
-                maxWidth: "40px",
+                width: "28px",
                 height: `${h}px`,
                 borderRadius: "2px 2px 0 0",
                 backgroundColor: d.color || "var(--st-accent)",
@@ -1200,12 +1205,12 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
       {/* X-axis labels */}
       <div style={{
         display: "flex",
-        gap: data.length > 8 ? "2px" : "4px",
+        gap: `${BAR_GAP_PX}px`,
         marginTop: "4px",
       }}>
         {data.map((d, i) => (
           <div key={i} style={{
-            flex: 1,
+            width: `${BAR_SLOT_PX}px`,
             textAlign: "center",
             fontFamily: FONT_SANS,
             fontSize: "0.75rem",
@@ -1214,7 +1219,6 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            minWidth: 0,
           }}>
             {d.label}
           </div>
