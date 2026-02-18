@@ -193,6 +193,36 @@ export async function getMonthlyRevenue(year: number, month: number): Promise<{
   };
 }
 
+/**
+ * Get all monthly revenue summaries (periods where start and end are within the same month).
+ * Excludes annual/multi-month periods. Ordered chronologically.
+ */
+export async function getAllMonthlyRevenue(): Promise<{
+  periodStart: string;
+  periodEnd: string;
+  categoryCount: number;
+  totalRevenue: number;
+  totalNetRevenue: number;
+}[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT period_start, period_end, COUNT(*) as category_count,
+            SUM(revenue) as total_revenue, SUM(net_revenue) as total_net_revenue
+     FROM revenue_categories
+     WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+     GROUP BY period_start, period_end
+     ORDER BY period_start ASC`
+  );
+
+  return rows.map((r: Record<string, unknown>) => ({
+    periodStart: r.period_start as string,
+    periodEnd: r.period_end as string,
+    categoryCount: Number(r.category_count),
+    totalRevenue: Number(r.total_revenue),
+    totalNetRevenue: Number(r.total_net_revenue),
+  }));
+}
+
 export async function savePipelineRun(
   dateRangeStart: string,
   dateRangeEnd: string,

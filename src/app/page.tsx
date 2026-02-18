@@ -34,6 +34,7 @@ interface DashboardStats {
   trends?: TrendsData | null;
   revenueCategories?: RevenueCategoryData | null;
   monthOverMonth?: MonthOverMonthData | null;
+  monthlyRevenue?: { month: string; gross: number; net: number }[];
 }
 
 interface RevenueCategoryData {
@@ -1345,76 +1346,69 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 // ─── Revenue Section (weekly + monthly, hard separation) ─────
 
 function RevenueSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
-  const weekly = trends?.weekly || [];
-  const monthly = trends?.monthly || [];
-  const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
-  const prevW = weekly.length >= 2 ? weekly[weekly.length - 2] : null;
+  // Only show completed months (exclude current calendar month)
+  const nowDate = new Date();
+  const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+  const monthlyRevenue = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
 
-  // Weekly delta
-  const weeklyDelta = latestW && prevW && prevW.revenueAdded > 0
-    ? latestW.revenueAdded - prevW.revenueAdded
-    : null;
-  const weeklyDeltaPct = latestW && prevW && prevW.revenueAdded > 0
-    ? Math.round((latestW.revenueAdded - prevW.revenueAdded) / prevW.revenueAdded * 1000) / 10
-    : null;
-
-  // Monthly bars
-  const revenueMonthlyBars: BarChartData[] = monthly.slice(-6).map((m) => ({
-    label: formatMonthLabel(m.period),
-    value: m.revenueAdded,
+  // Use actual monthly revenue data for the bar chart (last 12 months)
+  const revenueMonthlyBars: BarChartData[] = monthlyRevenue.slice(-12).map((m) => ({
+    label: formatMonthLabel(m.month),
+    value: m.gross,
     color: COLORS.member,
   }));
 
-  // Last month total (second-to-last monthly period)
-  const lastMonthRevenue = monthly.length >= 2 ? monthly[monthly.length - 2].revenueAdded : null;
+  // MoM delta from the last two months
+  const lastTwo = monthlyRevenue.slice(-2);
+  const currentMonth = lastTwo.length >= 1 ? lastTwo[lastTwo.length - 1] : null;
+  const prevMonth = lastTwo.length >= 2 ? lastTwo[0] : null;
+  const momDelta = currentMonth && prevMonth && prevMonth.gross > 0
+    ? currentMonth.gross - prevMonth.gross
+    : null;
+  const momDeltaPct = currentMonth && prevMonth && prevMonth.gross > 0
+    ? Math.round((currentMonth.gross - prevMonth.gross) / prevMonth.gross * 1000) / 10
+    : null;
 
   return (
     <div className="space-y-5">
       <SectionHeader>Revenue</SectionHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {/* Left: Weekly Revenue */}
+        {/* Left: Current month */}
         <Card padding="1.5rem">
           <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em", marginBottom: "2px" }}>
-            Weekly Revenue
+            {currentMonth ? formatMonthLabel(currentMonth.month) : "Current Month"} Gross Revenue
           </p>
-          {latestW && (
-            <p style={{ fontFamily: FONT_SANS, fontSize: "0.78rem", color: "var(--st-text-secondary)", marginBottom: "12px" }}>
-              {formatWeekRange(latestW.period)}
-            </p>
-          )}
 
-          {latestW ? (
+          {currentMonth ? (
             <>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                {formatCurrency(latestW.revenueAdded)}
+              <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "8px" }}>
+                {formatCurrency(currentMonth.gross)}
               </p>
-              {weeklyDelta != null && (
-                <p style={{ marginTop: "6px" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>vs prior week: </span>
-                  <DeltaBadge delta={weeklyDelta} deltaPercent={weeklyDeltaPct} isCurrency compact />
+              <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "4px" }}>
+                Net: {formatCurrency(currentMonth.net)}
+              </p>
+              {momDelta != null && prevMonth && (
+                <p style={{ marginTop: "8px" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)" }}>vs {formatMonthLabel(prevMonth.month)}: </span>
+                  <DeltaBadge delta={momDelta} deltaPercent={momDeltaPct} isCurrency compact />
                 </p>
               )}
             </>
           ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No weekly data yet</p>
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, marginTop: "8px" }}>No monthly data yet</p>
           )}
         </Card>
 
         {/* Right: Monthly Revenue Trend */}
         <Card padding="1.5rem">
           <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
-            Monthly Revenue Trend
+            Monthly Revenue Trend (Gross)
           </p>
           {revenueMonthlyBars.length > 0 ? (
             <MiniBarChart data={revenueMonthlyBars} height={100} formatValue={formatCompactCurrency} />
           ) : (
             <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>No monthly data yet</p>
-          )}
-          {lastMonthRevenue != null && lastMonthRevenue > 0 && (
-            <p style={{ fontFamily: FONT_SANS, fontSize: "0.82rem", color: "var(--st-text-secondary)", marginTop: "10px" }}>
-              Last month: {formatCurrency(lastMonthRevenue)}
-            </p>
           )}
         </Card>
       </div>
@@ -2878,13 +2872,29 @@ function DashboardView() {
             ? latestW.newSkyTingTv - latestW.skyTingTvChurn
             : null;
 
+          // Use latest COMPLETED monthly revenue for the KPI (exclude current month)
+          const nowDate = new Date();
+          const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+          const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+          const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
+          const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
+          const heroLabel = latestMonthly
+            ? `${formatMonthLabel(latestMonthly.month)} Revenue`
+            : "Revenue MTD";
+          const heroValue = latestMonthly
+            ? latestMonthly.gross
+            : data.currentMonthRevenue;
+          const heroSublabel = prevMonthly
+            ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
+            : data.previousMonthRevenue > 0
+              ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
+              : undefined;
+
           const tiles: HeroTile[] = [
             {
-              label: "Revenue MTD",
-              value: formatCurrency(data.currentMonthRevenue),
-              sublabel: data.previousMonthRevenue > 0
-                ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
-                : undefined,
+              label: heroLabel,
+              value: formatCurrency(heroValue),
+              sublabel: heroSublabel,
             },
             {
               label: "In-Studio Auto-Renews",

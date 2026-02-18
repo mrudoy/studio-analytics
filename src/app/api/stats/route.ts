@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
 import { readDashboardStats, readTrendsData } from "@/lib/sheets/read-dashboard";
 import { getSheetUrl } from "@/lib/sheets/sheets-client";
-import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue, getAllMonthlyRevenue } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -190,12 +190,46 @@ export async function GET() {
       console.warn("[api/stats] Failed to compute month-over-month:", err);
     }
 
-    // ── 7. Return response ──────────────────────────────────
+    // ── 7. Monthly revenue timeline ──────────────────────────
+    let monthlyRevenue: { month: string; gross: number; net: number }[] = [];
+    try {
+      const allMonthly = await getAllMonthlyRevenue();
+      monthlyRevenue = allMonthly.map((m) => ({
+        month: m.periodStart.slice(0, 7), // "2025-01"
+        gross: Math.round(m.totalRevenue * 100) / 100,
+        net: Math.round(m.totalNetRevenue * 100) / 100,
+      }));
+
+      // Override currentMonthRevenue with actual monthly data if available
+      if (stats && monthlyRevenue.length > 0) {
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+        const currentEntry = monthlyRevenue.find((m) => m.month === currentMonthKey);
+        const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
+
+        if (currentEntry) {
+          stats.currentMonthRevenue = currentEntry.net;
+        }
+        if (prevEntry) {
+          stats.previousMonthRevenue = prevEntry.net;
+        }
+      }
+
+      console.log(`[api/stats] Monthly revenue timeline: ${monthlyRevenue.length} months`);
+    } catch (err) {
+      console.warn("[api/stats] Failed to load monthly revenue timeline:", err);
+    }
+
+    // ── 8. Return response ──────────────────────────────────
     return NextResponse.json({
       ...(stats || {}),
       trends,
       revenueCategories,
       monthOverMonth,
+      monthlyRevenue,
       dataSource,
       spreadsheetUrl: spreadsheetId ? getSheetUrl(spreadsheetId) : undefined,
     });
