@@ -337,9 +337,17 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
         ? (priorMonths.reduce((s, e) => s + e.mrr, 0) / priorMonths.length) * 12
         : priorMonths.reduce((s, e) => s + e.mrr, 0))
       : 0;
-    const nonMrrMultiplier = (priorYearActualRevenue && mrrBasedPriorTotal > 0)
+    // Non-MRR multiplier: how much total revenue exceeds MRR-only revenue.
+    // Capped at 2.0 to prevent absurd projections when MRR data is sparse
+    // (e.g., auto_renews table empty → MRR backtrack produces tiny numbers
+    // while revenue_categories has real $2M+ actuals).
+    const rawMultiplier = (priorYearActualRevenue && mrrBasedPriorTotal > 0)
       ? priorYearActualRevenue / mrrBasedPriorTotal
       : 1;
+    const nonMrrMultiplier = Math.min(rawMultiplier, 2.0);
+    if (rawMultiplier > 2.0) {
+      console.warn(`[db-trends] nonMrrMultiplier capped: raw=${rawMultiplier.toFixed(2)}, using 2.0. MRR data may be sparse.`);
+    }
 
     // Project annual revenue (MRR-based, then scaled by non-MRR multiplier)
     let projectedMrrRevenue = 0;
@@ -364,7 +372,13 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
 
     // Scale by non-MRR multiplier to account for drop-ins, workshops, retail, etc.
-    const projectedAnnualRevenue = Math.round(projectedMrrRevenue * nonMrrMultiplier);
+    let projectedAnnualRevenue = Math.round(projectedMrrRevenue * nonMrrMultiplier);
+
+    // Sanity check: projection shouldn't be more than 3x prior year
+    if (priorYearRevenue > 0 && projectedAnnualRevenue > priorYearRevenue * 3) {
+      console.warn(`[db-trends] Projection sanity check failed: $${projectedAnnualRevenue.toLocaleString()} > 3x prior year $${Math.round(priorYearRevenue).toLocaleString()}. Capping.`);
+      projectedAnnualRevenue = Math.round(priorYearRevenue * 1.3); // assume 30% growth max
+    }
 
     projection = {
       year: currentYear,
