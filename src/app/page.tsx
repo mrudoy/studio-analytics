@@ -402,7 +402,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
     <a
       href={href}
       className="hover:underline transition-colors"
-      style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500 }}
+      style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal }}
       onMouseOver={(e) =>
         (e.currentTarget.style.color = "var(--st-text-primary)")
       }
@@ -806,7 +806,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
       className="inline-flex items-center rounded-full px-2.5 py-0.5 mt-1.5"
       style={{ color, fontFamily: FONT_SANS, backgroundColor: bgColor, gap: "3px" }}
     >
-      <span style={{ fontSize: "0.65rem", fontWeight: 700 }}>{arrow}</span>
+      <span style={{ fontSize: DS.text.xs, fontWeight: DS.weight.bold }}>{arrow}</span>
       <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, letterSpacing: "-0.01em" }}>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
       </span>
@@ -1109,10 +1109,10 @@ function DonutChart({ segments, size = 160 }: { segments: DonutSegment[]; size?:
             />
           );
         })}
-        <text x="64" y="58" textAnchor="middle" style={{ fill: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: 700, fontSize: "26px" }}>
+        <text x="64" y="58" textAnchor="middle" style={{ fill: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: "26px" }}>
           {formatNumber(total)}
         </text>
-        <text x="64" y="78" textAnchor="middle" style={{ fill: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500, fontSize: "11px", letterSpacing: "0.08em" }}>
+        <text x="64" y="78" textAnchor="middle" style={{ fill: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: "11px", letterSpacing: "0.05em" }}>
           TOTAL
         </text>
       </svg>
@@ -1304,7 +1304,7 @@ function StackedBarChart({ data, height = 28 }: { data: StackedBarData[]; height
         return (
           <div key={i}>
             <div className="flex items-center justify-between mb-1">
-              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)", letterSpacing: "0.05em", textTransform: "uppercase" as const }}>
                 {bar.label}
               </span>
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
@@ -1745,7 +1745,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             First Visits
           </span>
         </div>
@@ -1768,7 +1768,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
           {weeklyBars.length > 0 ? (
             <MiniBarChart data={weeklyBars} height={100} />
           ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>--</p>
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
           )}
         </div>
 
@@ -1861,7 +1861,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Returning Non-Members
           </span>
         </div>
@@ -1884,7 +1884,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
           {weeklyBars.length > 0 ? (
             <MiniBarChart data={weeklyBars} height={100} />
           ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>--</p>
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
           )}
         </div>
 
@@ -1990,7 +1990,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
 
               {/* User churn rate (primary metric) */}
               <div style={{ marginBottom: "0.5rem" }}>
-                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 2 }}>
+                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 2 }}>
                   User Churn (avg/mo)
                 </div>
                 <span style={{ fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(data.avgUserChurnRate) }}>
@@ -2001,7 +2001,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
               {/* MRR churn + at-risk row */}
               <div className="flex items-center gap-3">
                 <div>
-                  <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.04em", textTransform: "uppercase" as const, marginBottom: 1 }}>
+                  <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 1 }}>
                     MRR Churn
                   </div>
                   <span style={{ fontSize: DS.text.md, fontWeight: DS.weight.medium, color: churnBenchmarkColor(data.avgMrrChurnRate) }}>
@@ -2136,7 +2136,7 @@ function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
           if (!lastCompleted?.annualActiveAtStart) return null;
           return (
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: "0.65rem", color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
                 Members last month: Annual {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned, Monthly {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
               </div>
             </div>
@@ -2186,7 +2186,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Drop-Ins
           </span>
           <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
@@ -2212,7 +2212,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
           {weeklyBars.length > 0 ? (
             <MiniBarChart data={weeklyBars} height={100} />
           ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>—</p>
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>—</p>
           )}
         </div>
 
@@ -2283,7 +2283,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: color, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             {title}
           </span>
         </div>
@@ -2301,7 +2301,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
           {weeklyNewBars.length > 0 ? (
             <MiniBarChart data={weeklyNewBars} height={100} />
           ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.8rem" }}>—</p>
+            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>—</p>
           )}
         </div>
 
@@ -2361,7 +2361,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
           {/* Metric pills */}
           <div className="flex gap-3 mb-3">
             <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
                 User Churn (avg/mo)
               </div>
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgUserChurnRate) }}>
@@ -2370,7 +2370,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
             </div>
 
             <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
                 MRR Churn (avg/mo)
               </div>
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgMrrChurnRate) }}>
@@ -2380,7 +2380,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
 
             {churnData.atRiskCount > 0 && (
               <div className="rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)", minWidth: "60px", textAlign: "center" }}>
-                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.03em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
+                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
                   At Risk
                 </div>
                 <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: COLORS.warning }}>
@@ -2621,7 +2621,7 @@ function DashboardView() {
   if (loadState.state === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500 }}>
+        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal }}>
           Loading...
         </p>
       </div>
@@ -2869,7 +2869,7 @@ export default function Home() {
   if (mode === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: 500 }}>
+        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal }}>
           Loading...
         </p>
       </div>
