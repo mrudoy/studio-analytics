@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db/database";
 import { getPipelineQueue } from "@/lib/queue/pipeline-queue";
+import { listBackups } from "@/lib/db/backup";
 
 export async function GET() {
   const checks: Record<string, { status: "ok" | "error"; latencyMs?: number; error?: string }> = {};
@@ -38,6 +39,17 @@ export async function GET() {
     };
   }
 
+  // Check last backup
+  let lastBackup: string | null = null;
+  try {
+    const backups = await listBackups();
+    if (backups.length > 0) {
+      lastBackup = backups[0].createdAt;
+    }
+  } catch {
+    // Non-critical — backup table may not exist yet
+  }
+
   const allOk = Object.values(checks).every((c) => c.status === "ok");
 
   return NextResponse.json(
@@ -45,6 +57,7 @@ export async function GET() {
       status: allOk ? "healthy" : "degraded",
       uptime: Math.round(process.uptime()),
       checks,
+      lastBackup,
     },
     { status: allOk ? 200 : 503 }
   );

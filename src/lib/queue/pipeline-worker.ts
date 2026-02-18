@@ -5,6 +5,7 @@ import { runEmailPipeline } from "./email-pipeline";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
 import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
+import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 
 /** Maximum total time the pipeline is allowed to run before being killed. */
 const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
@@ -155,8 +156,19 @@ export function startPipelineWorker(): Worker {
     }
   );
 
-  w.on("completed", (job) => {
+  w.on("completed", async (job) => {
     console.log(`[worker] Pipeline job ${job.id} completed`);
+    // Auto-backup after successful pipeline run
+    try {
+      const backup = await createBackup();
+      const { filePath, metadata } = await saveBackupToDisk(backup);
+      await saveBackupMetadata(metadata, filePath);
+      await pruneBackups(7);
+      const totalRows = Object.values(metadata.tables).reduce((a, b) => a + b, 0);
+      console.log(`[worker] Post-pipeline backup: ${totalRows} rows saved to ${filePath}`);
+    } catch (err) {
+      console.warn(`[worker] Post-pipeline backup failed:`, err instanceof Error ? err.message : err);
+    }
   });
 
   w.on("failed", (job, err) => {
