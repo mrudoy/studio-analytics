@@ -1228,6 +1228,130 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   );
 }
 
+// ─── Line Chart ──────────────────────────────────────────────
+
+function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)" }: {
+  data: { label: string; value: number }[];
+  height?: number;
+  formatValue?: (v: number) => string;
+  color?: string;
+}) {
+  if (data.length < 2) return null;
+  const fmt = formatValue || ((v: number) => String(v));
+  const values = data.map(d => d.value);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+
+  // SVG dimensions — labels are positioned with HTML overlay
+  const svgW = 600;
+  const svgH = height;
+  const padL = 0;
+  const padR = 0;
+  const padT = 8;
+  const padB = 8;
+  const plotW = svgW - padL - padR;
+  const plotH = svgH - padT - padB;
+
+  // Build points
+  const points = data.map((d, i) => ({
+    x: padL + (i / (data.length - 1)) * plotW,
+    y: padT + plotH - ((d.value - min) / range) * plotH,
+    value: d.value,
+    label: d.label,
+  }));
+
+  // SVG path
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+  // Gradient fill path (area under line)
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${svgH - padB} L ${points[0].x} ${svgH - padB} Z`;
+
+  // Y-axis gridlines (4 lines)
+  const gridLines = [0.25, 0.5, 0.75, 1].map(frac => padT + plotH - frac * plotH);
+
+  return (
+    <div style={{ width: "100%", position: "relative" }}>
+      {/* Y-axis labels */}
+      <div style={{ position: "absolute", top: 0, left: 0, height: `${svgH}px`, display: "flex", flexDirection: "column", justifyContent: "space-between", paddingTop: `${padT}px`, paddingBottom: `${padB}px`, pointerEvents: "none" }}>
+        {[max, min + range * 0.75, min + range * 0.5, min + range * 0.25, min].map((v, i) => (
+          <span key={i} style={{ fontFamily: FONT_SANS, fontSize: "0.65rem", color: "var(--st-text-secondary)", opacity: 0.6, lineHeight: 1 }}>
+            {fmt(v)}
+          </span>
+        ))}
+      </div>
+
+      {/* SVG chart */}
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: `${svgH}px`, display: "block" }} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {gridLines.map((y, i) => (
+          <line key={i} x1={padL} y1={y} x2={svgW - padR} y2={y} stroke="var(--st-border)" strokeWidth="0.5" strokeDasharray="4 4" />
+        ))}
+
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#lineGrad)" />
+
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+
+        {/* Data points */}
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="var(--st-bg-card)" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
+
+      {/* X-axis labels */}
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
+        {data.map((d, i) => (
+          <span key={i} style={{
+            fontFamily: FONT_SANS,
+            fontSize: "0.7rem",
+            color: "var(--st-text-secondary)",
+            textAlign: "center",
+            minWidth: 0,
+            flex: 1,
+          }}>
+            {d.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Value labels on points */}
+      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: `${svgH}px`, pointerEvents: "none" }}>
+        {points.map((p, i) => {
+          // Only show labels on first, last, and peaks/valleys
+          const isPeak = i > 0 && i < points.length - 1 &&
+            p.value >= points[i - 1].value && p.value >= points[i + 1].value;
+          const isEndpoint = i === 0 || i === points.length - 1;
+          if (!isEndpoint && !isPeak) return null;
+          return (
+            <span key={i} style={{
+              position: "absolute",
+              left: `${(p.x / svgW) * 100}%`,
+              top: `${(p.y / svgH) * 100 - 8}%`,
+              transform: "translateX(-50%)",
+              fontFamily: FONT_SANS,
+              fontSize: "0.7rem",
+              fontWeight: DS.weight.medium,
+              color: "var(--st-text-primary)",
+              whiteSpace: "nowrap",
+            }}>
+              {fmt(p.value)}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Stacked Bar Chart ───────────────────────────────────────
 
 interface StackedBarData {
@@ -1519,7 +1643,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           <p className="mb-3" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
             Monthly Revenue Trend (Gross)
           </p>
-          <MiniBarChart data={revenueMonthlyBars} height={140} formatValue={formatCompactCurrency} />
+          <LineChart data={revenueMonthlyBars} height={180} formatValue={formatCompactCurrency} color={COLORS.member} />
         </Card>
       )}
     </div>
