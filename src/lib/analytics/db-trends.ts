@@ -40,7 +40,7 @@ import type {
   ChurnRateData,
   CategoryChurnData,
   CategoryMonthlyChurn,
-} from "../sheets/read-dashboard";
+} from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
 

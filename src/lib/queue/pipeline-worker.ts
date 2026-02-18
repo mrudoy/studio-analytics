@@ -1,10 +1,9 @@
 import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "./connection";
 import { loadSettings } from "../crypto/credentials";
-import { runPipelineFromFiles } from "./pipeline-core";
 import { runEmailPipeline } from "./email-pipeline";
 import { cleanupDownloads } from "../scraper/download-manager";
-import type { PipelineJobData, PipelineResult } from "@/types/pipeline";
+import type { PipelineResult } from "@/types/pipeline";
 import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 
 /** Maximum total time the pipeline is allowed to run before being killed. */
@@ -49,13 +48,6 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     throw new Error("No Union.fit credentials configured. Go to Settings to configure.");
   }
 
-  const analyticsSheetId = settings.analyticsSpreadsheetId || process.env.ANALYTICS_SPREADSHEET_ID;
-  const rawDataSheetId = settings.rawDataSpreadsheetId || process.env.RAW_DATA_SPREADSHEET_ID;
-
-  if (!analyticsSheetId) {
-    throw new Error("Analytics Spreadsheet ID not configured.");
-  }
-
   // Build date range from job params or per-report watermarks
   let dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
     ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
@@ -68,7 +60,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   // ── Email pipeline (primary path) ──
   // All CSV downloads go through: Playwright clicks "Download CSV" button →
   // Union.fit either downloads directly or emails the CSV → Gmail API picks up emails.
-  // No HTML scraping.
+  // No HTML scraping. Database is the single source of truth.
   if (!settings.robotEmail?.address) {
     throw new Error(
       "Robot email not configured. The pipeline requires email-based CSV delivery. " +
@@ -83,8 +75,6 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     unionEmail: settings.credentials.email,
     unionPassword: settings.credentials.password,
     robotEmail: settings.robotEmail.address,
-    analyticsSheetId,
-    rawDataSheetId,
     dateRange,
     onProgress: (step, percent) => updateProgress(job, step, percent),
   });

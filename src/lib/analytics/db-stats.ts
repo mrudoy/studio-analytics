@@ -8,7 +8,7 @@
 
 import { getAutoRenewStats, hasAutoRenewData } from "../db/auto-renew-store";
 import { getLatestPeriod, getRevenueForPeriod } from "../db/revenue-store";
-import type { DashboardStats } from "../sheets/read-dashboard";
+import type { DashboardStats } from "@/types/dashboard";
 
 /**
  * Attempt to build DashboardStats entirely from PostgreSQL.

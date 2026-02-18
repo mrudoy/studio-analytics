@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { loadSettings } from "@/lib/crypto/credentials";
 import { runPipelineFromFiles } from "@/lib/queue/pipeline-core";
 import type { DownloadedFiles } from "@/types/union-data";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -31,20 +30,6 @@ type ReportType = (typeof ALL_REPORTS)[number];
 
 export async function POST(request: Request) {
   try {
-    // Load settings for Sheets ID
-    const settings = loadSettings();
-    const analyticsSheetId =
-      settings?.analyticsSpreadsheetId || process.env.ANALYTICS_SPREADSHEET_ID;
-    const rawDataSheetId =
-      settings?.rawDataSpreadsheetId || process.env.RAW_DATA_SPREADSHEET_ID;
-
-    if (!analyticsSheetId) {
-      return NextResponse.json(
-        { error: "Analytics Spreadsheet ID not configured. Go to Settings." },
-        { status: 503 }
-      );
-    }
-
     const formData = await request.formData();
 
     // Ensure upload directory exists
@@ -98,9 +83,8 @@ export async function POST(request: Request) {
 
     console.log(`[upload-pipeline] Received ${receivedReports.length} reports: ${receivedReports.join(", ")}`);
 
-    // Run the full pipeline from uploaded files
-    const result = await runPipelineFromFiles(files, analyticsSheetId, {
-      rawDataSheetId,
+    // Run the full pipeline from uploaded files (DB-only, no Sheets)
+    const result = await runPipelineFromFiles(files, undefined, {
       onProgress: (step, percent) => {
         console.log(`[upload-pipeline] ${step} (${percent}%)`);
       },
@@ -108,7 +92,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: result.success,
-      sheetUrl: result.sheetUrl,
       duration: result.duration,
       recordCounts: result.recordCounts,
       warnings: result.warnings.slice(0, 20),

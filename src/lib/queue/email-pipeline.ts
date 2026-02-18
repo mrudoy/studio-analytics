@@ -32,10 +32,8 @@ export interface EmailPipelineOptions {
   unionPassword: string;
   /** Robot email address for reading emails (same as unionEmail typically) */
   robotEmail: string;
-  /** Google Sheets analytics spreadsheet ID */
-  analyticsSheetId: string;
-  /** Google Sheets raw data spreadsheet ID (optional) */
-  rawDataSheetId?: string;
+  /** @deprecated No longer used — DB is source of truth */
+  analyticsSheetId?: string;
   /** Date range string, e.g. "1/1/2025 - 2/16/2025" */
   dateRange?: string;
   /** Progress callback */
@@ -111,8 +109,6 @@ export async function runEmailPipeline(options: EmailPipelineOptions): Promise<P
     unionEmail,
     unionPassword,
     robotEmail,
-    analyticsSheetId,
-    rawDataSheetId,
     onProgress,
     emailTimeoutMs = 900_000,
   } = options;
@@ -276,8 +272,7 @@ export async function runEmailPipeline(options: EmailPipelineOptions): Promise<P
     fullRegistrations: reportFiles.fullRegistrations!,
   };
 
-  const result = await runPipelineFromFiles(files, analyticsSheetId, {
-    rawDataSheetId,
+  const result = await runPipelineFromFiles(files, undefined, {
     dateRange,
     onProgress: (step, percent) => {
       // Map pipeline-core's 50-100% range to our 50-100% range

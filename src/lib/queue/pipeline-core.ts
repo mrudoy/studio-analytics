@@ -1,9 +1,11 @@
 /**
- * Core pipeline logic: parse CSVs → run analytics → export to Google Sheets.
+ * Core pipeline logic: parse CSVs → run analytics → save to database.
  *
- * Extracted from pipeline-worker.ts so it can be called from both:
+ * Called from both:
  * - BullMQ worker (scraper-based pipeline)
  * - Upload API route (manual CSV upload)
+ *
+ * The database is the single source of truth. No Google Sheets export.
  */
 
 import { parseCSV } from "../parser/csv-parser";
@@ -24,19 +26,6 @@ import { computeSummary } from "../analytics/summary";
 import { analyzeTrends } from "../analytics/trends";
 import { analyzeRevenueCategories } from "../analytics/revenue-categories";
 import { analyzeReturningNonMembers } from "../analytics/returning-non-members";
-import { getSpreadsheet, getSheetUrl } from "../sheets/sheets-client";
-import {
-  writeDashboardTab,
-  writeFunnelOverviewTab,
-  writeFunnelTab,
-  writeWeeklyVolumeTab,
-  writeChurnTab,
-  writeRunLogEntry,
-  writeRawDataSheets,
-  writeTrendsTab,
-  writeRevenueCategoriesTab,
-} from "../sheets/templates";
-import { clearDashboardCache } from "../sheets/read-dashboard";
 import type { PipelineResult, ValidationResult } from "@/types/pipeline";
 import type {
   NewCustomer,
@@ -76,7 +65,7 @@ type ProgressCallback = (step: string, percent: number) => void;
  */
 export async function runPipelineFromFiles(
   files: DownloadedFiles,
-  analyticsSheetId: string,
+  analyticsSheetId?: string,
   options?: {
     rawDataSheetId?: string;
     dateRange?: string;
@@ -86,7 +75,6 @@ export async function runPipelineFromFiles(
   const startTime = Date.now();
   const allWarnings: string[] = [];
   const progress = options?.onProgress ?? (() => {});
-  const rawDataSheetId = options?.rawDataSheetId;
   const dateRange = options?.dateRange ?? "";
 
   // ── Parse CSVs ──────────────────────────────────────────────
@@ -451,55 +439,9 @@ export async function runPipelineFromFiles(
     }
   }
 
-  // Revenue category analysis
-  const revenueCatAnalysis =
-    revenueCatResult.data.length > 0 ? analyzeRevenueCategories(revenueCatResult.data) : null;
-
-  // ── Export to Google Sheets ──────────────────────────────────
-  progress("Connecting to Google Sheets", 75);
-  const analyticsDoc = await getSpreadsheet(analyticsSheetId);
-
-  const dateRangeStr = dateRange || "All time";
-
-  progress("Writing analytics tabs", 78);
-  await Promise.all([
-    writeDashboardTab(analyticsDoc, summary, dateRangeStr, recordCounts),
-    writeFunnelOverviewTab(analyticsDoc, funnelOverview),
-    writeFunnelTab(analyticsDoc, funnelResults),
-    writeWeeklyVolumeTab(analyticsDoc, volumeResults),
-    writeChurnTab(analyticsDoc, churnResults),
-    writeTrendsTab(analyticsDoc, trendsResults),
-    ...(revenueCatAnalysis
-      ? [writeRevenueCategoriesTab(analyticsDoc, revenueCatAnalysis, dateRangeStr)]
-      : []),
-  ]);
-
-  progress("Writing Run Log", 93);
-  await writeRunLogEntry(analyticsDoc, {
-    timestamp: new Date().toISOString(),
-    duration: Date.now() - startTime,
-    recordCounts,
-    warnings: allWarnings,
-  });
-
-  // Raw data sheets
-  let rawDataSheetUrl = "";
-  if (rawDataSheetId) {
-    progress("Writing raw data sheet", 95);
-    const rawDoc = await getSpreadsheet(rawDataSheetId);
-
-    await writeRawDataSheets(rawDoc, {
-      newCustomers: newCustomersResult.data as unknown as Record<string, string | number>[],
-      orders: ordersResult.data as unknown as Record<string, string | number>[],
-      registrations: registrationsResult.data as unknown as Record<string, string | number>[],
-      autoRenews: allCurrentSubs as unknown as Record<string, string | number>[],
-    });
-
-    rawDataSheetUrl = getSheetUrl(rawDataSheetId);
-  }
-
-  // Revenue categories log
+  // Revenue category analysis (log only)
   if (revenueCatResult.data.length > 0) {
+    progress("Analyzing revenue categories", 85);
     console.log(`[pipeline-core] Revenue Categories (${revenueCatResult.data.length} categories):`);
     const sorted = [...revenueCatResult.data].sort((a, b) => b.netRevenue - a.netRevenue);
     for (const cat of sorted.slice(0, 10)) {
@@ -510,6 +452,7 @@ export async function runPipelineFromFiles(
   }
 
   // Save pipeline run to database
+  progress("Saving pipeline run record", 90);
   try {
     const drParts = (dateRange || "").split(" - ").map((s) => s.trim());
     const toISO2 = (s: string): string => {
@@ -520,9 +463,6 @@ export async function runPipelineFromFiles(
   } catch {
     /* non-critical */
   }
-
-  // Clear dashboard cache
-  clearDashboardCache();
 
   // Validate completeness
   const validation = validateCompleteness(recordCounts);
@@ -536,8 +476,8 @@ export async function runPipelineFromFiles(
 
   return {
     success: true,
-    sheetUrl: getSheetUrl(analyticsSheetId),
-    rawDataSheetUrl,
+    sheetUrl: "",
+    rawDataSheetUrl: "",
     duration: Date.now() - startTime,
     recordCounts,
     warnings: allWarnings,

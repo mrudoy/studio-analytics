@@ -26,10 +26,8 @@ type ProgressCallback = (step: string, percent: number) => void;
 export interface GmailPipelineOptions {
   /** Robot email address for reading emails */
   robotEmail: string;
-  /** Google Sheets analytics spreadsheet ID */
-  analyticsSheetId: string;
-  /** Google Sheets raw data spreadsheet ID (optional) */
-  rawDataSheetId?: string;
+  /** @deprecated No longer used — DB is source of truth */
+  analyticsSheetId?: string;
   /** Date range string, e.g. "1/1/2025 - 2/16/2025" */
   dateRange?: string;
   /** Progress callback */
@@ -88,8 +86,6 @@ function filenameToReportType(filename: string): ReportType | undefined {
 export async function runGmailPipeline(options: GmailPipelineOptions): Promise<PipelineResult> {
   const {
     robotEmail,
-    analyticsSheetId,
-    rawDataSheetId,
     onProgress,
     lookbackHours = 24,
   } = options;
@@ -202,8 +198,7 @@ export async function runGmailPipeline(options: GmailPipelineOptions): Promise<P
     fullRegistrations: reportFiles.fullRegistrations || "",
   };
 
-  const result = await runPipelineFromFiles(files, analyticsSheetId, {
-    rawDataSheetId,
+  const result = await runPipelineFromFiles(files, undefined, {
     dateRange,
     onProgress: (step, percent) => {
       progress(step, percent);

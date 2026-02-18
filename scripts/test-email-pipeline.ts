@@ -33,19 +33,9 @@ async function main() {
     process.exit(1);
   }
 
-  const analyticsSheetId = settings.analyticsSpreadsheetId || process.env.ANALYTICS_SPREADSHEET_ID;
-  const rawDataSheetId = settings.rawDataSpreadsheetId || process.env.RAW_DATA_SPREADSHEET_ID;
-
-  if (!analyticsSheetId) {
-    console.error("No analytics spreadsheet ID configured.");
-    process.exit(1);
-  }
-
   console.log(`Union.fit email: ${settings.credentials.email}`);
   console.log(`Robot email:     ${settings.robotEmail.address}`);
-  console.log(`Analytics sheet: ${analyticsSheetId}`);
-  console.log(`Raw data sheet:  ${rawDataSheetId || "(not set)"}`);
-  console.log(`Email timeout:   3 minutes`);
+  console.log(`Email timeout:   15 minutes`);
   console.log("");
 
   const startTime = Date.now();
@@ -55,8 +45,6 @@ async function main() {
       unionEmail: settings.credentials.email,
       unionPassword: settings.credentials.password,
       robotEmail: settings.robotEmail.address,
-      analyticsSheetId,
-      rawDataSheetId,
       emailTimeoutMs: 900_000, // 15 minutes — Union.fit emails can be very slow
       onProgress: (step, percent) => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
