@@ -2402,6 +2402,223 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   );
 }
 
+// ─── Year-over-Year Revenue Comparison ──────────────────────
+
+function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string; gross: number; net: number }[] }) {
+  const currentYear = new Date().getFullYear();
+  const priorYear = currentYear - 1;
+  const twoYearsAgo = currentYear - 2;
+
+  // Filter to prior year and two-years-ago
+  const priorData = monthlyRevenue.filter((m) => m.month.startsWith(String(priorYear)));
+  const olderData = monthlyRevenue.filter((m) => m.month.startsWith(String(twoYearsAgo)));
+
+  if (olderData.length === 0 && priorData.length === 0) return null;
+
+  // Build month-by-month pairs (Jan=01 through Dec=12)
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const pairs = monthNames.map((name, i) => {
+    const mm = String(i + 1).padStart(2, "0");
+    const older = olderData.find((m) => m.month === `${twoYearsAgo}-${mm}`);
+    const prior = priorData.find((m) => m.month === `${priorYear}-${mm}`);
+    return {
+      label: name,
+      olderGross: older?.gross ?? 0,
+      olderNet: older?.net ?? 0,
+      priorGross: prior?.gross ?? 0,
+      priorNet: prior?.net ?? 0,
+    };
+  });
+
+  // Annual totals
+  const olderTotal = olderData.reduce((s, m) => s + m.net, 0);
+  const priorTotal = priorData.reduce((s, m) => s + m.net, 0);
+  const yoyDelta = olderTotal > 0 ? ((priorTotal - olderTotal) / olderTotal * 100) : 0;
+
+  // Chart: grouped bars, two per month
+  const maxVal = Math.max(...pairs.flatMap((p) => [p.olderGross, p.priorGross]), 1);
+  const chartHeight = 220;
+  const marginLeft = 52;
+  const marginRight = 12;
+  const marginTop = 18;
+  const marginBottom = 24;
+  const barAreaHeight = chartHeight - marginTop - marginBottom;
+
+  // Y-axis gridlines
+  const niceMax = (() => {
+    const raw = maxVal;
+    if (raw === 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    if (norm <= 1.5) return 1.5 * mag;
+    if (norm <= 2) return 2 * mag;
+    if (norm <= 3) return 3 * mag;
+    if (norm <= 5) return 5 * mag;
+    return 10 * mag;
+  })();
+  const gridLines = [0, niceMax / 3, (niceMax * 2) / 3, niceMax];
+
+  const groupWidth = (500 - marginLeft - marginRight) / 12;
+  const barWidth = groupWidth * 0.35;
+  const groupGap = groupWidth * 0.1;
+
+  const olderColor = "var(--st-text-secondary)";
+  const priorColor = "var(--st-accent)";
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
+
+      {/* Summary tiles */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card padding="1.5rem">
+          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            {twoYearsAgo} Total (Net)
+          </p>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "4px" }}>
+            {olderTotal > 0 ? formatCurrency(olderTotal) : "No data"}
+          </p>
+        </Card>
+        <Card padding="1.5rem">
+          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            {priorYear} Total (Net)
+          </p>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: "var(--st-accent)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "4px" }}>
+            {priorTotal > 0 ? formatCurrency(priorTotal) : "No data"}
+          </p>
+        </Card>
+        <Card padding="1.5rem">
+          <p className="uppercase" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.72rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+            Year-over-Year
+          </p>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: 700, fontSize: "2rem", color: yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "4px" }}>
+            {olderTotal > 0 ? `${yoyDelta >= 0 ? "+" : ""}${yoyDelta.toFixed(1)}%` : "--"}
+          </p>
+          {olderTotal > 0 && priorTotal > 0 && (
+            <p style={{ fontFamily: FONT_SANS, fontSize: "0.8rem", color: "var(--st-text-secondary)", marginTop: "2px" }}>
+              {yoyDelta >= 0 ? "+" : ""}{formatCurrency(priorTotal - olderTotal)}
+            </p>
+          )}
+        </Card>
+      </div>
+
+      {/* Grouped bar chart */}
+      <Card padding="1.5rem">
+        <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          Monthly Gross Revenue
+        </p>
+        <div style={{ width: "100%", position: "relative" }}>
+          <svg viewBox={`0 0 500 ${chartHeight}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "auto", display: "block" }}>
+            {/* Y-axis gridlines */}
+            {gridLines.map((val, i) => {
+              const y = marginTop + barAreaHeight - (val / niceMax) * barAreaHeight;
+              return (
+                <g key={`grid-${i}`}>
+                  <line x1={marginLeft} x2={500 - marginRight} y1={y} y2={y}
+                    stroke="var(--st-border)" strokeWidth={i === 0 ? 1.2 : 0.8} strokeDasharray={i === 0 ? "none" : "3,3"} />
+                  <text x={marginLeft - 6} y={y + 1} textAnchor="end" dominantBaseline="middle"
+                    fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="9" fontWeight="500">
+                    {formatCompactCurrency(val)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Grouped bars */}
+            {pairs.map((p, i) => {
+              const groupX = marginLeft + i * groupWidth;
+              const olderH = niceMax > 0 ? Math.max((p.olderGross / niceMax) * barAreaHeight, p.olderGross > 0 ? 2 : 0) : 0;
+              const priorH = niceMax > 0 ? Math.max((p.priorGross / niceMax) * barAreaHeight, p.priorGross > 0 ? 2 : 0) : 0;
+              const olderY = marginTop + barAreaHeight - olderH;
+              const priorY = marginTop + barAreaHeight - priorH;
+              return (
+                <g key={i}>
+                  {/* Older year bar */}
+                  <rect x={groupX + groupGap} y={olderY} width={barWidth} height={olderH} rx={1.5}
+                    fill={olderColor} opacity={0.35} />
+                  {/* Prior year bar */}
+                  <rect x={groupX + groupGap + barWidth + 1} y={priorY} width={barWidth} height={priorH} rx={1.5}
+                    fill={priorColor} opacity={0.8} />
+                  {/* Month label */}
+                  <text x={groupX + groupWidth / 2} y={chartHeight - marginBottom + 14}
+                    textAnchor="middle" fill="var(--st-text-secondary)" fontFamily={FONT_SANS} fontSize="8.5" fontWeight="500">
+                    {p.label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-5 mt-2" style={{ fontFamily: FONT_SANS, fontSize: "0.75rem", color: "var(--st-text-secondary)" }}>
+          <span className="flex items-center gap-1.5">
+            <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 2, backgroundColor: olderColor, opacity: 0.35 }} />
+            {twoYearsAgo}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 2, backgroundColor: priorColor, opacity: 0.8 }} />
+            {priorYear}
+          </span>
+        </div>
+      </Card>
+
+      {/* Monthly detail table */}
+      <Card padding="1.5rem">
+        <p className="uppercase mb-3" style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: "0.75rem", color: "var(--st-text-secondary)", letterSpacing: "0.06em" }}>
+          Monthly Net Revenue Detail
+        </p>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", fontFamily: FONT_SANS, fontSize: "0.82rem", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid var(--st-border)" }}>
+                <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 600, color: "var(--st-text-secondary)", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Month</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, color: "var(--st-text-secondary)", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>{twoYearsAgo}</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, color: "var(--st-text-secondary)", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>{priorYear}</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, color: "var(--st-text-secondary)", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((p, i) => {
+                const delta = p.olderNet > 0 ? ((p.priorNet - p.olderNet) / p.olderNet * 100) : 0;
+                const hasData = p.olderNet > 0 || p.priorNet > 0;
+                if (!hasData) return null;
+                return (
+                  <tr key={i} style={{ borderBottom: "1px solid var(--st-border)" }}>
+                    <td style={{ padding: "6px 8px", fontWeight: 500 }}>{p.label}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", color: p.olderNet > 0 ? "var(--st-text-primary)" : "var(--st-text-secondary)" }}>
+                      {p.olderNet > 0 ? formatCurrency(p.olderNet) : "--"}
+                    </td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600 }}>
+                      {p.priorNet > 0 ? formatCurrency(p.priorNet) : "--"}
+                    </td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", color: delta >= 0 ? "var(--st-success)" : "var(--st-error)", fontWeight: 500 }}>
+                      {p.olderNet > 0 && p.priorNet > 0 ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%` : "--"}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Totals row */}
+              <tr style={{ borderTop: "2px solid var(--st-text-secondary)" }}>
+                <td style={{ padding: "8px 8px", fontWeight: 700 }}>Total</td>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: 600 }}>
+                  {olderTotal > 0 ? formatCurrency(olderTotal) : "--"}
+                </td>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: 700, color: "var(--st-accent)" }}>
+                  {priorTotal > 0 ? formatCurrency(priorTotal) : "--"}
+                </td>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: 700, color: yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)" }}>
+                  {olderTotal > 0 && priorTotal > 0 ? `${yoyDelta >= 0 ? "+" : ""}${yoyDelta.toFixed(1)}%` : "--"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Revenue Section ─────────────────────────────────────────
 
 function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
@@ -2754,6 +2971,11 @@ function DashboardView() {
             <SectionHeader>Revenue</SectionHeader>
             <NoData label="Revenue Projection" />
           </div>
+        )}
+
+        {/* ━━ Year-over-Year Revenue ━━━━━━━━━━━━━━━━ */}
+        {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
+          <YoYRevenueSection monthlyRevenue={data.monthlyRevenue} />
         )}
 
         {/* ── Footer ────────────────────────────────── */}
