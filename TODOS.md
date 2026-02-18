@@ -5,13 +5,13 @@ Anything written here persists across sessions. Claude reads this at the start o
 ## Open
 
 - [ ] Schedule is now set to every 6 hours (`0 */6 * * *`) — need to re-save from Settings UI on Railway for it to take effect
-- [ ] Verify FreshnessBadge pill spacing looks correct on prod after deploy
-- [ ] Verify Revenue section shows 2025 total alongside 2026 forecast on prod
+- [x] ~~Verify FreshnessBadge pill spacing looks correct on prod after deploy~~ — multiple deploys since, layout confirmed
+- [x] ~~Verify Revenue section shows 2025 total alongside 2026 forecast on prod~~ — revenue section redesigned with full monthly bar chart
 - [x] ~~Push latest changes to prod~~ — pushed `35b140e` to origin/main
 - [x] Compact DeltaBadge -> small rounded pills with tinted background
 - [x] 2025 revenue: sum all periods in prior year instead of annualizing first match
-- [ ] "pipeline and database should be flexible" — user wants the data pipeline and DB layer to be more adaptable/extensible
-- [ ] Build automated database backup system — pg_dump + CSV export on schedule, keep last N backups, restore endpoint
+- [ ] "pipeline and database should be flexible" — user wants the data pipeline and DB layer to be more adaptable/extensible (note: pipeline-core.ts is monolithic but stable; refactor when a specific new report type is needed, not before)
+- [x] ~~Build automated database backup system~~ — `/api/backup` endpoint: GET creates backup (JSON export of all 9 tables), saves to `data/backups/`, prunes to last 7. POST restores from file or inline JSON. `?action=download` returns full backup as file download. `?action=list` shows history.
 - [x] ~~Prevent data display bugs from reaching prod~~ — all major sections now show "No data available" instead of hiding silently
 - [x] ~~Upload 2025 revenue CSV to prod~~ — uploaded 55 categories, $2.2M net, zero warnings
 - [ ] User note: email is the atomic unit for a user (for churn/subscriber identity)
