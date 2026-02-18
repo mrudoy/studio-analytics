@@ -185,7 +185,10 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 }
 
 /**
- * Get all active auto-renews (plan_state = 'Valid Now').
+ * Get all active auto-renews.
+ * Active = any state where the subscriber currently has access:
+ * 'Valid Now', 'In Trial', 'Pending Cancel', 'Past Due', 'Paused'
+ * Excludes: 'Canceled', 'Invalid'
  */
 export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
   const pool = getPool();
@@ -193,7 +196,7 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
-     WHERE plan_state = 'Valid Now'
+     WHERE plan_state NOT IN ('Canceled', 'Invalid')
      ORDER BY plan_name`
   );
 
