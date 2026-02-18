@@ -247,7 +247,7 @@ const DS = {
     xl: "2rem",        // section spacing
   },
   // Card padding — one value everywhere
-  cardPad: "1rem",
+  cardPad: "1.25rem",
   // Uppercase label style
   label: {
     fontSize: "0.7rem",
@@ -741,12 +741,11 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
     <div>
       <h2
         style={{
-          color: "var(--st-text-secondary)",
+          color: "var(--st-text-primary)",
           fontFamily: FONT_SANS,
-          fontWeight: DS.weight.medium,
-          fontSize: DS.text.sm,
-          letterSpacing: "0.05em",
-          textTransform: "uppercase" as const,
+          fontWeight: DS.weight.bold,
+          fontSize: DS.text.md,
+          letterSpacing: "0.02em",
         }}
       >
         {children}
@@ -1577,7 +1576,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           <p className="mb-3" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Monthly Revenue Trend (Gross)
           </p>
-          <MiniBarChart data={revenueMonthlyBars} height={120} formatValue={formatCompactCurrency} />
+          <MiniBarChart data={revenueMonthlyBars} height={160} formatValue={formatCompactCurrency} />
         </Card>
       )}
     </div>
@@ -1606,50 +1605,37 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
       </SectionHeader>
 
       <Card>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "2rem", padding: "0.5rem 0" }}>
+        <div className="grid grid-cols-2 gap-4">
           {/* Prior year */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-              {formatCurrency(priorGross)}
-            </span>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-              Net {formatCurrency(priorNet)}
-            </span>
-            <div style={{
-              width: 40, height: Math.max(Math.round((priorGross / maxVal) * 80), 4),
-              borderRadius: 3, backgroundColor: "var(--st-text-secondary)", opacity: 0.3
-            }} />
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+          <div style={{ padding: "0.5rem 0" }}>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
               {data.monthName} {data.priorYear?.year ?? ""}
-            </span>
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              {formatCurrency(priorGross)}
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
+              Net {formatCurrency(priorNet)}
+            </p>
           </div>
           {/* Current year */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-              {formatCurrency(currentGross)}
-            </span>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-              Net {formatCurrency(currentNet)}
-            </span>
-            <div style={{
-              width: 40, height: Math.max(Math.round((currentGross / maxVal) * 80), 4),
-              borderRadius: 3, backgroundColor: "var(--st-accent)", opacity: 0.8
-            }} />
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+          <div style={{ padding: "0.5rem 0", borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
               {data.monthName} {data.current?.year ?? ""}
-            </span>
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              {formatCurrency(currentGross)}
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
+              Net {formatCurrency(currentNet)}
+            </p>
+            {data.yoyGrossPct !== null && (
+              <p style={{ marginTop: "8px" }}>
+                <DeltaBadge delta={data.yoyGrossChange ?? null} deltaPercent={data.yoyGrossPct} isCurrency compact />
+              </p>
+            )}
           </div>
         </div>
-        {data.yoyGrossPct !== null && (
-          <div style={{ textAlign: "center", marginTop: "0.25rem" }}>
-            <span style={{
-              fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.bold,
-              color: data.yoyGrossChange !== null && data.yoyGrossChange >= 0 ? "var(--st-success)" : "var(--st-error)"
-            }}>
-              {data.yoyGrossPct >= 0 ? "+" : ""}{data.yoyGrossPct}% YoY
-            </span>
-          </div>
-        )}
       </Card>
     </div>
   );
@@ -2442,44 +2428,36 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
       <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
 
       <Card>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "2rem", padding: "0.5rem 0" }}>
+        <div className="grid grid-cols-2 gap-4">
           {/* Older year */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
+          <div style={{ padding: "0.5rem 0" }}>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
+              {twoYearsAgo} Net Revenue
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
               {formatCurrency(olderTotal)}
-            </span>
-            <div style={{
-              width: 40, height: Math.max(Math.round((olderTotal / maxVal) * 80), 4),
-              borderRadius: 3, backgroundColor: "var(--st-text-secondary)", opacity: 0.3
-            }} />
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
-              {twoYearsAgo}
-            </span>
+            </p>
           </div>
           {/* Prior year */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
+          <div style={{ padding: "0.5rem 0", borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
+              {priorYear} Net Revenue
+            </p>
+            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
               {formatCurrency(priorTotal)}
-            </span>
-            <div style={{
-              width: 40, height: Math.max(Math.round((priorTotal / maxVal) * 80), 4),
-              borderRadius: 3, backgroundColor: "var(--st-accent)", opacity: 0.8
-            }} />
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
-              {priorYear}
-            </span>
+            </p>
+            {olderTotal > 0 && priorTotal > 0 && (
+              <p style={{ marginTop: "8px" }}>
+                <span style={{
+                  fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold,
+                  color: yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)"
+                }}>
+                  {yoyDelta >= 0 ? "+" : ""}{yoyDelta.toFixed(1)}% YoY
+                </span>
+              </p>
+            )}
           </div>
         </div>
-        {olderTotal > 0 && priorTotal > 0 && (
-          <div style={{ textAlign: "center", marginTop: "0.25rem" }}>
-            <span style={{
-              fontFamily: FONT_SANS, fontSize: DS.text.xs, fontWeight: DS.weight.bold,
-              color: yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)"
-            }}>
-              {yoyDelta >= 0 ? "+" : ""}{yoyDelta.toFixed(1)}% ({yoyDelta >= 0 ? "+" : ""}{formatCurrency(priorTotal - olderTotal)})
-            </span>
-          </div>
-        )}
       </Card>
     </div>
   );
@@ -2638,7 +2616,7 @@ function DashboardView() {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-4 sm:p-6 pb-16">
-      <div className="max-w-2xl w-full space-y-6">
+      <div className="max-w-5xl w-full space-y-6">
         {/* ── Header ─────────────────────────────────── */}
         <div className="text-center space-y-2 pt-2">
           <div className="flex justify-center">
@@ -2648,10 +2626,9 @@ function DashboardView() {
             style={{
               color: "var(--st-text-primary)",
               fontFamily: FONT_SANS,
-              fontWeight: DS.weight.medium,
-              fontSize: DS.text.md,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase" as const,
+              fontWeight: DS.weight.bold,
+              fontSize: DS.text.lg,
+              letterSpacing: "-0.01em",
             }}
           >
             Studio Dashboard
