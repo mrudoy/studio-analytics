@@ -1116,18 +1116,21 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const fmt = formatValue || ((v: number) => String(v));
 
-  // SVG-based bar chart with Y-axis gridlines
-  const marginLeft = 52;
-  const marginRight = 12;
-  const marginTop = showValues ? 18 : 8;
-  const marginBottom = 28;
+  // For short charts (< 120px), use compact mode: no Y-axis, no gridlines
+  const compact = height < 120;
+
+  const marginLeft = compact ? 4 : 52;
+  const marginRight = compact ? 4 : 12;
+  const marginTop = showValues ? 16 : 6;
+  const marginBottom = 22;
   const chartHeight = height;
-  const barAreaHeight = chartHeight - marginTop - marginBottom;
+  const barAreaHeight = Math.max(chartHeight - marginTop - marginBottom, 20);
   const barGap = data.length > 8 ? 3 : 6;
 
-  // Generate nice Y-axis gridlines
+  // Generate nice Y-axis gridlines (only for tall charts)
   const niceMax = (() => {
     const raw = max;
+    if (raw === 0) return 1;
     const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
     const normalized = raw / magnitude;
     if (normalized <= 1.5) return 1.5 * magnitude;
@@ -1136,8 +1139,14 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
     if (normalized <= 5) return 5 * magnitude;
     return 10 * magnitude;
   })();
-  const gridCount = 3;
-  const gridLines = Array.from({ length: gridCount + 1 }, (_, i) => (niceMax / gridCount) * i);
+  const gridCount = compact ? 0 : 3;
+  const gridLines = compact ? [] : Array.from({ length: gridCount + 1 }, (_, i) => (niceMax / gridCount) * i);
+
+  // For gridline labels, use the formatValue function if provided, otherwise format as number
+  const fmtGrid = formatValue || ((v: number) => v >= 1000 ? `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k` : String(Math.round(v)));
+
+  // Scale factor: use niceMax for tall charts with gridlines, raw max for compact
+  const scaleMax = compact ? max : niceMax;
 
   return (
     <div style={{ width: "100%", position: "relative" }}>
@@ -1146,9 +1155,9 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
         preserveAspectRatio="xMidYMid meet"
         style={{ width: "100%", height: "auto", display: "block" }}
       >
-        {/* Y-axis gridlines and labels */}
+        {/* Y-axis gridlines and labels (tall charts only) */}
         {gridLines.map((val, i) => {
-          const y = marginTop + barAreaHeight - (val / niceMax) * barAreaHeight;
+          const y = marginTop + barAreaHeight - (val / scaleMax) * barAreaHeight;
           return (
             <g key={`grid-${i}`}>
               <line
@@ -1170,17 +1179,29 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
                 fontSize="10"
                 fontWeight="500"
               >
-                {formatCompactCurrency(val)}
+                {fmtGrid(val)}
               </text>
             </g>
           );
         })}
 
+        {/* Baseline for compact charts */}
+        {compact && (
+          <line
+            x1={marginLeft}
+            x2={500 - marginRight}
+            y1={marginTop + barAreaHeight}
+            y2={marginTop + barAreaHeight}
+            stroke="var(--st-border)"
+            strokeWidth={1}
+          />
+        )}
+
         {/* Bars */}
         {data.map((d, i) => {
           const barWidth = (500 - marginLeft - marginRight - barGap * (data.length - 1)) / data.length;
           const x = marginLeft + i * (barWidth + barGap);
-          const fraction = Math.abs(d.value) / niceMax;
+          const fraction = scaleMax > 0 ? Math.abs(d.value) / scaleMax : 0;
           const barH = Math.max(Math.round(fraction * barAreaHeight), 3);
           const y = marginTop + barAreaHeight - barH;
           return (
@@ -1198,24 +1219,24 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
               {showValues && (
                 <text
                   x={x + barWidth / 2}
-                  y={y - 4}
+                  y={y - 3}
                   textAnchor="middle"
                   fill="var(--st-text-primary)"
                   fontFamily={FONT_SANS}
-                  fontSize={data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
+                  fontSize={compact ? "9" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
                   fontWeight="600"
                 >
                   {fmt(d.value)}
                 </text>
               )}
-              {/* Month label below */}
+              {/* Label below */}
               <text
                 x={x + barWidth / 2}
                 y={chartHeight - marginBottom + 14}
                 textAnchor="middle"
                 fill="var(--st-text-secondary)"
                 fontFamily={FONT_SANS}
-                fontSize={data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
+                fontSize={compact ? "8.5" : data.length > 10 ? "7.5" : data.length > 6 ? "8" : "9.5"}
                 fontWeight="500"
               >
                 {d.label}
