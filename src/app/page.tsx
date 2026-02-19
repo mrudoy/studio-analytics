@@ -261,11 +261,11 @@ const DS = {
 // ─── Section & Category Labels ──────────────────────────────
 // RULE: Use honest data labels that match Union.fit terminology.
 // Never rename these to marketing-friendly alternatives.
-// "Auto-Renews" not "Subscriptions". "SKY3 / Packs" not "Memberships".
+// "Auto-Renews" not "Subscriptions". "Sky3" not "Memberships".
 const LABELS = {
   autoRenews: "Auto-Renews",
   members: "Members",
-  sky3: "SKY3 / Packs",
+  sky3: "Sky3",
   tv: "Sky Ting TV",
   nonMembers: "Non Members",
   firstVisits: "First Visits",
@@ -312,15 +312,6 @@ function formatCurrency(n: number): string {
   });
 }
 
-function formatCurrencyDecimal(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 function formatCompactCurrency(n: number): string {
   if (n >= 1000) {
     return "$" + (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
@@ -356,8 +347,10 @@ function formatDateTime(iso: string): string {
 
 function formatDelta(n: number | null): string {
   if (n == null) return "";
-  if (n > 0) return `+${n}`;
-  return String(n);
+  const abs = Math.abs(n).toLocaleString("en-US");
+  if (n > 0) return `+${abs}`;
+  if (n < 0) return `-${abs}`;
+  return "0";
 }
 
 function formatDeltaCurrency(n: number | null): string {
@@ -372,12 +365,6 @@ function formatDeltaPercent(n: number | null): string {
   if (n == null) return "";
   if (n > 0) return `+${n}%`;
   return `${n}%`;
-}
-
-function formatWeekLabel(period: string): string {
-  const d = new Date(period + "T00:00:00");
-  if (isNaN(d.getTime())) return period;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /** Convert ISO week string "2025-W03" to a Date (Monday of that week) */
@@ -407,16 +394,6 @@ function formatWeekShort(period: string): string {
     return `${d.getMonth() + 1}/${d.getDate()}`;
   }
   return period;
-}
-
-function formatWeekRange(period: string): string {
-  const isoDate = isoWeekToDate(period);
-  const start = isoDate || new Date(period + "T00:00:00");
-  if (isNaN(start.getTime())) return period;
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
-  return `${fmt(start)}\u2013${fmt(end)}`;
 }
 
 function formatMonthLabel(period: string): string {
@@ -1116,72 +1093,6 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
 
 // ─── SVG Donut Chart ─────────────────────────────────────────
 
-interface DonutSegment {
-  label: string;
-  value: number;
-  color: string;
-}
-
-function DonutChart({ segments, size = 160 }: { segments: DonutSegment[]; size?: number }) {
-  const total = segments.reduce((s, seg) => s + seg.value, 0);
-  if (total === 0) return null;
-
-  const radius = 52;
-  const strokeWidth = 20;
-  const circumference = 2 * Math.PI * radius;
-  let cumulativeOffset = 0;
-
-  return (
-    <div className="flex items-center gap-6">
-      <svg width={size} height={size} viewBox="0 0 128 128">
-        {segments.map((seg, i) => {
-          const fraction = seg.value / total;
-          const dashLength = fraction * circumference;
-          const dashOffset = -cumulativeOffset;
-          cumulativeOffset += dashLength;
-          return (
-            <circle
-              key={i}
-              cx="64"
-              cy="64"
-              r={radius}
-              fill="none"
-              stroke={seg.color}
-              strokeWidth={strokeWidth}
-              strokeDasharray={`${dashLength} ${circumference - dashLength}`}
-              strokeDashoffset={dashOffset}
-              transform="rotate(-90 64 64)"
-              strokeLinecap="butt"
-              style={{ opacity: 0.85 }}
-            />
-          );
-        })}
-        <text x="64" y="58" textAnchor="middle" style={{ fill: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: "26px" }}>
-          {formatNumber(total)}
-        </text>
-        <text x="64" y="78" textAnchor="middle" style={{ fill: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: "11px", letterSpacing: "0.05em" }}>
-          TOTAL
-        </text>
-      </svg>
-      <div className="flex flex-col gap-2">
-        {segments.map((seg, i) => (
-          <div key={i} className="flex items-center gap-2.5">
-            <span className="rounded-full" style={{ width: "10px", height: "10px", backgroundColor: seg.color, flexShrink: 0, opacity: 0.85 }} />
-            <div>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
-                {formatNumber(seg.value)}
-              </span>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginLeft: "6px" }}>
-                {seg.label}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Mini Bar Chart (reusable) ───────────────────────────────
 
 interface BarChartData {
@@ -1192,11 +1103,8 @@ interface BarChartData {
 
 /**
  * Bar chart rule: each bar gets a fixed-width slot (BAR_SLOT_PX).
- * The chart is only as wide as it needs to be — never stretches to fill the card.
- * This keeps bars tight and readable regardless of container width.
+ * Fluid flex-based layout — bars stretch to fill available width.
  */
-const BAR_SLOT_PX = 48;
-const BAR_GAP_PX = 4;
 
 function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   data: BarChartData[];
@@ -1420,76 +1328,6 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
   );
 }
 
-// ─── Stacked Bar Chart ───────────────────────────────────────
-
-interface StackedBarData {
-  label: string;
-  segments: { value: number; color: string; label: string }[];
-}
-
-function StackedBarChart({ data, height = 28 }: { data: StackedBarData[]; height?: number }) {
-  if (data.length === 0) return null;
-
-  return (
-    <div className="flex flex-col gap-3">
-      {data.map((bar, i) => {
-        const total = bar.segments.reduce((s, seg) => s + seg.value, 0);
-        if (total === 0) return null;
-        return (
-          <div key={i}>
-            <div className="flex items-center justify-between mb-1">
-              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)", letterSpacing: "0.05em", textTransform: "uppercase" as const }}>
-                {bar.label}
-              </span>
-              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-                {formatCurrency(total)}
-              </span>
-            </div>
-            <div className="flex rounded-full overflow-hidden" style={{ height: `${height}px`, backgroundColor: "var(--st-border)" }}>
-              {bar.segments.map((seg, j) => {
-                const pct = (seg.value / total) * 100;
-                if (pct < 0.5) return null;
-                return (
-                  <div
-                    key={j}
-                    title={`${seg.label}: ${formatCurrency(seg.value)} (${pct.toFixed(0)}%)`}
-                    style={{
-                      width: `${pct}%`,
-                      backgroundColor: seg.color,
-                      opacity: 0.8,
-                      transition: "width 0.4s ease",
-                    }}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── KPI Row (open layout — no box) ─────────────────────────
-
-function KPIMetric({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
-  return (
-    <div style={{ padding: "0.5rem 0" }}>
-      <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-        {label}
-      </p>
-      <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2, marginTop: "2px" }}>
-        {value}
-      </p>
-      {sublabel && (
-        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "1px" }}>
-          {sublabel}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ─── Card wrapper (used selectively) ─────────────────────────
 
 function Card({ children, padding = DS.cardPad }: { children: React.ReactNode; padding?: string }) {
@@ -1549,21 +1387,6 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
           {sublabel}
         </p>
       )}
-    </div>
-  );
-}
-
-// ─── Forecast Metric ─────────────────────────────────────────
-
-function ForecastMetric({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="flex items-center justify-between" style={{ padding: "0.7rem 0", borderBottom: "1px solid var(--st-border)" }}>
-      <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-        {label}
-      </p>
-      <p style={{ color: color || "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg }}>
-        {value}
-      </p>
     </div>
   );
 }
@@ -1650,7 +1473,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <SectionHeader>Revenue</SectionHeader>
+      <SectionHeader>{LABELS.revenue}</SectionHeader>
 
       {/* Full-width area chart */}
       {revenueAreaData.length > 1 && (
@@ -1703,71 +1526,13 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
   );
 }
 
-// ─── Month-over-Month YoY Comparison ─────────────────────────
-
-function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
-  const hasCurrentData = data.current !== null;
-  const hasPriorData = data.priorYear !== null;
-
-  if (!hasCurrentData && !hasPriorData) return null;
-
-  const priorGross = data.priorYear?.gross ?? 0;
-  const currentGross = data.current?.gross ?? 0;
-  const priorNet = data.priorYear?.net ?? 0;
-  const currentNet = data.current?.net ?? 0;
-  const maxVal = Math.max(priorGross, currentGross, 1);
-
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader subtitle={`${data.monthName} ${data.priorYear?.year ?? (data.current ? data.current.year - 1 : "")} → ${data.monthName} ${data.current?.year ?? ""}`}>
-        Year-over-Year
-      </SectionHeader>
-
-      <Card>
-        <div className="grid grid-cols-2 gap-4">
-          {/* Prior year */}
-          <div style={{ padding: "0.5rem 0" }}>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
-              {data.monthName} {data.priorYear?.year ?? ""}
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-              {formatCurrency(priorGross)}
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
-              Net {formatCurrency(priorNet)}
-            </p>
-          </div>
-          {/* Current year */}
-          <div style={{ padding: "0.5rem 0", borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
-              {data.monthName} {data.current?.year ?? ""}
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-              {formatCurrency(currentGross)}
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
-              Net {formatCurrency(currentNet)}
-            </p>
-            {data.yoyGrossPct !== null && (
-              <p style={{ marginTop: "8px" }}>
-                <DeltaBadge delta={data.yoyGrossChange ?? null} deltaPercent={data.yoyGrossPct} isCurrency compact />
-              </p>
-            )}
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 // ─── MRR Breakdown (standalone) ──────────────────────────────
 
 function MRRBreakdown({ data }: { data: DashboardStats }) {
   const segments = [
-    { label: "Members", value: data.mrr.member, color: COLORS.member },
-    { label: "SKY3 / Packs", value: data.mrr.sky3, color: COLORS.sky3 },
-    { label: "Sky Ting TV", value: data.mrr.skyTingTv, color: COLORS.tv },
+    { label: LABELS.members, value: data.mrr.member, color: COLORS.member },
+    { label: LABELS.sky3, value: data.mrr.sky3, color: COLORS.sky3 },
+    { label: LABELS.tv, value: data.mrr.skyTingTv, color: COLORS.tv },
     ...(data.mrr.unknown > 0 ? [{ label: "Other", value: data.mrr.unknown, color: "#999" }] : []),
   ].filter(s => s.value > 0);
 
@@ -1775,7 +1540,7 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
         <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-          Monthly Recurring Revenue
+          {LABELS.mrr}
         </p>
         <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatCurrency(data.mrr.total)}
@@ -1830,13 +1595,14 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>First Visits</span>
+          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>{LABELS.firstVisits}</span>
         </div>
         <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatNumber(firstVisits.currentWeekTotal)}
           <span style={{ fontFamily: FONT_SANS, ...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
         </span>
       </div>
+      <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
         {segments.map((seg) => {
           const count = agg[seg] || 0;
@@ -1848,7 +1614,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
                 <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{SEGMENT_LABELS[seg]}</span>
               </div>
               <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-                {count}
+                {formatNumber(count)}
                 {aggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round((count / aggTotal) * 100)}%</span>}
               </span>
             </div>
@@ -1888,13 +1654,14 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>Returning Non-Members</span>
+          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>{LABELS.returningNonMembers}</span>
         </div>
         <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatNumber(returningNonMembers.currentWeekTotal)}
           <span style={{ fontFamily: FONT_SANS, ...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
         </span>
       </div>
+      <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
         {rnmSegments.map((seg) => (
           <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1903,7 +1670,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{RNM_SEGMENT_LABELS[seg]}</span>
             </div>
             <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-              {aggDisplay[seg] || 0}
+              {formatNumber(aggDisplay[seg] || 0)}
               {rnmAggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
             </span>
           </div>
@@ -1915,12 +1682,6 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
 
 // ─── Churn Section ──────────────────────────────────────────
 
-function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
-  // Churn data is now shown inline within each CategoryDetail card
-  // This standalone section is kept for backward compatibility but not rendered in the main layout
-  return null;
-}
-
 // ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
 
 function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firstVisits: FirstVisitData | null; returningNonMembers: ReturningNonMemberData | null; dropIns: DropInData | null }) {
@@ -1928,7 +1689,7 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firs
 
   return (
     <div className="space-y-3">
-      <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">Non Members</SectionHeader>
+      <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">{LABELS.nonMembers}</SectionHeader>
 
       {dropIns && <DropInCardNew dropIns={dropIns} />}
       {(firstVisits || returningNonMembers) && (
@@ -1963,7 +1724,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
         <div className="flex items-center gap-2">
           <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
           <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Drop-Ins
+            {LABELS.dropIns}
           </span>
           <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
             Visits
@@ -1996,20 +1757,20 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
         <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
           <TrendRow
             label="Month to Date"
-            value={String(dropIns.currentMonthTotal)}
+            value={formatNumber(dropIns.currentMonthTotal)}
             delta={prevDelta}
             deltaPercent={null}
-            sublabel={isPacing ? `Projected month-end: ${dropIns.currentMonthPaced}` : undefined}
+            sublabel={isPacing ? `Projected month-end: ${formatNumber(dropIns.currentMonthPaced)}` : undefined}
           />
           <TrendRow
             label="Last Month"
-            value={String(dropIns.previousMonthTotal)}
+            value={formatNumber(dropIns.previousMonthTotal)}
             delta={null}
             deltaPercent={null}
           />
           <TrendRow
             label="Weekly Avg"
-            value={String(dropIns.weeklyAvg6w)}
+            value={formatNumber(dropIns.weeklyAvg6w)}
             delta={null}
             deltaPercent={null}
             sublabel="6-week rolling"
@@ -2160,9 +1921,12 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   );
 }
 
-// ─── Year-over-Year Revenue Comparison ──────────────────────
+// ─── Annual Revenue Comparison (single card with vertical bars) ──────────
 
-function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string; gross: number; net: number }[] }) {
+function AnnualRevenueCard({ monthlyRevenue, projection }: {
+  monthlyRevenue: { month: string; gross: number; net: number }[];
+  projection?: ProjectionData | null;
+}) {
   const currentYear = new Date().getFullYear();
   const priorYear = currentYear - 1;
   const twoYearsAgo = currentYear - 2;
@@ -2172,116 +1936,76 @@ function YoYRevenueSection({ monthlyRevenue }: { monthlyRevenue: { month: string
 
   if (olderData.length === 0 && priorData.length === 0) return null;
 
-  // Annual totals (net)
   const olderTotal = olderData.reduce((s, m) => s + m.net, 0);
   const priorTotal = priorData.reduce((s, m) => s + m.net, 0);
   const yoyDelta = olderTotal > 0 ? ((priorTotal - olderTotal) / olderTotal * 100) : 0;
-
   const maxVal = Math.max(olderTotal, priorTotal, 1);
+  const BAR_HEIGHT = 140;
+
+  const bars = [
+    { year: twoYearsAgo, value: olderTotal, color: "var(--st-text-secondary)" },
+    { year: priorYear, value: priorTotal, color: COLORS.member },
+  ].filter((b) => b.value > 0);
 
   return (
-    <div className="space-y-4">
-      <SectionHeader>{twoYearsAgo} vs {priorYear} Revenue</SectionHeader>
-
-      <Card>
-        <div className="grid grid-cols-2 gap-4">
-          {/* Older year */}
-          <div style={{ padding: "0.5rem 0" }}>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
-              {twoYearsAgo} Net Revenue
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-              {formatCurrency(olderTotal)}
-            </p>
-          </div>
-          {/* Prior year */}
-          <div style={{ padding: "0.5rem 0", borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "6px" }}>
-              {priorYear} Net Revenue
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-              {formatCurrency(priorTotal)}
-            </p>
-            {olderTotal > 0 && priorTotal > 0 && (
-              <p style={{ marginTop: "8px" }}>
-                <span style={{
-                  fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold,
-                  color: yoyDelta >= 0 ? "var(--st-success)" : "var(--st-error)"
-                }}>
-                  {yoyDelta >= 0 ? "+" : ""}{yoyDelta.toFixed(1)}% YoY
-                </span>
-              </p>
-            )}
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── Revenue Section ─────────────────────────────────────────
-
-function RevenueProjectionSection({ projection }: { projection: ProjectionData }) {
-  // Use actual prior year revenue if available
-  const priorYearRev = projection.priorYearActualRevenue || projection.priorYearRevenue;
-  const isActualPrior = !!projection.priorYearActualRevenue;
-
-  // Only show MRR metrics if they look sane (non-zero MRR, growth rate under 50%)
-  const mrrSane = projection.currentMRR > 0
-    && Math.abs(projection.monthlyGrowthRate) < 50
-    && projection.projectedYearEndMRR < projection.currentMRR * 20;
-
-  return (
-    <div className="space-y-4">
-      <SectionHeader>Revenue</SectionHeader>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Prior year total */}
-        <Card>
-          <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-            {projection.year - 1} Total Revenue{priorYearRev > 0 && !isActualPrior ? " (Est.)" : ""}
-          </p>
-          {priorYearRev > 0 ? (
-            <>
-              <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "4px" }}>
-                {formatCurrency(priorYearRev)}
-              </p>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
-                {isActualPrior ? "Actual net revenue" : "Estimated from MRR data"}
-              </p>
-            </>
-          ) : (
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
-              No data available
-            </p>
-          )}
-        </Card>
-
-        {/* MRR metrics — only if data is sane */}
-        {mrrSane ? (
-          <Card>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-              {projection.year} Subscription MRR
-            </p>
-            <p className="stat-hero-value" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "4px" }}>
-              {formatCurrency(projection.currentMRR)}
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
-              {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
-            </p>
-          </Card>
-        ) : (
-          <Card>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
-              {projection.year} MRR
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "10px", opacity: 0.6 }}>
-              Insufficient subscription data
-            </p>
-          </Card>
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+        <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Annual Net Revenue</p>
+        {olderTotal > 0 && priorTotal > 0 && (
+          <DeltaBadge delta={priorTotal - olderTotal} deltaPercent={Math.round(yoyDelta * 10) / 10} isCurrency compact />
         )}
       </div>
-    </div>
+
+      {/* Vertical bar chart */}
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "2rem", height: `${BAR_HEIGHT}px`, marginBottom: "0.5rem" }}>
+        {bars.map((b) => {
+          const fraction = b.value / maxVal;
+          const h = Math.max(Math.round(fraction * (BAR_HEIGHT - 20)), 8);
+          return (
+            <div key={b.year} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", flex: 1, maxWidth: "120px" }}>
+              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", marginBottom: "4px" }}>
+                {formatCompactCurrency(b.value)}
+              </span>
+              <div style={{
+                width: "100%",
+                height: `${h}px`,
+                borderRadius: "4px 4px 0 0",
+                backgroundColor: b.color,
+                opacity: 0.85,
+              }} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Year labels */}
+      <div style={{ display: "flex", justifyContent: "center", gap: "2rem" }}>
+        {bars.map((b) => (
+          <div key={b.year} style={{ flex: 1, maxWidth: "120px", textAlign: "center" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+              {b.year}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* MRR note if available */}
+      {projection && projection.currentMRR > 0 && Math.abs(projection.monthlyGrowthRate) < 50 && (
+        <div style={{ borderTop: "1px solid var(--st-border)", marginTop: "0.75rem", paddingTop: "0.75rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+              {projection.year} Subscription MRR
+            </span>
+            <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+              {formatCurrency(projection.currentMRR)}
+            </span>
+          </div>
+          <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px" }}>
+            {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
+          </p>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -2436,7 +2160,7 @@ function DashboardView() {
               sublabel: inStudioNet != null ? "net this week" : undefined,
             },
             {
-              label: "Sky Ting TV",
+              label: LABELS.tv,
               value: formatNumber(data.activeSubscribers.skyTingTv),
               delta: digitalNet,
               sublabel: digitalNet != null ? "net this week" : undefined,
@@ -2454,7 +2178,7 @@ function DashboardView() {
           {data.monthOverMonth ? (
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
-                <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Year over Year</p>
+                <p style={{ fontFamily: FONT_SANS, ...DS.label }}>{LABELS.yoy}</p>
                 <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
                   {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
                 </p>
@@ -2512,7 +2236,7 @@ function DashboardView() {
           />
 
           <CategoryDetail
-            title="SKY3 / Packs"
+            title={LABELS.sky3}
             color={COLORS.sky3}
             count={data.activeSubscribers.sky3}
             weekly={weekly}
@@ -2527,7 +2251,7 @@ function DashboardView() {
           />
 
           <CategoryDetail
-            title="Sky Ting TV"
+            title={LABELS.tv}
             color={COLORS.tv}
             count={data.activeSubscribers.skyTingTv}
             weekly={weekly}
@@ -2547,14 +2271,9 @@ function DashboardView() {
           <NoData label="Non-Members (First Visits, Drop-Ins)" />
         )}
 
-        {/* ── Revenue Projection ── */}
-        {trends?.projection && (
-          <RevenueProjectionSection projection={trends.projection} />
-        )}
-
-        {/* ── Year-over-Year Revenue ── */}
+        {/* ── Annual Revenue Comparison ── */}
         {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <YoYRevenueSection monthlyRevenue={data.monthlyRevenue} />
+          <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
         )}
 
         {/* ── Footer ── */}

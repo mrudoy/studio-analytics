@@ -42,9 +42,3 @@ h1, h2, h3, .font-heading {
   to { transform: rotate(360deg); }
 }
 
-/* Shrink hero card values on mobile so numbers don't overflow */
-@media (max-width: 639px) {
-  .stat-hero-value {
-    font-size: 2.4rem !important;
-  }
-}
