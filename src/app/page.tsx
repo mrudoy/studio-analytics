@@ -1230,6 +1230,10 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
 
 // ─── Line Chart ──────────────────────────────────────────────
 
+/** Line chart rule: each data point gets a fixed-width slot (LINE_POINT_SLOT_PX).
+ *  The chart sizes to its content, never stretches to fill the card. */
+const LINE_POINT_SLOT_PX = 56;
+
 function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)" }: {
   data: { label: string; value: number }[];
   height?: number;
@@ -1271,7 +1275,7 @@ function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)"
   const gridLines = [0.25, 0.5, 0.75, 1].map(frac => padT + plotH - frac * plotH);
 
   return (
-    <div style={{ width: "100%", position: "relative" }}>
+    <div style={{ width: `${data.length * LINE_POINT_SLOT_PX}px`, maxWidth: "100%", position: "relative" }}>
       {/* Y-axis labels */}
       <div style={{ position: "absolute", top: 0, left: 0, height: `${svgH}px`, display: "flex", flexDirection: "column", justifyContent: "space-between", paddingTop: `${padT}px`, paddingBottom: `${padB}px`, pointerEvents: "none" }}>
         {[max, min + range * 0.75, min + range * 0.5, min + range * 0.25, min].map((v, i) => (
