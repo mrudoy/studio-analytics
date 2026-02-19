@@ -1817,65 +1817,46 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Left: Weekly bar chart — last 4 completed weeks */}
-        <div>
-          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-            Unique Visitors — Last 4 Weeks
-          </p>
-          {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={70} />
-          ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
-          )}
-        </div>
+      {/* Weekly bar chart */}
+      <div style={{ marginBottom: "0.75rem" }}>
+        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          Unique Visitors — Last 4 Weeks
+        </p>
+        {weeklyBars.length > 0 ? (
+          <MiniBarChart data={weeklyBars} height={60} />
+        ) : (
+          <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
+        )}
+      </div>
 
-        {/* Right: Source Mix (aggregate across full window) */}
-        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-            Source Mix
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {segments.map((seg) => {
-              const count = agg[seg] || 0;
-              if (count === 0 && aggTotal === 0) return null;
-              return (
-                <div key={seg} className="flex items-center justify-between" style={{ padding: "0.3rem 0" }}>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full" style={{ width: "7px", height: "7px", backgroundColor: SEGMENT_COLORS[seg] }} />
-                    <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-                      {SEGMENT_LABELS[seg]}
+      {/* Source Mix */}
+      <div style={{ borderTop: "1px solid var(--st-border)", paddingTop: "0.75rem" }}>
+        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          Source Mix
+        </p>
+        <div className="flex flex-col gap-1">
+          {segments.map((seg) => {
+            const count = agg[seg] || 0;
+            if (count === 0 && aggTotal === 0) return null;
+            return (
+              <div key={seg} className="flex items-center justify-between" style={{ padding: "0.2rem 0" }}>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full" style={{ width: "6px", height: "6px", backgroundColor: SEGMENT_COLORS[seg] }} />
+                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                    {SEGMENT_LABELS[seg]}
+                  </span>
+                </div>
+                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+                  {count}
+                  {aggTotal > 0 && (
+                    <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>
+                      {Math.round((count / aggTotal) * 100)}%
                     </span>
-                  </div>
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
-                    {count}
-                    {aggTotal > 0 && (
-                      <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
-                        {Math.round((count / aggTotal) * 100)}%
-                      </span>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          {otherTop5.length > 0 && (
-            <div style={{ marginTop: "0.5rem", paddingLeft: "1rem" }}>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
-                Other includes:
-              </p>
-              {otherTop5.map((item, i) => (
-                <div key={i} className="flex items-center justify-between" style={{ padding: "0.15rem 0" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-                    {item.passName}
-                  </span>
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-                    {item.count}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </Card>
@@ -1933,61 +1914,42 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Left: Weekly bar chart */}
-        <div>
-          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-            Unique Visitors — Last 4 Weeks
-          </p>
-          {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={70} />
-          ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
-          )}
-        </div>
+      {/* Weekly bar chart */}
+      <div style={{ marginBottom: "0.75rem" }}>
+        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          Unique Visitors — Last 4 Weeks
+        </p>
+        {weeklyBars.length > 0 ? (
+          <MiniBarChart data={weeklyBars} height={60} />
+        ) : (
+          <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
+        )}
+      </div>
 
-        {/* Right: Source Mix (aggregate, 3 buckets) */}
-        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-            Source Mix
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {rnmSegments.map((seg) => (
-              <div key={seg} className="flex items-center justify-between" style={{ padding: "0.3rem 0" }}>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full" style={{ width: "7px", height: "7px", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-                    {RNM_SEGMENT_LABELS[seg]}
-                  </span>
-                </div>
-                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
-                  {aggDisplay[seg] || 0}
-                  {rnmAggTotal > 0 && (
-                    <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
-                      {Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%
-                    </span>
-                  )}
+      {/* Source Mix */}
+      <div style={{ borderTop: "1px solid var(--st-border)", paddingTop: "0.75rem" }}>
+        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          Source Mix
+        </p>
+        <div className="flex flex-col gap-1">
+          {rnmSegments.map((seg) => (
+            <div key={seg} className="flex items-center justify-between" style={{ padding: "0.2rem 0" }}>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full" style={{ width: "6px", height: "6px", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
+                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                  {RNM_SEGMENT_LABELS[seg]}
                 </span>
               </div>
-            ))}
-          </div>
-          {otherTop5.length > 0 && (
-            <div style={{ marginTop: "0.5rem", paddingLeft: "1rem" }}>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.3rem" }}>
-                Other includes:
-              </p>
-              {otherTop5.map((item, i) => (
-                <div key={i} className="flex items-center justify-between" style={{ padding: "0.15rem 0" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-                    {item.passName}
+              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+                {aggDisplay[seg] || 0}
+                {rnmAggTotal > 0 && (
+                  <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>
+                    {Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%
                   </span>
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-                    {item.count}
-                  </span>
-                </div>
-              ))}
+                )}
+              </span>
             </div>
-          )}
+          ))}
         </div>
       </div>
     </Card>
@@ -2012,8 +1974,12 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firs
       <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">Non Members</SectionHeader>
 
       {dropIns && <DropInCardNew dropIns={dropIns} />}
-      {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
-      {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
+      {(firstVisits || returningNonMembers) && (
+        <div style={{ display: "grid", gridTemplateColumns: firstVisits && returningNonMembers ? "1fr 1fr" : "1fr", gap: "1rem" }}>
+          {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
+          {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
+        </div>
+      )}
     </div>
   );
 }
