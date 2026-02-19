@@ -2005,7 +2005,7 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
   const [showChart, setShowChart] = useState(false);
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
 
-  const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, frequency } = dropIns;
+  const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency } = dropIns;
 
   // Display last 8 complete weeks in the table
   const displayWeeks = completeWeeks.slice(-8);
@@ -2019,20 +2019,20 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
   const barMax = Math.max(...chartData.map((d) => d.visits), 1);
   const BAR_H = 80;
 
-  // Trend display
+  // Trend display (smaller arrow, #2)
   const trendSymbol = trend === "up" ? "\u25B2" : trend === "down" ? "\u25BC" : "\u2014";
   const trendLabel = trend === "up" ? "Up" : trend === "down" ? "Down" : "Flat";
 
-  // WTD delta badge
+  // WTD delta badge (#1: now vs last week same-day cut)
   const wtdDeltaSign = wtdDelta > 0 ? "+" : "";
 
-  // Table styles (matching funnel module)
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.45)" };
+  // Table styles: softer header color (#7), right-aligned numerics
+  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.35)", fontVariantNumeric: "tabular-nums" };
   const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
 
-  // Tab style (matching funnel module)
+  // Tab style (matching funnel module, #7: spacing fix)
   const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "0.25rem 0.6rem 0.3rem",
+    padding: "0.25rem 0.6rem 0.35rem",
     marginBottom: "-1px",
     fontSize: "0.7rem",
     fontWeight: active ? DS.weight.bold : DS.weight.normal,
@@ -2061,9 +2061,9 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
     </span>
   );
 
-  // Mix bar colors: two lightness levels of the same hue
-  const mixFirstTime = "rgba(155, 118, 83, 0.75)";   // darker sienna
-  const mixRepeat = "rgba(155, 118, 83, 0.35)";       // lighter sienna
+  // Mix bar colors (#4): explicit First vs Repeat
+  const mixFirstTime = "rgba(155, 118, 83, 0.78)";   // darker sienna = First
+  const mixRepeat = "rgba(155, 118, 83, 0.32)";       // lighter sienna = Repeat
 
   return (
     <Card>
@@ -2082,24 +2082,30 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         marginBottom: "0.5rem",
         fontVariantNumeric: "tabular-nums",
       }}>
-        {/* Tile 1: This week (WTD) */}
+        {/* Tile 1: This week (WTD) — #1 fixed delta */}
         <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.3rem" }}>
             <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
               {formatNumber(wtd?.visits ?? 0)}
             </span>
-            {wtdDelta !== 0 && lastCompleteWeek && (
-              <span style={{
-                fontSize: "0.55rem", fontWeight: DS.weight.medium,
-                color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-                padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
-              }}>
+            {wtdDelta !== 0 && (
+              <span
+                title={`vs last week WTD: ${wtdDeltaSign}${wtdDelta} (${wtdDeltaSign}${wtdDeltaPercent.toFixed(0)}%)`}
+                style={{
+                  fontSize: "0.55rem", fontWeight: DS.weight.medium,
+                  color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+                  padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
+                }}
+              >
                 {wtdDeltaSign}{wtdDelta}
               </span>
             )}
           </div>
           <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            This week (WTD)
+            Drop-in visits (WTD)
+          </div>
+          <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.05rem", opacity: 0.7 }}>
+            {wtdDayLabel} &middot; vs last wk WTD
           </div>
         </div>
 
@@ -2122,11 +2128,11 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         {/* Hairline */}
         <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
 
-        {/* Tile 3: Trend */}
+        {/* Tile 3: Trend — #2 reduced arrow, clarified label */}
         <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
             <span style={{
-              fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS,
+              fontWeight: DS.weight.medium, fontSize: DS.text.md, fontFamily: FONT_SANS,
               color: trend === "up" ? COLORS.success : trend === "down" ? COLORS.error : "var(--st-text-primary)",
               letterSpacing: "-0.02em", lineHeight: 1.1,
             }}>
@@ -2147,14 +2153,14 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             <InfoIcon tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%." />
           </div>
           <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Last 4 vs prior 4
+            Trend (complete weeks)
           </div>
         </div>
       </div>
 
       {/* ── Chart toggle (collapsed by default) ── */}
       {chartData.length > 0 && (
-        <div style={{ marginBottom: "1.1rem" }}>
+        <div style={{ marginBottom: "0.75rem" }}>
           <button
             type="button"
             onClick={() => setShowChart(!showChart)}
@@ -2164,8 +2170,8 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
               display: "flex", alignItems: "center", gap: "0.3rem",
             }}
           >
-            <span style={{ fontSize: "0.6rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
-            Show trend
+            <span style={{ fontSize: "0.5rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
+            {showChart ? "Hide trend" : "Show trend"}
           </button>
 
           {showChart && (
@@ -2231,8 +2237,8 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         </div>
       )}
 
-      {/* ── Tabs ── */}
-      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: "0" }}>
+      {/* ── Tabs — #7: extra padding-bottom so underline doesn't collide with table border ── */}
+      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: "0.15rem" }}>
         <button type="button" className="funnel-tab" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
           Complete weeks ({displayWeeks.length})
         </button>
@@ -2243,39 +2249,54 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         )}
       </div>
 
-      {/* ── Complete weeks table ── */}
+      {/* ── Complete weeks table — #3 FIRST%, #4 mix legend, #5 Latest tag, #7 aligned headers ── */}
       {activeTab === "complete" && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "34%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "14%" }} />
+              <col style={{ width: "28%" }} />
               <col style={{ width: "12%" }} />
               <col style={{ width: "12%" }} />
-              <col style={{ width: "14%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "18%" }} />
             </colgroup>
             <thead>
               <tr>
                 <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
-                <th style={thStyle}>Visits</th>
-                <th style={thStyle}>Unique</th>
-                <th style={thStyle} title="Unique customers visiting for the first time ever">First</th>
-                <th style={thStyle} title="Unique customers who have visited before">Repeat</th>
-                <th style={{ ...thStyle, textAlign: "center" }}>Mix</th>
+                <th style={thStyle} title="Total drop-in visits">Visits</th>
+                <th style={thStyle} title="Unique drop-in customers">Customers</th>
+                <th style={thStyle} title="First-time visitors (all-time first drop-in)">First</th>
+                <th style={thStyle} title="Returning visitors (visited before)">Repeat</th>
+                <th style={thStyle} title="First-time as % of unique customers">First %</th>
+                <th style={thStyle}>
+                  {/* #4: Mini legend in header */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.3rem" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                      <span style={{ width: "5px", height: "5px", borderRadius: "1px", backgroundColor: mixFirstTime, display: "inline-block" }} />
+                      <span style={{ fontSize: "0.5rem", letterSpacing: "0" }}>1st</span>
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                      <span style={{ width: "5px", height: "5px", borderRadius: "1px", backgroundColor: mixRepeat, display: "inline-block" }} />
+                      <span style={{ fontSize: "0.5rem", letterSpacing: "0" }}>Rpt</span>
+                    </span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody>
               {displayWeeks.map((w) => {
                 const isHovered = hoveredWeek === w.weekStart;
-                const isNewest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
+                const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
+                const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
                 return (
                   <tr
                     key={w.weekStart}
                     style={{
                       borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
                       borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
-                      backgroundColor: isNewest && !isHovered ? "rgba(65, 58, 58, 0.015)" : "transparent",
+                      backgroundColor: isHovered ? "rgba(65, 58, 58, 0.02)" : "transparent",
                       transition: "border-color 0.15s, background-color 0.15s",
                     }}
                     onMouseEnter={() => setHoveredWeek(w.weekStart)}
@@ -2283,6 +2304,16 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                   >
                     <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
                       {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
+                      {isLatest && (
+                        <span style={{
+                          fontSize: "0.5rem", fontWeight: DS.weight.medium,
+                          backgroundColor: "rgba(155, 118, 83, 0.10)", color: COLORS.dropIn,
+                          padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
+                          marginLeft: "0.3rem",
+                        }}>
+                          Latest
+                        </span>
+                      )}
                     </td>
                     <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
                       {formatNumber(w.visits)}
@@ -2296,11 +2327,14 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                     <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
                       {w.repeatCustomers}
                     </td>
+                    <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                      {firstPct}%
+                    </td>
                     <td style={{ ...tdBase, textAlign: "center" }}>
-                      {/* 8px stacked bar: first-time / repeat */}
+                      {/* #4: 2-part stacked bar: First = darker, Repeat = lighter */}
                       {w.uniqueCustomers > 0 ? (
                         <div
-                          title={`First-time: ${w.firstTime} (${Math.round((w.firstTime / w.uniqueCustomers) * 100)}%) \u00b7 Repeat: ${w.repeatCustomers} (${Math.round((w.repeatCustomers / w.uniqueCustomers) * 100)}%)`}
+                          title={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
                           style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "2.5rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.04)" }}
                         >
                           <div style={{ flex: Math.max(w.firstTime, 0.1), backgroundColor: mixFirstTime, borderRadius: "1px" }} />
@@ -2334,7 +2368,7 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
               <tr>
                 <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
                 <th style={thStyle}>Visits</th>
-                <th style={thStyle}>Unique</th>
+                <th style={thStyle}>Customers</th>
                 <th style={thStyle}>First</th>
                 <th style={thStyle}>Repeat</th>
                 <th style={thStyle}>Days left</th>
@@ -2389,7 +2423,7 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         </div>
       )}
 
-      {/* ── 90-Day Frequency Distribution ── */}
+      {/* ── 90-Day Frequency Distribution — #6: two-line labels, min hover target, tooltips ── */}
       {frequency && frequency.totalCustomers > 0 && (
         <div style={{ marginTop: "0.75rem", paddingTop: "0.5rem", borderTop: "1px solid rgba(65, 58, 58, 0.06)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginBottom: "0.4rem" }}>
@@ -2399,44 +2433,61 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             <InfoIcon tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
           </div>
 
-          {/* Segmented bar */}
-          <div style={{ display: "flex", height: "10px", borderRadius: "4px", overflow: "hidden", gap: "1px" }}>
-            {[
+          {(() => {
+            const segments = [
               { count: frequency.bucket1, label: "1 visit", opacity: 0.3 },
-              { count: frequency.bucket2to4, label: "2-4", opacity: 0.5 },
-              { count: frequency.bucket5to10, label: "5-10", opacity: 0.7 },
+              { count: frequency.bucket2to4, label: "2\u20134", opacity: 0.5 },
+              { count: frequency.bucket5to10, label: "5\u201310", opacity: 0.7 },
               { count: frequency.bucket11plus, label: "11+", opacity: 0.9 },
-            ].map((seg) => (
-              seg.count > 0 ? (
-                <div
-                  key={seg.label}
-                  style={{
-                    flex: seg.count,
-                    backgroundColor: COLORS.dropIn,
-                    opacity: seg.opacity,
-                    borderRadius: "1px",
-                  }}
-                  title={`${seg.label}: ${seg.count} customers (${Math.round((seg.count / frequency.totalCustomers) * 100)}%)`}
-                />
-              ) : null
-            ))}
-          </div>
-
-          {/* Labels below */}
-          <div style={{ display: "flex", gap: "1px", marginTop: "0.2rem" }}>
-            {[
-              { count: frequency.bucket1, label: "1 visit" },
-              { count: frequency.bucket2to4, label: "2\u20134" },
-              { count: frequency.bucket5to10, label: "5\u201310" },
-              { count: frequency.bucket11plus, label: "11+" },
-            ].map((seg) => (
-              seg.count > 0 ? (
-                <div key={seg.label} style={{ flex: seg.count, textAlign: "center", fontSize: "0.55rem", color: "var(--st-text-secondary)" }}>
-                  {seg.label} ({Math.round((seg.count / frequency.totalCustomers) * 100)}%)
+            ];
+            return (
+              <>
+                {/* Segmented bar */}
+                <div style={{ display: "flex", height: "10px", borderRadius: "4px", overflow: "hidden", gap: "1px" }}>
+                  {segments.map((seg) => (
+                    seg.count > 0 ? (
+                      <div
+                        key={seg.label}
+                        style={{
+                          flex: Math.max(seg.count, frequency.totalCustomers * 0.03), // #6: min 3% width for hover
+                          backgroundColor: COLORS.dropIn,
+                          opacity: seg.opacity,
+                          borderRadius: "1px",
+                          cursor: "default",
+                        }}
+                        title={`${seg.label}: ${seg.count} customers (${Math.round((seg.count / frequency.totalCustomers) * 100)}%)`}
+                      />
+                    ) : null
+                  ))}
                 </div>
-              ) : null
-            ))}
-          </div>
+
+                {/* #6: Two-line labels: bucket on top, % below (bolder) */}
+                <div style={{ display: "flex", gap: "1px", marginTop: "0.25rem" }}>
+                  {segments.map((seg) => (
+                    seg.count > 0 ? (
+                      <div
+                        key={seg.label}
+                        style={{
+                          flex: Math.max(seg.count, frequency.totalCustomers * 0.03),
+                          textAlign: "center",
+                          display: "flex", flexDirection: "column", alignItems: "center",
+                          minWidth: "24px",
+                        }}
+                        title={`${seg.count} customers`}
+                      >
+                        <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.03em", lineHeight: 1.2 }}>
+                          {seg.label}
+                        </span>
+                        <span style={{ fontSize: "0.6rem", fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                          {Math.round((seg.count / frequency.totalCustomers) * 100)}%
+                        </span>
+                      </div>
+                    ) : null
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </Card>

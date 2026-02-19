@@ -720,6 +720,27 @@ export async function getDropInWTD(): Promise<DropInWeekDetailRow & { daysLeft: 
 }
 
 /**
+ * Get last week's drop-in visits through the same weekday as today.
+ * Used for apples-to-apples WTD comparison ("vs last week, same day cut").
+ */
+export async function getDropInLastWeekWTD(): Promise<number> {
+  const pool = getPool();
+
+  const query = `
+    SELECT COUNT(*) as visits
+    FROM registrations r
+    WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+      AND r.email IS NOT NULL AND r.email != ''
+      AND (r.subscription = 'false' OR r.subscription IS NULL)
+      AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date
+      AND r.attended_at::date <= (CURRENT_DATE - INTERVAL '7 days')::date
+  `;
+
+  const { rows } = await pool.query(query);
+  return Number(rows[0]?.visits ?? 0);
+}
+
+/**
  * Get drop-in frequency distribution over the last 90 days.
  * Buckets: 1 visit, 2-4 visits, 5-10 visits, 11+ visits.
  */

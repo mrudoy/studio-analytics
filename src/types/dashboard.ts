@@ -147,8 +147,9 @@ export interface DropInModuleData {
   typicalWeekVisits: number;       // 8-week avg of complete weeks
   trend: "up" | "flat" | "down";
   trendDeltaPercent: number;       // last 4 vs prior 4
-  wtdDelta: number;                // WTD visits - same point last week
+  wtdDelta: number;                // WTD visits - last week through same weekday
   wtdDeltaPercent: number;
+  wtdDayLabel: string;             // "As of Mon", "As of Tue", etc.
   frequency: DropInFrequency | null;
 }
 

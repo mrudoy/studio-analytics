@@ -30,6 +30,7 @@ import {
   getNewCustomerCohorts,
   getDropInWeeklyDetail,
   getDropInWTD,
+  getDropInLastWeekWTD,
   getDropInFrequencyDistribution,
   getConversionPoolWeekly,
   getConversionPoolWTD,
@@ -451,10 +452,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
 
   if (await hasRegistrationData()) {
     try {
-      const [weeklyDetail, wtdRaw, frequencyRaw] = await Promise.all([
+      const [weeklyDetail, wtdRaw, frequencyRaw, lastWeekWTDVisits] = await Promise.all([
         getDropInWeeklyDetail(16),
         getDropInWTD(),
         getDropInFrequencyDistribution(),
+        getDropInLastWeekWTD(),
       ]);
 
       if (weeklyDetail.length > 0 || wtdRaw) {
@@ -492,12 +494,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
         const trend: "up" | "flat" | "down" =
           trendDeltaPercent > 5 ? "up" : trendDeltaPercent < -5 ? "down" : "flat";
 
-        // WTD delta: compare WTD visits to same point last week (or last complete week total)
+        // WTD delta: compare WTD visits to last week through the same weekday
         const wtdVisits = wtdRaw?.visits ?? 0;
-        const lastWeekVisits = lastCompleteWeek?.visits ?? 0;
-        const wtdDelta = wtdVisits - lastWeekVisits;
-        const wtdDeltaPercent = lastWeekVisits > 0
-          ? Math.round((wtdDelta / lastWeekVisits) * 1000) / 10
+        const wtdDelta = wtdVisits - lastWeekWTDVisits;
+        const wtdDeltaPercent = lastWeekWTDVisits > 0
+          ? Math.round((wtdDelta / lastWeekWTDVisits) * 1000) / 10
           : 0;
 
         const wtd = wtdRaw ? {
@@ -518,6 +519,10 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
           totalCustomers: frequencyRaw.totalCustomers,
         } : null;
 
+        // Day label: "As of Mon", "As of Tue", etc.
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const wtdDayLabel = `As of ${dayNames[new Date().getDay()]}`;
+
         dropIns = {
           completeWeeks,
           wtd,
@@ -527,6 +532,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
           trendDeltaPercent,
           wtdDelta,
           wtdDeltaPercent,
+          wtdDayLabel,
           frequency,
         };
       }
