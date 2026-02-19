@@ -31,6 +31,9 @@ import {
   getDropInWeeklyDetail,
   getDropInWTD,
   getDropInFrequencyDistribution,
+  getConversionPoolWeekly,
+  getConversionPoolWTD,
+  getConversionPoolLagStats,
 } from "../db/registration-store";
 import type {
   TrendsData,
@@ -45,6 +48,7 @@ import type {
   CategoryMonthlyChurn,
   NewCustomerVolumeData,
   NewCustomerCohortData,
+  ConversionPoolModuleData,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -687,13 +691,99 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
+  // ── 10. Conversion Pool: non-auto visitors → in-studio auto-renew ──
+  let conversionPool: ConversionPoolModuleData | null = null;
+
+  if (await hasRegistrationData()) {
+    try {
+      const [weeklyRows, wtdRow, lagRow] = await Promise.all([
+        getConversionPoolWeekly(16),
+        getConversionPoolWTD(),
+        getConversionPoolLagStats(),
+      ]);
+
+      if (weeklyRows.length > 0) {
+        // Compute rate + yield per 100 for each week
+        const completeWeeks = weeklyRows.map((w) => ({
+          weekStart: w.weekStart,
+          weekEnd: w.weekEnd,
+          activePool7d: w.activePool7d,
+          converts: w.converts,
+          conversionRate: w.activePool7d > 0
+            ? Math.round((w.converts / w.activePool7d) * 10000) / 100
+            : 0,
+          yieldPer100: w.activePool7d > 0
+            ? Math.round((w.converts / w.activePool7d) * 10000) / 100
+            : 0,
+        }));
+
+        const lastCompleteWeek = completeWeeks[completeWeeks.length - 1] ?? null;
+
+        // 8-week averages (last 8 complete weeks)
+        const last8 = completeWeeks.slice(-8);
+        const avgPool7d = last8.length > 0
+          ? Math.round(last8.reduce((s, w) => s + w.activePool7d, 0) / last8.length)
+          : 0;
+        const avgRate = last8.length > 0
+          ? Math.round((last8.reduce((s, w) => s + w.conversionRate, 0) / last8.length) * 100) / 100
+          : 0;
+
+        // Build WTD with rate
+        const wtd = wtdRow ? {
+          weekStart: wtdRow.weekStart,
+          weekEnd: wtdRow.weekEnd,
+          activePool7d: wtdRow.activePool7d,
+          activePool30d: wtdRow.activePool30d,
+          converts: wtdRow.converts,
+          conversionRate: wtdRow.activePool7d > 0
+            ? Math.round((wtdRow.converts / wtdRow.activePool7d) * 10000) / 100
+            : 0,
+          daysLeft: wtdRow.daysLeft,
+        } : null;
+
+        // Build lag stats
+        const lagStats = lagRow ? {
+          medianTimeToConvert: lagRow.medianTimeToConvert != null
+            ? Math.round(lagRow.medianTimeToConvert) : null,
+          avgVisitsBeforeConvert: lagRow.avgVisitsBeforeConvert != null
+            ? Math.round(lagRow.avgVisitsBeforeConvert * 10) / 10 : null,
+          timeBucket0to30: lagRow.timeBucket0to30,
+          timeBucket31to90: lagRow.timeBucket31to90,
+          timeBucket91to180: lagRow.timeBucket91to180,
+          timeBucket180plus: lagRow.timeBucket180plus,
+          visitBucket1to2: lagRow.visitBucket1to2,
+          visitBucket3to5: lagRow.visitBucket3to5,
+          visitBucket6to10: lagRow.visitBucket6to10,
+          visitBucket11plus: lagRow.visitBucket11plus,
+          totalConvertersInBuckets: lagRow.totalConvertersInBuckets,
+          historicalMedianTimeToConvert: lagRow.historicalMedianTimeToConvert != null
+            ? Math.round(lagRow.historicalMedianTimeToConvert) : null,
+          historicalAvgVisitsBeforeConvert: lagRow.historicalAvgVisitsBeforeConvert != null
+            ? Math.round(lagRow.historicalAvgVisitsBeforeConvert * 10) / 10 : null,
+        } : null;
+
+        conversionPool = {
+          completeWeeks,
+          wtd,
+          lagStats,
+          lastCompleteWeek,
+          avgPool7d,
+          avgRate,
+        };
+      }
+    } catch (err) {
+      console.warn("[db-trends] Failed to compute conversion pool data:", err);
+    }
+  }
+
   console.log(
     `[db-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins typical=${dropIns.typicalWeekVisits}/wk, trend=${dropIns.trend}` : "") +
     (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
     (newCustomerVolume ? `, new customers this week=${newCustomerVolume.currentWeekCount}` : "") +
     (newCustomerCohorts ? `, cohort avg conversion=${newCustomerCohorts.avgConversionRate?.toFixed(1) ?? "N/A"}%` : "") +
-    (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "")
+    (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "") +
+    (conversionPool ? `, conversion pool=${conversionPool.avgPool7d} avg pool, ${conversionPool.avgRate.toFixed(2)}% avg rate` : "")
   );
 
   return {
@@ -707,6 +797,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     churnRates,
     newCustomerVolume,
     newCustomerCohorts,
+    conversionPool,
   };
 }
 

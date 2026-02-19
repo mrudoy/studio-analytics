@@ -16,6 +16,7 @@ import type {
   MonthOverMonthData,
   NewCustomerVolumeData,
   NewCustomerCohortData,
+  ConversionPoolModuleData,
 } from "@/types/dashboard";
 
 // ─── Client-only types ───────────────────────────────────────
@@ -93,6 +94,7 @@ const LABELS = {
   returningNonMembers: "Returning Non-Members",
   newCustomers: "New Customers",
   newCustomerFunnel: "New Customer Funnel",
+  conversionPool: "Conversion Pool",
   revenue: "Revenue",
   mrr: "Monthly Recurring Revenue",
   yoy: "Year over Year",
@@ -113,6 +115,7 @@ const COLORS = {
   copper: "#B87333",     // copper for returning non-members
   newCustomer: "#5A6B7A", // slate for new customer funnel
   dropIn: "#9B7653",     // warm sienna for drop-ins
+  conversionPool: "#6B5B7B", // muted plum for conversion pool
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -1966,14 +1969,15 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
 // ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
 
-function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCustomerVolume, newCustomerCohorts }: {
+function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCustomerVolume, newCustomerCohorts, conversionPool }: {
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
   dropIns: DropInModuleData | null;
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
+  conversionPool: ConversionPoolModuleData | null;
 }) {
-  if (!firstVisits && !returningNonMembers && !dropIns && !newCustomerVolume && !newCustomerCohorts) return null;
+  if (!firstVisits && !returningNonMembers && !dropIns && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
 
   return (
     <div className="space-y-3">
@@ -1989,6 +1993,7 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCusto
       {(newCustomerVolume || newCustomerCohorts) && (
         <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
       )}
+      {conversionPool && <ConversionPoolModule pool={conversionPool} />}
     </div>
   );
 }
@@ -2433,6 +2438,402 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             ))}
           </div>
         </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Conversion Pool Module (non-auto → auto-renew) ─────────
+
+function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
+  const [showChart, setShowChart] = useState(false);
+  const [chartMetric, setChartMetric] = useState<"pool" | "converts">("pool");
+  const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
+
+  const { completeWeeks, wtd, lagStats, lastCompleteWeek, avgPool7d, avgRate } = pool;
+
+  // Display last 8 complete weeks in table
+  const displayWeeks = completeWeeks.slice(-8);
+
+  // Chart data: all complete weeks + WTD
+  const chartData = [
+    ...completeWeeks.map((w) => ({ weekStart: w.weekStart, weekEnd: w.weekEnd, pool: w.activePool7d, converts: w.converts, complete: true })),
+    ...(wtd ? [{ weekStart: wtd.weekStart, weekEnd: wtd.weekEnd, pool: wtd.activePool7d, converts: wtd.converts, complete: false }] : []),
+  ];
+  const barMax = Math.max(...chartData.map((d) => chartMetric === "pool" ? d.pool : d.converts), 1);
+  const BAR_H = 80;
+
+  // Table styles (matching other modules)
+  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.45)", whiteSpace: "nowrap" };
+  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
+
+  // Info icon
+  const InfoIcon = ({ tooltip }: { tooltip: string }) => (
+    <span
+      title={tooltip}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: "24px", height: "24px", cursor: "help",
+        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.5,
+      }}
+    >
+      &#9432;
+    </span>
+  );
+
+  // Distribution bar renderer
+  const DistBar = ({ buckets, labels, colors }: { buckets: number[]; labels: string[]; colors: string[] }) => {
+    const total = buckets.reduce((s, b) => s + b, 0);
+    if (total === 0) return <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>&mdash;</span>;
+    return (
+      <div>
+        <div style={{ display: "flex", height: "10px", borderRadius: "3px", overflow: "hidden", gap: "1px" }}>
+          {buckets.map((b, i) => (
+            <div key={i} style={{ flex: b, backgroundColor: colors[i], minWidth: b > 0 ? "2px" : 0 }} title={`${labels[i]}: ${b} (${Math.round((b / total) * 100)}%)`} />
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
+          {buckets.map((b, i) => b > 0 ? (
+            <div key={i} style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "0.15rem" }}>
+              <span style={{ width: "5px", height: "5px", borderRadius: "1px", backgroundColor: colors[i], display: "inline-block" }} />
+              {labels[i]}
+            </div>
+          ) : null)}
+        </div>
+      </div>
+    );
+  };
+
+  // Time + visit distribution colors (4 opacity levels of the module color)
+  const distColors = [
+    "rgba(107, 91, 123, 0.85)",
+    "rgba(107, 91, 123, 0.60)",
+    "rgba(107, 91, 123, 0.40)",
+    "rgba(107, 91, 123, 0.22)",
+  ];
+
+  // Hero values
+  const heroPool = wtd?.activePool7d ?? lastCompleteWeek?.activePool7d ?? 0;
+  const heroConverts = wtd?.converts ?? lastCompleteWeek?.converts ?? 0;
+  const heroRate = wtd ? wtd.conversionRate : (lastCompleteWeek?.conversionRate ?? 0);
+  const heroYield = heroRate; // same number, different framing
+
+  return (
+    <Card>
+      {/* ── Module header ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+        <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.conversionPool, opacity: 0.85 }} />
+        <span style={{ ...DS.label }}>{LABELS.conversionPool}</span>
+      </div>
+
+      {/* ── KPI Row 1: 4 tiles ── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1px 1fr 1px 1fr 1px auto",
+        alignItems: "stretch",
+        padding: "0.4rem 0",
+        marginBottom: "0.3rem",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {/* Tile 1: Active Pool (7d) */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+              {formatNumber(heroPool)}
+            </span>
+            <InfoIcon tooltip="Unique non-subscriber studio visitors this week. Excludes anyone on an active auto-renew." />
+          </div>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            Active pool (7d)
+          </div>
+          {wtd && wtd.activePool30d > 0 && (
+            <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.15rem", display: "flex", alignItems: "center", gap: "0.15rem" }}>
+              30d: {formatNumber(wtd.activePool30d)}
+              <InfoIcon tooltip="Unique non-subscriber studio visitors in the last 30 days." />
+            </div>
+          )}
+        </div>
+
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+
+        {/* Tile 2: Converts */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+              {formatNumber(heroConverts)}
+            </span>
+            <InfoIcon tooltip="Pool members who started their first in-studio auto-renew (Member or Sky3) this week." />
+          </div>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            Converts (week)
+          </div>
+        </div>
+
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+
+        {/* Tile 3: Rate */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+              {heroRate.toFixed(1)}%
+            </span>
+            <InfoIcon tooltip="Converts / Active pool (7d)." />
+          </div>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            Rate
+          </div>
+        </div>
+
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+
+        {/* Tile 4: Per 100 */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+            {heroYield.toFixed(1)}
+          </span>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            Per 100
+          </div>
+        </div>
+      </div>
+
+      {/* ── KPI Row 2: Lag stats + distributions ── */}
+      {lagStats && (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "auto auto 1fr 1fr",
+          gap: "0.5rem",
+          alignItems: "start",
+          padding: "0.3rem 0 0.5rem",
+          marginBottom: "0.5rem",
+          borderTop: "1px solid rgba(65, 58, 58, 0.06)",
+        }}>
+          {/* Lag stat 1: Median time-to-convert */}
+          <div style={{ padding: "0 0.3rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.1rem" }}>
+              <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
+              </span>
+              <InfoIcon tooltip="Median days between first non-auto studio visit and auto-renew start." />
+            </div>
+            <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.05rem" }}>
+              Median time
+            </div>
+            {lagStats.historicalMedianTimeToConvert != null && (
+              <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+                12wk: {lagStats.historicalMedianTimeToConvert}d
+              </div>
+            )}
+          </div>
+
+          {/* Lag stat 2: Avg visits */}
+          <div style={{ padding: "0 0.3rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.1rem" }}>
+              <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
+              </span>
+              <InfoIcon tooltip="Average distinct non-subscriber visits before conversion." />
+            </div>
+            <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.05rem" }}>
+              Avg visits
+            </div>
+            {lagStats.historicalAvgVisitsBeforeConvert != null && (
+              <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+                12wk: {lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}
+              </div>
+            )}
+          </div>
+
+          {/* Time distribution bar */}
+          <div>
+            <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Time to convert
+            </div>
+            <DistBar
+              buckets={[lagStats.timeBucket0to30, lagStats.timeBucket31to90, lagStats.timeBucket91to180, lagStats.timeBucket180plus]}
+              labels={["0-30d", "31-90d", "91-180d", "180d+"]}
+              colors={distColors}
+            />
+          </div>
+
+          {/* Visit distribution bar */}
+          <div>
+            <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Visits before convert
+            </div>
+            <DistBar
+              buckets={[lagStats.visitBucket1to2, lagStats.visitBucket3to5, lagStats.visitBucket6to10, lagStats.visitBucket11plus]}
+              labels={["1-2", "3-5", "6-10", "11+"]}
+              colors={distColors}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Chart toggle (collapsed by default) ── */}
+      {chartData.length > 0 && (
+        <div style={{ marginBottom: "1.1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <button
+              type="button"
+              onClick={() => setShowChart(!showChart)}
+              style={{
+                background: "none", border: "none", padding: "0.15rem 0", cursor: "pointer",
+                fontSize: DS.text.xs, color: "var(--st-text-secondary)",
+                display: "flex", alignItems: "center", gap: "0.3rem",
+              }}
+            >
+              <span style={{ fontSize: "0.5rem", transition: "transform 0.2s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
+              {showChart ? "Hide trend" : "Show trend"}
+            </button>
+            {showChart && (
+              <div style={{ display: "flex", gap: "0.1rem" }}>
+                {(["pool", "converts"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setChartMetric(m)}
+                    style={{
+                      background: chartMetric === m ? "rgba(107, 91, 123, 0.12)" : "none",
+                      border: `1px solid ${chartMetric === m ? "rgba(107, 91, 123, 0.25)" : "transparent"}`,
+                      borderRadius: "3px", padding: "1px 6px", cursor: "pointer",
+                      fontSize: "0.55rem", color: chartMetric === m ? COLORS.conversionPool : "var(--st-text-secondary)",
+                      fontWeight: chartMetric === m ? DS.weight.medium : DS.weight.normal,
+                      letterSpacing: "0.02em", textTransform: "capitalize",
+                    }}
+                  >
+                    {m === "pool" ? "Pool" : "Converts"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showChart && (
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: BAR_H, marginTop: "0.3rem" }}>
+              {chartData.map((d, i) => {
+                const val = chartMetric === "pool" ? d.pool : d.converts;
+                const h = barMax > 0 ? (val / barMax) * BAR_H : 0;
+                const isHovered = hoveredWeek === d.weekStart;
+                return (
+                  <div
+                    key={i}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: BAR_H, position: "relative" }}
+                    onMouseEnter={() => setHoveredWeek(d.weekStart)}
+                    onMouseLeave={() => setHoveredWeek(null)}
+                  >
+                    {isHovered && (
+                      <div style={{
+                        position: "absolute", top: -18, fontSize: "0.55rem",
+                        fontWeight: DS.weight.medium, color: "var(--st-text-primary)",
+                        whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+                      }}>
+                        {formatNumber(val)}
+                      </div>
+                    )}
+                    <div style={{
+                      width: "100%", borderRadius: "2px 2px 0 0",
+                      height: Math.max(h, val > 0 ? 2 : 0),
+                      ...(d.complete
+                        ? { backgroundColor: COLORS.conversionPool, opacity: isHovered ? 0.85 : 0.65 }
+                        : { backgroundColor: "rgba(107, 91, 123, 0.06)", border: `1.5px dashed ${COLORS.conversionPool}`, opacity: isHovered ? 0.5 : 0.35 }),
+                      transition: "opacity 0.15s",
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Weekly Table ── */}
+      {displayWeeks.length > 0 && (
+        <table style={{
+          width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS,
+          tableLayout: "fixed",
+        }}>
+          <colgroup>
+            <col style={{ width: "40%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "20%" }} />
+          </colgroup>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.1)" }}>
+              <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
+              <th style={thStyle}>Pool</th>
+              <th style={thStyle}>Converts</th>
+              <th style={thStyle}>Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayWeeks.map((w) => {
+              const isHovered = hoveredWeek === w.weekStart;
+              const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              return (
+                <tr
+                  key={w.weekStart}
+                  onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                  onMouseLeave={() => setHoveredWeek(null)}
+                  style={{
+                    borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
+                    borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
+                    transition: "background 0.1s",
+                    background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
+                  }}
+                >
+                  <td style={{ ...tdBase, textAlign: "left", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                    {weekLabel}
+                  </td>
+                  <td style={{ ...tdBase, fontSize: DS.text.sm }}>
+                    {formatNumber(w.activePool7d)}
+                  </td>
+                  <td style={{ ...tdBase, fontSize: DS.text.sm }}>
+                    {formatNumber(w.converts)}
+                  </td>
+                  <td style={{ ...tdBase, fontSize: DS.text.sm }}>
+                    {w.conversionRate.toFixed(1)}%
+                  </td>
+                </tr>
+              );
+            })}
+            {/* WTD row */}
+            {wtd && (
+              <tr style={{
+                borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
+                borderLeft: `2px solid ${COLORS.conversionPool}`,
+                background: "rgba(107, 91, 123, 0.03)",
+              }}>
+                <td style={{ ...tdBase, textAlign: "left", fontSize: DS.text.xs, fontStyle: "italic", color: "var(--st-text-secondary)" }}>
+                  <span style={{
+                    fontSize: "0.5rem", fontWeight: DS.weight.medium,
+                    backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
+                    padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
+                    marginRight: "0.3rem", fontStyle: "normal",
+                  }}>
+                    WTD
+                  </span>
+                  {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  {wtd.daysLeft > 0 && (
+                    <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginLeft: "0.25rem" }}>
+                      ({wtd.daysLeft}d left)
+                    </span>
+                  )}
+                </td>
+                <td style={{ ...tdBase, fontSize: DS.text.sm, fontStyle: "italic" }}>
+                  {formatNumber(wtd.activePool7d)}
+                </td>
+                <td style={{ ...tdBase, fontSize: DS.text.sm, fontStyle: "italic" }}>
+                  {formatNumber(wtd.converts)}
+                </td>
+                <td style={{ ...tdBase, fontSize: DS.text.sm, fontStyle: "italic" }}>
+                  {wtd.conversionRate.toFixed(1)}%
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       )}
     </Card>
   );
@@ -2921,7 +3322,7 @@ function DashboardView() {
 
         {/* ── Non Members ── */}
         {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns || trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
-          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} />
+          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
         ) : (
           <NoData label="Non-Members (First Visits, Drop-Ins)" />
         )}

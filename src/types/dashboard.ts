@@ -266,6 +266,55 @@ export interface NewCustomerCohortData {
   avgConversionRate: number | null;  // null if < 3 complete cohorts
 }
 
+// ── Conversion Pool types ─────────────────────────────────
+
+export interface ConversionPoolWeekRow {
+  weekStart: string;          // Monday YYYY-MM-DD
+  weekEnd: string;            // Sunday YYYY-MM-DD
+  activePool7d: number;       // unique non-auto emails who visited this week
+  converts: number;           // pool members who started in-studio auto-renew this week
+  conversionRate: number;     // converts / activePool7d * 100
+  yieldPer100: number;        // same as rate, explicit "per 100" framing
+}
+
+export interface ConversionPoolWTD {
+  weekStart: string;
+  weekEnd: string;
+  activePool7d: number;
+  activePool30d: number;      // unique non-auto emails in last 30 days
+  converts: number;
+  conversionRate: number;
+  daysLeft: number;
+}
+
+export interface ConversionPoolLagStats {
+  medianTimeToConvert: number | null;     // median days (this week's converters)
+  avgVisitsBeforeConvert: number | null;  // avg visit count before conversion
+  // Time-to-convert buckets (this week's converters)
+  timeBucket0to30: number;
+  timeBucket31to90: number;
+  timeBucket91to180: number;
+  timeBucket180plus: number;
+  // Visits-to-convert buckets (this week's converters)
+  visitBucket1to2: number;
+  visitBucket3to5: number;
+  visitBucket6to10: number;
+  visitBucket11plus: number;
+  totalConvertersInBuckets: number;
+  // Historical aggregates (last 12 complete weeks)
+  historicalMedianTimeToConvert: number | null;
+  historicalAvgVisitsBeforeConvert: number | null;
+}
+
+export interface ConversionPoolModuleData {
+  completeWeeks: ConversionPoolWeekRow[];   // last 16 complete weeks
+  wtd: ConversionPoolWTD | null;
+  lagStats: ConversionPoolLagStats | null;
+  lastCompleteWeek: ConversionPoolWeekRow | null;
+  avgPool7d: number;                         // 8-week average of activePool7d
+  avgRate: number;                           // 8-week average conversion rate
+}
+
 // ── Trends aggregate ───────────────────────────────────────
 
 export interface TrendsData {
@@ -279,4 +328,5 @@ export interface TrendsData {
   churnRates: ChurnRateData | null;
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
+  conversionPool: ConversionPoolModuleData | null;
 }

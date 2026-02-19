@@ -929,3 +929,275 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
     total3Week: Number(r.total3Week),
   }));
 }
+
+// ── Conversion Pool Queries ──────────────────────────────────
+
+export interface ConversionPoolWeekRow {
+  weekStart: string;
+  weekEnd: string;
+  activePool7d: number;
+  converts: number;
+}
+
+/**
+ * Get weekly conversion pool data for complete weeks.
+ *
+ * Pool = unique emails with a non-subscriber registration that week
+ *        (subscription = 'false') who were NOT on any active auto-renew at time of visit.
+ * Converts = pool members whose FIRST in-studio auto-renew (MEMBER/SKY3) started that week,
+ *            AND who had at least one prior non-subscriber visit.
+ */
+export async function getConversionPoolWeekly(weeksBack = 16): Promise<ConversionPoolWeekRow[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH week_series AS (
+      SELECT generate_series(
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date,
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date,
+        '1 week'::interval
+      )::date as week_start
+    ),
+    -- Unique non-subscriber visitors per week
+    non_auto_pool AS (
+      SELECT DATE_TRUNC('week', r.attended_at::date)::date as week_start,
+             COUNT(DISTINCT LOWER(r.email)) as pool_size
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date
+      GROUP BY DATE_TRUNC('week', r.attended_at::date)::date
+    ),
+    -- Each person's first in-studio auto-renew start date
+    first_in_studio_sub AS (
+      SELECT LOWER(customer_email) as email,
+             MIN(created_at::date) as first_sub_date
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL AND customer_email != ''
+        AND created_at IS NOT NULL AND created_at != ''
+        ${IN_STUDIO_PLAN_FILTER}
+      GROUP BY LOWER(customer_email)
+    ),
+    -- Only count converters who had at least one prior non-sub visit
+    converters AS (
+      SELECT f.email, f.first_sub_date,
+             DATE_TRUNC('week', f.first_sub_date)::date as convert_week
+      FROM first_in_studio_sub f
+      WHERE EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = f.email
+          AND r.attended_at IS NOT NULL AND r.attended_at != ''
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          AND r.attended_at::date < f.first_sub_date
+      )
+    ),
+    weekly_converts AS (
+      SELECT convert_week as week_start,
+             COUNT(*) as converts
+      FROM converters
+      WHERE convert_week >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND convert_week < DATE_TRUNC('week', CURRENT_DATE)::date
+      GROUP BY convert_week
+    )
+    SELECT ws.week_start::text as "weekStart",
+           (ws.week_start + INTERVAL '6 days')::date::text as "weekEnd",
+           COALESCE(p.pool_size, 0) as "activePool7d",
+           COALESCE(wc.converts, 0) as converts
+    FROM week_series ws
+    LEFT JOIN non_auto_pool p ON p.week_start = ws.week_start
+    LEFT JOIN weekly_converts wc ON wc.week_start = ws.week_start
+    ORDER BY ws.week_start
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    activePool7d: Number(r.activePool7d),
+    converts: Number(r.converts),
+  }));
+}
+
+/**
+ * Get conversion pool week-to-date stats for the current partial week.
+ * Includes both 7d pool (this week's visitors) and 30d pool (last 30 days).
+ */
+export async function getConversionPoolWTD(): Promise<{
+  weekStart: string;
+  weekEnd: string;
+  activePool7d: number;
+  activePool30d: number;
+  converts: number;
+  daysLeft: number;
+} | null> {
+  const pool = getPool();
+
+  const query = `
+    WITH pool_7d AS (
+      SELECT COUNT(DISTINCT LOWER(r.email)) as cnt
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
+        AND r.attended_at::date <= CURRENT_DATE
+    ),
+    pool_30d AS (
+      SELECT COUNT(DISTINCT LOWER(r.email)) as cnt
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
+        AND r.attended_at::date <= CURRENT_DATE
+    ),
+    first_in_studio_sub AS (
+      SELECT LOWER(customer_email) as email,
+             MIN(created_at::date) as first_sub_date
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL AND customer_email != ''
+        AND created_at IS NOT NULL AND created_at != ''
+        ${IN_STUDIO_PLAN_FILTER}
+      GROUP BY LOWER(customer_email)
+    ),
+    wtd_converts AS (
+      SELECT COUNT(*) as cnt
+      FROM first_in_studio_sub f
+      WHERE f.first_sub_date >= DATE_TRUNC('week', CURRENT_DATE)::date
+        AND f.first_sub_date <= CURRENT_DATE
+        AND EXISTS (
+          SELECT 1 FROM registrations r
+          WHERE LOWER(r.email) = f.email
+            AND r.attended_at IS NOT NULL AND r.attended_at != ''
+            AND (r.subscription = 'false' OR r.subscription IS NULL)
+            AND r.attended_at::date < f.first_sub_date
+        )
+    )
+    SELECT
+      DATE_TRUNC('week', CURRENT_DATE)::date::text as "weekStart",
+      (DATE_TRUNC('week', CURRENT_DATE) + INTERVAL '6 days')::date::text as "weekEnd",
+      (SELECT cnt FROM pool_7d) as "activePool7d",
+      (SELECT cnt FROM pool_30d) as "activePool30d",
+      (SELECT cnt FROM wtd_converts) as converts,
+      (7 - EXTRACT(ISODOW FROM CURRENT_DATE)::int) as "daysLeft"
+  `;
+
+  const { rows } = await pool.query(query);
+  if (!rows.length) return null;
+  const r = rows[0] as Record<string, unknown>;
+  return {
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    activePool7d: Number(r.activePool7d),
+    activePool30d: Number(r.activePool30d),
+    converts: Number(r.converts),
+    daysLeft: Number(r.daysLeft),
+  };
+}
+
+/**
+ * Get conversion lag stats: median time-to-convert, avg visits before convert,
+ * plus bucket distributions for both time and visits.
+ *
+ * Returns stats for both the current week's converters and a 12-week historical window.
+ * Falls back to historical if current week has no converters.
+ */
+export async function getConversionPoolLagStats(): Promise<{
+  medianTimeToConvert: number | null;
+  avgVisitsBeforeConvert: number | null;
+  timeBucket0to30: number;
+  timeBucket31to90: number;
+  timeBucket91to180: number;
+  timeBucket180plus: number;
+  visitBucket1to2: number;
+  visitBucket3to5: number;
+  visitBucket6to10: number;
+  visitBucket11plus: number;
+  totalConvertersInBuckets: number;
+  historicalMedianTimeToConvert: number | null;
+  historicalAvgVisitsBeforeConvert: number | null;
+} | null> {
+  const pool = getPool();
+
+  const query = `
+    WITH first_in_studio_sub AS (
+      SELECT LOWER(customer_email) as email,
+             MIN(created_at::date) as first_sub_date
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL AND customer_email != ''
+        AND created_at IS NOT NULL AND created_at != ''
+        ${IN_STUDIO_PLAN_FILTER}
+      GROUP BY LOWER(customer_email)
+    ),
+    -- All converters who had prior non-sub visits (last 12 complete weeks + current)
+    converter_detail AS (
+      SELECT f.email,
+             f.first_sub_date,
+             DATE_TRUNC('week', f.first_sub_date)::date as convert_week,
+             MIN(r.attended_at::date) as first_non_auto_visit,
+             COUNT(DISTINCT r.attended_at::date) as visit_count,
+             f.first_sub_date - MIN(r.attended_at::date) as days_to_convert
+      FROM first_in_studio_sub f
+      JOIN registrations r ON LOWER(r.email) = f.email
+        AND r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.attended_at::date < f.first_sub_date
+      WHERE f.first_sub_date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '12 weeks')::date
+      GROUP BY f.email, f.first_sub_date
+    ),
+    -- Current week converters
+    current_week AS (
+      SELECT * FROM converter_detail
+      WHERE convert_week = DATE_TRUNC('week', CURRENT_DATE)::date
+    ),
+    -- Historical: last 12 complete weeks
+    historical AS (
+      SELECT * FROM converter_detail
+      WHERE convert_week >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '12 weeks')::date
+        AND convert_week < DATE_TRUNC('week', CURRENT_DATE)::date
+    )
+    SELECT
+      -- Current week stats
+      (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_to_convert)
+       FROM current_week) as "medianTimeToConvert",
+      (SELECT AVG(visit_count)
+       FROM current_week) as "avgVisitsBeforeConvert",
+      -- Time-to-convert buckets (current week)
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 0 AND 30) FROM current_week) as "timeBucket0to30",
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 31 AND 90) FROM current_week) as "timeBucket31to90",
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 91 AND 180) FROM current_week) as "timeBucket91to180",
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert > 180) FROM current_week) as "timeBucket180plus",
+      -- Visits-before-convert buckets (current week)
+      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 1 AND 2) FROM current_week) as "visitBucket1to2",
+      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 3 AND 5) FROM current_week) as "visitBucket3to5",
+      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 6 AND 10) FROM current_week) as "visitBucket6to10",
+      (SELECT COUNT(*) FILTER (WHERE visit_count > 10) FROM current_week) as "visitBucket11plus",
+      (SELECT COUNT(*) FROM current_week) as "totalConvertersInBuckets",
+      -- Historical aggregates (12 complete weeks)
+      (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_to_convert)
+       FROM historical) as "historicalMedianTimeToConvert",
+      (SELECT AVG(visit_count)
+       FROM historical) as "historicalAvgVisitsBeforeConvert"
+  `;
+
+  const { rows } = await pool.query(query);
+  if (!rows.length) return null;
+  const r = rows[0] as Record<string, unknown>;
+  return {
+    medianTimeToConvert: r.medianTimeToConvert != null ? Number(r.medianTimeToConvert) : null,
+    avgVisitsBeforeConvert: r.avgVisitsBeforeConvert != null ? Number(r.avgVisitsBeforeConvert) : null,
+    timeBucket0to30: Number(r.timeBucket0to30 ?? 0),
+    timeBucket31to90: Number(r.timeBucket31to90 ?? 0),
+    timeBucket91to180: Number(r.timeBucket91to180 ?? 0),
+    timeBucket180plus: Number(r.timeBucket180plus ?? 0),
+    visitBucket1to2: Number(r.visitBucket1to2 ?? 0),
+    visitBucket3to5: Number(r.visitBucket3to5 ?? 0),
+    visitBucket6to10: Number(r.visitBucket6to10 ?? 0),
+    visitBucket11plus: Number(r.visitBucket11plus ?? 0),
+    totalConvertersInBuckets: Number(r.totalConvertersInBuckets ?? 0),
+    historicalMedianTimeToConvert: r.historicalMedianTimeToConvert != null ? Number(r.historicalMedianTimeToConvert) : null,
+    historicalAvgVisitsBeforeConvert: r.historicalAvgVisitsBeforeConvert != null ? Number(r.historicalAvgVisitsBeforeConvert) : null,
+  };
+}
