@@ -2516,6 +2516,9 @@ function DashboardView() {
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
                 <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Year over Year</p>
+                <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+                  {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                </p>
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
