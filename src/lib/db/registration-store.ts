@@ -615,9 +615,40 @@ export interface NewCustomerCohortRow {
   total3Week: number;
 }
 
+// SQL fragment: in-studio intro/drop-in passes only (mirrors isDropInOrIntro).
+// Excludes TV/replay/livestream visitors — this funnel is in-studio only.
+const IN_STUDIO_PASS_FILTER = `
+  AND (
+    UPPER(pass) LIKE '%DROP-IN%' OR UPPER(pass) LIKE '%DROP IN%' OR UPPER(pass) LIKE '%DROPIN%'
+    OR UPPER(pass) LIKE '%DROPLET%'
+    OR UPPER(pass) LIKE '%INTRO%'
+    OR UPPER(pass) LIKE '%TRIAL%'
+    OR UPPER(pass) LIKE '%FIRST%'
+    OR UPPER(pass) LIKE '%SINGLE CLASS%'
+    OR UPPER(pass) LIKE '%WELLHUB%'
+    OR UPPER(pass) LIKE '%GUEST%'
+    OR UPPER(pass) LIKE '%COMMUNITY DAY%'
+    OR UPPER(pass) LIKE '%POKER CHIP%'
+    OR UPPER(pass) LIKE '%ON RUNNING%'
+  )`;
+
+// SQL fragment: only SKY3 + MEMBER auto-renew plans (excludes SKY TING TV, UNKNOWN).
+const IN_STUDIO_PLAN_FILTER = `
+  AND (
+    UPPER(plan_name) LIKE '%SKY3%' OR UPPER(plan_name) LIKE '%SKY5%'
+    OR UPPER(plan_name) LIKE '%SKYHIGH%' OR UPPER(plan_name) LIKE '%5 PACK%'
+    OR UPPER(plan_name) LIKE '%5-PACK%'
+    OR UPPER(plan_name) LIKE '%UNLIMITED%' OR UPPER(plan_name) LIKE '%MEMBER%'
+    OR UPPER(plan_name) LIKE '%ALL ACCESS%' OR UPPER(plan_name) LIKE '%TING FAM%'
+    OR UPPER(plan_name) LIKE '%WELCOME SKY3%'
+  )
+  AND UPPER(plan_name) NOT LIKE '%SKY TING TV%'
+  AND UPPER(plan_name) NOT LIKE '%SKYTING TV%'`;
+
 /**
  * Get new customer volume by week.
- * A "new customer" = person whose MIN(attended_at) in first_visits falls in the week.
+ * A "new customer" = person whose first in-studio visit (intro week / drop-in)
+ * falls in the week. Excludes TV/replay/livestream first visits.
  * Returns ~6 weeks of data (Monday-based weeks).
  */
 export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]> {
@@ -629,6 +660,7 @@ export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]
       FROM first_visits
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
+        ${IN_STUDIO_PASS_FILTER}
       GROUP BY LOWER(email)
     ),
     weekly AS (
@@ -655,13 +687,15 @@ export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]
 }
 
 /**
- * Get new customer cohort conversion data.
+ * Get new customer cohort conversion data (in-studio only).
+ *
+ * Acquisition: first in-studio visit (intro week / drop-in pass).
+ * Conversion: earliest SKY3 or MEMBER auto-renew within 3 weeks.
+ * Excludes Sky Ting TV on both sides.
+ *
  * For each weekly cohort (by first visit date), counts how many converted
  * to auto-renew subscriptions within week 1 (days 0-6), week 2 (7-13),
  * week 3 (14-20), and total.
- *
- * Conversion = email appears in auto_renews with a created_at within 3 weeks.
- * Uses earliest auto_renews.created_at per email (any plan, any state).
  */
 export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
   const pool = getPool();
@@ -674,6 +708,7 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
       FROM first_visits
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
+        ${IN_STUDIO_PASS_FILTER}
       GROUP BY LOWER(email)
     ),
     conversions AS (
@@ -682,6 +717,7 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
       FROM auto_renews
       WHERE customer_email IS NOT NULL AND customer_email != ''
         AND created_at IS NOT NULL AND created_at != ''
+        ${IN_STUDIO_PLAN_FILTER}
       GROUP BY LOWER(customer_email)
     ),
     cohort_data AS (
