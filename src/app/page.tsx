@@ -1788,76 +1788,39 @@ const SEGMENT_COLORS: Record<FirstVisitSegment, string> = {
 };
 
 function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
-  const weeklyBars: BarChartData[] = firstVisits.completedWeeks.map((w) => {
-    return { label: formatWeekRange(w.week), value: w.uniqueVisitors, color: COLORS.teal };
-  });
-
   const segments: FirstVisitSegment[] = ["introWeek", "dropIn", "guest", "other"];
   const agg = firstVisits.aggregateSegments;
   const aggTotal = agg.introWeek + agg.dropIn + agg.guest + agg.other;
-  const otherTop5 = firstVisits.otherBreakdownTop5 || [];
 
   return (
     <Card>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            First Visits
-          </span>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.teal, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>First Visits</span>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
-            {formatNumber(firstVisits.currentWeekTotal)}
-          </span>
-          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "2px" }}>
-            Unique This Week
-          </p>
-        </div>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+          {formatNumber(firstVisits.currentWeekTotal)}
+          <span style={{ fontFamily: FONT_SANS, ...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+        </span>
       </div>
-
-      {/* Weekly bar chart */}
-      <div style={{ marginBottom: "0.75rem" }}>
-        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-          Unique Visitors — Last 4 Weeks
-        </p>
-        {weeklyBars.length > 0 ? (
-          <MiniBarChart data={weeklyBars} height={60} />
-        ) : (
-          <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
-        )}
-      </div>
-
-      {/* Source Mix */}
-      <div style={{ borderTop: "1px solid var(--st-border)", paddingTop: "0.75rem" }}>
-        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-          Source Mix
-        </p>
-        <div className="flex flex-col gap-1">
-          {segments.map((seg) => {
-            const count = agg[seg] || 0;
-            if (count === 0 && aggTotal === 0) return null;
-            return (
-              <div key={seg} className="flex items-center justify-between" style={{ padding: "0.2rem 0" }}>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full" style={{ width: "6px", height: "6px", backgroundColor: SEGMENT_COLORS[seg] }} />
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-                    {SEGMENT_LABELS[seg]}
-                  </span>
-                </div>
-                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
-                  {count}
-                  {aggTotal > 0 && (
-                    <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>
-                      {Math.round((count / aggTotal) * 100)}%
-                    </span>
-                  )}
-                </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+        {segments.map((seg) => {
+          const count = agg[seg] || 0;
+          if (count === 0 && aggTotal === 0) return null;
+          return (
+            <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: SEGMENT_COLORS[seg] }} />
+                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{SEGMENT_LABELS[seg]}</span>
               </div>
-            );
-          })}
-        </div>
+              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                {count}
+                {aggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round((count / aggTotal) * 100)}%</span>}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </Card>
   );
@@ -1878,79 +1841,40 @@ const RNM_SEGMENT_LABELS: Record<string, string> = {
 };
 
 function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers: ReturningNonMemberData }) {
-  const weeklyBars: BarChartData[] = returningNonMembers.completedWeeks.map((w) => {
-    return { label: formatWeekRange(w.week), value: w.uniqueVisitors, color: COLORS.copper };
-  });
-
-  // 3 buckets only (no Intro Week — it's merged into Other in the analytics)
   const rnmSegments = ["dropIn", "guest", "other"] as const;
   const agg = returningNonMembers.aggregateSegments;
-  // Merge any introWeek into other for display (defensive)
   const aggDisplay = {
     dropIn: agg.dropIn,
     guest: agg.guest,
     other: agg.other + agg.introWeek,
   };
   const rnmAggTotal = aggDisplay.dropIn + aggDisplay.guest + aggDisplay.other;
-  const otherTop5 = returningNonMembers.otherBreakdownTop5 || [];
 
   return (
     <Card>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Returning Non-Members
-          </span>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.copper, opacity: 0.85 }} />
+          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>Returning Non-Members</span>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
-            {formatNumber(returningNonMembers.currentWeekTotal)}
-          </span>
-          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "2px" }}>
-            Unique This Week
-          </p>
-        </div>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+          {formatNumber(returningNonMembers.currentWeekTotal)}
+          <span style={{ fontFamily: FONT_SANS, ...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+        </span>
       </div>
-
-      {/* Weekly bar chart */}
-      <div style={{ marginBottom: "0.75rem" }}>
-        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-          Unique Visitors — Last 4 Weeks
-        </p>
-        {weeklyBars.length > 0 ? (
-          <MiniBarChart data={weeklyBars} height={60} />
-        ) : (
-          <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>--</p>
-        )}
-      </div>
-
-      {/* Source Mix */}
-      <div style={{ borderTop: "1px solid var(--st-border)", paddingTop: "0.75rem" }}>
-        <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
-          Source Mix
-        </p>
-        <div className="flex flex-col gap-1">
-          {rnmSegments.map((seg) => (
-            <div key={seg} className="flex items-center justify-between" style={{ padding: "0.2rem 0" }}>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full" style={{ width: "6px", height: "6px", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
-                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-                  {RNM_SEGMENT_LABELS[seg]}
-                </span>
-              </div>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
-                {aggDisplay[seg] || 0}
-                {rnmAggTotal > 0 && (
-                  <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>
-                    {Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%
-                  </span>
-                )}
-              </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+        {rnmSegments.map((seg) => (
+          <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{RNM_SEGMENT_LABELS[seg]}</span>
             </div>
-          ))}
-        </div>
+            <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+              {aggDisplay[seg] || 0}
+              {rnmAggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
+            </span>
+          </div>
+        ))}
       </div>
     </Card>
   );
