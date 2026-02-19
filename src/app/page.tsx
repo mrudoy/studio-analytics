@@ -247,7 +247,7 @@ const DS = {
     xl: "2rem",        // section spacing
   },
   // Card padding — one value everywhere
-  cardPad: "1.5rem",
+  cardPad: "1rem",
   // Uppercase label style
   label: {
     fontSize: "0.75rem",
