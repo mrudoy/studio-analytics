@@ -1247,8 +1247,11 @@ function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)"
   const min = Math.min(...values);
   const range = max - min || 1;
 
-  // SVG dimensions — labels are positioned with HTML overlay
-  const svgW = 600;
+  // Unique gradient ID per chart instance
+  const gradId = `lineGrad-${data.length}-${Math.round(data[0]?.value || 0)}`;
+  // Chart width = fixed slot per data point (matches container)
+  const chartW = data.length * LINE_POINT_SLOT_PX;
+  const svgW = chartW;
   const svgH = height;
   const padL = 0;
   const padR = 0;
@@ -1286,9 +1289,9 @@ function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)"
       </div>
 
       {/* SVG chart */}
-      <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: `${svgH}px`, display: "block" }} preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: `${svgW}px`, height: `${svgH}px`, display: "block" }}>
         <defs>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.15" />
             <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
@@ -1300,7 +1303,7 @@ function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)"
         ))}
 
         {/* Area fill */}
-        <path d={areaPath} fill="url(#lineGrad)" />
+        <path d={areaPath} fill={`url(#${gradId})`} />
 
         {/* Line */}
         <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
