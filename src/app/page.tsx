@@ -380,13 +380,43 @@ function formatWeekLabel(period: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Convert ISO week string "2025-W03" to a Date (Monday of that week) */
+function isoWeekToDate(isoWeek: string): Date | null {
+  const m = isoWeek.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return null;
+  const year = parseInt(m[1]);
+  const week = parseInt(m[2]);
+  // Jan 4 is always in ISO week 1
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = jan4.getDay() || 7; // Mon=1...Sun=7
+  const mondayW1 = new Date(jan4);
+  mondayW1.setDate(jan4.getDate() - dayOfWeek + 1);
+  const result = new Date(mondayW1);
+  result.setDate(mondayW1.getDate() + (week - 1) * 7);
+  return result;
+}
+
+/** Format a period (date string or ISO week) as "M/D" */
+function formatWeekShort(period: string): string {
+  const isoDate = isoWeekToDate(period);
+  if (isoDate) {
+    return `${isoDate.getMonth() + 1}/${isoDate.getDate()}`;
+  }
+  const d = new Date(period + "T00:00:00");
+  if (!isNaN(d.getTime())) {
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+  return period;
+}
+
 function formatWeekRange(period: string): string {
-  const start = new Date(period + "T00:00:00");
+  const isoDate = isoWeekToDate(period);
+  const start = isoDate || new Date(period + "T00:00:00");
   if (isNaN(start.getTime())) return period;
   const end = new Date(start);
   end.setDate(end.getDate() + 6);
-  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${fmt(start)} \u2013 ${fmt(end)}`;
+  const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${fmt(start)}\u2013${fmt(end)}`;
 }
 
 function formatMonthLabel(period: string): string {
@@ -1178,15 +1208,14 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const fmt = formatValue || ((v: number) => String(v));
   const barHeight = height;
-  const chartWidth = data.length * BAR_SLOT_PX + (data.length - 1) * BAR_GAP_PX;
 
   return (
-    <div style={{ width: `${chartWidth}px`, maxWidth: "100%" }}>
+    <div style={{ width: "100%" }}>
       {/* Bar area */}
       <div style={{
         display: "flex",
         alignItems: "flex-end",
-        gap: `${BAR_GAP_PX}px`,
+        gap: "2px",
         height: `${barHeight}px`,
         borderBottom: "1px solid var(--st-border)",
         paddingBottom: "1px",
@@ -1195,11 +1224,11 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
           const fraction = max > 0 ? Math.abs(d.value) / max : 0;
           const h = Math.max(Math.round(fraction * (barHeight - (showValues ? 18 : 4))), 3);
           return (
-            <div key={i} style={{ width: `${BAR_SLOT_PX}px`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
+            <div key={i} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
               {showValues && (
                 <span style={{
                   fontFamily: FONT_SANS,
-                  fontSize: "0.75rem",
+                  fontSize: "0.65rem",
                   fontWeight: DS.weight.medium,
                   color: "var(--st-text-primary)",
                   marginBottom: "2px",
@@ -1210,7 +1239,8 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
                 </span>
               )}
               <div style={{
-                width: "28px",
+                width: "70%",
+                maxWidth: "28px",
                 height: `${h}px`,
                 borderRadius: "2px 2px 0 0",
                 backgroundColor: d.color || "var(--st-accent)",
@@ -1223,20 +1253,21 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
       {/* X-axis labels */}
       <div style={{
         display: "flex",
-        gap: `${BAR_GAP_PX}px`,
+        gap: "2px",
         marginTop: "4px",
       }}>
         {data.map((d, i) => (
           <div key={i} style={{
-            width: `${BAR_SLOT_PX}px`,
+            flex: 1,
+            minWidth: 0,
             textAlign: "center",
             fontFamily: FONT_SANS,
-            fontSize: "0.75rem",
+            fontSize: "0.65rem",
             fontWeight: DS.weight.normal,
             color: "var(--st-text-secondary)",
-            whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}>
             {d.label}
           </div>
@@ -1469,6 +1500,8 @@ function Card({ children, padding = DS.cardPad }: { children: React.ReactNode; p
         backgroundColor: "var(--st-bg-card)",
         border: "1px solid var(--st-border)",
         padding,
+        overflow: "hidden",
+        minWidth: 0,
       }}
     >
       {children}
@@ -1553,7 +1586,7 @@ interface HeroTile {
 
 function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${tiles.length}, 1fr)`, gap: "1rem" }}>
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
       {tiles.map((tile, i) => (
         <Card key={i}>
           <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "8px" }}>
@@ -1899,7 +1932,7 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firs
 
       {dropIns && <DropInCardNew dropIns={dropIns} />}
       {(firstVisits || returningNonMembers) && (
-        <div style={{ display: "grid", gridTemplateColumns: firstVisits && returningNonMembers ? "1fr 1fr" : "1fr", gap: "1rem" }}>
+        <div className={`grid gap-3 ${firstVisits && returningNonMembers ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
           {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
           {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
         </div>
@@ -1920,9 +1953,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
   const allWeeks = dropIns.weeklyBreakdown;
   const completedDropInWeeks = allWeeks.length > 0 ? allWeeks.slice(0, -1) : [];
   const weeklyBars: BarChartData[] = completedDropInWeeks.map((w) => {
-    const d = new Date(w.week + "T00:00:00");
-    const label = isNaN(d.getTime()) ? w.week : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    return { label, value: w.count, color: COLORS.warning };
+    return { label: formatWeekShort(w.week), value: w.count, color: COLORS.warning };
   });
 
   return (
@@ -2362,7 +2393,7 @@ function DashboardView() {
       </div>
 
       {/* ━━ Single column — centered, spacious ━━━━━━━━ */}
-      <div style={{ maxWidth: "960px", width: "92%", margin: "0 auto", display: "flex", flexDirection: "column", gap: "2rem" }}>
+      <div style={{ maxWidth: "960px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem", boxSizing: "border-box" }}>
 
         {/* ── KPI Hero Strip ── */}
         <KPIHeroStrip tiles={(() => {
@@ -2418,7 +2449,7 @@ function DashboardView() {
         <RevenueSection data={data} trends={trends} />
 
         {/* ── MRR + Year-over-Year side by side ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <MRRBreakdown data={data} />
           {data.monthOverMonth ? (
             <Card>

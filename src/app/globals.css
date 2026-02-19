@@ -23,6 +23,11 @@ body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   background-color: var(--st-bg-primary);
   color: var(--st-text-primary);
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 h1, h2, h3, .font-heading {
