@@ -64,6 +64,8 @@ const DS = {
   },
   // Card padding — one value everywhere
   cardPad: "1rem",
+  // Gap between card header (label row) and content below
+  cardHeaderMb: "0.5rem",
   // Uppercase label style
   label: {
     fontSize: "0.75rem",
@@ -1216,7 +1218,7 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
       {tiles.map((tile, i) => (
         <Card key={i}>
-          <p style={{...DS.label, marginBottom: "8px" }}>
+          <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>
             {tile.label}
           </p>
           <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.0 }}>
@@ -1282,7 +1284,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
       {/* Full-width area chart */}
       {revenueAreaData.length > 1 && (
         <Card>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
             <p style={{...DS.label }}>Monthly Gross Revenue</p>
             {currentMonth && (
               <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
@@ -1302,7 +1304,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
       {/* Breakdown — simple list */}
       {currentMonth && (
         <Card>
-          <p style={{...DS.label, marginBottom: "0.75rem" }}>
+          <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>
             {formatMonthLabel(currentMonth.month)} Breakdown
           </p>
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1342,7 +1344,7 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
 
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
         <p style={{...DS.label }}>
           {LABELS.mrr}
         </p>
@@ -1396,7 +1398,7 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
 
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.teal, opacity: 0.85 }} />
           <span style={{...DS.label }}>{LABELS.firstVisits}</span>
@@ -1455,7 +1457,7 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
 
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.copper, opacity: 0.85 }} />
           <span style={{...DS.label }}>{LABELS.returningNonMembers}</span>
@@ -1524,7 +1526,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
   return (
     <Card>
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between" style={{ marginBottom: DS.cardHeaderMb }}>
         <div className="flex items-center gap-2">
           <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
           <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -1547,7 +1549,7 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Weekly visits chart */}
         <div>
-          <p className="mb-2" style={{...DS.label }}>
+          <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>
             Weekly Visits
           </p>
           {weeklyBars.length > 0 ? (
@@ -1654,7 +1656,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   return (
     <Card>
       {/* Header: title + big count */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
           <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -1753,7 +1755,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
 
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
         <p style={{...DS.label }}>Annual Net Revenue</p>
         {olderTotal > 0 && priorTotal > 0 && (
           <DeltaBadge delta={priorTotal - olderTotal} deltaPercent={Math.round(yoyDelta * 10) / 10} isCurrency compact />
@@ -1980,7 +1982,7 @@ function DashboardView() {
           <MRRBreakdown data={data} />
           {data.monthOverMonth ? (
             <Card>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
                 <p style={{...DS.label }}>{LABELS.yoy}</p>
                 <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
                   {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
@@ -2013,7 +2015,7 @@ function DashboardView() {
             </Card>
           ) : (
             <Card>
-              <p style={{...DS.label, marginBottom: "1rem" }}>Year over Year</p>
+              <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>Year over Year</p>
               <p style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)", opacity: 0.6 }}>No data available</p>
             </Card>
           )}
