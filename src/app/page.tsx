@@ -6,7 +6,7 @@ import type {
   TrendRowData,
   PacingData,
   ProjectionData,
-  DropInData,
+  DropInModuleData,
   FirstVisitSegment,
   FirstVisitData,
   ReturningNonMemberData,
@@ -112,6 +112,7 @@ const COLORS = {
   teal: "#3A8A8A",       // teal for first visits
   copper: "#B87333",     // copper for returning non-members
   newCustomer: "#5A6B7A", // slate for new customer funnel
+  dropIn: "#9B7653",     // warm sienna for drop-ins
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -1968,7 +1969,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCustomerVolume, newCustomerCohorts }: {
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
-  dropIns: DropInData | null;
+  dropIns: DropInModuleData | null;
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
 }) {
@@ -1978,7 +1979,7 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCusto
     <div className="space-y-3">
       <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">{LABELS.nonMembers}</SectionHeader>
 
-      {dropIns && <DropInCardNew dropIns={dropIns} />}
+      {dropIns && <DropInsModule dropIns={dropIns} />}
       {(firstVisits || returningNonMembers) && (
         <div className={`grid gap-3 ${firstVisits && returningNonMembers ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
           {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
@@ -1992,82 +1993,447 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCusto
   );
 }
 
-// ─── Layer 3: Drop-In Card (visits-focused, distinct from CategoryDetail) ──
+// ─── Drop-Ins Module (weekly-first, matching funnel module quality) ──
 
-function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
-  const isPacing = dropIns.currentMonthDaysElapsed < dropIns.currentMonthDaysInMonth;
-  const prevDelta = dropIns.previousMonthTotal > 0
-    ? dropIns.currentMonthTotal - dropIns.previousMonthTotal
-    : null;
+function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
+  const [activeTab, setActiveTab] = useState<"complete" | "wtd">("complete");
+  const [showChart, setShowChart] = useState(false);
+  const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
 
-  // Drop current partial week — only show completed weeks
-  const allWeeks = dropIns.weeklyBreakdown;
-  const completedDropInWeeks = allWeeks.length > 0 ? allWeeks.slice(0, -1) : [];
-  const weeklyBars: BarChartData[] = completedDropInWeeks.map((w) => {
-    return { label: formatWeekShort(w.week), value: w.count, color: COLORS.warning };
+  const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, frequency } = dropIns;
+
+  // Display last 8 complete weeks in the table
+  const displayWeeks = completeWeeks.slice(-8);
+
+  // Chart data: up to 16 complete weeks + current WTD
+  const chartWeeks = completeWeeks.slice(-16);
+  const chartData = [
+    ...chartWeeks.map((w) => ({ weekStart: w.weekStart, weekEnd: w.weekEnd, visits: w.visits, complete: true })),
+    ...(wtd ? [{ weekStart: wtd.weekStart, weekEnd: wtd.weekEnd, visits: wtd.visits, complete: false }] : []),
+  ];
+  const barMax = Math.max(...chartData.map((d) => d.visits), 1);
+  const BAR_H = 80;
+
+  // Trend display
+  const trendSymbol = trend === "up" ? "\u25B2" : trend === "down" ? "\u25BC" : "\u2014";
+  const trendLabel = trend === "up" ? "Up" : trend === "down" ? "Down" : "Flat";
+
+  // WTD delta badge
+  const wtdDeltaSign = wtdDelta > 0 ? "+" : "";
+
+  // Table styles (matching funnel module)
+  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.45)" };
+  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
+
+  // Tab style (matching funnel module)
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: "0.25rem 0.6rem 0.3rem",
+    marginBottom: "-1px",
+    fontSize: "0.7rem",
+    fontWeight: active ? DS.weight.bold : DS.weight.normal,
+    color: active ? "var(--st-text-primary)" : "var(--st-text-secondary)",
+    backgroundColor: "transparent",
+    border: "none",
+    borderBottom: active ? `2px solid var(--st-text-primary)` : "2px solid transparent",
+    borderRadius: "0",
+    cursor: "pointer",
+    transition: "color 0.15s, border-color 0.15s",
+    letterSpacing: "0.02em",
+    outline: "none",
   });
+
+  // Info icon
+  const InfoIcon = ({ tooltip }: { tooltip: string }) => (
+    <span
+      title={tooltip}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: "24px", height: "24px", cursor: "help",
+        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.5,
+      }}
+    >
+      &#9432;
+    </span>
+  );
+
+  // Mix bar colors: two lightness levels of the same hue
+  const mixFirstTime = "rgba(155, 118, 83, 0.75)";   // darker sienna
+  const mixRepeat = "rgba(155, 118, 83, 0.35)";       // lighter sienna
 
   return (
     <Card>
-      {/* Header */}
-      <div className="flex items-center justify-between" style={{ marginBottom: DS.cardHeaderMb }}>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
-          <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            {LABELS.dropIns}
-          </span>
-          <span style={{fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
-            Visits
-          </span>
+      {/* ── Module header ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+        <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.dropIn, opacity: 0.85 }} />
+        <span style={{ ...DS.label }}>{LABELS.dropIns}</span>
+      </div>
+
+      {/* ── KPI Row: 3 tiles ── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1px 1fr 1px auto",
+        alignItems: "stretch",
+        padding: "0.4rem 0",
+        marginBottom: "0.5rem",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {/* Tile 1: This week (WTD) */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "0.3rem" }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+              {formatNumber(wtd?.visits ?? 0)}
+            </span>
+            {wtdDelta !== 0 && lastCompleteWeek && (
+              <span style={{
+                fontSize: "0.55rem", fontWeight: DS.weight.medium,
+                color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+                padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
+              }}>
+                {wtdDeltaSign}{wtdDelta}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            This week (WTD)
+          </div>
         </div>
-        <div className="flex flex-col items-end">
-          <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
-            {formatNumber(dropIns.currentMonthTotal)}
-          </span>
-          <span style={{...DS.label, marginTop: "0.25rem" }}>
-            Month to Date
-          </span>
+
+        {/* Hairline */}
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+
+        {/* Tile 2: Typical week */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+              {formatNumber(typicalWeekVisits)}
+            </span>
+            <InfoIcon tooltip="Average visits per week over the last 8 complete weeks." />
+          </div>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            Typical week (8-wk avg)
+          </div>
+        </div>
+
+        {/* Hairline */}
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+
+        {/* Tile 3: Trend */}
+        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{
+              fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS,
+              color: trend === "up" ? COLORS.success : trend === "down" ? COLORS.error : "var(--st-text-primary)",
+              letterSpacing: "-0.02em", lineHeight: 1.1,
+            }}>
+              {trendSymbol}
+            </span>
+            <span style={{ fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+              {trendLabel}
+            </span>
+            {trendDeltaPercent !== 0 && (
+              <span style={{
+                fontSize: "0.55rem", fontWeight: DS.weight.medium,
+                color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+                padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
+              }}>
+                {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}%
+              </span>
+            )}
+            <InfoIcon tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%." />
+          </div>
+          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+            Last 4 vs prior 4
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Left: Weekly visits chart */}
-        <div>
-          <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>
-            Weekly Visits
-          </p>
-          {weeklyBars.length > 0 ? (
-            <MiniBarChart data={weeklyBars} height={70} />
-          ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontSize: DS.text.sm }}>—</p>
+      {/* ── Chart toggle (collapsed by default) ── */}
+      {chartData.length > 0 && (
+        <div style={{ marginBottom: "1.1rem" }}>
+          <button
+            type="button"
+            onClick={() => setShowChart(!showChart)}
+            style={{
+              background: "none", border: "none", padding: "0.15rem 0", cursor: "pointer",
+              fontSize: DS.text.xs, color: "var(--st-text-secondary)",
+              display: "flex", alignItems: "center", gap: "0.3rem",
+            }}
+          >
+            <span style={{ fontSize: "0.6rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
+            Show trend
+          </button>
+
+          {showChart && (
+            <div style={{ marginTop: "0.3rem" }}>
+              <div style={{
+                display: "flex", alignItems: "flex-end", gap: "3px",
+                height: `${BAR_H}px`, borderBottom: "1px solid var(--st-border)", paddingBottom: "1px",
+              }}>
+                {chartData.map((d) => {
+                  const fraction = barMax > 0 ? d.visits / barMax : 0;
+                  const h = Math.max(Math.round(fraction * (BAR_H - 4)), 3);
+                  const isHovered = hoveredWeek === d.weekStart;
+                  return (
+                    <div
+                      key={d.weekStart}
+                      style={{
+                        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "flex-end", cursor: "default",
+                      }}
+                      onMouseEnter={() => setHoveredWeek(d.weekStart)}
+                      onMouseLeave={() => setHoveredWeek(null)}
+                      title={`${formatWeekRangeLabel(d.weekStart, d.weekEnd)}: ${d.visits} visits${d.complete ? "" : " (WTD)"}`}
+                    >
+                      <div style={{
+                        width: "70%", maxWidth: "28px", height: `${h}px`, borderRadius: "2px 2px 0 0",
+                        ...(d.complete
+                          ? { backgroundColor: COLORS.dropIn, opacity: isHovered ? 0.85 : 0.65 }
+                          : { backgroundColor: "rgba(155, 118, 83, 0.06)", border: `1.5px dashed ${COLORS.dropIn}`, opacity: isHovered ? 0.5 : 0.35 }
+                        ),
+                        transition: "opacity 0.15s",
+                      }} />
+                    </div>
+                  );
+                })}
+              </div>
+              {/* X-axis */}
+              <div style={{ display: "flex", gap: "3px", marginTop: "2px" }}>
+                {chartData.map((d) => (
+                  <div key={d.weekStart} style={{
+                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "0.55rem",
+                    color: hoveredWeek === d.weekStart ? "var(--st-text-primary)" : "var(--st-text-secondary)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {formatCohortShort(d.weekStart)}
+                  </div>
+                ))}
+              </div>
+              {/* Legend */}
+              <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.15rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
+                  <span style={{ width: "6px", height: "4px", borderRadius: "1px", backgroundColor: COLORS.dropIn, opacity: 0.65, display: "inline-block" }} />
+                  <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)" }}>Complete</span>
+                </div>
+                {wtd && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
+                    <span style={{ width: "6px", height: "4px", borderRadius: "1px", border: `1px dashed ${COLORS.dropIn}`, opacity: 0.35, display: "inline-block" }} />
+                    <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)" }}>WTD</span>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
+      )}
 
-        {/* Right: Key metrics */}
-        <div style={{ borderLeft: "1px solid var(--st-border)", paddingLeft: "1rem" }}>
-          <TrendRow
-            label="Month to Date"
-            value={formatNumber(dropIns.currentMonthTotal)}
-            delta={prevDelta}
-            deltaPercent={null}
-            sublabel={isPacing ? `Projected month-end: ${formatNumber(dropIns.currentMonthPaced)}` : undefined}
-          />
-          <TrendRow
-            label="Last Month"
-            value={formatNumber(dropIns.previousMonthTotal)}
-            delta={null}
-            deltaPercent={null}
-          />
-          <TrendRow
-            label="Weekly Avg"
-            value={formatNumber(dropIns.weeklyAvg6w)}
-            delta={null}
-            deltaPercent={null}
-            sublabel="6-week rolling"
-            isLast
-          />
-        </div>
+      {/* ── Tabs ── */}
+      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: "0" }}>
+        <button type="button" className="funnel-tab" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
+          Complete weeks ({displayWeeks.length})
+        </button>
+        {wtd && (
+          <button type="button" className="funnel-tab" style={tabStyle(activeTab === "wtd")} onClick={() => setActiveTab("wtd")}>
+            This week (WTD)
+          </button>
+        )}
       </div>
+
+      {/* ── Complete weeks table ── */}
+      {activeTab === "complete" && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "34%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "14%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
+                <th style={thStyle}>Visits</th>
+                <th style={thStyle}>Unique</th>
+                <th style={thStyle} title="Unique customers visiting for the first time ever">First</th>
+                <th style={thStyle} title="Unique customers who have visited before">Repeat</th>
+                <th style={{ ...thStyle, textAlign: "center" }}>Mix</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayWeeks.map((w) => {
+                const isHovered = hoveredWeek === w.weekStart;
+                const isNewest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
+                return (
+                  <tr
+                    key={w.weekStart}
+                    style={{
+                      borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
+                      borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
+                      backgroundColor: isNewest && !isHovered ? "rgba(65, 58, 58, 0.015)" : "transparent",
+                      transition: "border-color 0.15s, background-color 0.15s",
+                    }}
+                    onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                    onMouseLeave={() => setHoveredWeek(null)}
+                  >
+                    <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                      {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
+                    </td>
+                    <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
+                      {formatNumber(w.visits)}
+                    </td>
+                    <td style={{ ...tdBase, fontWeight: DS.weight.medium }}>
+                      {formatNumber(w.uniqueCustomers)}
+                    </td>
+                    <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                      {w.firstTime}
+                    </td>
+                    <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                      {w.repeatCustomers}
+                    </td>
+                    <td style={{ ...tdBase, textAlign: "center" }}>
+                      {/* 8px stacked bar: first-time / repeat */}
+                      {w.uniqueCustomers > 0 ? (
+                        <div
+                          title={`First-time: ${w.firstTime} (${Math.round((w.firstTime / w.uniqueCustomers) * 100)}%) \u00b7 Repeat: ${w.repeatCustomers} (${Math.round((w.repeatCustomers / w.uniqueCustomers) * 100)}%)`}
+                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "2.5rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.04)" }}
+                        >
+                          <div style={{ flex: Math.max(w.firstTime, 0.1), backgroundColor: mixFirstTime, borderRadius: "1px" }} />
+                          <div style={{ flex: Math.max(w.repeatCustomers, 0.1), backgroundColor: mixRepeat, borderRadius: "1px" }} />
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--st-text-secondary)", opacity: 0.4 }}>{"\u2014"}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── WTD table ── */}
+      {activeTab === "wtd" && wtd && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "16%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
+                <th style={thStyle}>Visits</th>
+                <th style={thStyle}>Unique</th>
+                <th style={thStyle}>First</th>
+                <th style={thStyle}>Repeat</th>
+                <th style={thStyle}>Days left</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Current WTD row */}
+              <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)" }}>
+                <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                  {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                </td>
+                <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
+                  {formatNumber(wtd.visits)}
+                </td>
+                <td style={{ ...tdBase, fontWeight: DS.weight.medium }}>
+                  {formatNumber(wtd.uniqueCustomers)}
+                </td>
+                <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                  {wtd.firstTime}
+                </td>
+                <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                  {wtd.repeatCustomers}
+                </td>
+                <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                  {wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}
+                </td>
+              </tr>
+              {/* Last complete week for comparison (muted) */}
+              {lastCompleteWeek && (
+                <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", opacity: 0.55 }}>
+                  <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+                    {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
+                    <span style={{ fontSize: DS.text.xs, marginLeft: "0.3rem", fontWeight: DS.weight.normal, fontStyle: "italic" }}>prev</span>
+                  </td>
+                  <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-secondary)" }}>
+                    {formatNumber(lastCompleteWeek.visits)}
+                  </td>
+                  <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+                    {formatNumber(lastCompleteWeek.uniqueCustomers)}
+                  </td>
+                  <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                    {lastCompleteWeek.firstTime}
+                  </td>
+                  <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
+                    {lastCompleteWeek.repeatCustomers}
+                  </td>
+                  <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>{"\u2014"}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── 90-Day Frequency Distribution ── */}
+      {frequency && frequency.totalCustomers > 0 && (
+        <div style={{ marginTop: "0.75rem", paddingTop: "0.5rem", borderTop: "1px solid rgba(65, 58, 58, 0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginBottom: "0.4rem" }}>
+            <span style={{ fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Drop-in frequency (last 90 days)
+            </span>
+            <InfoIcon tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
+          </div>
+
+          {/* Segmented bar */}
+          <div style={{ display: "flex", height: "10px", borderRadius: "4px", overflow: "hidden", gap: "1px" }}>
+            {[
+              { count: frequency.bucket1, label: "1 visit", opacity: 0.3 },
+              { count: frequency.bucket2to4, label: "2-4", opacity: 0.5 },
+              { count: frequency.bucket5to10, label: "5-10", opacity: 0.7 },
+              { count: frequency.bucket11plus, label: "11+", opacity: 0.9 },
+            ].map((seg) => (
+              seg.count > 0 ? (
+                <div
+                  key={seg.label}
+                  style={{
+                    flex: seg.count,
+                    backgroundColor: COLORS.dropIn,
+                    opacity: seg.opacity,
+                    borderRadius: "1px",
+                  }}
+                  title={`${seg.label}: ${seg.count} customers (${Math.round((seg.count / frequency.totalCustomers) * 100)}%)`}
+                />
+              ) : null
+            ))}
+          </div>
+
+          {/* Labels below */}
+          <div style={{ display: "flex", gap: "1px", marginTop: "0.2rem" }}>
+            {[
+              { count: frequency.bucket1, label: "1 visit" },
+              { count: frequency.bucket2to4, label: "2\u20134" },
+              { count: frequency.bucket5to10, label: "5\u201310" },
+              { count: frequency.bucket11plus, label: "11+" },
+            ].map((seg) => (
+              seg.count > 0 ? (
+                <div key={seg.label} style={{ flex: seg.count, textAlign: "center", fontSize: "0.55rem", color: "var(--st-text-secondary)" }}>
+                  {seg.label} ({Math.round((seg.count / frequency.totalCustomers) * 100)}%)
+                </div>
+              ) : null
+            ))}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

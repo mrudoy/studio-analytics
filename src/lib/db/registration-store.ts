@@ -597,6 +597,171 @@ export async function getReturningSourceBreakdown(
   );
 }
 
+// ── Drop-In Weekly Detail Queries ────────────────────────────
+
+export interface DropInWeekDetailRow {
+  weekStart: string;
+  weekEnd: string;
+  visits: number;
+  uniqueCustomers: number;
+  firstTime: number;
+  repeatCustomers: number;
+}
+
+/**
+ * Get drop-in weekly detail: visits, unique customers, first-time vs repeat.
+ * "First-time" = customer's all-time first non-subscriber visit falls in that week.
+ * Only returns complete weeks (excludes the current partial week).
+ */
+export async function getDropInWeeklyDetail(weeksBack = 16): Promise<DropInWeekDetailRow[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH first_ever AS (
+      -- Each customer's all-time first non-subscriber visit date
+      SELECT LOWER(email) as email, MIN(attended_at::date) as first_drop_in_date
+      FROM registrations
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        AND (subscription = 'false' OR subscription IS NULL)
+      GROUP BY LOWER(email)
+    ),
+    drop_in_visits AS (
+      SELECT r.email, r.attended_at::date as visit_date,
+             DATE_TRUNC('week', r.attended_at::date)::date as week_start
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date
+    )
+    SELECT
+      d.week_start::text as "weekStart",
+      (d.week_start + INTERVAL '6 days')::date::text as "weekEnd",
+      COUNT(*) as visits,
+      COUNT(DISTINCT LOWER(d.email)) as "uniqueCustomers",
+      COUNT(DISTINCT CASE
+        WHEN fe.first_drop_in_date >= d.week_start
+         AND fe.first_drop_in_date < d.week_start + INTERVAL '7 days'
+        THEN LOWER(d.email) END) as "firstTime",
+      COUNT(DISTINCT CASE
+        WHEN fe.first_drop_in_date < d.week_start
+        THEN LOWER(d.email) END) as "repeatCustomers"
+    FROM drop_in_visits d
+    LEFT JOIN first_ever fe ON LOWER(d.email) = fe.email
+    GROUP BY d.week_start
+    ORDER BY d.week_start
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    visits: Number(r.visits),
+    uniqueCustomers: Number(r.uniqueCustomers),
+    firstTime: Number(r.firstTime),
+    repeatCustomers: Number(r.repeatCustomers),
+  }));
+}
+
+/**
+ * Get drop-in WTD (week-to-date) stats for the current partial week.
+ */
+export async function getDropInWTD(): Promise<DropInWeekDetailRow & { daysLeft: number } | null> {
+  const pool = getPool();
+
+  const query = `
+    WITH first_ever AS (
+      SELECT LOWER(email) as email, MIN(attended_at::date) as first_drop_in_date
+      FROM registrations
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        AND (subscription = 'false' OR subscription IS NULL)
+      GROUP BY LOWER(email)
+    ),
+    wtd_visits AS (
+      SELECT r.email, r.attended_at::date as visit_date
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
+        AND r.attended_at::date <= CURRENT_DATE
+    )
+    SELECT
+      DATE_TRUNC('week', CURRENT_DATE)::date::text as "weekStart",
+      (DATE_TRUNC('week', CURRENT_DATE) + INTERVAL '6 days')::date::text as "weekEnd",
+      COUNT(*) as visits,
+      COUNT(DISTINCT LOWER(w.email)) as "uniqueCustomers",
+      COUNT(DISTINCT CASE
+        WHEN fe.first_drop_in_date >= DATE_TRUNC('week', CURRENT_DATE)::date
+        THEN LOWER(w.email) END) as "firstTime",
+      COUNT(DISTINCT CASE
+        WHEN fe.first_drop_in_date < DATE_TRUNC('week', CURRENT_DATE)::date
+        THEN LOWER(w.email) END) as "repeatCustomers",
+      (DATE_TRUNC('week', CURRENT_DATE)::date + 6 - CURRENT_DATE) as "daysLeft"
+    FROM wtd_visits w
+    LEFT JOIN first_ever fe ON LOWER(w.email) = fe.email
+  `;
+
+  const { rows } = await pool.query(query);
+  if (rows.length === 0) return null;
+  const r = rows[0] as Record<string, unknown>;
+  return {
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    visits: Number(r.visits),
+    uniqueCustomers: Number(r.uniqueCustomers),
+    firstTime: Number(r.firstTime),
+    repeatCustomers: Number(r.repeatCustomers),
+    daysLeft: Number(r.daysLeft),
+  };
+}
+
+/**
+ * Get drop-in frequency distribution over the last 90 days.
+ * Buckets: 1 visit, 2-4 visits, 5-10 visits, 11+ visits.
+ */
+export async function getDropInFrequencyDistribution(): Promise<{
+  bucket1: number;
+  bucket2to4: number;
+  bucket5to10: number;
+  bucket11plus: number;
+  totalCustomers: number;
+}> {
+  const pool = getPool();
+
+  const query = `
+    WITH visit_counts AS (
+      SELECT LOWER(email) as email, COUNT(*) as visits
+      FROM registrations
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        AND (subscription = 'false' OR subscription IS NULL)
+        AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+      GROUP BY LOWER(email)
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE visits = 1) as bucket1,
+      COUNT(*) FILTER (WHERE visits BETWEEN 2 AND 4) as "bucket2to4",
+      COUNT(*) FILTER (WHERE visits BETWEEN 5 AND 10) as "bucket5to10",
+      COUNT(*) FILTER (WHERE visits >= 11) as "bucket11plus",
+      COUNT(*) as "totalCustomers"
+    FROM visit_counts
+  `;
+
+  const { rows } = await pool.query(query);
+  const r = rows[0] as Record<string, unknown>;
+  return {
+    bucket1: Number(r.bucket1),
+    bucket2to4: Number(r.bucket2to4),
+    bucket5to10: Number(r.bucket5to10),
+    bucket11plus: Number(r.bucket11plus),
+    totalCustomers: Number(r.totalCustomers),
+  };
+}
+
 // ── New Customer Queries ────────────────────────────────────
 
 export interface NewCustomerWeekRow {

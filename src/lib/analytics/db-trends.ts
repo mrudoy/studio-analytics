@@ -20,8 +20,6 @@ import {
   hasAutoRenewData,
 } from "../db/auto-renew-store";
 import {
-  getDropInsByWeek,
-  getDropInStats,
   hasRegistrationData,
   hasFirstVisitData,
   getFirstTimeUniqueVisitorsByWeek,
@@ -30,13 +28,16 @@ import {
   getReturningSourceBreakdown,
   getNewCustomerVolumeByWeek,
   getNewCustomerCohorts,
+  getDropInWeeklyDetail,
+  getDropInWTD,
+  getDropInFrequencyDistribution,
 } from "../db/registration-store";
 import type {
   TrendsData,
   TrendRowData,
   PacingData,
   ProjectionData,
-  DropInData,
+  DropInModuleData,
   FirstVisitData,
   ReturningNonMemberData,
   ChurnRateData,
@@ -441,28 +442,92 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
-  // ── 5. Drop-in data ──────────────────────────────────────
-  let dropIns: DropInData | null = null;
+  // ── 5. Drop-in data (weekly-first module) ─────────────────
+  let dropIns: DropInModuleData | null = null;
 
   if (await hasRegistrationData()) {
-    const dropInStats = await getDropInStats();
-    if (dropInStats) {
-      // Get weekly breakdown from registrations
-      const eightWeeksAgo = new Date(now);
-      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-      const dropInWeeks = await getDropInsByWeek(
-        eightWeeksAgo.toISOString().split("T")[0]
-      );
+    try {
+      const [weeklyDetail, wtdRaw, frequencyRaw] = await Promise.all([
+        getDropInWeeklyDetail(16),
+        getDropInWTD(),
+        getDropInFrequencyDistribution(),
+      ]);
 
-      dropIns = {
-        currentMonthTotal: dropInStats.currentMonthTotal,
-        currentMonthDaysElapsed: dropInStats.currentMonthDaysElapsed,
-        currentMonthDaysInMonth: dropInStats.currentMonthDaysInMonth,
-        currentMonthPaced: dropInStats.currentMonthPaced,
-        previousMonthTotal: dropInStats.previousMonthTotal,
-        weeklyAvg6w: dropInStats.weeklyAvg6w,
-        weeklyBreakdown: dropInWeeks.map((w) => ({ week: w.week, count: w.count })),
-      };
+      if (weeklyDetail.length > 0 || wtdRaw) {
+        const completeWeeks = weeklyDetail.map((w) => ({
+          weekStart: w.weekStart,
+          weekEnd: w.weekEnd,
+          visits: w.visits,
+          uniqueCustomers: w.uniqueCustomers,
+          firstTime: w.firstTime,
+          repeatCustomers: w.repeatCustomers,
+        }));
+
+        const lastCompleteWeek = completeWeeks.length > 0
+          ? completeWeeks[completeWeeks.length - 1]
+          : null;
+
+        // Typical week = average of last 8 complete weeks
+        const last8 = completeWeeks.slice(-8);
+        const typicalWeekVisits = last8.length > 0
+          ? Math.round(last8.reduce((s, w) => s + w.visits, 0) / last8.length)
+          : 0;
+
+        // Trend: avg of last 4 vs prior 4 complete weeks, ±5% threshold
+        const last4 = completeWeeks.slice(-4);
+        const prior4 = completeWeeks.slice(-8, -4);
+        const avgLast4 = last4.length > 0
+          ? last4.reduce((s, w) => s + w.visits, 0) / last4.length
+          : 0;
+        const avgPrior4 = prior4.length > 0
+          ? prior4.reduce((s, w) => s + w.visits, 0) / prior4.length
+          : 0;
+        const trendDeltaPercent = avgPrior4 > 0
+          ? Math.round(((avgLast4 - avgPrior4) / avgPrior4) * 1000) / 10
+          : 0;
+        const trend: "up" | "flat" | "down" =
+          trendDeltaPercent > 5 ? "up" : trendDeltaPercent < -5 ? "down" : "flat";
+
+        // WTD delta: compare WTD visits to same point last week (or last complete week total)
+        const wtdVisits = wtdRaw?.visits ?? 0;
+        const lastWeekVisits = lastCompleteWeek?.visits ?? 0;
+        const wtdDelta = wtdVisits - lastWeekVisits;
+        const wtdDeltaPercent = lastWeekVisits > 0
+          ? Math.round((wtdDelta / lastWeekVisits) * 1000) / 10
+          : 0;
+
+        const wtd = wtdRaw ? {
+          weekStart: wtdRaw.weekStart,
+          weekEnd: wtdRaw.weekEnd,
+          visits: wtdRaw.visits,
+          uniqueCustomers: wtdRaw.uniqueCustomers,
+          firstTime: wtdRaw.firstTime,
+          repeatCustomers: wtdRaw.repeatCustomers,
+          daysLeft: wtdRaw.daysLeft,
+        } : null;
+
+        const frequency = frequencyRaw.totalCustomers > 0 ? {
+          bucket1: frequencyRaw.bucket1,
+          bucket2to4: frequencyRaw.bucket2to4,
+          bucket5to10: frequencyRaw.bucket5to10,
+          bucket11plus: frequencyRaw.bucket11plus,
+          totalCustomers: frequencyRaw.totalCustomers,
+        } : null;
+
+        dropIns = {
+          completeWeeks,
+          wtd,
+          lastCompleteWeek,
+          typicalWeekVisits,
+          trend,
+          trendDeltaPercent,
+          wtdDelta,
+          wtdDeltaPercent,
+          frequency,
+        };
+      }
+    } catch (err) {
+      console.warn("[db-trends] Failed to compute drop-in module data:", err);
     }
   }
 
@@ -624,7 +689,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
 
   console.log(
     `[db-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
-    (dropIns ? `, drop-ins MTD=${dropIns.currentMonthTotal}` : "") +
+    (dropIns ? `, drop-ins typical=${dropIns.typicalWeekVisits}/wk, trend=${dropIns.trend}` : "") +
     (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
     (newCustomerVolume ? `, new customers this week=${newCustomerVolume.currentWeekCount}` : "") +
     (newCustomerCohorts ? `, cohort avg conversion=${newCustomerCohorts.avgConversionRate?.toFixed(1) ?? "N/A"}%` : "") +

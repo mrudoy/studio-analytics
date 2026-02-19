@@ -111,6 +111,47 @@ export interface DropInData {
   weeklyBreakdown: { week: string; count: number }[];
 }
 
+// ── Drop-In Module types (weekly-first redesign) ──────────
+
+export interface DropInWeekRow {
+  weekStart: string;    // Monday YYYY-MM-DD
+  weekEnd: string;      // Sunday YYYY-MM-DD
+  visits: number;
+  uniqueCustomers: number;
+  firstTime: number;
+  repeatCustomers: number;
+}
+
+export interface DropInWTD {
+  weekStart: string;
+  weekEnd: string;
+  visits: number;
+  uniqueCustomers: number;
+  firstTime: number;
+  repeatCustomers: number;
+  daysLeft: number;
+}
+
+export interface DropInFrequency {
+  bucket1: number;       // visited exactly once
+  bucket2to4: number;    // 2-4 visits
+  bucket5to10: number;   // 5-10 visits
+  bucket11plus: number;  // 11+ visits
+  totalCustomers: number;
+}
+
+export interface DropInModuleData {
+  completeWeeks: DropInWeekRow[];
+  wtd: DropInWTD | null;
+  lastCompleteWeek: DropInWeekRow | null;
+  typicalWeekVisits: number;       // 8-week avg of complete weeks
+  trend: "up" | "flat" | "down";
+  trendDeltaPercent: number;       // last 4 vs prior 4
+  wtdDelta: number;                // WTD visits - same point last week
+  wtdDeltaPercent: number;
+  frequency: DropInFrequency | null;
+}
+
 export type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
 
 export interface FirstVisitData {
@@ -232,7 +273,7 @@ export interface TrendsData {
   monthly: TrendRowData[];
   pacing: PacingData | null;
   projection: ProjectionData | null;
-  dropIns: DropInData | null;
+  dropIns: DropInModuleData | null;
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
   churnRates: ChurnRateData | null;
