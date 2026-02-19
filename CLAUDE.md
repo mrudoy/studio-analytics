@@ -25,7 +25,7 @@ All spacing, sizing, and typography must use the DS object in page.tsx. Never us
 - `DS.weight.bold` (600)
 
 ### Card Layout
-- `DS.cardPad` (1rem) — padding inside every Card component
+- `DS.cardPad` (0.75rem) — padding inside every Card component
 - `DS.cardHeaderMb` (0.5rem) — gap between card header row and content below. Every card header must use this.
 
 ### Spacing Scale
@@ -58,13 +58,21 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - "Sky3" not "Memberships" or "SKY3 / Packs"
 - "Drop-Ins" not "Walk-ins"
 
+## Currency Formatting
+
+- **Millions**: Always show as `$X.XM` (one decimal, drop `.0`). Example: `$2,234,000` becomes `$2.2M`. Never show millions as thousands (`$2234k` is wrong).
+- **Thousands** (compact only): `$234k` via `formatCompactCurrency()`.
+- **Under 1000**: Full dollar amount with comma formatting.
+- `formatCurrency()` — use for most displays. Auto-formats millions as `$X.XM`.
+- `formatCompactCurrency()` — use for chart axis labels. Millions as `$X.XM`, thousands as `$Xk`.
+
 ## Layout Rules
 
 - No horizontal bar charts. No pie charts.
 - Weekly and monthly data never mixed in the same card.
 - Numbers must use `formatNumber()` for comma formatting.
 - Delta values must use `formatDelta()` which includes comma formatting.
-- Currency values use `formatCurrency()`.
+- Currency values use `formatCurrency()` (auto-handles millions).
 
 ## Architecture
 

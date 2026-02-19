@@ -122,6 +122,14 @@ function formatNumber(n: number): string {
 }
 
 function formatCurrency(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  // Millions: $2.2M (one decimal, drop trailing .0)
+  if (abs >= 1_000_000) {
+    const m = (abs / 1_000_000);
+    const s = m.toFixed(1);
+    return sign + "$" + (s.endsWith(".0") ? s.slice(0, -2) : s) + "M";
+  }
   return n.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -131,8 +139,17 @@ function formatCurrency(n: number): string {
 }
 
 function formatCompactCurrency(n: number): string {
-  if (n >= 1000) {
-    return "$" + (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  // Millions: $2.2M
+  if (abs >= 1_000_000) {
+    const m = (abs / 1_000_000);
+    const s = m.toFixed(1);
+    return sign + "$" + (s.endsWith(".0") ? s.slice(0, -2) : s) + "M";
+  }
+  // Thousands: $234k
+  if (abs >= 1000) {
+    return sign + "$" + (abs / 1000).toFixed(abs % 1000 === 0 ? 0 : 1) + "k";
   }
   return formatCurrency(n);
 }
