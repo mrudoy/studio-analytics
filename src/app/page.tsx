@@ -248,6 +248,13 @@ function formatWeekRange(start: string, _end: string): string {
   return formatDateShort(s);
 }
 
+/** Format cohort start as short label "Jan 26" for bar chart x-axis */
+function formatCohortShort(start: string): string {
+  const s = new Date(start + "T00:00:00");
+  if (isNaN(s.getTime())) return start;
+  return `${s.toLocaleDateString("en-US", { month: "short" })} ${s.getDate()}`;
+}
+
 /** Format week range as "Jan 19-25" or "Jan 26-Feb 1" for cohort labels */
 function formatWeekRangeLabel(start: string, end: string): string {
   const s = new Date(start + "T00:00:00");
@@ -1543,42 +1550,53 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 }) {
   if (!volume && !cohorts) return null;
 
+  const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  /** Days elapsed since cohort start */
   function daysElapsed(cohortStart: string): number {
     const start = new Date(cohortStart + "T00:00:00");
     return Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  // Determine complete cohorts for synchronized display
-  const completeCohorts = cohorts?.cohorts.filter((c) => daysElapsed(c.cohortStart) >= 21) ?? [];
-  const incompleteCohorts = cohorts?.cohorts.filter((c) => daysElapsed(c.cohortStart) < 21) ?? [];
-  const displayCohorts = [...completeCohorts.slice(-5), ...incompleteCohorts];
+  // Partition cohorts
+  const allCohorts = cohorts?.cohorts ?? [];
+  const completeCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) >= 21);
+  const incompleteCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) < 21);
 
-  // Bar chart: use the same complete cohorts as the KPI (last 5 complete)
-  const chartCohorts = completeCohorts.slice(-5);
-  const bars: BarChartData[] = chartCohorts.map((c) => ({
-    label: formatWeekRangeLabel(c.cohortStart, c.cohortEnd),
+  // Synchronized display: last 5 complete + in-progress
+  const displayComplete = completeCohorts.slice(-5);
+  const displayCohorts = [...displayComplete, ...incompleteCohorts];
+
+  // Bar chart: complete (solid) + in-progress (ghost), same rows as table
+  const chartBars = displayCohorts.map((c) => ({
+    cohortStart: c.cohortStart,
+    cohortEnd: c.cohortEnd,
     value: c.newCustomers,
-    color: COLORS.newCustomer,
+    complete: daysElapsed(c.cohortStart) >= 21,
   }));
+  const chartMax = Math.max(...chartBars.map((b) => b.value), 1);
+  const BAR_H = 70;
 
-  // Expected auto-renews bridge
+  // KPI values
   const avgRate = cohorts?.avgConversionRate ?? null;
-  const expectedAutoRenews = (volume && avgRate !== null)
-    ? Math.round(volume.currentWeekCount * avgRate / 100)
+  const currentCohortCount = volume?.currentWeekCount ?? (incompleteCohorts.length > 0 ? incompleteCohorts[incompleteCohorts.length - 1].newCustomers : null);
+  const expectedAutoRenews = (currentCohortCount !== null && currentCohortCount !== undefined && avgRate !== null)
+    ? Math.round(currentCohortCount * avgRate / 100)
     : null;
 
+  // Table styles
   const thStyle = { textAlign: "right" as const, padding: "0.3rem 0.5rem", ...DS.label, fontSize: "0.65rem" };
   const tdBase = { textAlign: "right" as const, padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums" as const };
   const dash = <span style={{ color: "var(--st-text-secondary)", opacity: 0.35 }}>&mdash;</span>;
+  const arrowStyle = { color: "var(--st-text-secondary)", fontSize: DS.text.sm, margin: "0 0.35rem", opacity: 0.5 };
+  const highlightBg = "rgba(196, 146, 58, 0.06)";
 
   return (
     <Card>
-      {/* Module header */}
-      <div style={{ marginBottom: DS.cardHeaderMb }}>
+      {/* ── Module header ── */}
+      <div style={{ marginBottom: "0.6rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.15rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.newCustomer, opacity: 0.85 }} />
           <span style={{ ...DS.label }}>{LABELS.newCustomerFunnel}</span>
@@ -1588,74 +1606,172 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         </p>
       </div>
 
-      {/* Two-panel layout */}
-      <div style={{ display: "flex", gap: 0, minHeight: 0 }}>
-        {/* LEFT PANEL — Acquisition */}
-        {volume && (
-          <div style={{ flex: "0 0 35%", maxWidth: "35%", paddingRight: DS.space.sm, borderRight: "1px solid var(--st-border)", display: "flex", flexDirection: "column" }}>
-            {/* KPI */}
-            <div style={{ marginBottom: DS.space.sm }}>
-              <span style={{ ...DS.label, fontSize: "0.65rem" }}>New Customers (Cohorts)</span>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", marginTop: "0.15rem" }}>
-                <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
-                  {formatNumber(volume.currentWeekCount)}
-                </span>
-                <span style={{ ...DS.label, fontSize: DS.text.xs }}>this week</span>
-              </div>
-              {expectedAutoRenews !== null && (
-                <p style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", margin: "0.2rem 0 0 0" }}>
-                  &asymp; {expectedAutoRenews} expected auto-renews (3-wk avg)
-                </p>
-              )}
-            </div>
-            {/* Bar chart — same cohort weeks as table */}
-            {bars.length > 0 ? (
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <MiniBarChart data={bars} height={70} />
-                <p style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", margin: "0.25rem 0 0 0", textAlign: "center" }}>
-                  Cohort week of first visit
-                </p>
-              </div>
-            ) : (
-              <p style={{ color: "var(--st-text-secondary)", fontSize: DS.text.sm }}>—</p>
-            )}
-          </div>
-        )}
+      {/* ── KPI Spine ── */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "0.15rem",
+        padding: "0.5rem 0.4rem",
+        marginBottom: "0.5rem",
+        backgroundColor: "rgba(65, 58, 58, 0.025)",
+        borderRadius: "6px",
+      }}>
+        {/* KPI 1: New customers */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.3rem" }}>
+          <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+            {formatNumber(currentCohortCount ?? 0)}
+          </span>
+          <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+            new customers (current cohort so far)
+          </span>
+        </div>
 
-        {/* RIGHT PANEL — Activation */}
-        {cohorts && (
-          <div style={{ flex: 1, minWidth: 0, paddingLeft: volume ? DS.space.sm : 0 }}>
-            {/* KPI */}
-            <div style={{ marginBottom: DS.space.sm }}>
-              <span style={{ ...DS.label, fontSize: "0.65rem" }}>Cohort Conversion</span>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", marginTop: "0.15rem" }}>
-                {avgRate !== null ? (
-                  <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
-                    {avgRate.toFixed(1)}%
-                  </span>
-                ) : (
-                  <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)", letterSpacing: "-0.02em" }}>—</span>
-                )}
-                <span style={{ ...DS.label, fontSize: DS.text.xs }}>
-                  {avgRate !== null ? "3-wk avg" : ""}
-                </span>
+        <span style={arrowStyle}>&rarr;</span>
+
+        {/* KPI 2: Conversion rate */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.3rem" }}>
+          {avgRate !== null ? (
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+              {avgRate.toFixed(1)}%
+            </span>
+          ) : (
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)" }}>&mdash;</span>
+          )}
+          <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+            3-week conversion{avgRate !== null ? ` (last ${Math.min(completeCohorts.length, 5)} complete)` : ""}
+          </span>
+        </div>
+
+        <span style={arrowStyle}>&rarr;</span>
+
+        {/* KPI 3: Expected auto-renews */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.3rem" }}>
+          {expectedAutoRenews !== null ? (
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+              &asymp;{expectedAutoRenews}
+            </span>
+          ) : (
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-secondary)" }}>&mdash;</span>
+          )}
+          <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+            expected auto-renews
+          </span>
+        </div>
+      </div>
+
+      {/* Estimate disclaimer */}
+      {expectedAutoRenews !== null && (
+        <p style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", margin: "-0.3rem 0 0.5rem 0.4rem", opacity: 0.7 }}>
+          Estimate using weighted 3-week conversion rate
+        </p>
+      )}
+
+      {/* ── Body: chart (left) + table (right) ── */}
+      <div style={{ display: "flex", gap: 0, minHeight: 0 }}>
+
+        {/* LEFT — Cohort volume chart */}
+        <div style={{ flex: "0 0 38%", maxWidth: "38%", paddingRight: DS.space.md }}>
+          {chartBars.length > 0 && (
+            <div>
+              {/* Bars */}
+              <div style={{
+                display: "flex",
+                alignItems: "flex-end",
+                gap: "2px",
+                height: `${BAR_H}px`,
+                borderBottom: "1px solid var(--st-border)",
+                paddingBottom: "1px",
+              }}>
+                {chartBars.map((b) => {
+                  const fraction = chartMax > 0 ? b.value / chartMax : 0;
+                  const h = Math.max(Math.round(fraction * (BAR_H - 18)), 3);
+                  const isHovered = hoveredCohort === b.cohortStart;
+                  return (
+                    <div
+                      key={b.cohortStart}
+                      style={{
+                        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "flex-end",
+                        cursor: "default",
+                        backgroundColor: isHovered ? highlightBg : "transparent",
+                        borderRadius: "3px",
+                        transition: "background-color 0.15s",
+                      }}
+                      onMouseEnter={() => setHoveredCohort(b.cohortStart)}
+                      onMouseLeave={() => setHoveredCohort(null)}
+                      title={formatWeekRangeLabel(b.cohortStart, b.cohortEnd)}
+                    >
+                      <span style={{
+                        fontSize: "0.65rem",
+                        fontWeight: DS.weight.medium,
+                        color: "var(--st-text-primary)",
+                        marginBottom: "2px",
+                        whiteSpace: "nowrap",
+                        opacity: b.complete ? 1 : 0.5,
+                      }}>
+                        {b.value}
+                      </span>
+                      <div style={{
+                        width: "70%",
+                        maxWidth: "28px",
+                        height: `${h}px`,
+                        borderRadius: "2px 2px 0 0",
+                        ...(b.complete
+                          ? { backgroundColor: COLORS.newCustomer, opacity: 0.8 }
+                          : { backgroundColor: "transparent", border: `1.5px solid ${COLORS.newCustomer}`, opacity: 0.6 }
+                        ),
+                      }} />
+                    </div>
+                  );
+                })}
               </div>
-              {avgRate !== null && (
-                <p style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", margin: "0.2rem 0 0 0" }}>
-                  Weighted, last {Math.min(completeCohorts.length, 5)} complete cohorts
-                </p>
-              )}
+              {/* X-axis labels */}
+              <div style={{ display: "flex", gap: "2px", marginTop: "4px" }}>
+                {chartBars.map((b) => (
+                  <div key={b.cohortStart} style={{
+                    flex: 1, minWidth: 0, textAlign: "center",
+                    fontSize: "0.6rem", fontWeight: DS.weight.normal,
+                    color: hoveredCohort === b.cohortStart ? "var(--st-text-primary)" : "var(--st-text-secondary)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    transition: "color 0.15s",
+                  }}>
+                    {formatCohortShort(b.cohortStart)}
+                  </div>
+                ))}
+              </div>
+              {/* Legend */}
+              <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.35rem", justifyContent: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
+                  <span style={{ width: "8px", height: "6px", borderRadius: "1px", backgroundColor: COLORS.newCustomer, opacity: 0.8, display: "inline-block" }} />
+                  <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)" }}>Complete</span>
+                </div>
+                {incompleteCohorts.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
+                    <span style={{ width: "8px", height: "6px", borderRadius: "1px", border: `1px solid ${COLORS.newCustomer}`, opacity: 0.6, display: "inline-block" }} />
+                    <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)" }}>In progress</span>
+                  </div>
+                )}
+              </div>
+              <p style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", margin: "0.2rem 0 0 0", textAlign: "center", opacity: 0.7 }}>
+                Cohort week start (Mon-Sun)
+              </p>
             </div>
-            {/* Table */}
+          )}
+        </div>
+
+        {/* RIGHT — Cohort conversion table */}
+        {cohorts && (
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--st-border)" }}>
                     <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
                     <th style={{ ...thStyle, color: "var(--st-text-primary)" }}>New</th>
-                    <th style={thStyle}>0-6d</th>
-                    <th style={thStyle}>7-13d</th>
-                    <th style={thStyle}>14-20d</th>
+                    <th style={thStyle} title="Weeks relative to first visit cohort week">Same week</th>
+                    <th style={thStyle} title="Weeks relative to first visit cohort week">+1 week</th>
+                    <th style={thStyle} title="Weeks relative to first visit cohort week">+2 weeks</th>
                     <th style={thStyle}>Total</th>
                     <th style={thStyle}>Rate</th>
                   </tr>
@@ -1667,9 +1783,21 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                     const wk2Possible = days >= 7;
                     const wk3Possible = days >= 14;
                     const rate = c.newCustomers > 0 ? (c.total3Week / c.newCustomers * 100).toFixed(1) : "0.0";
+                    const isHovered = hoveredCohort === c.cohortStart;
 
                     return (
-                      <tr key={c.cohortStart} style={{ borderBottom: "1px solid var(--st-border)", opacity: complete ? 1 : 0.7 }}>
+                      <tr
+                        key={c.cohortStart}
+                        style={{
+                          borderBottom: "1px solid var(--st-border)",
+                          opacity: complete ? 1 : 0.7,
+                          backgroundColor: isHovered ? highlightBg : "transparent",
+                          transition: "background-color 0.15s",
+                          cursor: "default",
+                        }}
+                        onMouseEnter={() => setHoveredCohort(c.cohortStart)}
+                        onMouseLeave={() => setHoveredCohort(null)}
+                      >
                         {/* Cohort date + status pill */}
                         <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
                           {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
@@ -1694,15 +1822,15 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                         <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
                           {formatNumber(c.newCustomers)}
                         </td>
-                        {/* 0-6d */}
+                        {/* Same week */}
                         <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
                           {c.week1}
                         </td>
-                        {/* 7-13d */}
+                        {/* +1 week */}
                         <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
                           {wk2Possible ? c.week2 : dash}
                         </td>
-                        {/* 14-20d */}
+                        {/* +2 weeks */}
                         <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
                           {wk3Possible ? c.week3 : dash}
                         </td>
