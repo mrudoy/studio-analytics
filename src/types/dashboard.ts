@@ -1,13 +1,14 @@
 /**
- * Dashboard type definitions.
+ * Dashboard type definitions — single source of truth.
  *
- * These were originally in lib/sheets/read-dashboard.ts but are now standalone
- * so they don't pull in the google-spreadsheet dependency chain.
+ * Both the API routes and the client (page.tsx) import from here.
  */
 
 export interface DashboardStats {
   lastUpdated: string | null;
   dateRange: string | null;
+  spreadsheetUrl?: string;
+  dataSource?: "database" | "sheets" | "hybrid";
   mrr: {
     member: number;
     sky3: number;
@@ -30,7 +31,26 @@ export interface DashboardStats {
   };
   currentMonthRevenue: number;
   previousMonthRevenue: number;
-  spreadsheetUrl?: string;
+  trends?: TrendsData | null;
+  revenueCategories?: RevenueCategoryData | null;
+  monthOverMonth?: MonthOverMonthData | null;
+  monthlyRevenue?: { month: string; gross: number; net: number }[];
+}
+
+export interface RevenueCategoryData {
+  periodStart: string;
+  periodEnd: string;
+  categories: { category: string; revenue: number; netRevenue: number; fees: number; refunded: number }[];
+  totalRevenue: number;
+  totalNetRevenue: number;
+  totalFees: number;
+  totalRefunded: number;
+  dropInRevenue: number;
+  dropInNetRevenue: number;
+  autoRenewRevenue: number;
+  autoRenewNetRevenue: number;
+  workshopRevenue: number;
+  otherRevenue: number;
 }
 
 export interface TrendRowData {
@@ -98,7 +118,7 @@ export interface FirstVisitData {
   currentWeekSegments: Record<FirstVisitSegment, number>;
   completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
   aggregateSegments: Record<FirstVisitSegment, number>;
-  otherBreakdownTop5: { passName: string; count: number }[];
+  otherBreakdownTop5?: { passName: string; count: number }[];
 }
 
 export interface ReturningNonMemberData {
@@ -106,7 +126,7 @@ export interface ReturningNonMemberData {
   currentWeekSegments: Record<FirstVisitSegment, number>;
   completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
   aggregateSegments: Record<FirstVisitSegment, number>;
-  otherBreakdownTop5: { passName: string; count: number }[];
+  otherBreakdownTop5?: { passName: string; count: number }[];
 }
 
 /** Per-category churn data for a single month */
@@ -155,6 +175,26 @@ export interface ChurnRateData {
   avgMemberRate: number;
   avgSky3Rate: number;
   atRisk: number;
+}
+
+export interface MonthOverMonthPeriod {
+  year: number;
+  periodStart: string;
+  periodEnd: string;
+  gross: number;
+  net: number;
+  categoryCount: number;
+}
+
+export interface MonthOverMonthData {
+  month: number;
+  monthName: string;
+  current: MonthOverMonthPeriod | null;
+  priorYear: MonthOverMonthPeriod | null;
+  yoyGrossChange: number | null;
+  yoyNetChange: number | null;
+  yoyGrossPct: number | null;
+  yoyNetPct: number | null;
 }
 
 export interface TrendsData {

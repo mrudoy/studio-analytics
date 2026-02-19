@@ -1,206 +1,22 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import type {
+  DashboardStats,
+  TrendRowData,
+  PacingData,
+  ProjectionData,
+  DropInData,
+  FirstVisitSegment,
+  FirstVisitData,
+  ReturningNonMemberData,
+  CategoryChurnData,
+  ChurnRateData,
+  TrendsData,
+  MonthOverMonthData,
+} from "@/types/dashboard";
 
-// ─── Types ───────────────────────────────────────────────────
-
-interface DashboardStats {
-  lastUpdated: string | null;
-  dateRange: string | null;
-  spreadsheetUrl?: string;
-  dataSource?: "database" | "sheets" | "hybrid";
-  mrr: {
-    member: number;
-    sky3: number;
-    skyTingTv: number;
-    unknown: number;
-    total: number;
-  };
-  activeSubscribers: {
-    member: number;
-    sky3: number;
-    skyTingTv: number;
-    unknown: number;
-    total: number;
-  };
-  arpu: {
-    member: number;
-    sky3: number;
-    skyTingTv: number;
-    overall: number;
-  };
-  currentMonthRevenue: number;
-  previousMonthRevenue: number;
-  trends?: TrendsData | null;
-  revenueCategories?: RevenueCategoryData | null;
-  monthOverMonth?: MonthOverMonthData | null;
-  monthlyRevenue?: { month: string; gross: number; net: number }[];
-}
-
-interface RevenueCategoryData {
-  periodStart: string;
-  periodEnd: string;
-  categories: { category: string; revenue: number; netRevenue: number; fees: number; refunded: number }[];
-  totalRevenue: number;
-  totalNetRevenue: number;
-  totalFees: number;
-  totalRefunded: number;
-  dropInRevenue: number;
-  dropInNetRevenue: number;
-  autoRenewRevenue: number;
-  autoRenewNetRevenue: number;
-  workshopRevenue: number;
-  otherRevenue: number;
-}
-
-interface TrendRowData {
-  period: string;
-  type: string;
-  newMembers: number;
-  newSky3: number;
-  newSkyTingTv: number;
-  memberChurn: number;
-  sky3Churn: number;
-  skyTingTvChurn: number;
-  netMemberGrowth: number;
-  netSky3Growth: number;
-  revenueAdded: number;
-  revenueLost: number;
-  deltaNewMembers: number | null;
-  deltaNewSky3: number | null;
-  deltaRevenue: number | null;
-  deltaPctNewMembers: number | null;
-  deltaPctNewSky3: number | null;
-  deltaPctRevenue: number | null;
-}
-
-interface PacingData {
-  month: string;
-  daysElapsed: number;
-  daysInMonth: number;
-  newMembersActual: number;
-  newMembersPaced: number;
-  newSky3Actual: number;
-  newSky3Paced: number;
-  revenueActual: number;
-  revenuePaced: number;
-  memberCancellationsActual: number;
-  memberCancellationsPaced: number;
-  sky3CancellationsActual: number;
-  sky3CancellationsPaced: number;
-}
-
-interface ProjectionData {
-  year: number;
-  projectedAnnualRevenue: number;
-  currentMRR: number;
-  projectedYearEndMRR: number;
-  monthlyGrowthRate: number;
-  priorYearRevenue: number;
-  priorYearActualRevenue: number | null;
-}
-
-interface DropInData {
-  currentMonthTotal: number;
-  currentMonthDaysElapsed: number;
-  currentMonthDaysInMonth: number;
-  currentMonthPaced: number;
-  previousMonthTotal: number;
-  weeklyAvg6w: number;
-  weeklyBreakdown: { week: string; count: number }[];
-}
-
-type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
-
-interface FirstVisitData {
-  currentWeekTotal: number;
-  currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
-  aggregateSegments: Record<FirstVisitSegment, number>;
-  otherBreakdownTop5?: { passName: string; count: number }[];
-}
-
-interface ReturningNonMemberData {
-  currentWeekTotal: number;
-  currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
-  aggregateSegments: Record<FirstVisitSegment, number>;
-  otherBreakdownTop5?: { passName: string; count: number }[];
-}
-
-interface CategoryMonthlyChurn {
-  month: string;
-  userChurnRate: number;
-  mrrChurnRate: number;
-  activeAtStart: number;
-  activeMrrAtStart: number;
-  canceledCount: number;
-  canceledMrr: number;
-  annualCanceledCount?: number;
-  annualActiveAtStart?: number;
-  monthlyCanceledCount?: number;
-  monthlyActiveAtStart?: number;
-}
-
-interface CategoryChurnData {
-  category: "MEMBER" | "SKY3" | "SKY_TING_TV";
-  monthly: CategoryMonthlyChurn[];
-  avgUserChurnRate: number;
-  avgMrrChurnRate: number;
-  atRiskCount: number;
-}
-
-interface ChurnRateData {
-  byCategory: {
-    member: CategoryChurnData;
-    sky3: CategoryChurnData;
-    skyTingTv: CategoryChurnData;
-  };
-  totalAtRisk: number;
-  monthly: {
-    month: string;
-    memberRate: number;
-    sky3Rate: number;
-    memberActiveStart: number;
-    sky3ActiveStart: number;
-    memberCanceled: number;
-    sky3Canceled: number;
-  }[];
-  avgMemberRate: number;
-  avgSky3Rate: number;
-  atRisk: number;
-}
-
-interface MonthOverMonthPeriod {
-  year: number;
-  periodStart: string;
-  periodEnd: string;
-  gross: number;
-  net: number;
-  categoryCount: number;
-}
-
-interface MonthOverMonthData {
-  month: number;
-  monthName: string;
-  current: MonthOverMonthPeriod | null;
-  priorYear: MonthOverMonthPeriod | null;
-  yoyGrossChange: number | null;
-  yoyNetChange: number | null;
-  yoyGrossPct: number | null;
-  yoyNetPct: number | null;
-}
-
-interface TrendsData {
-  weekly: TrendRowData[];
-  monthly: TrendRowData[];
-  pacing: PacingData | null;
-  projection: ProjectionData | null;
-  dropIns: DropInData | null;
-  firstVisits: FirstVisitData | null;
-  returningNonMembers: ReturningNonMemberData | null;
-  churnRates: ChurnRateData | null;
-}
+// ─── Client-only types ───────────────────────────────────────
 
 type DashboardLoadState =
   | { state: "loading" }
@@ -218,7 +34,7 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 
 // ─── Font constants ─────────────────────────────────────────
 
-const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+// Body font (Helvetica Neue) inherited from globals.css — no FONT_SANS needed on elements.
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
 // ─── Design System Tokens ────────────────────────────────────
@@ -427,7 +243,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
     <a
       href={href}
       className="hover:underline transition-colors"
-      style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal }}
+      style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}
       onMouseOver={(e) =>
         (e.currentTarget.style.color = "var(--st-text-primary)")
       }
@@ -540,15 +356,14 @@ function PipelineView() {
           <h1
             style={{
               color: "var(--st-text-primary)",
-              fontFamily: FONT_SANS,
-              fontWeight: 700,
+                           fontWeight: 700,
               fontSize: "2.4rem",
               letterSpacing: "-0.03em",
             }}
           >
             Studio Analytics
           </h1>
-          <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: "0.95rem" }}>
+          <p style={{ color: "var(--st-text-secondary)", fontSize: "0.95rem" }}>
             Pull data from Union.fit, run analytics, export to Google Sheets
           </p>
         </div>
@@ -560,8 +375,7 @@ function PipelineView() {
               backgroundColor: "var(--st-bg-section)",
               border: "1px solid var(--st-border)",
               color: "var(--st-warning)",
-              fontFamily: FONT_SANS,
-            }}
+                         }}
           >
             No credentials configured.{" "}
             <a href="/settings" className="underline font-medium" style={{ color: "var(--st-text-primary)" }}>
@@ -586,8 +400,7 @@ function PipelineView() {
               backgroundColor: "var(--st-accent)",
               color: "var(--st-text-light)",
               borderRadius: "var(--st-radius-pill)",
-              fontFamily: FONT_SANS,
-              fontWeight: 700,
+                           fontWeight: 700,
               letterSpacing: "0.08em",
             }}
             onMouseOver={(e) => {
@@ -608,7 +421,7 @@ function PipelineView() {
               : 0;
             return (
               <div className="space-y-3">
-                <div className="flex justify-between items-baseline" style={{ fontFamily: FONT_SANS }}>
+                <div className="flex justify-between items-baseline">
                   <span className="text-sm" style={{ color: "var(--st-text-secondary)" }}>{status.step}</span>
                   <span className="text-lg font-bold" style={{ color: "var(--st-text-primary)" }}>{status.percent}%</span>
                 </div>
@@ -625,14 +438,14 @@ function PipelineView() {
                   />
                 </div>
                 {etaMs > 3000 && (
-                  <p className="text-xs text-center" style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, opacity: 0.7 }}>
+                  <p className="text-xs text-center" style={{ color: "var(--st-text-secondary)", opacity: 0.7 }}>
                     {formatEta(etaMs)}
                   </p>
                 )}
                 <button
                   onClick={resetPipeline}
                   className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
-                  style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}
+                  style={{ color: "var(--st-text-secondary)" }}
                 >
                   Reset if stuck
                 </button>
@@ -649,17 +462,17 @@ function PipelineView() {
               }}
             >
               <div className="text-center space-y-1">
-                <p className="font-medium" style={{ color: "var(--st-success)", fontFamily: FONT_SANS }}>
+                <p className="font-medium" style={{ color: "var(--st-success)" }}>
                   Pipeline complete
                 </p>
-                <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8, fontFamily: FONT_SANS }}>
+                <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8 }}>
                   Finished in {Math.round(status.duration / 1000)}s
                 </p>
               </div>
 
               {/* Validation warning */}
               {status.validation && !status.validation.passed && (
-                <p className="text-xs text-center font-medium" style={{ color: COLORS.warning, fontFamily: FONT_SANS }}>
+                <p className="text-xs text-center font-medium" style={{ color: COLORS.warning }}>
                   Some data may be missing or incomplete
                 </p>
               )}
@@ -672,8 +485,7 @@ function PipelineView() {
                       key={check.name}
                       className="flex items-center justify-between px-3 py-1.5 text-xs"
                       style={{
-                        fontFamily: FONT_SANS,
-                        backgroundColor: i % 2 === 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.3)",
+                                               backgroundColor: i % 2 === 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.3)",
                       }}
                     >
                       <span style={{ color: "var(--st-text-secondary)" }}>{check.name}</span>
@@ -695,7 +507,7 @@ function PipelineView() {
 
               {/* Warnings */}
               {status.warnings && status.warnings.length > 0 && (
-                <details className="text-xs" style={{ fontFamily: FONT_SANS, color: COLORS.warning }}>
+                <details className="text-xs" style={{color: COLORS.warning }}>
                   <summary className="cursor-pointer font-medium">{status.warnings.length} warning{status.warnings.length > 1 ? "s" : ""}</summary>
                   <ul className="mt-1 ml-4 space-y-0.5 list-disc" style={{ color: "var(--st-text-secondary)" }}>
                     {status.warnings.slice(0, 10).map((w, i) => <li key={i}>{w}</li>)}
@@ -713,8 +525,7 @@ function PipelineView() {
                     backgroundColor: "var(--st-success)",
                     color: "#fff",
                     borderRadius: "var(--st-radius-pill)",
-                    fontFamily: FONT_SANS,
-                    letterSpacing: "0.06em",
+                                       letterSpacing: "0.06em",
                   }}
                 >
                   Open Google Sheet
@@ -731,14 +542,14 @@ function PipelineView() {
                 border: "1px solid rgba(160, 64, 64, 0.2)",
               }}
             >
-              <p className="font-medium" style={{ color: "var(--st-error)", fontFamily: FONT_SANS }}>Error</p>
-              <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85, fontFamily: FONT_SANS }}>
+              <p className="font-medium" style={{ color: "var(--st-error)" }}>Error</p>
+              <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85 }}>
                 {status.message}
               </p>
               <button
                 onClick={() => setStatus({ state: "idle" })}
                 className="mt-3 text-sm underline"
-                style={{ color: "var(--st-error)", opacity: 0.7, fontFamily: FONT_SANS }}
+                style={{ color: "var(--st-error)", opacity: 0.7 }}
               >
                 Dismiss
               </button>
@@ -767,8 +578,7 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
       <h2
         style={{
           color: "var(--st-text-primary)",
-          fontFamily: FONT_SANS,
-          fontWeight: DS.weight.bold,
+                   fontWeight: DS.weight.bold,
           fontSize: DS.text.md,
           letterSpacing: "0.02em",
         }}
@@ -776,7 +586,7 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
         {children}
       </h2>
       {subtitle && (
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.xs, marginTop: "2px", opacity: 0.7 }}>
+        <p style={{ color: "var(--st-text-secondary)", fontSize: DS.text.xs, marginTop: "2px", opacity: 0.7 }}>
           {subtitle}
         </p>
       )}
@@ -810,7 +620,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
     return (
       <span
         className="inline-flex items-center rounded-full px-2 py-0.5"
-        style={{ color, fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.xs, whiteSpace: "nowrap", backgroundColor: compactBg, gap: "2px" }}
+        style={{ color, fontWeight: DS.weight.medium, fontSize: DS.text.xs, whiteSpace: "nowrap", backgroundColor: compactBg, gap: "2px" }}
       >
         <span style={{ fontSize: "0.55rem" }}>{arrow}</span>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
@@ -828,7 +638,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
   return (
     <div
       className="inline-flex items-center rounded-full px-2.5 py-0.5 mt-1.5"
-      style={{ color, fontFamily: FONT_SANS, backgroundColor: bgColor, gap: "3px" }}
+      style={{ color, backgroundColor: bgColor, gap: "3px" }}
     >
       <span style={{ fontSize: DS.text.xs, fontWeight: DS.weight.bold }}>{arrow}</span>
       <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, letterSpacing: "-0.01em" }}>
@@ -963,8 +773,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
           style={{
             backgroundColor: isStale ? "rgba(160, 64, 64, 0.08)" : "rgba(74, 124, 89, 0.08)",
             border: `1px solid ${isStale ? "rgba(160, 64, 64, 0.2)" : "rgba(74, 124, 89, 0.2)"}`,
-            fontFamily: FONT_SANS,
-            fontWeight: 600,
+                       fontWeight: 600,
           }}
         >
           <span
@@ -985,8 +794,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
             style={{
               backgroundColor: "rgba(128, 128, 128, 0.06)",
               border: "1px solid var(--st-border)",
-              fontFamily: FONT_SANS,
-              fontWeight: 500,
+                           fontWeight: 500,
               color: "var(--st-text-secondary)",
             }}
           >
@@ -1005,8 +813,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
             style={{
               color: "var(--st-text-secondary)",
               border: "1px solid var(--st-border)",
-              fontFamily: FONT_SANS,
-              fontWeight: 500,
+                           fontWeight: 500,
               fontSize: "0.8rem",
             }}
             onMouseOver={(e) => {
@@ -1036,8 +843,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
           style={{
             color: refreshState === "running" ? "var(--st-text-secondary)" : refreshState === "done" ? "var(--st-success)" : refreshState === "error" ? "var(--st-error)" : "var(--st-text-secondary)",
             border: `1px solid ${refreshState === "done" ? "rgba(74, 124, 89, 0.3)" : "var(--st-border)"}`,
-            fontFamily: FONT_SANS,
-            fontWeight: 500,
+                       fontWeight: 500,
             fontSize: "0.8rem",
             cursor: refreshState === "running" ? "wait" : "pointer",
             opacity: refreshState === "running" ? 0.6 : 1,
@@ -1070,7 +876,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
 
       {refreshState === "running" && (
         <div style={{ marginTop: "0.5rem", maxWidth: "340px", width: "100%" }}>
-          <div className="flex justify-between items-baseline" style={{ fontFamily: FONT_SANS, fontSize: "0.72rem", marginBottom: "4px" }}>
+          <div className="flex justify-between items-baseline" style={{fontSize: "0.72rem", marginBottom: "4px" }}>
             <span style={{ color: "var(--st-text-secondary)" }}>{pipelineStep}</span>
             <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{pipelinePercent}%</span>
           </div>
@@ -1081,7 +887,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
             />
           </div>
           {etaMs > 3000 && (
-            <p style={{ fontFamily: FONT_SANS, fontSize: "0.68rem", color: "var(--st-text-secondary)", opacity: 0.7, marginTop: "3px", textAlign: "center" }}>
+            <p style={{fontSize: "0.68rem", color: "var(--st-text-secondary)", opacity: 0.7, marginTop: "3px", textAlign: "center" }}>
               {formatEta(etaMs)}
             </p>
           )}
@@ -1135,8 +941,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
             <div key={i} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
               {showValues && (
                 <span style={{
-                  fontFamily: FONT_SANS,
-                  fontSize: "0.65rem",
+                                   fontSize: "0.65rem",
                   fontWeight: DS.weight.medium,
                   color: "var(--st-text-primary)",
                   marginBottom: "2px",
@@ -1169,8 +974,7 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
             flex: 1,
             minWidth: 0,
             textAlign: "center",
-            fontFamily: FONT_SANS,
-            fontSize: "0.65rem",
+                       fontSize: "0.65rem",
             fontWeight: DS.weight.normal,
             color: "var(--st-text-secondary)",
             overflow: "hidden",
@@ -1269,7 +1073,7 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
               x={padLeft - 8}
               y={g.y + 3}
               textAnchor="end"
-              style={{ fontFamily: FONT_SANS, fontSize: "9px", fontWeight: 400, fill: "var(--st-text-secondary)" }}
+              style={{fontSize: "9px", fontWeight: 400, fill: "var(--st-text-secondary)" }}
             >
               {fmt(g.val)}
             </text>
@@ -1302,7 +1106,7 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
               x={p.x}
               y={height - 4}
               textAnchor="middle"
-              style={{ fontFamily: FONT_SANS, fontSize: "9px", fontWeight: 400, fill: "var(--st-text-secondary)" }}
+              style={{fontSize: "9px", fontWeight: 400, fill: "var(--st-text-secondary)" }}
             >
               {p.label}
             </text>
@@ -1317,7 +1121,7 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
               x={last.x}
               y={last.y - 10}
               textAnchor="end"
-              style={{ fontFamily: FONT_SANS, fontSize: "11px", fontWeight: 700, fill: "var(--st-text-primary)" }}
+              style={{fontSize: "11px", fontWeight: 700, fill: "var(--st-text-primary)" }}
             >
               {fmt(last.value)}
             </text>
@@ -1350,7 +1154,7 @@ function Card({ children, padding = DS.cardPad }: { children: React.ReactNode; p
 function NoData({ label }: { label: string }) {
   return (
     <Card>
-      <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+      <p style={{fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
         {label}: <span style={{ opacity: 0.6 }}>No data available</span>
       </p>
     </Card>
@@ -1372,18 +1176,18 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
   return (
     <div style={{ padding: "0.5rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+        <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
           {label}
         </span>
         <div className="flex items-center gap-3">
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
+          <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
             {value}
           </span>
           <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} compact />
         </div>
       </div>
       {sublabel && (
-        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px", fontStyle: "italic" }}>
+        <p style={{fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px", fontStyle: "italic" }}>
           {sublabel}
         </p>
       )}
@@ -1412,10 +1216,10 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
       {tiles.map((tile, i) => (
         <Card key={i}>
-          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "8px" }}>
+          <p style={{...DS.label, marginBottom: "8px" }}>
             {tile.label}
           </p>
-          <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.0 }}>
+          <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.0 }}>
             {tile.value}
           </p>
           {(tile.sublabel || tile.delta != null) && (
@@ -1424,7 +1228,7 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
                 <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
               )}
               {tile.sublabel && (
-                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                <span style={{fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
                   {tile.sublabel}
                 </span>
               )}
@@ -1479,10 +1283,10 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
       {revenueAreaData.length > 1 && (
         <Card>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Monthly Gross Revenue</p>
+            <p style={{...DS.label }}>Monthly Gross Revenue</p>
             {currentMonth && (
               <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
-                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+                <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
                   {formatCurrency(currentMonth.gross)}
                 </span>
                 {momDelta != null && (
@@ -1498,7 +1302,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
       {/* Breakdown — simple list */}
       {currentMonth && (
         <Card>
-          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "0.75rem" }}>
+          <p style={{...DS.label, marginBottom: "0.75rem" }}>
             {formatMonthLabel(currentMonth.month)} Breakdown
           </p>
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1511,7 +1315,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                 display: "flex", justifyContent: "space-between", alignItems: "center",
                 padding: "0.6rem 0",
                 borderBottom: i < 2 ? "1px solid var(--st-border)" : "none",
-                fontFamily: FONT_SANS, fontSize: DS.text.sm,
+                fontSize: DS.text.sm,
               }}>
                 <span style={{ color: "var(--st-text-secondary)" }}>{row.label}</span>
                 <span style={{ fontWeight: row.bold ? DS.weight.bold : DS.weight.medium, color: row.color || "var(--st-text-primary)" }}>
@@ -1539,10 +1343,10 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
-        <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
+        <p style={{...DS.label }}>
           {LABELS.mrr}
         </p>
-        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+        <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatCurrency(data.mrr.total)}
         </p>
       </div>
@@ -1555,11 +1359,11 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: seg.color, opacity: 0.85, flexShrink: 0 }} />
-              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+              <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                 {seg.label}
               </span>
             </div>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+            <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
               {formatCurrency(seg.value)}
             </span>
           </div>
@@ -1595,14 +1399,14 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>{LABELS.firstVisits}</span>
+          <span style={{...DS.label }}>{LABELS.firstVisits}</span>
         </div>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+        <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatNumber(firstVisits.currentWeekTotal)}
-          <span style={{ fontFamily: FONT_SANS, ...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+          <span style={{...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
         </span>
       </div>
-      <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
+      <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
         {segments.map((seg) => {
           const count = agg[seg] || 0;
@@ -1611,9 +1415,9 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
             <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: SEGMENT_COLORS[seg] }} />
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{SEGMENT_LABELS[seg]}</span>
+                <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{SEGMENT_LABELS[seg]}</span>
               </div>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
                 {formatNumber(count)}
                 {aggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round((count / aggTotal) * 100)}%</span>}
               </span>
@@ -1654,22 +1458,22 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "0.75rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, ...DS.label }}>{LABELS.returningNonMembers}</span>
+          <span style={{...DS.label }}>{LABELS.returningNonMembers}</span>
         </div>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+        <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
           {formatNumber(returningNonMembers.currentWeekTotal)}
-          <span style={{ fontFamily: FONT_SANS, ...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+          <span style={{...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
         </span>
       </div>
-      <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
+      <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
         {rnmSegments.map((seg) => (
           <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
-              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{RNM_SEGMENT_LABELS[seg]}</span>
+              <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{RNM_SEGMENT_LABELS[seg]}</span>
             </div>
-            <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+            <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
               {formatNumber(aggDisplay[seg] || 0)}
               {rnmAggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
             </span>
@@ -1723,18 +1527,18 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: COLORS.warning, opacity: 0.85 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             {LABELS.dropIns}
           </span>
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
+          <span style={{fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
             Visits
           </span>
         </div>
         <div className="flex flex-col items-end">
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
             {formatNumber(dropIns.currentMonthTotal)}
           </span>
-          <span style={{ fontFamily: FONT_SANS, ...DS.label, marginTop: "0.25rem" }}>
+          <span style={{...DS.label, marginTop: "0.25rem" }}>
             Month to Date
           </span>
         </div>
@@ -1743,13 +1547,13 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left: Weekly visits chart */}
         <div>
-          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          <p className="mb-2" style={{...DS.label }}>
             Weekly Visits
           </p>
           {weeklyBars.length > 0 ? (
             <MiniBarChart data={weeklyBars} height={70} />
           ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontSize: DS.text.sm }}>—</p>
+            <p style={{ color: "var(--st-text-secondary)", fontSize: DS.text.sm }}>—</p>
           )}
         </div>
 
@@ -1853,11 +1657,11 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
-          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             {title}
           </span>
         </div>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em" }}>
+        <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em" }}>
           {formatNumber(count)}
         </span>
       </div>
@@ -1870,12 +1674,12 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
             padding: "0.5rem 0",
             borderBottom: i < metrics.length - 1 ? "1px solid var(--st-border)" : "none",
           }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+            <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
               {m.label}
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{
-                fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold,
+                fontSize: DS.text.md, fontWeight: DS.weight.bold,
                 color: m.color || "var(--st-text-primary)",
                 fontVariantNumeric: "tabular-nums",
               }}>
@@ -1894,7 +1698,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
         <div style={{
           marginTop: "0.75rem", paddingTop: "0.75rem",
           borderTop: "1px solid var(--st-border)",
-          fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)",
+          fontSize: DS.text.xs, color: "var(--st-text-secondary)",
           display: "flex", gap: "1rem", flexWrap: "wrap",
         }}>
           <span style={{ textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: DS.weight.medium, color: "var(--st-accent)" }}>
@@ -1912,7 +1716,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
         const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
         if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
         return (
-          <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "0.5rem" }}>
+          <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "0.5rem" }}>
             Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
           </p>
         );
@@ -1950,7 +1754,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
-        <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Annual Net Revenue</p>
+        <p style={{...DS.label }}>Annual Net Revenue</p>
         {olderTotal > 0 && priorTotal > 0 && (
           <DeltaBadge delta={priorTotal - olderTotal} deltaPercent={Math.round(yoyDelta * 10) / 10} isCurrency compact />
         )}
@@ -1963,7 +1767,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
           const h = Math.max(Math.round(fraction * (BAR_HEIGHT - 20)), 8);
           return (
             <div key={b.year} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", flex: 1, maxWidth: "120px" }}>
-              <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", marginBottom: "4px" }}>
+              <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", marginBottom: "4px" }}>
                 {formatCompactCurrency(b.value)}
               </span>
               <div style={{
@@ -1982,7 +1786,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
       <div style={{ display: "flex", justifyContent: "center", gap: "2rem" }}>
         {bars.map((b) => (
           <div key={b.year} style={{ flex: 1, maxWidth: "120px", textAlign: "center" }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+            <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
               {b.year}
             </span>
           </div>
@@ -1993,14 +1797,14 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
       {projection && projection.currentMRR > 0 && Math.abs(projection.monthlyGrowthRate) < 50 && (
         <div style={{ borderTop: "1px solid var(--st-border)", marginTop: "0.75rem", paddingTop: "0.75rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+            <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
               {projection.year} Subscription MRR
             </span>
-            <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
+            <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
               {formatCurrency(projection.currentMRR)}
             </span>
           </div>
-          <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px" }}>
+          <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px" }}>
             {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
           </p>
         </div>
@@ -2042,7 +1846,7 @@ function DashboardView() {
   if (loadState.state === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal }}>
+        <p style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>
           Loading...
         </p>
       </div>
@@ -2054,11 +1858,11 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
+          <h1 style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
             Studio Dashboard
           </h1>
           <div className="rounded-2xl p-6" style={{ backgroundColor: "var(--st-bg-card)", border: "1px solid var(--st-border)" }}>
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS }}>
+            <p style={{ color: "var(--st-text-secondary)" }}>
               No analytics data yet. Run the pipeline to see stats here.
             </p>
           </div>
@@ -2072,14 +1876,14 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 style={{ color: "var(--st-text-primary)", fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
+          <h1 style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
             Studio Dashboard
           </h1>
           <div className="rounded-2xl p-5 text-center" style={{ backgroundColor: "#F5EFEF", border: "1px solid rgba(160, 64, 64, 0.2)" }}>
-            <p className="font-medium" style={{ color: "var(--st-error)", fontFamily: FONT_SANS }}>
+            <p className="font-medium" style={{ color: "var(--st-error)" }}>
               Unable to load stats
             </p>
-            <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85, fontFamily: FONT_SANS }}>
+            <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85 }}>
               {loadState.message}
             </p>
           </div>
@@ -2104,8 +1908,7 @@ function DashboardView() {
         <h1
           style={{
             color: "var(--st-text-primary)",
-            fontFamily: FONT_SANS,
-            fontWeight: DS.weight.bold,
+                       fontWeight: DS.weight.bold,
             fontSize: DS.text.lg,
             letterSpacing: "-0.01em",
             marginBottom: "1rem",
@@ -2178,31 +1981,31 @@ function DashboardView() {
           {data.monthOverMonth ? (
             <Card>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
-                <p style={{ fontFamily: FONT_SANS, ...DS.label }}>{LABELS.yoy}</p>
-                <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+                <p style={{...DS.label }}>{LABELS.yoy}</p>
+                <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
                   {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
                 </p>
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                  <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                     {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
                   </span>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
                     {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                  <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                     {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
                   </span>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
                     {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
                   </span>
                 </div>
                 {data.monthOverMonth.yoyGrossPct !== null && (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.6rem 0" }}>
-                    <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>Change</span>
+                    <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>Change</span>
                     <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
                   </div>
                 )}
@@ -2210,8 +2013,8 @@ function DashboardView() {
             </Card>
           ) : (
             <Card>
-              <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "1rem" }}>Year over Year</p>
-              <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", opacity: 0.6 }}>No data available</p>
+              <p style={{...DS.label, marginBottom: "1rem" }}>Year over Year</p>
+              <p style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)", opacity: 0.6 }}>No data available</p>
             </Card>
           )}
         </div>
@@ -2308,7 +2111,7 @@ export default function Home() {
   if (mode === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal }}>
+        <p style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>
           Loading...
         </p>
       </div>

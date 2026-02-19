@@ -5,8 +5,12 @@ import { parseDate } from "@/lib/analytics/date-utils";
 /**
  * Debug endpoint to inspect raw auto_renews data and date parsing.
  * GET /api/debug?table=auto_renews&limit=10
+ * Only available in development.
  */
 export async function GET(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not available in production" }, { status: 403 });
+  }
   const url = new URL(req.url);
   const table = url.searchParams.get("table") || "auto_renews";
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "10"), 100);
