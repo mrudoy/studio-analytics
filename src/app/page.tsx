@@ -1609,7 +1609,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   // Charcoal → mid → light so segments are clearly distinguishable
   const timingColors = ["rgba(65, 58, 58, 0.55)", "rgba(65, 58, 58, 0.30)", "rgba(65, 58, 58, 0.14)"];
 
-  // Segmented tab style — modern underline approach
+  // Tab style — underline, no focus ring (handled by .funnel-tab:focus-visible in CSS)
   const tabStyle = (active: boolean): React.CSSProperties => ({
     padding: "0.25rem 0.6rem 0.35rem",
     fontSize: "0.7rem",
@@ -1620,8 +1620,9 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     borderBottom: active ? "2px solid var(--st-text-primary)" : "2px solid transparent",
     borderRadius: "0",
     cursor: "pointer",
-    transition: "all 0.15s",
+    transition: "color 0.15s, border-color 0.15s",
     letterSpacing: "0.02em",
+    outline: "none",
   });
 
   // Info icon (24x24 hit area)
@@ -1789,18 +1790,18 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
       {/* ── Tabs — underline style ── */}
       <div style={{ display: "flex", gap: "0", borderBottom: "1px solid var(--st-border)", marginBottom: "0" }}>
-        <button type="button" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
+        <button type="button" className="funnel-tab" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
           Complete ({displayComplete.length})
         </button>
         {incompleteCohorts.length > 0 && (
-          <button type="button" style={tabStyle(activeTab === "inProgress")} onClick={() => setActiveTab("inProgress")}>
+          <button type="button" className="funnel-tab" style={tabStyle(activeTab === "inProgress")} onClick={() => setActiveTab("inProgress")}>
             In progress ({incompleteCohorts.length})
           </button>
         )}
       </div>
 
-      {/* ── Table ── */}
-      {cohorts && (
+      {/* ── Complete table ── */}
+      {cohorts && activeTab === "complete" && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums" }}>
             <thead>
@@ -1813,7 +1814,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
               </tr>
             </thead>
             <tbody>
-              {activeTab === "complete" && displayComplete.map((c) => {
+              {displayComplete.map((c) => {
                 const rate = c.newCustomers > 0 ? (c.total3Week / c.newCustomers * 100).toFixed(1) : "0.0";
                 const isHovered = hoveredCohort === c.cohortStart;
                 const isExpanded = expandedRow === c.cohortStart;
@@ -1875,19 +1876,37 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                   </Fragment>
                 );
               })}
-              {activeTab === "inProgress" && incompleteCohorts.map((c) => {
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── In-progress table — own columns: COHORT | NEW | CONVERTS (SO FAR) | DAYS LEFT ── */}
+      {cohorts && activeTab === "inProgress" && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums" }}>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
+                <th style={{ ...thStyle, width: "3.2rem" }}>New</th>
+                <th style={{ ...thStyle, width: "5.5rem" }}>Converts so far</th>
+                <th style={{ ...thStyle, width: "4.5rem" }}>Days left</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incompleteCohorts.map((c) => {
                 const days = daysElapsed(c.cohortStart);
                 const wk2Possible = days >= 7;
                 const isHovered = hoveredCohort === c.cohortStart;
                 const isExpanded = expandedRow === c.cohortStart;
                 const daysRemaining = Math.max(21 - days, 0);
+                const convertsSoFar = c.week1 + (wk2Possible ? c.week2 : 0);
                 return (
                   <Fragment key={c.cohortStart}>
                     <tr
                       style={{
                         borderBottom: isExpanded ? "none" : "1px solid rgba(65, 58, 58, 0.06)",
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
-                        opacity: 0.8,
                         transition: "border-color 0.15s",
                         cursor: "pointer",
                       }}
@@ -1901,21 +1920,21 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
                         {formatNumber(c.newCustomers)}
                       </td>
-                      <td colSpan={2} style={{ ...tdBase, textAlign: "center", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-                        {daysRemaining}d remaining
+                      <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
+                        {convertsSoFar}
                       </td>
-                      <td style={{ ...tdBase, textAlign: "center", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
-                        {c.week1} so far
+                      <td style={{ ...tdBase, color: "var(--st-text-secondary)", fontSize: DS.text.xs }}>
+                        {daysRemaining} {daysRemaining === 1 ? "day" : "days"}
                       </td>
                     </tr>
                     {isExpanded && (
                       <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={5} style={{ padding: "0.15rem 0.5rem 0.25rem 1.5rem", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
+                        <td colSpan={4} style={{ padding: "0.15rem 0.5rem 0.25rem 1.5rem", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
                           <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
                             <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week1}</strong></span>
                             <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{wk2Possible ? c.week2 : "\u2014"}</strong></span>
                             <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{"\u2014"}</strong></span>
-                            <span style={{ opacity: 0.7 }}>{daysRemaining}d until complete</span>
+                            <span style={{ color: "var(--st-text-secondary)", opacity: 0.7 }}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"} until complete</span>
                           </div>
                         </td>
                       </tr>
