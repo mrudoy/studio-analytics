@@ -63,7 +63,7 @@ const DS = {
     xl: "2rem",        // section spacing
   },
   // Card padding — one value everywhere
-  cardPad: "1rem",
+  cardPad: "0.75rem",
   // Gap between card header (label row) and content below
   cardHeaderMb: "0.5rem",
   // Uppercase label style
@@ -580,7 +580,8 @@ function SectionHeader({ children, subtitle }: { children: React.ReactNode; subt
       <h2
         style={{
           color: "var(--st-text-primary)",
-                   fontWeight: DS.weight.bold,
+          fontFamily: FONT_SANS,
+          fontWeight: DS.weight.bold,
           fontSize: DS.text.md,
           letterSpacing: "0.02em",
         }}
