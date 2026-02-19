@@ -2011,9 +2011,9 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firs
     <div className="space-y-3">
       <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">Non Members</SectionHeader>
 
+      {dropIns && <DropInCardNew dropIns={dropIns} />}
       {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
       {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
-      {dropIns && <DropInCardNew dropIns={dropIns} />}
     </div>
   );
 }
