@@ -1938,7 +1938,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
   const priorTotal = priorData.reduce((s, m) => s + m.net, 0);
   const yoyDelta = olderTotal > 0 ? ((priorTotal - olderTotal) / olderTotal * 100) : 0;
   const maxVal = Math.max(olderTotal, priorTotal, 1);
-  const BAR_HEIGHT = 140;
+  const BAR_HEIGHT = 100;
 
   const bars = [
     { year: twoYearsAgo, value: olderTotal, color: "var(--st-text-secondary)" },
@@ -2270,7 +2270,9 @@ function DashboardView() {
 
         {/* ── Annual Revenue Comparison ── */}
         {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+            <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+          </div>
         )}
 
         {/* ── Footer ── */}
