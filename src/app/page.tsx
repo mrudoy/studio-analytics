@@ -2553,9 +2553,9 @@ function DashboardView() {
           )}
         </div>
 
-        {/* ── Subscriptions ── */}
+        {/* ── Auto-Renews ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <SectionHeader>Subscriptions</SectionHeader>
+          <SectionHeader>Auto-Renews</SectionHeader>
 
           <CategoryDetail
             title="Members"
