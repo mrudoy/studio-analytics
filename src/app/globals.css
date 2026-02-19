@@ -19,9 +19,8 @@
   --st-warning: #8B7340;
 }
 
-/* Fonts loaded via <link> in layout.tsx */
 body {
-  font-family: 'DM Sans', -apple-system, system-ui, 'Helvetica Neue', Helvetica, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   background-color: var(--st-bg-primary);
   color: var(--st-text-primary);
 }

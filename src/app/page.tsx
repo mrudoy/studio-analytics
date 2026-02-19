@@ -218,7 +218,7 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 
 // ─── Font constants ─────────────────────────────────────────
 
-const FONT_SANS = "'DM Sans', -apple-system, system-ui, 'Helvetica Neue', Helvetica, sans-serif";
+const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
 // ─── Design System Tokens ────────────────────────────────────
