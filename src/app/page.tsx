@@ -218,7 +218,7 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 
 // ─── Font constants ─────────────────────────────────────────
 
-const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const FONT_SANS = "'DM Sans', -apple-system, system-ui, 'Helvetica Neue', Helvetica, sans-serif";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
 // ─── Design System Tokens ────────────────────────────────────
@@ -234,9 +234,9 @@ const DS = {
   },
   // Font weights (3 only)
   weight: {
-    normal: 500,
-    medium: 600,
-    bold: 700,
+    normal: 400,
+    medium: 500,
+    bold: 600,
   },
   // Spacing scale
   space: {
@@ -256,6 +256,24 @@ const DS = {
     textTransform: "uppercase" as const,
     color: "var(--st-text-secondary)",
   },
+} as const;
+
+// ─── Section & Category Labels ──────────────────────────────
+// RULE: Use honest data labels that match Union.fit terminology.
+// Never rename these to marketing-friendly alternatives.
+// "Auto-Renews" not "Subscriptions". "SKY3 / Packs" not "Memberships".
+const LABELS = {
+  autoRenews: "Auto-Renews",
+  members: "Members",
+  sky3: "SKY3 / Packs",
+  tv: "Sky Ting TV",
+  nonMembers: "Non Members",
+  firstVisits: "First Visits",
+  dropIns: "Drop-Ins",
+  returningNonMembers: "Returning Non-Members",
+  revenue: "Revenue",
+  mrr: "Monthly Recurring Revenue",
+  yoy: "Year over Year",
 } as const;
 
 // ─── Color palette for categories ──────────────────────────
@@ -2555,10 +2573,10 @@ function DashboardView() {
 
         {/* ── Auto-Renews ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <SectionHeader>Auto-Renews</SectionHeader>
+          <SectionHeader>{LABELS.autoRenews}</SectionHeader>
 
           <CategoryDetail
-            title="Members"
+            title={LABELS.members}
             color={COLORS.member}
             count={data.activeSubscribers.member}
             weekly={weekly}

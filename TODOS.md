@@ -4,6 +4,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 
 ## Open
 
+- [x] ~~Fix stretched fonts~~ — `FONT_SANS` was overriding body's DM Sans with Helvetica Neue; `DS.weight.normal` was 500 (too heavy); DM Sans 700 wasn't loaded but used as bold. Fixed: FONT_SANS → DM Sans, weights → 400/500/600, loaded 700 in layout.tsx.
 - [ ] Schedule is now set to every 6 hours (`0 */6 * * *`) — need to re-save from Settings UI on Railway for it to take effect
 - [x] ~~Verify FreshnessBadge pill spacing looks correct on prod after deploy~~ — multiple deploys since, layout confirmed
 - [x] ~~Verify Revenue section shows 2025 total alongside 2026 forecast on prod~~ — revenue section redesigned with full monthly bar chart
