@@ -34,7 +34,7 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 
 // ─── Font constants ─────────────────────────────────────────
 
-// Body font (Helvetica Neue) inherited from globals.css — no FONT_SANS needed on elements.
+const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
 // ─── Design System Tokens ────────────────────────────────────
@@ -1146,6 +1146,7 @@ function Card({ children, padding = DS.cardPad }: { children: React.ReactNode; p
         padding,
         overflow: "hidden",
         minWidth: 0,
+        fontFamily: FONT_SANS,
       }}
     >
       {children}
@@ -1901,7 +1902,7 @@ function DashboardView() {
   const pacing = trends?.pacing || null;
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16" style={{ backgroundColor: "var(--st-bg-section)" }}>
+    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
       {/* ── Header ─────────────────────────────────── */}
       <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
