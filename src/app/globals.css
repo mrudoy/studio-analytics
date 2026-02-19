@@ -24,8 +24,11 @@
   --st-warning: #8B7340;
 }
 
-body {
+html, body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+body {
   background-color: var(--st-bg-primary);
   color: var(--st-text-primary);
   overflow-x: hidden;
@@ -33,6 +36,7 @@ body {
 
 * {
   box-sizing: border-box;
+  font-family: inherit;
 }
 
 h1, h2, h3, .font-heading {
