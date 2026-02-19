@@ -1462,8 +1462,8 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
   isLast?: boolean;
 }) {
   return (
-    <div style={{ padding: "0.65rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
-      <div className="flex items-center justify-between">
+    <div style={{ padding: "0.5rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}
         <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
           {label}
         </span>
@@ -2311,6 +2311,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
 
   return (
     <Card>
+      <div style={{ maxWidth: "480px" }}>
       {/* Header row */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -2461,6 +2462,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
           })()}
         </div>
       )}
+      </div>{/* close maxWidth wrapper */}
     </Card>
   );
 }
