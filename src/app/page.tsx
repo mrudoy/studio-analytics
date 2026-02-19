@@ -223,28 +223,28 @@ function isoWeekToDate(isoWeek: string): Date | null {
 }
 
 /** Format a period (date string or ISO week) as "M/D" */
+/** Format a Date as MM/DD/YY */
+function formatDateShort(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mm}/${dd}/${yy}`;
+}
+
+/** Format a period (date string or ISO week) as MM/DD/YY for bar chart labels */
 function formatWeekShort(period: string): string {
   const isoDate = isoWeekToDate(period);
-  if (isoDate) {
-    return `${isoDate.getMonth() + 1}/${isoDate.getDate()}`;
-  }
+  if (isoDate) return formatDateShort(isoDate);
   const d = new Date(period + "T00:00:00");
-  if (!isNaN(d.getTime())) {
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
+  if (!isNaN(d.getTime())) return formatDateShort(d);
   return period;
 }
 
-/** Format "2025-01-13" + "2025-01-19" → "Jan 13-19" (same month) or "Jan 27 – Feb 2" (cross-month) */
-function formatWeekRange(start: string, end: string): string {
-  const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** Format week range start date as MM/DD/YY for bar chart and table labels */
+function formatWeekRange(start: string, _end: string): string {
   const s = new Date(start + "T00:00:00");
-  const e = new Date(end + "T00:00:00");
-  if (isNaN(s.getTime()) || isNaN(e.getTime())) return start;
-  if (s.getMonth() === e.getMonth()) {
-    return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()}-${e.getDate()}`;
-  }
-  return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()} – ${MONTH_SHORT[e.getMonth()]} ${e.getDate()}`;
+  if (isNaN(s.getTime())) return start;
+  return formatDateShort(s);
 }
 
 function formatMonthLabel(period: string): string {

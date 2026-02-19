@@ -70,6 +70,7 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 - No horizontal bar charts. No pie charts.
 - Weekly and monthly data never mixed in the same card.
+- All dates under bar graphs must be MM/DD/YY format (e.g. `02/19/26`). Use `formatDateShort()` or `formatWeekShort()`.
 - Numbers must use `formatNumber()` for comma formatting.
 - Delta values must use `formatDelta()` which includes comma formatting.
 - Currency values use `formatCurrency()` (auto-handles millions).
