@@ -1609,9 +1609,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   // Charcoal → mid → light so segments are clearly distinguishable
   const timingColors = ["rgba(65, 58, 58, 0.55)", "rgba(65, 58, 58, 0.30)", "rgba(65, 58, 58, 0.14)"];
 
-  // Tab style — underline, no focus ring (handled by .funnel-tab:focus-visible in CSS)
+  // Tab style — underline sits above the hairline divider (1px gap via marginBottom)
   const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "0.25rem 0.6rem 0.35rem",
+    padding: "0.25rem 0.6rem 0.3rem",
+    marginBottom: "-1px",          // overlap with the container hairline
     fontSize: "0.7rem",
     fontWeight: active ? DS.weight.bold : DS.weight.normal,
     color: active ? "var(--st-text-primary)" : "var(--st-text-secondary)",
@@ -1788,8 +1789,8 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         </div>
       )}
 
-      {/* ── Tabs — underline style ── */}
-      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid var(--st-border)", marginBottom: "0" }}>
+      {/* ── Tabs — underline sits above a lighter hairline ── */}
+      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: "0" }}>
         <button type="button" className="funnel-tab" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
           Complete ({displayComplete.length})
         </button>
@@ -1881,16 +1882,26 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         </div>
       )}
 
-      {/* ── In-progress table — own columns: COHORT | NEW | CONVERTS (SO FAR) | DAYS LEFT ── */}
+      {/* ── In-progress table — COHORT | NEW | CONVERTS | DAYS LEFT ── */}
       {cohorts && activeTab === "inProgress" && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "42%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "22%" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
-                <th style={{ ...thStyle, width: "3.2rem" }}>New</th>
-                <th style={{ ...thStyle, width: "5.5rem" }}>Converts so far</th>
-                <th style={{ ...thStyle, width: "4.5rem" }}>Days left</th>
+                <th style={thStyle}>New</th>
+                <th style={thStyle} title="Converts so far (cohort still accumulating)">
+                  <span style={{ whiteSpace: "nowrap" }}>Converts</span>
+                </th>
+                <th style={thStyle}>
+                  <span style={{ whiteSpace: "nowrap" }}>Days left</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1914,7 +1925,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                      <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium, overflow: "hidden", textOverflow: "ellipsis" }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
@@ -1923,7 +1934,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
                         {convertsSoFar}
                       </td>
-                      <td style={{ ...tdBase, color: "var(--st-text-secondary)", fontSize: DS.text.xs }}>
+                      <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
                         {daysRemaining} {daysRemaining === 1 ? "day" : "days"}
                       </td>
                     </tr>
