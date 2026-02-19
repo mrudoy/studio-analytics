@@ -596,3 +596,135 @@ export async function getReturningSourceBreakdown(
     false
   );
 }
+
+// ── New Customer Queries ────────────────────────────────────
+
+export interface NewCustomerWeekRow {
+  weekStart: string;  // Monday YYYY-MM-DD
+  weekEnd: string;    // Sunday YYYY-MM-DD
+  count: number;
+}
+
+export interface NewCustomerCohortRow {
+  cohortStart: string;
+  cohortEnd: string;
+  newCustomers: number;
+  week1: number;
+  week2: number;
+  week3: number;
+  total3Week: number;
+}
+
+/**
+ * Get new customer volume by week.
+ * A "new customer" = person whose MIN(attended_at) in first_visits falls in the week.
+ * Returns ~6 weeks of data (Monday-based weeks).
+ */
+export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH first_date_per_email AS (
+      SELECT LOWER(email) as email, MIN(attended_at::date) as first_date
+      FROM first_visits
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+      GROUP BY LOWER(email)
+    ),
+    weekly AS (
+      SELECT DATE_TRUNC('week', first_date)::date as week_start,
+             COUNT(*) as count
+      FROM first_date_per_email
+      GROUP BY week_start
+      ORDER BY week_start DESC
+      LIMIT 7
+    )
+    SELECT week_start::text as "weekStart",
+           (week_start + INTERVAL '6 days')::date::text as "weekEnd",
+           count
+    FROM weekly
+    ORDER BY week_start
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    count: Number(r.count),
+  }));
+}
+
+/**
+ * Get new customer cohort conversion data.
+ * For each weekly cohort (by first visit date), counts how many converted
+ * to auto-renew subscriptions within week 1 (days 0-6), week 2 (7-13),
+ * week 3 (14-20), and total.
+ *
+ * Conversion = email appears in auto_renews with a created_at within 3 weeks.
+ * Uses earliest auto_renews.created_at per email (any plan, any state).
+ */
+export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH new_custs AS (
+      SELECT LOWER(email) as email,
+             MIN(attended_at::date) as first_date,
+             DATE_TRUNC('week', MIN(attended_at::date))::date as cohort_start
+      FROM first_visits
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+      GROUP BY LOWER(email)
+    ),
+    conversions AS (
+      SELECT LOWER(customer_email) as email,
+             MIN(created_at::date) as earliest_sub
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL AND customer_email != ''
+        AND created_at IS NOT NULL AND created_at != ''
+      GROUP BY LOWER(customer_email)
+    ),
+    cohort_data AS (
+      SELECT nc.cohort_start,
+             (nc.cohort_start + INTERVAL '6 days')::date as cohort_end,
+             COUNT(*) as new_customers,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 0 AND 6
+                   THEN 1 END) as week1,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 7 AND 13
+                   THEN 1 END) as week2,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 14 AND 20
+                   THEN 1 END) as week3,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 0 AND 20
+                   THEN 1 END) as total_3week
+      FROM new_custs nc
+      LEFT JOIN conversions c ON c.email = nc.email
+      GROUP BY nc.cohort_start
+      ORDER BY nc.cohort_start DESC
+      LIMIT 8
+    )
+    SELECT cohort_start::text as "cohortStart",
+           cohort_end::text as "cohortEnd",
+           new_customers as "newCustomers",
+           week1,
+           week2,
+           week3,
+           total_3week as "total3Week"
+    FROM cohort_data
+    ORDER BY cohort_start
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    cohortStart: r.cohortStart as string,
+    cohortEnd: r.cohortEnd as string,
+    newCustomers: Number(r.newCustomers),
+    week1: Number(r.week1),
+    week2: Number(r.week2),
+    week3: Number(r.week3),
+    total3Week: Number(r.total3Week),
+  }));
+}

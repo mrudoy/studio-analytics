@@ -14,6 +14,8 @@ import type {
   ChurnRateData,
   TrendsData,
   MonthOverMonthData,
+  NewCustomerVolumeData,
+  NewCustomerCohortData,
 } from "@/types/dashboard";
 
 // ─── Client-only types ───────────────────────────────────────
@@ -89,6 +91,7 @@ const LABELS = {
   firstVisits: "First Visits",
   dropIns: "Drop-Ins",
   returningNonMembers: "Returning Non-Members",
+  newCustomers: "New Customers",
   revenue: "Revenue",
   mrr: "Monthly Recurring Revenue",
   yoy: "Year over Year",
@@ -107,6 +110,7 @@ const COLORS = {
   warning: "#8B7340",
   teal: "#3A8A8A",       // teal for first visits
   copper: "#B87333",     // copper for returning non-members
+  newCustomer: "#C4923A", // warm amber for new customers
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -229,6 +233,18 @@ function formatWeekShort(period: string): string {
     return `${d.getMonth() + 1}/${d.getDate()}`;
   }
   return period;
+}
+
+/** Format "2025-01-13" + "2025-01-19" → "Jan 13-19" (same month) or "Jan 27 – Feb 2" (cross-month) */
+function formatWeekRange(start: string, end: string): string {
+  const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const s = new Date(start + "T00:00:00");
+  const e = new Date(end + "T00:00:00");
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return start;
+  if (s.getMonth() === e.getMonth()) {
+    return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()}-${e.getDate()}`;
+  }
+  return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()} – ${MONTH_SHORT[e.getMonth()]} ${e.getDate()}`;
 }
 
 function formatMonthLabel(period: string): string {
@@ -1505,12 +1521,129 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
   );
 }
 
+// ─── Layer 3: New Customer Volume Card ──────────────────────
+
+function NewCustomerVolumeCard({ data }: { data: NewCustomerVolumeData }) {
+  const bars: BarChartData[] = data.completedWeeks.map((w) => ({
+    label: formatWeekRange(w.weekStart, w.weekEnd),
+    value: w.count,
+    color: COLORS.newCustomer,
+  }));
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.newCustomer, opacity: 0.85 }} />
+          <span style={{...DS.label }}>{LABELS.newCustomers}</span>
+        </div>
+        <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+          {formatNumber(data.currentWeekCount)}
+          <span style={{...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+        </span>
+      </div>
+      {bars.length > 0 ? (
+        <MiniBarChart data={bars} height={70} />
+      ) : (
+        <p style={{ color: "var(--st-text-secondary)", fontSize: DS.text.sm }}>—</p>
+      )}
+    </Card>
+  );
+}
+
+// ─── Layer 3: New Customer Cohort Card ──────────────────────
+
+function NewCustomerCohortCard({ data }: { data: NewCustomerCohortData }) {
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+
+  function isComplete(cohortStart: string): boolean {
+    const start = new Date(cohortStart + "T00:00:00");
+    const cutoff = new Date(start);
+    cutoff.setDate(cutoff.getDate() + 20);
+    return cutoff.toISOString().split("T")[0] < todayStr;
+  }
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.newCustomer, opacity: 0.85 }} />
+          <span style={{...DS.label }}>Cohort Conversion</span>
+        </div>
+        {data.avgConversionRate !== null && (
+          <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+            {data.avgConversionRate.toFixed(1)}%
+            <span style={{...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>avg 3-week</span>
+          </span>
+        )}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--st-border)" }}>
+              <th style={{ textAlign: "left", padding: "0.25rem 0.4rem", ...DS.label, fontSize: "0.65rem" }}>Cohort</th>
+              <th style={{ textAlign: "right", padding: "0.25rem 0.4rem", ...DS.label, fontSize: "0.65rem" }}>New</th>
+              <th style={{ textAlign: "right", padding: "0.25rem 0.4rem", ...DS.label, fontSize: "0.65rem" }}>Wk 1</th>
+              <th style={{ textAlign: "right", padding: "0.25rem 0.4rem", ...DS.label, fontSize: "0.65rem" }}>Wk 2</th>
+              <th style={{ textAlign: "right", padding: "0.25rem 0.4rem", ...DS.label, fontSize: "0.65rem" }}>Wk 3</th>
+              <th style={{ textAlign: "right", padding: "0.25rem 0.4rem", ...DS.label, fontSize: "0.65rem" }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.cohorts.map((c) => {
+              const complete = isComplete(c.cohortStart);
+              const rate = c.newCustomers > 0 ? (c.total3Week / c.newCustomers * 100).toFixed(1) : "0.0";
+              return (
+                <tr key={c.cohortStart} style={{ borderBottom: "1px solid var(--st-border)", opacity: complete ? 1 : 0.5 }}>
+                  <td style={{ padding: "0.25rem 0.4rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    {formatWeekRange(c.cohortStart, c.cohortEnd)}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "0.25rem 0.4rem", fontWeight: DS.weight.medium, fontVariantNumeric: "tabular-nums" }}>
+                    {formatNumber(c.newCustomers)}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "0.25rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
+                    {c.week1}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "0.25rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
+                    {c.week2}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "0.25rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
+                    {c.week3}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "0.25rem 0.4rem", fontWeight: DS.weight.bold, fontVariantNumeric: "tabular-nums" }}>
+                    {c.total3Week}
+                    <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>
+                      {rate}%
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {data.cohorts.some((c) => !isComplete(c.cohortStart)) && (
+        <p style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.3rem", fontStyle: "italic" }}>
+          Faded rows are still within the 3-week conversion window
+        </p>
+      )}
+    </Card>
+  );
+}
+
 // ─── Churn Section ──────────────────────────────────────────
 
 // ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
 
-function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firstVisits: FirstVisitData | null; returningNonMembers: ReturningNonMemberData | null; dropIns: DropInData | null }) {
-  if (!firstVisits && !returningNonMembers && !dropIns) return null;
+function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCustomerVolume, newCustomerCohorts }: {
+  firstVisits: FirstVisitData | null;
+  returningNonMembers: ReturningNonMemberData | null;
+  dropIns: DropInData | null;
+  newCustomerVolume: NewCustomerVolumeData | null;
+  newCustomerCohorts: NewCustomerCohortData | null;
+}) {
+  if (!firstVisits && !returningNonMembers && !dropIns && !newCustomerVolume && !newCustomerCohorts) return null;
 
   return (
     <div className="space-y-3">
@@ -1521,6 +1654,12 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns }: { firs
         <div className={`grid gap-3 ${firstVisits && returningNonMembers ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
           {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
           {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
+        </div>
+      )}
+      {(newCustomerVolume || newCustomerCohorts) && (
+        <div className={`grid gap-3 ${newCustomerVolume && newCustomerCohorts ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+          {newCustomerVolume && <NewCustomerVolumeCard data={newCustomerVolume} />}
+          {newCustomerCohorts && <NewCustomerCohortCard data={newCustomerCohorts} />}
         </div>
       )}
     </div>
@@ -2089,8 +2228,8 @@ function DashboardView() {
         </div>
 
         {/* ── Non Members ── */}
-        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
-          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} />
+        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns || trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
+          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} />
         ) : (
           <NoData label="Non-Members (First Visits, Drop-Ins)" />
         )}

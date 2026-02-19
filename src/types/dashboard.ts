@@ -197,6 +197,36 @@ export interface MonthOverMonthData {
   yoyNetPct: number | null;
 }
 
+// ── New Customer types ─────────────────────────────────────
+
+export interface NewCustomerVolumeWeek {
+  weekStart: string;   // Monday YYYY-MM-DD
+  weekEnd: string;     // Sunday YYYY-MM-DD
+  count: number;
+}
+
+export interface NewCustomerVolumeData {
+  currentWeekCount: number;
+  completedWeeks: NewCustomerVolumeWeek[];
+}
+
+export interface NewCustomerCohortRow {
+  cohortStart: string;   // Monday YYYY-MM-DD
+  cohortEnd: string;     // Sunday YYYY-MM-DD
+  newCustomers: number;
+  week1: number;
+  week2: number;
+  week3: number;
+  total3Week: number;
+}
+
+export interface NewCustomerCohortData {
+  cohorts: NewCustomerCohortRow[];
+  avgConversionRate: number | null;  // null if < 3 complete cohorts
+}
+
+// ── Trends aggregate ───────────────────────────────────────
+
 export interface TrendsData {
   weekly: TrendRowData[];
   monthly: TrendRowData[];
@@ -206,4 +236,6 @@ export interface TrendsData {
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
   churnRates: ChurnRateData | null;
+  newCustomerVolume: NewCustomerVolumeData | null;
+  newCustomerCohorts: NewCustomerCohortData | null;
 }

@@ -28,6 +28,8 @@ import {
   getFirstTimeSourceBreakdown,
   getReturningUniqueVisitorsByWeek,
   getReturningSourceBreakdown,
+  getNewCustomerVolumeByWeek,
+  getNewCustomerCohorts,
 } from "../db/registration-store";
 import type {
   TrendsData,
@@ -40,6 +42,8 @@ import type {
   ChurnRateData,
   CategoryChurnData,
   CategoryMonthlyChurn,
+  NewCustomerVolumeData,
+  NewCustomerCohortData,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -550,10 +554,80 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     console.warn("[db-trends] Failed to compute churn rates:", err);
   }
 
+  // ── 9. New customer volume & cohort conversion ────────────
+  let newCustomerVolume: NewCustomerVolumeData | null = null;
+  let newCustomerCohorts: NewCustomerCohortData | null = null;
+
+  if (await hasFirstVisitData()) {
+    try {
+      // Volume: weekly new customer counts
+      const volumeWeeks = await getNewCustomerVolumeByWeek();
+      if (volumeWeeks.length > 0) {
+        const sorted = [...volumeWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+        // Last week is current (partial); rest are completed
+        const currentWeek = sorted[sorted.length - 1];
+        const completed = sorted.slice(0, -1).slice(-4); // last 4 completed weeks
+
+        newCustomerVolume = {
+          currentWeekCount: currentWeek.count,
+          completedWeeks: completed.map((w) => ({
+            weekStart: w.weekStart,
+            weekEnd: w.weekEnd,
+            count: w.count,
+          })),
+        };
+      }
+
+      // Cohorts: 3-week conversion tracking
+      const cohortRows = await getNewCustomerCohorts();
+      if (cohortRows.length > 0) {
+        const today = new Date();
+        const todayStr = today.toISOString().split("T")[0];
+
+        // A cohort is "complete" if cohort_start + 20 days < today
+        const completeCohorts = cohortRows.filter((c) => {
+          const start = new Date(c.cohortStart + "T00:00:00");
+          const cutoff = new Date(start);
+          cutoff.setDate(cutoff.getDate() + 20);
+          const cutoffStr = cutoff.toISOString().split("T")[0];
+          return cutoffStr < todayStr;
+        });
+
+        // Avg conversion rate from last 3-5 complete cohorts (null if < 3)
+        let avgConversionRate: number | null = null;
+        const recentComplete = completeCohorts.slice(-5);
+        if (recentComplete.length >= 3) {
+          const totalNew = recentComplete.reduce((s, c) => s + c.newCustomers, 0);
+          const totalConverted = recentComplete.reduce((s, c) => s + c.total3Week, 0);
+          avgConversionRate = totalNew > 0
+            ? Math.round((totalConverted / totalNew) * 1000) / 10
+            : 0;
+        }
+
+        newCustomerCohorts = {
+          cohorts: cohortRows.map((c) => ({
+            cohortStart: c.cohortStart,
+            cohortEnd: c.cohortEnd,
+            newCustomers: c.newCustomers,
+            week1: c.week1,
+            week2: c.week2,
+            week3: c.week3,
+            total3Week: c.total3Week,
+          })),
+          avgConversionRate,
+        };
+      }
+    } catch (err) {
+      console.warn("[db-trends] Failed to compute new customer data:", err);
+    }
+  }
+
   console.log(
     `[db-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins MTD=${dropIns.currentMonthTotal}` : "") +
     (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
+    (newCustomerVolume ? `, new customers this week=${newCustomerVolume.currentWeekCount}` : "") +
+    (newCustomerCohorts ? `, cohort avg conversion=${newCustomerCohorts.avgConversionRate?.toFixed(1) ?? "N/A"}%` : "") +
     (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "")
   );
 
@@ -566,6 +640,8 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     firstVisits,
     returningNonMembers,
     churnRates,
+    newCustomerVolume,
+    newCustomerCohorts,
   };
 }
 
