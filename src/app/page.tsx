@@ -111,7 +111,7 @@ const COLORS = {
   warning: "#8B7340",
   teal: "#3A8A8A",       // teal for first visits
   copper: "#B87333",     // copper for returning non-members
-  newCustomer: "#C4923A", // warm amber for new customers
+  newCustomer: "#5A6B7A", // slate for new customer funnel
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -1600,23 +1600,24 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     ? `${formatNumber(currentCohortCount ?? 0)} new \u00d7 ${avgRate?.toFixed(1)}% conversion. Based on last ${Math.min(completeCohorts.length, 5)} complete cohorts.`
     : "";
 
-  // Table styles
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.25rem 0.5rem", fontSize: "0.7rem", fontWeight: DS.weight.bold, letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--st-text-secondary)" };
-  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.25rem 0.5rem", fontVariantNumeric: "tabular-nums" };
+  // Table styles — right-align numeric columns, tabular numerals throughout
+  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.65rem", fontWeight: DS.weight.medium, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--st-text-secondary)", opacity: 0.7 };
+  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
 
-  // Timing bar segment opacities (varied lightness)
-  const timingOpacity = [0.7, 0.5, 0.35];
+  // Timing bar segment opacities — subtle differentiation without implying rank
+  const timingOpacity = [0.6, 0.45, 0.3];
 
-  // Segmented control style
+  // Segmented tab style — modern underline approach
   const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "0.2rem 0.55rem",
+    padding: "0.25rem 0.6rem 0.35rem",
     fontSize: "0.7rem",
     fontWeight: active ? DS.weight.bold : DS.weight.normal,
     color: active ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-    backgroundColor: active ? "var(--st-bg-card)" : "transparent",
-    border: active ? "1px solid var(--st-border)" : "1px solid transparent",
-    borderRadius: "4px",
+    backgroundColor: "transparent",
+    border: "none",
+    borderBottom: active ? "2px solid var(--st-text-primary)" : "2px solid transparent",
+    borderRadius: "0",
     cursor: "pointer",
     transition: "all 0.15s",
     letterSpacing: "0.02em",
@@ -1644,17 +1645,18 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         <span style={{ ...DS.label }}>{LABELS.newCustomerFunnel}</span>
       </div>
 
-      {/* ── KPI Row: 3 blocks, ultra-subtle hairlines ── */}
+      {/* ── KPI Row: 3 blocks, ultra-subtle hairlines, tabular numerals ── */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "1fr 1px 1fr 1px auto",
         alignItems: "stretch",
         padding: "0.4rem 0",
         marginBottom: "0.5rem",
+        fontVariantNumeric: "tabular-nums",
       }}>
         {/* Block 1: New customers */}
         <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+          <div style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
             {formatNumber(currentCohortCount ?? 0)}
           </div>
           <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
@@ -1668,7 +1670,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         {/* Block 2: 3-week conversion */}
         <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
               {avgRate !== null ? `${avgRate.toFixed(1)}%` : "\u2014"}
             </span>
             <InfoIcon tooltip={convTooltip} />
@@ -1684,7 +1686,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         {/* Block 3: Projected converts */}
         <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
               {expectedAutoRenews !== null ? `\u2248${expectedAutoRenews}` : "\u2014"}
             </span>
             {expectedAutoRenews !== null && (
@@ -1746,7 +1748,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                         width: "70%", maxWidth: "28px", height: `${h}px`, borderRadius: "2px 2px 0 0",
                         ...(d.complete
                           ? { backgroundColor: COLORS.newCustomer, opacity: isHovered ? 0.85 : 0.65 }
-                          : { backgroundColor: "rgba(196, 146, 58, 0.06)", border: `1.5px dashed ${COLORS.newCustomer}`, opacity: isHovered ? 0.5 : 0.35 }
+                          : { backgroundColor: "rgba(90, 107, 122, 0.06)", border: `1.5px dashed ${COLORS.newCustomer}`, opacity: isHovered ? 0.5 : 0.35 }
                         ),
                         transition: "opacity 0.15s",
                       }} />
@@ -1784,8 +1786,8 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         </div>
       )}
 
-      {/* ── Segmented Control ── */}
-      <div style={{ display: "flex", gap: "0.2rem", marginBottom: "0.35rem", padding: "0.1rem", backgroundColor: "rgba(65, 58, 58, 0.03)", borderRadius: "5px", width: "fit-content" }}>
+      {/* ── Tabs — underline style ── */}
+      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid var(--st-border)", marginBottom: "0" }}>
         <button type="button" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
           Complete ({displayComplete.length})
         </button>
@@ -1799,14 +1801,14 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
       {/* ── Table ── */}
       {cohorts && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums" }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--st-border)" }}>
+              <tr>
                 <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
                 <th style={thStyle}>New</th>
                 <th style={thStyle}>Converts</th>
-                <th style={thStyle}>Rate</th>
-                <th style={{ ...thStyle, textAlign: "center", width: "4.5rem" }}>Timing</th>
+                <th style={{ ...thStyle, paddingRight: "0.3rem" }}>Rate</th>
+                <th style={{ ...thStyle, textAlign: "center", width: "5rem", paddingLeft: "0.3rem" }}>Timing</th>
               </tr>
             </thead>
             <tbody>
@@ -1819,7 +1821,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                   <Fragment key={c.cohortStart}>
                     <tr
                       style={{
-                        borderBottom: isExpanded ? "none" : "1px solid var(--st-border)",
+                        borderBottom: isExpanded ? "none" : "1px solid rgba(65, 58, 58, 0.06)",
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
                         backgroundColor: isNewest && !isHovered ? "rgba(65, 58, 58, 0.015)" : "transparent",
                         transition: "border-color 0.15s, background-color 0.15s",
@@ -1829,7 +1831,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ padding: "0.25rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                      <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
@@ -1838,21 +1840,21 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold }}>
                         {c.total3Week}
                       </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-primary)" }}>
+                      <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-primary)", paddingRight: "0.3rem" }}>
                         {rate}%
                       </td>
-                      <td style={{ ...tdBase, textAlign: "center" }}>
-                        {/* Mini 3-segment bar — 1px white separators, varied lightness, 8px tall */}
+                      <td style={{ ...tdBase, textAlign: "center", paddingLeft: "0.3rem" }}>
+                        {/* Mini 3-segment bar — 1px bg separators, subtle opacity variation, 8px tall */}
                         <div
-                          title={`Same wk: ${c.week1} \u00b7 +1 wk: ${c.week2} \u00b7 +2 wks: ${c.week3}`}
-                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "2.5rem", margin: "0 auto", backgroundColor: "var(--st-bg-card)" }}
+                          title={`W0: ${c.week1} \u00b7 W1: ${c.week2} \u00b7 W2: ${c.week3}`}
+                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "3rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.08)" }}
                         >
                           {[c.week1, c.week2, c.week3].map((w, i) => (
                             <div key={i} style={{
                               flex: Math.max(w, 0.2),
                               backgroundColor: COLORS.newCustomer,
                               opacity: timingOpacity[i],
-                              borderRadius: "2px",
+                              borderRadius: "1px",
                             }} />
                           ))}
                         </div>
@@ -1860,9 +1862,9 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                     </tr>
                     {/* Expanded timing detail */}
                     {isExpanded && (
-                      <tr style={{ borderBottom: "1px solid var(--st-border)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
+                      <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
                         <td colSpan={5} style={{ padding: "0.15rem 0.5rem 0.25rem 1.5rem", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
-                          <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                          <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
                             <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week1}</strong></span>
                             <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week2}</strong></span>
                             <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week3}</strong></span>
@@ -1883,7 +1885,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                   <Fragment key={c.cohortStart}>
                     <tr
                       style={{
-                        borderBottom: isExpanded ? "none" : "1px solid var(--st-border)",
+                        borderBottom: isExpanded ? "none" : "1px solid rgba(65, 58, 58, 0.06)",
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
                         opacity: 0.8,
                         transition: "border-color 0.15s",
@@ -1893,7 +1895,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ padding: "0.25rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                      <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
@@ -1907,9 +1909,9 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       </td>
                     </tr>
                     {isExpanded && (
-                      <tr style={{ borderBottom: "1px solid var(--st-border)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
+                      <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
                         <td colSpan={5} style={{ padding: "0.15rem 0.5rem 0.25rem 1.5rem", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
-                          <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                          <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
                             <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week1}</strong></span>
                             <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{wk2Possible ? c.week2 : "\u2014"}</strong></span>
                             <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{"\u2014"}</strong></span>
