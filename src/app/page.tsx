@@ -1600,13 +1600,14 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     ? `${formatNumber(currentCohortCount ?? 0)} new \u00d7 ${avgRate?.toFixed(1)}% conversion. Based on last ${Math.min(completeCohorts.length, 5)} complete cohorts.`
     : "";
 
-  // Table styles — right-align numeric columns, tabular numerals throughout
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.65rem", fontWeight: DS.weight.medium, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--st-text-secondary)", opacity: 0.7 };
+  // Table styles — right-align numeric columns flush to right edge, tabular numerals
+  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.45)" };
   const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
 
-  // Timing bar segment opacities — subtle differentiation without implying rank
-  const timingOpacity = [0.6, 0.45, 0.3];
+  // Timing bar segment colors — 3 distinct lightness steps on one neutral hue
+  // Charcoal → mid → light so segments are clearly distinguishable
+  const timingColors = ["rgba(65, 58, 58, 0.55)", "rgba(65, 58, 58, 0.30)", "rgba(65, 58, 58, 0.14)"];
 
   // Segmented tab style — modern underline approach
   const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -1708,7 +1709,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
       {/* ── Chart toggle + chart (collapsed by default) ── */}
       {chartData.length > 0 && (
-        <div style={{ marginBottom: showChart ? "0.5rem" : "0.3rem" }}>
+        <div style={{ marginBottom: "1.1rem" }}>
           <button
             type="button"
             onClick={() => setShowChart(!showChart)}
@@ -1805,10 +1806,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
             <thead>
               <tr>
                 <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
-                <th style={thStyle}>New</th>
-                <th style={thStyle}>Converts</th>
-                <th style={{ ...thStyle, paddingRight: "0.3rem" }}>Rate</th>
-                <th style={{ ...thStyle, textAlign: "center", width: "5rem", paddingLeft: "0.3rem" }}>Timing</th>
+                <th style={{ ...thStyle, width: "3.2rem" }}>New</th>
+                <th style={{ ...thStyle, width: "3.8rem" }}>Converts</th>
+                <th style={{ ...thStyle, width: "3.2rem" }}>Rate</th>
+                <th style={{ ...thStyle, textAlign: "center", width: "5rem" }}>Timing</th>
               </tr>
             </thead>
             <tbody>
@@ -1840,20 +1841,19 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       <td style={{ ...tdBase, fontWeight: DS.weight.bold }}>
                         {c.total3Week}
                       </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-primary)", paddingRight: "0.3rem" }}>
+                      <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-primary)" }}>
                         {rate}%
                       </td>
-                      <td style={{ ...tdBase, textAlign: "center", paddingLeft: "0.3rem" }}>
-                        {/* Mini 3-segment bar — 1px bg separators, subtle opacity variation, 8px tall */}
+                      <td style={{ ...tdBase, textAlign: "center" }}>
+                        {/* Mini 3-segment bar — 3 lightness steps, 1px separators, 8px tall */}
                         <div
-                          title={`W0: ${c.week1} \u00b7 W1: ${c.week2} \u00b7 W2: ${c.week3}`}
-                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "3rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.08)" }}
+                          title={`Week 0: ${c.week1} \u00b7 Week 1: ${c.week2} \u00b7 Week 2: ${c.week3}`}
+                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "3rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.06)" }}
                         >
                           {[c.week1, c.week2, c.week3].map((w, i) => (
                             <div key={i} style={{
                               flex: Math.max(w, 0.2),
-                              backgroundColor: COLORS.newCustomer,
-                              opacity: timingOpacity[i],
+                              backgroundColor: timingColors[i],
                               borderRadius: "1px",
                             }} />
                           ))}
