@@ -1195,9 +1195,20 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
   );
 }
 
+// ─── Module spacing tokens ───────────────────────────────────
+/** Spacing tokens (px) for module anatomy */
+const MOD = {
+  cardPad: "24px",
+  headerToKpi: "16px",
+  kpiToToggle: "14px",
+  toggleToTabs: "20px",
+  tabsToTable: "12px",
+  rowH: "52px",
+} as const;
+
 // ─── Card wrapper (used selectively) ─────────────────────────
 
-function Card({ children, padding = DS.cardPad }: { children: React.ReactNode; padding?: string }) {
+function Card({ children, padding = MOD.cardPad }: { children: React.ReactNode; padding?: string }) {
   return (
     <div
       className="rounded-2xl"
@@ -1222,6 +1233,224 @@ function NoData({ label }: { label: string }) {
         {label}: <span style={{ opacity: 0.6 }}>No data available</span>
       </p>
     </Card>
+  );
+}
+
+// ─── Module Design System ────────────────────────────────────
+// Shared component library for New Customer Funnel, Drop-Ins,
+// and Conversion Pool. Identical anatomy, spacing, and behavior.
+
+/** Module header: left dot + title, right optional control */
+function ModuleHeader({ color, title, children }: {
+  color: string; title: string; children?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: MOD.headerToKpi }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
+        <span style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" as const, color: "var(--st-text-secondary)" }}>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Info tooltip icon (24x24 hit area) — shared across modules */
+function MInfoIcon({ tooltip }: { tooltip: string }) {
+  return (
+    <span
+      title={tooltip}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 24, height: 24, cursor: "help", flexShrink: 0,
+        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.6,
+      }}
+    >
+      &#9432;
+    </span>
+  );
+}
+
+/** Single KPI block within a KPI row */
+function KPIBlock({ value, label, sublabel, tooltip, delta, deltaSuffix, deltaSublabel, badge, children }: {
+  value: string;
+  label: string;
+  sublabel?: string;
+  tooltip?: string;
+  delta?: number | null;
+  deltaSuffix?: string;
+  deltaSublabel?: string;
+  badge?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const sign = delta && delta > 0 ? "+" : "";
+  return (
+    <div style={{ padding: "0 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <span style={{ fontWeight: 600, fontSize: "1.75rem", fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+          {value}
+        </span>
+        {badge}
+        {tooltip && <MInfoIcon tooltip={tooltip} />}
+      </div>
+      <div style={{ fontSize: "14px", color: "var(--st-text-secondary)", marginTop: "2px", lineHeight: 1.3 }}>
+        {label}
+      </div>
+      {(delta != null && delta !== 0) || sublabel || children ? (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "4px", minHeight: "16px" }}>
+          {delta != null && delta !== 0 && (
+            <span style={{
+              fontSize: "11px", fontWeight: 500,
+              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+              padding: "1px 5px", borderRadius: "3px", fontVariantNumeric: "tabular-nums",
+            }}>
+              {sign}{deltaSuffix === "pp" ? delta.toFixed(1) : delta}{deltaSuffix ?? ""}{deltaSublabel ? ` ${deltaSublabel}` : ""}
+            </span>
+          )}
+          {sublabel && (
+            <span style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}>{sublabel}</span>
+          )}
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** KPI row container: up to 3 blocks separated by whitespace (no dividers) */
+function KPIRow({ children }: { children: React.ReactNode }) {
+  const items = Array.isArray(children) ? children.filter(Boolean) : [children];
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: items.map(() => "1fr").join(" "),
+      alignItems: "stretch",
+      padding: "8px 0",
+      marginBottom: MOD.kpiToToggle,
+      fontVariantNumeric: "tabular-nums",
+    }}>
+      {items}
+    </div>
+  );
+}
+
+/** Toggle row for collapsible trend chart */
+function ToggleRow({ show, onToggle, label, children }: {
+  show: boolean; onToggle: () => void; label?: string; children?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: show ? "8px" : MOD.toggleToTabs }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        style={{
+          background: "none", border: "none", padding: "2px 0", cursor: "pointer",
+          fontSize: "12px", color: "var(--st-text-secondary)",
+          display: "flex", alignItems: "center", gap: "6px",
+        }}
+      >
+        <span style={{ fontSize: "8px", transition: "transform 0.15s", transform: show ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
+        {label ?? (show ? "Hide trend" : "Show trend")}
+      </button>
+      {show && children}
+    </div>
+  );
+}
+
+/** Underline tabs row */
+function UnderlineTabs({ tabs, active, onChange }: {
+  tabs: { key: string; label: string }[];
+  active: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 0, borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: MOD.tabsToTable }}>
+      {tabs.map((t) => {
+        const isActive = t.key === active;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => onChange(t.key)}
+            style={{
+              padding: "6px 12px 8px",
+              marginBottom: "-1px",
+              fontSize: "13px",
+              fontWeight: isActive ? 600 : 400,
+              color: isActive ? "var(--st-text-primary)" : "var(--st-text-secondary)",
+              backgroundColor: "transparent",
+              border: "none",
+              borderBottom: isActive ? "2px solid var(--st-text-primary)" : "2px solid transparent",
+              borderRadius: 0,
+              cursor: "pointer",
+              transition: "color 0.15s, border-color 0.15s",
+              letterSpacing: "0.02em",
+              outline: "none",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Shared table styles for module tables */
+const modTh: React.CSSProperties = {
+  textAlign: "right", padding: "8px 12px", fontSize: "11px", fontWeight: 400,
+  letterSpacing: "0.05em", textTransform: "uppercase",
+  color: "var(--st-text-secondary)", opacity: 0.55,
+  whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+};
+const modTd: React.CSSProperties = {
+  textAlign: "right", padding: "8px 12px",
+  fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS,
+  height: MOD.rowH, verticalAlign: "middle",
+};
+
+/** Mini segmented bar (timing, mix, distribution). High-contrast segment spec. */
+function SegmentedBar({ segments, height = 8, colors, tooltip }: {
+  segments: { value: number; label: string }[];
+  height?: number;
+  colors?: string[];
+  tooltip?: string;
+}) {
+  const total = segments.reduce((s, seg) => s + seg.value, 0);
+  if (total === 0) return <span style={{ fontSize: "12px", color: "var(--st-text-secondary)" }}>&mdash;</span>;
+  // Default colors: dark→mid→light
+  const defaultColors = [
+    "rgba(65, 58, 58, 0.65)",
+    "rgba(65, 58, 58, 0.38)",
+    "rgba(65, 58, 58, 0.18)",
+    "rgba(65, 58, 58, 0.10)",
+  ];
+  const c = colors ?? defaultColors;
+  return (
+    <div
+      title={tooltip ?? segments.map((s) => `${s.label}: ${s.value} (${Math.round((s.value / total) * 100)}%)`).join(" · ")}
+      style={{ display: "flex", height, borderRadius: Math.ceil(height / 2), overflow: "hidden", gap: 1, backgroundColor: "var(--st-bg-card)" }}
+    >
+      {segments.map((seg, i) => {
+        if (seg.value <= 0) return null;
+        const pct = Math.round((seg.value / total) * 100);
+        const showInline = pct >= 25 && height >= 10;
+        return (
+          <div key={i} style={{
+            flex: Math.max(seg.value, total * 0.03),
+            backgroundColor: c[i % c.length],
+            borderRadius: 1, minWidth: seg.value > 0 ? 2 : 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {showInline && (
+              <span style={{ fontSize: "9px", fontWeight: 600, color: "white", textShadow: "0 0 2px rgba(0,0,0,0.3)", lineHeight: 1 }}>
+                {pct}%
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1556,7 +1785,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 }) {
   if (!volume && !cohorts) return null;
 
-  const [activeTab, setActiveTab] = useState<"complete" | "inProgress">("complete");
+  const [activeTab, setActiveTab] = useState<string>("complete");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
   const [showChart, setShowChart] = useState(false);
@@ -1575,12 +1804,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   const incompleteCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) < 21);
   const displayComplete = completeCohorts.slice(-5);
 
-  // Chart data: bars only (new customers per cohort, single purpose)
+  // Chart data
   const chartData = [...displayComplete, ...incompleteCohorts].map((c) => ({
-    cohortStart: c.cohortStart,
-    cohortEnd: c.cohortEnd,
-    newCustomers: c.newCustomers,
-    complete: daysElapsed(c.cohortStart) >= 21,
+    cohortStart: c.cohortStart, cohortEnd: c.cohortEnd,
+    newCustomers: c.newCustomers, complete: daysElapsed(c.cohortStart) >= 21,
   }));
   const barMax = Math.max(...chartData.map((d) => d.newCustomers), 1);
   const BAR_H = 80;
@@ -1589,8 +1816,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   const avgRate = cohorts?.avgConversionRate ?? null;
   const currentCohortCount = volume?.currentWeekCount ?? (incompleteCohorts.length > 0 ? incompleteCohorts[incompleteCohorts.length - 1].newCustomers : null);
   const expectedAutoRenews = (currentCohortCount !== null && currentCohortCount !== undefined && avgRate !== null)
-    ? Math.round(currentCohortCount * avgRate / 100)
-    : null;
+    ? Math.round(currentCohortCount * avgRate / 100) : null;
 
   // Insight for tooltip
   const insightCohorts = displayComplete.filter((c) => c.total3Week > 0);
@@ -1598,7 +1824,6 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   const totalConv = insightCohorts.reduce((s, c) => s + c.total3Week, 0);
   const sameWeekPct = totalConv > 0 ? Math.round((totalWk1 / totalConv) * 100) : null;
 
-  // Tooltips
   const convTooltip = avgRate !== null
     ? `Weighted avg across last ${Math.min(completeCohorts.length, 5)} complete cohorts.${sameWeekPct ? ` ${sameWeekPct}% of conversions happen in the same week.` : ""}`
     : "Needs 3+ complete cohorts";
@@ -1606,170 +1831,83 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     ? `${formatNumber(currentCohortCount ?? 0)} new \u00d7 ${avgRate?.toFixed(1)}% conversion. Based on last ${Math.min(completeCohorts.length, 5)} complete cohorts.`
     : "";
 
-  // Table styles — right-align numeric columns flush to right edge, tabular numerals
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.45)" };
-  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
 
-  // Timing bar segment colors — 3 distinct lightness steps on one neutral hue
-  // Charcoal → mid → light so segments are clearly distinguishable
-  const timingColors = ["rgba(65, 58, 58, 0.55)", "rgba(65, 58, 58, 0.30)", "rgba(65, 58, 58, 0.14)"];
+  // High-contrast timing colors (A: dark→mid→light)
+  const timingColors = ["rgba(65, 58, 58, 0.65)", "rgba(65, 58, 58, 0.38)", "rgba(65, 58, 58, 0.18)"];
 
-  // Tab style — underline sits above the hairline divider (1px gap via marginBottom)
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "0.25rem 0.6rem 0.3rem",
-    marginBottom: "-1px",          // overlap with the container hairline
-    fontSize: "0.7rem",
-    fontWeight: active ? DS.weight.bold : DS.weight.normal,
-    color: active ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-    backgroundColor: "transparent",
-    border: "none",
-    borderBottom: active ? "2px solid var(--st-text-primary)" : "2px solid transparent",
-    borderRadius: "0",
-    cursor: "pointer",
-    transition: "color 0.15s, border-color 0.15s",
-    letterSpacing: "0.02em",
-    outline: "none",
-  });
-
-  // Info icon (24x24 hit area)
-  const InfoIcon = ({ tooltip }: { tooltip: string }) => (
-    <span
-      title={tooltip}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: "24px", height: "24px", cursor: "help",
-        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.5,
-      }}
-    >
-      &#9432;
-    </span>
-  );
+  // Tabs config
+  const tabsConfig = [
+    { key: "complete", label: `Complete (${displayComplete.length})` },
+    ...(incompleteCohorts.length > 0 ? [{ key: "inProgress", label: `In progress (${incompleteCohorts.length})` }] : []),
+  ];
 
   return (
     <Card>
-      {/* ── Module header ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-        <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.newCustomer, opacity: 0.85 }} />
-        <span style={{ ...DS.label }}>{LABELS.newCustomerFunnel}</span>
-      </div>
+      <ModuleHeader color={COLORS.newCustomer} title={LABELS.newCustomerFunnel} />
 
-      {/* ── KPI Row: 3 blocks, ultra-subtle hairlines, tabular numerals ── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1px 1fr 1px auto",
-        alignItems: "stretch",
-        padding: "0.4rem 0",
-        marginBottom: "0.5rem",
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {/* Block 1: New customers */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-            {formatNumber(currentCohortCount ?? 0)}
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            New customers (this week)
-          </div>
-        </div>
-
-        {/* Hairline */}
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Block 2: 3-week conversion */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {avgRate !== null ? `${avgRate.toFixed(1)}%` : "\u2014"}
+      {/* KPI Row: 3 blocks, no dividers (whitespace only) */}
+      <KPIRow>
+        <KPIBlock
+          value={formatNumber(currentCohortCount ?? 0)}
+          label="New customers (this week)"
+        />
+        <KPIBlock
+          value={avgRate !== null ? `${avgRate.toFixed(1)}%` : "\u2014"}
+          label="3-wk conversion"
+          tooltip={convTooltip}
+        />
+        <KPIBlock
+          value={expectedAutoRenews !== null ? `\u2248${expectedAutoRenews}` : "\u2014"}
+          label="Expected converts"
+          tooltip={expectedAutoRenews !== null ? projTooltip : undefined}
+          badge={expectedAutoRenews !== null ? (
+            <span style={{
+              fontSize: "11px", fontWeight: 500,
+              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+              padding: "1px 5px", borderRadius: "3px", textTransform: "uppercase", letterSpacing: "0.03em",
+            }}>
+              Proj
             </span>
-            <InfoIcon tooltip={convTooltip} />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            3-wk conversion
-          </div>
-        </div>
+          ) : undefined}
+        />
+      </KPIRow>
 
-        {/* Hairline */}
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Block 3: Projected converts */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.2rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {expectedAutoRenews !== null ? `\u2248${expectedAutoRenews}` : "\u2014"}
-            </span>
-            {expectedAutoRenews !== null && (
-              <span style={{
-                fontSize: "0.55rem", fontWeight: DS.weight.medium,
-                color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-                padding: "1px 4px", borderRadius: "3px", textTransform: "uppercase", letterSpacing: "0.03em",
-              }}>
-                Proj
-              </span>
-            )}
-            {expectedAutoRenews !== null && <InfoIcon tooltip={projTooltip} />}
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Expected converts
-          </div>
-        </div>
-      </div>
-
-      {/* ── Chart toggle + chart (collapsed by default) ── */}
+      {/* Toggle row */}
       {chartData.length > 0 && (
-        <div style={{ marginBottom: "1.1rem" }}>
-          <button
-            type="button"
-            onClick={() => setShowChart(!showChart)}
-            style={{
-              background: "none", border: "none", padding: "0.15rem 0", cursor: "pointer",
-              fontSize: DS.text.xs, color: "var(--st-text-secondary)",
-              display: "flex", alignItems: "center", gap: "0.3rem",
-            }}
-          >
-            <span style={{ fontSize: "0.6rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
-            Show trend
-          </button>
-
+        <>
+          <ToggleRow show={showChart} onToggle={() => setShowChart(!showChart)} />
           {showChart && (
-            <div style={{ marginTop: "0.3rem" }}>
-              {/* Bars */}
+            <div style={{ marginBottom: MOD.toggleToTabs }}>
               <div style={{
-                display: "flex", alignItems: "flex-end", gap: "3px",
-                height: `${BAR_H}px`, borderBottom: "1px solid var(--st-border)", paddingBottom: "1px",
+                display: "flex", alignItems: "flex-end", gap: 3,
+                height: BAR_H, borderBottom: "1px solid var(--st-border)", paddingBottom: 1,
               }}>
                 {chartData.map((d) => {
                   const fraction = barMax > 0 ? d.newCustomers / barMax : 0;
                   const h = Math.max(Math.round(fraction * (BAR_H - 4)), 3);
                   const isHovered = hoveredCohort === d.cohortStart;
                   return (
-                    <div
-                      key={d.cohortStart}
-                      style={{
-                        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
-                        alignItems: "center", justifyContent: "flex-end", cursor: "default",
-                      }}
+                    <div key={d.cohortStart} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}
                       onMouseEnter={() => setHoveredCohort(d.cohortStart)}
                       onMouseLeave={() => setHoveredCohort(null)}
                       title={`${formatWeekRangeLabel(d.cohortStart, d.cohortEnd)}: ${d.newCustomers} new${d.complete ? "" : " (in progress)"}`}
                     >
                       <div style={{
-                        width: "70%", maxWidth: "28px", height: `${h}px`, borderRadius: "2px 2px 0 0",
+                        width: "70%", maxWidth: 28, height: h, borderRadius: "2px 2px 0 0",
                         ...(d.complete
                           ? { backgroundColor: COLORS.newCustomer, opacity: isHovered ? 0.85 : 0.65 }
-                          : { backgroundColor: "rgba(90, 107, 122, 0.06)", border: `1.5px dashed ${COLORS.newCustomer}`, opacity: isHovered ? 0.5 : 0.35 }
-                        ),
+                          : { backgroundColor: "rgba(90, 107, 122, 0.06)", border: `1.5px dashed ${COLORS.newCustomer}`, opacity: isHovered ? 0.5 : 0.35 }),
                         transition: "opacity 0.15s",
                       }} />
                     </div>
                   );
                 })}
               </div>
-              {/* X-axis */}
-              <div style={{ display: "flex", gap: "3px", marginTop: "2px" }}>
+              <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
                 {chartData.map((d) => (
                   <div key={d.cohortStart} style={{
-                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "0.55rem",
+                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "11px",
                     color: hoveredCohort === d.cohortStart ? "var(--st-text-primary)" : "var(--st-text-secondary)",
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}>
@@ -1777,47 +1915,24 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                   </div>
                 ))}
               </div>
-              {/* Legend — single muted line */}
-              <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.15rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-                  <span style={{ width: "6px", height: "4px", borderRadius: "1px", backgroundColor: COLORS.newCustomer, opacity: 0.65, display: "inline-block" }} />
-                  <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)" }}>Complete</span>
-                </div>
-                {incompleteCohorts.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-                    <span style={{ width: "6px", height: "4px", borderRadius: "1px", border: `1px dashed ${COLORS.newCustomer}`, opacity: 0.35, display: "inline-block" }} />
-                    <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)" }}>In progress</span>
-                  </div>
-                )}
-              </div>
             </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* ── Tabs — underline sits above a lighter hairline ── */}
-      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: "0" }}>
-        <button type="button" className="funnel-tab" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
-          Complete ({displayComplete.length})
-        </button>
-        {incompleteCohorts.length > 0 && (
-          <button type="button" className="funnel-tab" style={tabStyle(activeTab === "inProgress")} onClick={() => setActiveTab("inProgress")}>
-            In progress ({incompleteCohorts.length})
-          </button>
-        )}
-      </div>
+      <UnderlineTabs tabs={tabsConfig} active={activeTab} onChange={setActiveTab} />
 
-      {/* ── Complete table ── */}
+      {/* Complete table */}
       {cohorts && activeTab === "complete" && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS }}>
             <thead>
               <tr>
-                <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
-                <th style={{ ...thStyle, width: "3.2rem" }}>New</th>
-                <th style={{ ...thStyle, width: "3.8rem" }}>Converts</th>
-                <th style={{ ...thStyle, width: "3.2rem" }}>Rate</th>
-                <th style={{ ...thStyle, textAlign: "center", width: "5rem" }}>Timing</th>
+                <th style={{ ...modTh, textAlign: "left" }}>Cohort</th>
+                <th style={{ ...modTh, width: "3.5rem" }}>New</th>
+                <th style={{ ...modTh, width: "4rem" }}>Converts</th>
+                <th style={{ ...modTh, width: "3.5rem" }}>Rate</th>
+                <th style={{ ...modTh, textAlign: "center", width: "5rem" }}>Timing</th>
               </tr>
             </thead>
             <tbody>
@@ -1840,42 +1955,31 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                      <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-                        {formatNumber(c.newCustomers)}
-                      </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.bold }}>
-                        {c.total3Week}
-                      </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-primary)" }}>
-                        {rate}%
-                      </td>
-                      <td style={{ ...tdBase, textAlign: "center" }}>
-                        {/* Mini 3-segment bar — 3 lightness steps, 1px separators, 8px tall */}
-                        <div
-                          title={`Week 0: ${c.week1} \u00b7 Week 1: ${c.week2} \u00b7 Week 2: ${c.week3}`}
-                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "3rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.06)" }}
-                        >
-                          {[c.week1, c.week2, c.week3].map((w, i) => (
-                            <div key={i} style={{
-                              flex: Math.max(w, 0.2),
-                              backgroundColor: timingColors[i],
-                              borderRadius: "1px",
-                            }} />
-                          ))}
-                        </div>
+                      <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
+                      <td style={{ ...modTd, fontWeight: 600 }}>{c.total3Week}</td>
+                      <td style={{ ...modTd, fontWeight: 500, color: "var(--st-text-primary)" }}>{rate}%</td>
+                      <td style={{ ...modTd, textAlign: "center" }}>
+                        <SegmentedBar
+                          segments={[
+                            { value: c.week1, label: "Same week" },
+                            { value: c.week2, label: "+1 week" },
+                            { value: c.week3, label: "+2 weeks" },
+                          ]}
+                          colors={timingColors}
+                          tooltip={`Week 0: ${c.week1} \u00b7 Week 1: ${c.week2} \u00b7 Week 2: ${c.week3}`}
+                        />
                       </td>
                     </tr>
-                    {/* Expanded timing detail */}
                     {isExpanded && (
                       <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={5} style={{ padding: "0.15rem 0.5rem 0.25rem 1.5rem", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
-                          <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                            <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week1}</strong></span>
-                            <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week2}</strong></span>
-                            <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week3}</strong></span>
+                        <td colSpan={5} style={{ padding: "4px 12px 6px 24px", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
+                          <div style={{ display: "flex", gap: "16px", fontSize: "12px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                            <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week1}</strong></span>
+                            <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week2}</strong></span>
+                            <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week3}</strong></span>
                           </div>
                         </td>
                       </tr>
@@ -1888,10 +1992,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
         </div>
       )}
 
-      {/* ── In-progress table — COHORT | NEW | CONVERTS | DAYS LEFT ── */}
+      {/* In-progress table */}
       {cohorts && activeTab === "inProgress" && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "42%" }} />
               <col style={{ width: "14%" }} />
@@ -1900,14 +2004,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...thStyle, textAlign: "left" }}>Cohort</th>
-                <th style={thStyle}>New</th>
-                <th style={thStyle} title="Converts so far (cohort still accumulating)">
-                  <span style={{ whiteSpace: "nowrap" }}>Converts</span>
-                </th>
-                <th style={thStyle}>
-                  <span style={{ whiteSpace: "nowrap" }}>Days left</span>
-                </th>
+                <th style={{ ...modTh, textAlign: "left" }}>Cohort</th>
+                <th style={modTh}>New</th>
+                <th style={modTh}>Converts</th>
+                <th style={modTh}>Days left</th>
               </tr>
             </thead>
             <tbody>
@@ -1924,34 +2024,27 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       style={{
                         borderBottom: isExpanded ? "none" : "1px solid rgba(65, 58, 58, 0.06)",
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
-                        transition: "border-color 0.15s",
-                        cursor: "pointer",
+                        transition: "border-color 0.15s", cursor: "pointer",
                       }}
                       onMouseEnter={() => setHoveredCohort(c.cohortStart)}
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <td style={{ ...modTd, textAlign: "left", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-                        {formatNumber(c.newCustomers)}
-                      </td>
-                      <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-                        {convertsSoFar}
-                      </td>
-                      <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                        {daysRemaining} {daysRemaining === 1 ? "day" : "days"}
-                      </td>
+                      <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
+                      <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{convertsSoFar}</td>
+                      <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"}</td>
                     </tr>
                     {isExpanded && (
                       <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={4} style={{ padding: "0.15rem 0.5rem 0.25rem 1.5rem", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
-                          <div style={{ display: "flex", gap: "1rem", fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                            <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{c.week1}</strong></span>
-                            <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{wk2Possible ? c.week2 : "\u2014"}</strong></span>
-                            <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.medium }}>{"\u2014"}</strong></span>
-                            <span style={{ color: "var(--st-text-secondary)", opacity: 0.7 }}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"} until complete</span>
+                        <td colSpan={4} style={{ padding: "4px 12px 6px 24px", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
+                          <div style={{ display: "flex", gap: "16px", fontSize: "12px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                            <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week1}</strong></span>
+                            <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{wk2Possible ? c.week2 : "\u2014"}</strong></span>
+                            <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{"\u2014"}</strong></span>
+                            <span style={{ opacity: 0.7 }}>{daysRemaining}d until complete</span>
                           </div>
                         </td>
                       </tr>
@@ -2003,16 +2096,14 @@ function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCusto
 // ─── Drop-Ins Module (weekly-first, matching funnel module quality) ──
 
 function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
-  const [activeTab, setActiveTab] = useState<"complete" | "wtd">("complete");
+  const [activeTab, setActiveTab] = useState<string>("complete");
   const [showChart, setShowChart] = useState(false);
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
 
   const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency } = dropIns;
-
-  // Display last 8 complete weeks in the table
   const displayWeeks = completeWeeks.slice(-8);
 
-  // Chart data: up to 16 complete weeks + current WTD
+  // Chart data
   const chartWeeks = completeWeeks.slice(-16);
   const chartData = [
     ...chartWeeks.map((w) => ({ weekStart: w.weekStart, weekEnd: w.weekEnd, visits: w.visits, complete: true })),
@@ -2021,202 +2112,90 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
   const barMax = Math.max(...chartData.map((d) => d.visits), 1);
   const BAR_H = 80;
 
-  // Trend display (smaller arrow, #2)
+  // Trend
   const trendSymbol = trend === "up" ? "\u25B2" : trend === "down" ? "\u25BC" : "\u2014";
   const trendLabel = trend === "up" ? "Up" : trend === "down" ? "Down" : "Flat";
-
-  // WTD delta badge (#1: now vs last week same-day cut)
   const wtdDeltaSign = wtdDelta > 0 ? "+" : "";
 
-  // Table styles (#6: use secondary text color token, not light gray)
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--st-text-secondary)", opacity: 0.55, fontVariantNumeric: "tabular-nums" };
-  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
+  // Mix bar colors: First (dark) vs Repeat (light) — high contrast per spec
+  const mixColors = ["rgba(155, 118, 83, 0.70)", "rgba(155, 118, 83, 0.28)"];
 
-  // Tab style
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "0.25rem 0.6rem 0.35rem",
-    marginBottom: "-1px",
-    fontSize: "0.7rem",
-    fontWeight: active ? DS.weight.bold : DS.weight.normal,
-    color: active ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-    backgroundColor: "transparent",
-    border: "none",
-    borderBottom: active ? `2px solid var(--st-text-primary)` : "2px solid transparent",
-    borderRadius: "0",
-    cursor: "pointer",
-    transition: "color 0.15s, border-color 0.15s",
-    letterSpacing: "0.02em",
-    outline: "none",
-  });
+  // Frequency distribution colors (dark→light)
+  const freqColors = [
+    `rgba(155, 118, 83, 0.30)`,
+    `rgba(155, 118, 83, 0.50)`,
+    `rgba(155, 118, 83, 0.70)`,
+    `rgba(155, 118, 83, 0.90)`,
+  ];
 
-  // Info icon (#6: secondary color, not very low opacity)
-  const InfoIcon = ({ tooltip }: { tooltip: string }) => (
-    <span
-      title={tooltip}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: "24px", height: "24px", cursor: "help",
-        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.6,
-      }}
-    >
-      &#9432;
-    </span>
-  );
-
-  // Mix bar colors (#4): explicit First vs Repeat
-  const mixFirstTime = "rgba(155, 118, 83, 0.78)";   // darker sienna = First
-  const mixRepeat = "rgba(155, 118, 83, 0.32)";       // lighter sienna = Repeat
+  // Tabs
+  const tabsConfig = [
+    { key: "complete", label: `Complete weeks (${displayWeeks.length})` },
+    ...(wtd ? [{ key: "wtd", label: "This week (WTD)" }] : []),
+  ];
 
   return (
     <Card>
-      {/* ── Module header ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-        <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.dropIn, opacity: 0.85 }} />
-        <span style={{ ...DS.label }}>{LABELS.dropIns}</span>
-      </div>
+      <ModuleHeader color={COLORS.dropIn} title={LABELS.dropIns} />
 
-      {/* ── KPI Row: 3 tiles ── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1px 1fr 1px auto",
-        alignItems: "stretch",
-        padding: "0.4rem 0",
-        marginBottom: "0.5rem",
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {/* Tile 1: This week (WTD) — #1 fixed delta */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "0.3rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {formatNumber(wtd?.visits ?? 0)}
-            </span>
-            {wtdDelta !== 0 && (
-              <span
-                title={`vs last week WTD: ${wtdDeltaSign}${wtdDelta} (${wtdDeltaSign}${wtdDeltaPercent.toFixed(0)}%)`}
-                style={{
-                  fontSize: "0.55rem", fontWeight: DS.weight.medium,
-                  color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-                  padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
-                }}
-              >
-                {wtdDeltaSign}{wtdDelta}
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Drop-in visits (WTD)
-          </div>
-          <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.05rem", opacity: 0.7 }}>
-            {wtdDayLabel} &middot; vs last wk WTD
-          </div>
-        </div>
+      {/* KPI Row: 3 blocks, no dividers */}
+      <KPIRow>
+        <KPIBlock
+          value={formatNumber(wtd?.visits ?? 0)}
+          label="Drop-in visits (WTD)"
+          delta={wtdDelta !== 0 ? wtdDelta : null}
+          sublabel={`${wtdDayLabel} \u00b7 vs last wk WTD`}
+        />
+        <KPIBlock
+          value={formatNumber(typicalWeekVisits)}
+          label="Typical week (8-wk avg)"
+          tooltip="Average visits per week over the last 8 complete weeks."
+        />
+        <KPIBlock
+          value={`${trendSymbol} ${trendLabel}`}
+          label="Trend"
+          delta={trendDeltaPercent !== 0 ? trendDeltaPercent : null}
+          deltaSuffix="%"
+          sublabel="vs prior 4 wks"
+          tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%."
+        />
+      </KPIRow>
 
-        {/* Hairline */}
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Tile 2: Typical week */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {formatNumber(typicalWeekVisits)}
-            </span>
-            <InfoIcon tooltip="Average visits per week over the last 8 complete weeks." />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Typical week (8-wk avg)
-          </div>
-        </div>
-
-        {/* Hairline */}
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Tile 3: Trend — #2 reduced arrow, clarified label */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-            <span style={{
-              fontWeight: DS.weight.medium, fontSize: DS.text.md, fontFamily: FONT_SANS,
-              color: trend === "up" ? COLORS.success : trend === "down" ? COLORS.error : "var(--st-text-primary)",
-              letterSpacing: "-0.02em", lineHeight: 1.1,
-            }}>
-              {trendSymbol}
-            </span>
-            <span style={{ fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
-              {trendLabel}
-            </span>
-            {trendDeltaPercent !== 0 && (
-              <span style={{
-                fontSize: "0.55rem", fontWeight: DS.weight.medium,
-                color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-                padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
-              }}>
-                {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}%
-              </span>
-            )}
-            <InfoIcon tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%." />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Trend
-          </div>
-          <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.05rem", opacity: 0.7 }}>
-            Last 4 vs prior 4 (complete weeks)
-          </div>
-        </div>
-      </div>
-
-      {/* ── Chart toggle (collapsed by default) ── */}
+      {/* Toggle row */}
       {chartData.length > 0 && (
-        <div style={{ marginBottom: "0.75rem" }}>
-          <button
-            type="button"
-            onClick={() => setShowChart(!showChart)}
-            style={{
-              background: "none", border: "none", padding: "0.15rem 0", cursor: "pointer",
-              fontSize: DS.text.xs, color: "var(--st-text-secondary)",
-              display: "flex", alignItems: "center", gap: "0.3rem",
-            }}
-          >
-            <span style={{ fontSize: "0.5rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
-            {showChart ? "Hide trend" : "Show trend"}
-          </button>
-
+        <>
+          <ToggleRow show={showChart} onToggle={() => setShowChart(!showChart)} />
           {showChart && (
-            <div style={{ marginTop: "0.3rem" }}>
+            <div style={{ marginBottom: MOD.toggleToTabs }}>
               <div style={{
-                display: "flex", alignItems: "flex-end", gap: "3px",
-                height: `${BAR_H}px`, borderBottom: "1px solid var(--st-border)", paddingBottom: "1px",
+                display: "flex", alignItems: "flex-end", gap: 3,
+                height: BAR_H, borderBottom: "1px solid var(--st-border)", paddingBottom: 1,
               }}>
                 {chartData.map((d) => {
                   const fraction = barMax > 0 ? d.visits / barMax : 0;
                   const h = Math.max(Math.round(fraction * (BAR_H - 4)), 3);
                   const isHovered = hoveredWeek === d.weekStart;
                   return (
-                    <div
-                      key={d.weekStart}
-                      style={{
-                        flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
-                        alignItems: "center", justifyContent: "flex-end", cursor: "default",
-                      }}
+                    <div key={d.weekStart} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}
                       onMouseEnter={() => setHoveredWeek(d.weekStart)}
                       onMouseLeave={() => setHoveredWeek(null)}
                       title={`${formatWeekRangeLabel(d.weekStart, d.weekEnd)}: ${d.visits} visits${d.complete ? "" : " (WTD)"}`}
                     >
                       <div style={{
-                        width: "70%", maxWidth: "28px", height: `${h}px`, borderRadius: "2px 2px 0 0",
+                        width: "70%", maxWidth: 28, height: h, borderRadius: "2px 2px 0 0",
                         ...(d.complete
                           ? { backgroundColor: COLORS.dropIn, opacity: isHovered ? 0.85 : 0.65 }
-                          : { backgroundColor: "rgba(155, 118, 83, 0.06)", border: `1.5px dashed ${COLORS.dropIn}`, opacity: isHovered ? 0.5 : 0.35 }
-                        ),
+                          : { backgroundColor: "rgba(155, 118, 83, 0.06)", border: `1.5px dashed ${COLORS.dropIn}`, opacity: isHovered ? 0.5 : 0.35 }),
                         transition: "opacity 0.15s",
                       }} />
                     </div>
                   );
                 })}
               </div>
-              {/* X-axis */}
-              <div style={{ display: "flex", gap: "3px", marginTop: "2px" }}>
+              <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
                 {chartData.map((d) => (
                   <div key={d.weekStart} style={{
-                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "0.55rem",
+                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "11px",
                     color: hoveredWeek === d.weekStart ? "var(--st-text-primary)" : "var(--st-text-secondary)",
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}>
@@ -2224,58 +2203,31 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                   </div>
                 ))}
               </div>
-              {/* Legend */}
-              <div style={{ display: "flex", gap: "0.6rem", marginTop: "0.15rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-                  <span style={{ width: "6px", height: "4px", borderRadius: "1px", backgroundColor: COLORS.dropIn, opacity: 0.65, display: "inline-block" }} />
-                  <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)" }}>Complete</span>
-                </div>
-                {wtd && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-                    <span style={{ width: "6px", height: "4px", borderRadius: "1px", border: `1px dashed ${COLORS.dropIn}`, opacity: 0.35, display: "inline-block" }} />
-                    <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)" }}>WTD</span>
-                  </div>
-                )}
-              </div>
             </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* ── Tabs — #7: extra padding-bottom so underline doesn't collide with table border ── */}
-      <div style={{ display: "flex", gap: "0", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: "0.15rem" }}>
-        <button type="button" className="funnel-tab" style={tabStyle(activeTab === "complete")} onClick={() => setActiveTab("complete")}>
-          Complete weeks ({displayWeeks.length})
-        </button>
-        {wtd && (
-          <button type="button" className="funnel-tab" style={tabStyle(activeTab === "wtd")} onClick={() => setActiveTab("wtd")}>
-            This week (WTD)
-          </button>
-        )}
-      </div>
+      <UnderlineTabs tabs={tabsConfig} active={activeTab} onChange={setActiveTab} />
 
-      {/* ── Complete weeks table — #3 FIRST%, #4 mix legend, #5 Latest tag, #7 aligned headers ── */}
+      {/* Complete weeks table: WEEK | VISITS | CUSTOMERS | FIRST % | MIX */}
       {activeTab === "complete" && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "28%" }} />
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
+              <col style={{ width: "32%" }} />
+              <col style={{ width: "16%" }} />
               <col style={{ width: "18%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "20%" }} />
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
-                <th style={thStyle} title="Total drop-in visits">Visits</th>
-                <th style={thStyle} title="Unique drop-in customers">Customers</th>
-                <th style={thStyle} title="First-time visitors (all-time first drop-in)">First</th>
-                <th style={thStyle} title="Returning visitors (visited before)">Repeat</th>
-                <th style={thStyle} title="First-time as % of unique customers">First %</th>
-                <th style={thStyle}>Mix (First/Repeat)</th>
+                <th style={{ ...modTh, textAlign: "left" }}>Week</th>
+                <th style={modTh}>Visits</th>
+                <th style={modTh}>Customers</th>
+                <th style={modTh}>First %</th>
+                <th style={{ ...modTh, textAlign: "center" }}>Mix</th>
               </tr>
             </thead>
             <tbody>
@@ -2295,44 +2247,32 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                     onMouseEnter={() => setHoveredWeek(w.weekStart)}
                     onMouseLeave={() => setHoveredWeek(null)}
                   >
-                    <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
+                    <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
                       {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
                       {isLatest && (
                         <span style={{
-                          fontSize: "0.5rem", fontWeight: DS.weight.medium,
+                          fontSize: "10px", fontWeight: 500,
                           backgroundColor: "rgba(155, 118, 83, 0.10)", color: COLORS.dropIn,
                           padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
-                          marginLeft: "0.3rem",
+                          marginLeft: "6px",
                         }}>
                           Latest
                         </span>
                       )}
                     </td>
-                    <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-                      {formatNumber(w.visits)}
-                    </td>
-                    <td style={{ ...tdBase, fontWeight: DS.weight.medium }}>
-                      {formatNumber(w.uniqueCustomers)}
-                    </td>
-                    <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                      {w.firstTime}
-                    </td>
-                    <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                      {w.repeatCustomers}
-                    </td>
-                    <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                      {firstPct}%
-                    </td>
-                    <td style={{ ...tdBase, textAlign: "center" }}>
-                      {/* #4: 2-part stacked bar: First = darker, Repeat = lighter */}
+                    <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(w.visits)}</td>
+                    <td style={{ ...modTd, fontWeight: 500 }}>{formatNumber(w.uniqueCustomers)}</td>
+                    <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{firstPct}%</td>
+                    <td style={{ ...modTd, textAlign: "center" }}>
                       {w.uniqueCustomers > 0 ? (
-                        <div
-                          title={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
-                          style={{ display: "flex", height: "8px", borderRadius: "3px", overflow: "hidden", gap: "1px", minWidth: "2.5rem", maxWidth: "5rem", margin: "0 auto", backgroundColor: "rgba(65, 58, 58, 0.04)" }}
-                        >
-                          <div style={{ flex: Math.max(w.firstTime, 0.1), backgroundColor: mixFirstTime, borderRadius: "1px" }} />
-                          <div style={{ flex: Math.max(w.repeatCustomers, 0.1), backgroundColor: mixRepeat, borderRadius: "1px" }} />
-                        </div>
+                        <SegmentedBar
+                          segments={[
+                            { value: w.firstTime, label: `First: ${w.firstTime}` },
+                            { value: w.repeatCustomers, label: `Repeat: ${w.repeatCustomers}` },
+                          ]}
+                          colors={mixColors}
+                          tooltip={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
+                        />
                       ) : (
                         <span style={{ color: "var(--st-text-secondary)", opacity: 0.4 }}>{"\u2014"}</span>
                       )}
@@ -2345,70 +2285,48 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         </div>
       )}
 
-      {/* ── WTD table ── */}
+      {/* WTD table */}
       {activeTab === "wtd" && wtd && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: DS.text.sm, fontVariantNumeric: "tabular-nums", tableLayout: "fixed" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "28%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "14%" }} />
+              <col style={{ width: "30%" }} />
               <col style={{ width: "16%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "22%" }} />
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
-                <th style={thStyle}>Visits</th>
-                <th style={thStyle}>Customers</th>
-                <th style={thStyle}>First</th>
-                <th style={thStyle}>Repeat</th>
-                <th style={thStyle}>Days left</th>
+                <th style={{ ...modTh, textAlign: "left" }}>Week</th>
+                <th style={modTh}>Visits</th>
+                <th style={modTh}>Customers</th>
+                <th style={modTh}>First %</th>
+                <th style={modTh}>Days left</th>
               </tr>
             </thead>
             <tbody>
-              {/* Current WTD row */}
               <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)" }}>
-                <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium }}>
-                  {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>{formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}</td>
+                <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(wtd.visits)}</td>
+                <td style={{ ...modTd, fontWeight: 500 }}>{formatNumber(wtd.uniqueCustomers)}</td>
+                <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>
+                  {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
                 </td>
-                <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>
-                  {formatNumber(wtd.visits)}
-                </td>
-                <td style={{ ...tdBase, fontWeight: DS.weight.medium }}>
-                  {formatNumber(wtd.uniqueCustomers)}
-                </td>
-                <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                  {wtd.firstTime}
-                </td>
-                <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                  {wtd.repeatCustomers}
-                </td>
-                <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                  {wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}
-                </td>
+                <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
               </tr>
-              {/* Last complete week for comparison (muted) */}
               {lastCompleteWeek && (
                 <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", opacity: 0.55 }}>
-                  <td style={{ padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
+                  <td style={{ ...modTd, textAlign: "left", fontWeight: 500, color: "var(--st-text-secondary)" }}>
                     {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
-                    <span style={{ fontSize: DS.text.xs, marginLeft: "0.3rem", fontWeight: DS.weight.normal, fontStyle: "italic" }}>prev</span>
+                    <span style={{ fontSize: "11px", marginLeft: "6px", fontWeight: 400, fontStyle: "italic" }}>prev</span>
                   </td>
-                  <td style={{ ...tdBase, fontWeight: DS.weight.bold, color: "var(--st-text-secondary)" }}>
-                    {formatNumber(lastCompleteWeek.visits)}
+                  <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.visits)}</td>
+                  <td style={{ ...modTd, fontWeight: 500, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
+                  <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>
+                    {lastCompleteWeek.uniqueCustomers > 0 ? `${Math.round((lastCompleteWeek.firstTime / lastCompleteWeek.uniqueCustomers) * 100)}%` : "\u2014"}
                   </td>
-                  <td style={{ ...tdBase, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
-                    {formatNumber(lastCompleteWeek.uniqueCustomers)}
-                  </td>
-                  <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                    {lastCompleteWeek.firstTime}
-                  </td>
-                  <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>
-                    {lastCompleteWeek.repeatCustomers}
-                  </td>
-                  <td style={{ ...tdBase, color: "var(--st-text-secondary)" }}>{"\u2014"}</td>
+                  <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{"\u2014"}</td>
                 </tr>
               )}
             </tbody>
@@ -2416,18 +2334,18 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
         </div>
       )}
 
-      {/* ── 90-Day Frequency Distribution — #6: two-line labels, min hover target, tooltips ── */}
+      {/* Footer: 90-Day Frequency Distribution */}
       {frequency && frequency.totalCustomers > 0 && (
-        <div style={{ marginTop: "0.75rem", paddingTop: "0.5rem", borderTop: "1px solid rgba(65, 58, 58, 0.06)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginBottom: "0.4rem" }}>
-            <span style={{ fontSize: DS.text.xs, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid rgba(65, 58, 58, 0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
+            <span style={{ fontSize: "11px", fontWeight: 500, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Drop-in frequency (last 90 days)
             </span>
-            <InfoIcon tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
+            <MInfoIcon tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
           </div>
 
           {(() => {
-            const segments = [
+            const segs = [
               { count: frequency.bucket1, label: "1 visit", opacity: 0.3 },
               { count: frequency.bucket2to4, label: "2\u20134", opacity: 0.5 },
               { count: frequency.bucket5to10, label: "5\u201310", opacity: 0.7 },
@@ -2435,50 +2353,25 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             ];
             return (
               <>
-                {/* Segmented bar */}
-                <div style={{ display: "flex", height: "10px", borderRadius: "4px", overflow: "hidden", gap: "1px" }}>
-                  {segments.map((seg) => (
-                    seg.count > 0 ? (
-                      <div
-                        key={seg.label}
-                        style={{
-                          flex: Math.max(seg.count, frequency.totalCustomers * 0.03),
-                          backgroundColor: COLORS.dropIn,
-                          opacity: seg.opacity,
-                          borderRadius: "1px",
-                          cursor: "default",
-                        }}
-                        title={`${seg.label}: ${seg.count} customers (${Math.round((seg.count / frequency.totalCustomers) * 100)}%)`}
-                      />
-                    ) : null
-                  ))}
-                </div>
-
-                {/* Tick marks + two-line labels */}
-                <div style={{ display: "flex", gap: "1px" }}>
-                  {segments.map((seg) => (
-                    seg.count > 0 ? (
-                      <div
-                        key={seg.label}
-                        style={{
-                          flex: Math.max(seg.count, frequency.totalCustomers * 0.03),
-                          textAlign: "center",
-                          display: "flex", flexDirection: "column", alignItems: "center",
-                          minWidth: "24px",
-                        }}
-                        title={`${seg.count} customers`}
-                      >
-                        {/* Vertical tick mark from bar midpoint down to label */}
-                        <div style={{ width: "1px", height: "6px", backgroundColor: "rgba(65, 58, 58, 0.15)" }} />
-                        <span style={{ fontSize: "0.5rem", color: "var(--st-text-secondary)", letterSpacing: "0.03em", lineHeight: 1.3 }}>
-                          {seg.label}
-                        </span>
-                        <span style={{ fontSize: "0.6rem", fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-                          {Math.round((seg.count / frequency.totalCustomers) * 100)}%
-                        </span>
-                      </div>
-                    ) : null
-                  ))}
+                <SegmentedBar
+                  segments={segs.map((s) => ({ value: s.count, label: s.label }))}
+                  height={10}
+                  colors={freqColors}
+                />
+                {/* Labels with ticks and bold % */}
+                <div style={{ display: "flex", gap: 1, marginTop: 0 }}>
+                  {segs.map((seg) => seg.count > 0 ? (
+                    <div key={seg.label} style={{
+                      flex: Math.max(seg.count, frequency.totalCustomers * 0.03),
+                      textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", minWidth: 24,
+                    }} title={`${seg.count} customers`}>
+                      <div style={{ width: 1, height: 6, backgroundColor: "rgba(65, 58, 58, 0.15)" }} />
+                      <span style={{ fontSize: "10px", color: "var(--st-text-secondary)", lineHeight: 1.3 }}>{seg.label}</span>
+                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                        {Math.round((seg.count / frequency.totalCustomers) * 100)}%
+                      </span>
+                    </div>
+                  ) : null)}
                 </div>
               </>
             );
@@ -2496,6 +2389,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const [chartMetric, setChartMetric] = useState<"pool" | "converts">("pool");
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
   const [activeSlice, setActiveSlice] = useState<ConversionPoolSlice>("all");
+  const [activeTab, setActiveTab] = useState<string>("complete");
 
   // Resolve active slice data (fall back to "all")
   const data: ConversionPoolSliceData | null = pool.slices[activeSlice] ?? pool.slices.all ?? null;
@@ -2518,16 +2412,13 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const convertsDelta = lastCompleteWeek && prevCompleteWeek ? lastCompleteWeek.converts - prevCompleteWeek.converts : null;
   const rateDelta = lastCompleteWeek && prevCompleteWeek ? Math.round((lastCompleteWeek.conversionRate - prevCompleteWeek.conversionRate) * 10) / 10 : null;
 
-  // Rate vs 8-week avg baseline (#4)
+  // Rate vs 8-week avg baseline
   const rateVsBaseline = avgRate > 0 ? Math.round((heroRate - avgRate) * 10) / 10 : null;
   const showRateWarning = rateVsBaseline !== null && rateVsBaseline < -(avgRate * 0.2);
 
-  // Hot pool: high-intent slice's pool count (≥2 visits in 30d, no auto-renew) (#5)
+  // Hot pool: high-intent slice's pool count (≥2 visits in 30d, no auto-renew)
   const highIntentSlice = pool.slices["high-intent"];
   const hotPoolCount = highIntentSlice?.wtd?.activePool7d ?? highIntentSlice?.lastCompleteWeek?.activePool7d ?? null;
-  const hotPoolPrev = highIntentSlice?.completeWeeks && highIntentSlice.completeWeeks.length >= 2
-    ? highIntentSlice.completeWeeks[highIntentSlice.completeWeeks.length - 2].activePool7d : null;
-  const hotPoolDelta = hotPoolCount !== null && hotPoolPrev !== null ? (highIntentSlice?.lastCompleteWeek?.activePool7d ?? 0) - hotPoolPrev : null;
 
   // Chart data: all complete weeks + WTD
   const chartData = [
@@ -2541,92 +2432,6 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const gridLine1 = Math.round(barMax / 3);
   const gridLine2 = Math.round((barMax * 2) / 3);
 
-  // Table styles (#6: use secondary not light-gray)
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--st-text-secondary)", opacity: 0.55, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
-  const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
-
-  // Info icon (#6: secondary color, not very low opacity)
-  const InfoIcon = ({ tooltip }: { tooltip: string }) => (
-    <span
-      title={tooltip}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: "24px", height: "24px", cursor: "help",
-        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.6,
-      }}
-    >
-      &#9432;
-    </span>
-  );
-
-  // Delta pill renderer
-  const DeltaPill = ({ delta, suffix = "", label }: { delta: number | null; suffix?: string; label?: string }) => {
-    if (delta === null || delta === 0) return null;
-    const sign = delta > 0 ? "+" : "";
-    return (
-      <span style={{
-        fontSize: "0.55rem", fontWeight: DS.weight.medium,
-        color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-        padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {sign}{typeof delta === "number" && suffix === "pp" ? delta.toFixed(1) : delta}{suffix}{label ? ` ${label}` : ""}
-      </span>
-    );
-  };
-
-  // Distribution bar with inline % on largest segment (#6: use secondary for labels)
-  const DistBar = ({ buckets, labels, colors }: { buckets: number[]; labels: string[]; colors: string[] }) => {
-    const total = buckets.reduce((s, b) => s + b, 0);
-    if (total === 0) return <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>&mdash;</span>;
-    const maxIdx = buckets.indexOf(Math.max(...buckets));
-    return (
-      <div>
-        <div style={{ display: "flex", height: "12px", borderRadius: "3px", overflow: "hidden", gap: "1px" }}>
-          {buckets.map((b, i) => {
-            const pct = Math.round((b / total) * 100);
-            const isLargest = i === maxIdx && pct >= 20;
-            return (
-              <div
-                key={i}
-                style={{
-                  flex: Math.max(b, total * 0.03),
-                  backgroundColor: colors[i],
-                  minWidth: b > 0 ? "2px" : 0,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  position: "relative",
-                }}
-                title={`${labels[i]}: ${b} (${pct}%)`}
-              >
-                {isLargest && pct > 0 && (
-                  <span style={{ fontSize: "0.5rem", fontWeight: DS.weight.bold, color: "white", textShadow: "0 0 2px rgba(0,0,0,0.3)", lineHeight: 1 }}>
-                    {pct}%
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
-          {buckets.map((b, i) => b > 0 ? (
-            <div key={i} style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "0.15rem" }}>
-              <span style={{ width: "5px", height: "5px", borderRadius: "1px", backgroundColor: colors[i], display: "inline-block" }} />
-              {labels[i]}
-            </div>
-          ) : null)}
-        </div>
-      </div>
-    );
-  };
-
-  // Distribution colors
-  const distColors = [
-    "rgba(107, 91, 123, 0.85)",
-    "rgba(107, 91, 123, 0.60)",
-    "rgba(107, 91, 123, 0.40)",
-    "rgba(107, 91, 123, 0.22)",
-  ];
-
   // Slice options
   const sliceOptions: { key: ConversionPoolSlice; label: string }[] = [
     { key: "all", label: "All" },
@@ -2636,23 +2441,27 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     { key: "high-intent", label: "High intent" },
   ];
 
+  // Distribution colors — high-contrast spec
+  const distColors = [
+    "rgba(107, 91, 123, 0.85)",
+    "rgba(107, 91, 123, 0.55)",
+    "rgba(107, 91, 123, 0.32)",
+    "rgba(107, 91, 123, 0.16)",
+  ];
+
   return (
     <Card>
-      {/* ── Module header with Slice dropdown ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.conversionPool, opacity: 0.85 }} />
-          <span style={{ ...DS.label }}>{LABELS.conversionPool}</span>
-        </div>
+      {/* ── Header with Slice dropdown ── */}
+      <ModuleHeader color={COLORS.conversionPool} title={LABELS.conversionPool}>
         <select
           value={activeSlice}
           onChange={(e) => setActiveSlice(e.target.value as ConversionPoolSlice)}
           title="Filter pool by visit type"
           style={{
-            fontSize: "0.6rem", fontWeight: DS.weight.medium,
+            fontSize: "11px", fontWeight: 500,
             color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.04)",
             border: "1px solid rgba(65, 58, 58, 0.1)", borderRadius: "3px",
-            padding: "2px 6px", cursor: "pointer", outline: "none",
+            padding: "2px 8px", cursor: "pointer", outline: "none",
             fontFamily: FONT_SANS, letterSpacing: "0.02em",
           }}
         >
@@ -2660,287 +2469,276 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             <option key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</option>
           ))}
         </select>
-      </div>
+      </ModuleHeader>
 
-      {/* ── KPI Row: 4 tiles (Pool, Converts, Rate, Hot Pool) ── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1px 1fr 1px 1fr 1px auto",
-        alignItems: "stretch",
-        padding: "0.4rem 0",
-        marginBottom: "0.3rem",
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {/* Tile 1: Active Pool (7d) */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {formatNumber(heroPool)}
+      {/* ── KPI Row: 3 blocks (Pool, Converts, Rate) — no dividers ── */}
+      <KPIRow>
+        <KPIBlock
+          value={formatNumber(heroPool)}
+          label="Active pool (7d)"
+          tooltip="Unique non-subscriber studio visitors this week. Excludes anyone on an active auto-renew."
+          delta={poolDelta}
+        >
+          {wtd && wtd.activePool30d > 0 && (
+            <span style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}>
+              30d: {formatNumber(wtd.activePool30d)}
             </span>
-            <InfoIcon tooltip="Unique non-subscriber studio visitors this week. Excludes anyone on an active auto-renew." />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Active pool (7d)
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.15rem", minHeight: "1rem" }}>
-            <DeltaPill delta={poolDelta} />
-            {wtd && wtd.activePool30d > 0 && (
-              <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)" }}>
-                30d: {formatNumber(wtd.activePool30d)}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Tile 2: Converts */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {formatNumber(heroConverts)}
+          )}
+          {hotPoolCount != null && (
+            <span
+              title="High-intent: 2+ visits in 30d, no auto-renew"
+              style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}
+            >
+              Hot: {formatNumber(hotPoolCount)}
             </span>
-            <InfoIcon tooltip="Pool members who started their first in-studio auto-renew (Member or Sky3) this week." />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Converts (week)
-          </div>
-          <div style={{ marginTop: "0.15rem", minHeight: "1rem" }}>
-            <DeltaPill delta={convertsDelta} />
-          </div>
-        </div>
-
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Tile 3: Rate (with delta vs last week + vs baseline badge) (#4) */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {heroRate.toFixed(1)}%
+          )}
+        </KPIBlock>
+        <KPIBlock
+          value={formatNumber(heroConverts)}
+          label="Converts (week)"
+          tooltip="Pool members who started their first in-studio auto-renew (Member or Sky3) this week."
+          delta={convertsDelta}
+        />
+        <KPIBlock
+          value={`${heroRate.toFixed(1)}%`}
+          label="Rate"
+          tooltip="Converts / Active pool (7d)."
+          delta={rateDelta}
+          deltaSuffix="pp"
+          deltaSublabel="vs wk"
+          badge={showRateWarning ? (
+            <span
+              title={`Rate is ${Math.abs(rateVsBaseline!).toFixed(1)}pp below 8-week avg (${avgRate.toFixed(1)}%). Click to expand trend.`}
+              onClick={() => setShowChart(true)}
+              style={{
+                fontSize: "10px", fontWeight: 600,
+                color: COLORS.error, backgroundColor: "rgba(160, 64, 64, 0.08)",
+                padding: "1px 5px", borderRadius: "2px", cursor: "pointer",
+                letterSpacing: "0.02em",
+              }}
+            >
+              Down vs baseline
             </span>
-            {showRateWarning && (
-              <span
-                title={`Rate is ${Math.abs(rateVsBaseline!).toFixed(1)}pp below 8-week avg (${avgRate.toFixed(1)}%). Click to expand trend.`}
-                onClick={() => setShowChart(true)}
-                style={{
-                  fontSize: "0.5rem", fontWeight: DS.weight.bold,
-                  color: COLORS.error, backgroundColor: "rgba(160, 64, 64, 0.08)",
-                  padding: "1px 4px", borderRadius: "2px", cursor: "pointer",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                Down vs baseline
-              </span>
-            )}
-            <InfoIcon tooltip="Converts / Active pool (7d)." />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Rate
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.2rem", flexWrap: "wrap", marginTop: "0.15rem", minHeight: "1rem" }}>
-            <DeltaPill delta={rateDelta} suffix="pp" label="vs wk" />
-            {rateVsBaseline !== null && rateVsBaseline !== 0 && (
-              <DeltaPill delta={rateVsBaseline} suffix="pp" label="vs avg" />
-            )}
-          </div>
-        </div>
-
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Tile 4: Hot Pool — high-intent visitors (#5) */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center", minWidth: "5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
-            <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-              {hotPoolCount != null ? formatNumber(hotPoolCount) : "\u2014"}
+          ) : undefined}
+        >
+          {rateVsBaseline !== null && rateVsBaseline !== 0 && (
+            <span style={{
+              fontSize: "11px", fontWeight: 500,
+              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+              padding: "1px 5px", borderRadius: "3px", fontVariantNumeric: "tabular-nums",
+            }}>
+              {rateVsBaseline > 0 ? "+" : ""}{rateVsBaseline.toFixed(1)}pp vs avg
             </span>
-            <InfoIcon tooltip="Active non-auto customers with 2+ visits in last 30 days and no auto-renew. High-intent conversion candidates." />
-          </div>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Hot pool (7d)
-          </div>
-          <div style={{ marginTop: "0.15rem", minHeight: "1rem" }}>
-            <DeltaPill delta={hotPoolDelta} />
-          </div>
-        </div>
-      </div>
+          )}
+        </KPIBlock>
+      </KPIRow>
 
-      {/* ── Lag stats + distributions ── */}
+      {/* ── Lag stats + distribution bars ── */}
       {lagStats && (
         <div style={{
           display: "grid",
           gridTemplateColumns: "auto auto 1fr 1fr",
-          gap: "0.5rem",
+          gap: "12px",
           alignItems: "start",
-          padding: "0.3rem 0 0.5rem",
-          marginBottom: "0.5rem",
+          padding: "8px 0 12px",
+          marginBottom: "12px",
           borderTop: "1px solid rgba(65, 58, 58, 0.06)",
         }}>
-          {/* Lag stat 1: Median time-to-convert */}
-          <div style={{ padding: "0 0.3rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.1rem" }}>
-              <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+          {/* Median time-to-convert */}
+          <div style={{ padding: "0 4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              <span style={{ fontWeight: 600, fontSize: "15px", fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
                 {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
               </span>
-              <InfoIcon tooltip="Median days between first non-auto studio visit and auto-renew start." />
+              <MInfoIcon tooltip="Median days between first non-auto studio visit and auto-renew start." />
             </div>
-            <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.05rem" }}>
+            <div style={{ fontSize: "12px", color: "var(--st-text-secondary)", marginTop: "1px" }}>
               Median time
             </div>
             {lagStats.historicalMedianTimeToConvert != null && (
-              <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+              <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginTop: "2px" }}>
                 12wk: {lagStats.historicalMedianTimeToConvert}d
               </div>
             )}
           </div>
 
-          {/* Lag stat 2: Avg visits */}
-          <div style={{ padding: "0 0.3rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.1rem" }}>
-              <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+          {/* Avg visits */}
+          <div style={{ padding: "0 4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              <span style={{ fontWeight: 600, fontSize: "15px", fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
                 {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
               </span>
-              <InfoIcon tooltip="Average distinct non-subscriber visits before conversion." />
+              <MInfoIcon tooltip="Average distinct non-subscriber visits before conversion." />
             </div>
-            <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.05rem" }}>
+            <div style={{ fontSize: "12px", color: "var(--st-text-secondary)", marginTop: "1px" }}>
               Avg visits
             </div>
             {lagStats.historicalAvgVisitsBeforeConvert != null && (
-              <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
+              <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginTop: "2px" }}>
                 12wk: {lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}
               </div>
             )}
           </div>
 
-          {/* Time distribution bar (#6: secondary color labels) */}
+          {/* Time distribution bar — using SegmentedBar */}
           <div>
-            <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 400 }}>
               Time to convert
             </div>
-            <DistBar
-              buckets={[lagStats.timeBucket0to30, lagStats.timeBucket31to90, lagStats.timeBucket91to180, lagStats.timeBucket180plus]}
-              labels={["0-30d", "31-90d", "91-180d", "180d+"]}
+            <SegmentedBar
+              segments={[
+                { value: lagStats.timeBucket0to30, label: "0-30d" },
+                { value: lagStats.timeBucket31to90, label: "31-90d" },
+                { value: lagStats.timeBucket91to180, label: "91-180d" },
+                { value: lagStats.timeBucket180plus, label: "180d+" },
+              ]}
+              height={12}
               colors={distColors}
             />
+            {/* Legend */}
+            <div style={{ display: "flex", gap: "6px", marginTop: "3px", flexWrap: "wrap" }}>
+              {[
+                { label: "0-30d", val: lagStats.timeBucket0to30 },
+                { label: "31-90d", val: lagStats.timeBucket31to90 },
+                { label: "91-180d", val: lagStats.timeBucket91to180 },
+                { label: "180d+", val: lagStats.timeBucket180plus },
+              ].map((b, i) => b.val > 0 ? (
+                <div key={i} style={{ fontSize: "11px", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "3px" }}>
+                  <span style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: distColors[i], display: "inline-block" }} />
+                  {b.label}
+                </div>
+              ) : null)}
+            </div>
           </div>
 
-          {/* Visit distribution bar (#6: secondary color labels) */}
+          {/* Visit distribution bar — using SegmentedBar */}
           <div>
-            <div style={{ fontSize: "0.6rem", color: "var(--st-text-secondary)", marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 400 }}>
               Visits before convert
             </div>
-            <DistBar
-              buckets={[lagStats.visitBucket1to2, lagStats.visitBucket3to5, lagStats.visitBucket6to10, lagStats.visitBucket11plus]}
-              labels={["1-2", "3-5", "6-10", "11+"]}
+            <SegmentedBar
+              segments={[
+                { value: lagStats.visitBucket1to2, label: "1-2" },
+                { value: lagStats.visitBucket3to5, label: "3-5" },
+                { value: lagStats.visitBucket6to10, label: "6-10" },
+                { value: lagStats.visitBucket11plus, label: "11+" },
+              ]}
+              height={12}
               colors={distColors}
             />
-          </div>
-        </div>
-      )}
-
-      {/* ── Chart toggle (gridlines + y-axis labels) ── */}
-      {chartData.length > 0 && (
-        <div style={{ marginBottom: "0.75rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <button
-              type="button"
-              onClick={() => setShowChart(!showChart)}
-              style={{
-                background: "none", border: "none", padding: "0.15rem 0", cursor: "pointer",
-                fontSize: DS.text.xs, color: "var(--st-text-secondary)",
-                display: "flex", alignItems: "center", gap: "0.3rem",
-              }}
-            >
-              <span style={{ fontSize: "0.5rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
-              {showChart ? "Hide trend" : "Show trend"}
-            </button>
-            {showChart && (
-              <div style={{ display: "flex", gap: "0.1rem" }}>
-                {(["pool", "converts"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setChartMetric(m)}
-                    style={{
-                      background: chartMetric === m ? "rgba(107, 91, 123, 0.12)" : "none",
-                      border: `1px solid ${chartMetric === m ? "rgba(107, 91, 123, 0.25)" : "transparent"}`,
-                      borderRadius: "3px", padding: "1px 6px", cursor: "pointer",
-                      fontSize: "0.55rem", color: chartMetric === m ? COLORS.conversionPool : "var(--st-text-secondary)",
-                      fontWeight: chartMetric === m ? DS.weight.medium : DS.weight.normal,
-                      letterSpacing: "0.02em", textTransform: "capitalize",
-                    }}
-                  >
-                    {m === "pool" ? "Pool" : "Converts"}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {showChart && (
-            <div style={{ display: "flex", marginTop: "0.3rem" }}>
-              {/* Y-axis labels */}
-              <div style={{ width: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-end", paddingRight: "4px", height: BAR_H }}>
-                <span style={{ fontSize: "0.45rem", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(barMax)}</span>
-                <span style={{ fontSize: "0.45rem", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(gridLine1)}</span>
-                <span style={{ fontSize: "0.45rem", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>0</span>
-              </div>
-              {/* Bars with gridlines (#7: tooltips use position:fixed clamped to viewport) */}
-              <div style={{ flex: 1, position: "relative", height: BAR_H, overflow: "visible" }}>
-                {/* Gridlines */}
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
-                  <div style={{ position: "absolute", top: `${(1 - gridLine2 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
-                  <div style={{ position: "absolute", top: `${(1 - gridLine1 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
+            {/* Legend */}
+            <div style={{ display: "flex", gap: "6px", marginTop: "3px", flexWrap: "wrap" }}>
+              {[
+                { label: "1-2", val: lagStats.visitBucket1to2 },
+                { label: "3-5", val: lagStats.visitBucket3to5 },
+                { label: "6-10", val: lagStats.visitBucket6to10 },
+                { label: "11+", val: lagStats.visitBucket11plus },
+              ].map((b, i) => b.val > 0 ? (
+                <div key={i} style={{ fontSize: "11px", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "3px" }}>
+                  <span style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: distColors[i], display: "inline-block" }} />
+                  {b.label}
                 </div>
-                {/* Bars */}
-                <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: BAR_H, position: "relative" }}>
-                  {chartData.map((d, i) => {
-                    const val = chartMetric === "pool" ? d.pool : d.converts;
-                    const h = barMax > 0 ? (val / barMax) * BAR_H : 0;
-                    const isHovered = hoveredWeek === d.weekStart;
-                    return (
-                      <div
-                        key={i}
-                        style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: BAR_H, position: "relative" }}
-                        onMouseEnter={() => setHoveredWeek(d.weekStart)}
-                        onMouseLeave={() => setHoveredWeek(null)}
-                      >
-                        {/* (#7) Tooltip: absolute, pointer-events none, clamped above bar */}
-                        {isHovered && (
-                          <div style={{
-                            position: "absolute", bottom: Math.max(h, 2) + 4, left: "50%", transform: "translateX(-50%)",
-                            fontSize: "0.5rem", fontWeight: DS.weight.medium, color: "var(--st-text-primary)",
-                            whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
-                            pointerEvents: "none", zIndex: 10,
-                            backgroundColor: "rgba(255,255,255,0.92)", padding: "1px 3px", borderRadius: "2px",
-                            boxShadow: "0 0 2px rgba(0,0,0,0.06)",
-                          }}>
-                            {formatNumber(val)}
-                          </div>
-                        )}
-                        <div style={{
-                          width: "70%", maxWidth: "28px", borderRadius: "2px 2px 0 0",
-                          height: Math.max(h, val > 0 ? 2 : 0),
-                          ...(d.complete
-                            ? { backgroundColor: COLORS.conversionPool, opacity: isHovered ? 0.85 : 0.65 }
-                            : { backgroundColor: "rgba(107, 91, 123, 0.06)", border: `1.5px dashed ${COLORS.conversionPool}`, opacity: isHovered ? 0.5 : 0.35 }),
-                          transition: "opacity 0.15s",
-                        }} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              ) : null)}
             </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* ── Weekly Table ── */}
-      {displayWeeks.length > 0 && (
-        <table style={{
-          width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS,
-          tableLayout: "fixed",
-        }}>
+      {/* ── Chart toggle — uses ToggleRow ── */}
+      {chartData.length > 0 && (
+        <ToggleRow show={showChart} onToggle={() => setShowChart(!showChart)}>
+          <div style={{ display: "flex", gap: "2px" }}>
+            {(["pool", "converts"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setChartMetric(m)}
+                style={{
+                  background: chartMetric === m ? "rgba(107, 91, 123, 0.12)" : "none",
+                  border: `1px solid ${chartMetric === m ? "rgba(107, 91, 123, 0.25)" : "transparent"}`,
+                  borderRadius: "3px", padding: "1px 8px", cursor: "pointer",
+                  fontSize: "11px", color: chartMetric === m ? COLORS.conversionPool : "var(--st-text-secondary)",
+                  fontWeight: chartMetric === m ? 500 : 400,
+                  letterSpacing: "0.02em", textTransform: "capitalize" as const,
+                }}
+              >
+                {m === "pool" ? "Pool" : "Converts"}
+              </button>
+            ))}
+          </div>
+        </ToggleRow>
+      )}
+
+      {showChart && chartData.length > 0 && (
+        <div style={{ display: "flex", marginBottom: MOD.toggleToTabs }}>
+          {/* Y-axis labels */}
+          <div style={{ width: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-end", paddingRight: "4px", height: BAR_H }}>
+            <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(barMax)}</span>
+            <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(gridLine1)}</span>
+            <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>0</span>
+          </div>
+          {/* Bars with gridlines */}
+          <div style={{ flex: 1, position: "relative", height: BAR_H, overflow: "visible" }}>
+            {/* Gridlines */}
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
+              <div style={{ position: "absolute", top: `${(1 - gridLine2 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
+              <div style={{ position: "absolute", top: `${(1 - gridLine1 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
+            </div>
+            {/* Bars */}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: BAR_H, position: "relative" }}>
+              {chartData.map((d, i) => {
+                const val = chartMetric === "pool" ? d.pool : d.converts;
+                const h = barMax > 0 ? (val / barMax) * BAR_H : 0;
+                const isHovered = hoveredWeek === d.weekStart;
+                return (
+                  <div
+                    key={i}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: BAR_H, position: "relative" }}
+                    onMouseEnter={() => setHoveredWeek(d.weekStart)}
+                    onMouseLeave={() => setHoveredWeek(null)}
+                  >
+                    {/* Tooltip: absolute, pointer-events none */}
+                    {isHovered && (
+                      <div style={{
+                        position: "absolute", bottom: Math.max(h, 2) + 4, left: "50%", transform: "translateX(-50%)",
+                        fontSize: "10px", fontWeight: 500, color: "var(--st-text-primary)",
+                        whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+                        pointerEvents: "none", zIndex: 10,
+                        backgroundColor: "rgba(255,255,255,0.92)", padding: "1px 4px", borderRadius: "2px",
+                        boxShadow: "0 0 2px rgba(0,0,0,0.06)",
+                      }}>
+                        {formatNumber(val)}
+                      </div>
+                    )}
+                    <div style={{
+                      width: "70%", maxWidth: "28px", borderRadius: "2px 2px 0 0",
+                      height: Math.max(h, val > 0 ? 2 : 0),
+                      ...(d.complete
+                        ? { backgroundColor: COLORS.conversionPool, opacity: isHovered ? 0.85 : 0.65 }
+                        : { backgroundColor: "rgba(107, 91, 123, 0.06)", border: `1.5px dashed ${COLORS.conversionPool}`, opacity: isHovered ? 0.5 : 0.35 }),
+                      transition: "opacity 0.15s",
+                    }} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tabs: Complete | WTD ── */}
+      <UnderlineTabs
+        tabs={[
+          { key: "complete", label: "Complete weeks" },
+          ...(wtd ? [{ key: "wtd", label: "Week to date" }] : []),
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
+
+      {/* ── Weekly Table (Complete weeks tab) ── */}
+      {activeTab === "complete" && displayWeeks.length > 0 && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "38%" }} />
             <col style={{ width: "18%" }} />
@@ -2949,10 +2747,10 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           </colgroup>
           <thead>
             <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.1)" }}>
-              <th style={{ ...thStyle, textAlign: "left" }}>Week</th>
-              <th style={thStyle}>Pool</th>
-              <th style={thStyle}>Converts</th>
-              <th style={thStyle}>Rate</th>
+              <th style={{ ...modTh, textAlign: "left" }}>Week</th>
+              <th style={modTh}>Pool</th>
+              <th style={modTh}>Converts</th>
+              <th style={modTh}>Rate</th>
             </tr>
           </thead>
           <tbody>
@@ -2970,67 +2768,88 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                     borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
                     transition: "background 0.1s",
                     background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
+                    height: MOD.rowH,
                   }}
                 >
-                  <td style={{ ...tdBase, textAlign: "left", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                  <td style={{ ...modTd, textAlign: "left", fontSize: "12px", color: "var(--st-text-secondary)" }}>
                     {weekLabel}
                     {isLatest && (
                       <span style={{
-                        fontSize: "0.5rem", fontWeight: DS.weight.medium,
+                        fontSize: "10px", fontWeight: 500,
                         backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
-                        padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
-                        marginLeft: "0.3rem",
+                        padding: "1px 5px", borderRadius: "2px", letterSpacing: "0.03em",
+                        marginLeft: "6px",
                       }}>
                         Latest
                       </span>
                     )}
                   </td>
-                  <td style={{ ...tdBase, fontSize: DS.text.sm }}>
+                  <td style={{ ...modTd, fontSize: "13px" }}>
                     {formatNumber(w.activePool7d)}
                   </td>
-                  <td style={{ ...tdBase, fontSize: DS.text.sm }}>
+                  <td style={{ ...modTd, fontSize: "13px" }}>
                     {formatNumber(w.converts)}
                   </td>
-                  <td style={{ ...tdBase, fontSize: DS.text.sm }}>
+                  <td style={{ ...modTd, fontSize: "13px" }}>
                     {w.conversionRate.toFixed(1)}%
                   </td>
                 </tr>
               );
             })}
-            {/* WTD row */}
-            {wtd && (
-              <tr style={{
-                borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
-                borderLeft: `2px solid ${COLORS.conversionPool}`,
-                background: "rgba(107, 91, 123, 0.03)",
-              }}>
-                <td style={{ ...tdBase, textAlign: "left", fontSize: DS.text.xs, fontStyle: "italic", color: "var(--st-text-secondary)" }}>
-                  <span style={{
-                    fontSize: "0.5rem", fontWeight: DS.weight.medium,
-                    backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
-                    padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
-                    marginRight: "0.3rem", fontStyle: "normal",
-                  }}>
-                    WTD
+          </tbody>
+        </table>
+      )}
+
+      {/* ── WTD Tab ── */}
+      {activeTab === "wtd" && wtd && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: "38%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "22%" }} />
+          </colgroup>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.1)" }}>
+              <th style={{ ...modTh, textAlign: "left" }}>Period</th>
+              <th style={modTh}>Pool</th>
+              <th style={modTh}>Converts</th>
+              <th style={modTh}>Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{
+              borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
+              borderLeft: `2px solid ${COLORS.conversionPool}`,
+              background: "rgba(107, 91, 123, 0.03)",
+              height: MOD.rowH,
+            }}>
+              <td style={{ ...modTd, textAlign: "left", fontSize: "12px", color: "var(--st-text-secondary)" }}>
+                <span style={{
+                  fontSize: "10px", fontWeight: 500,
+                  backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
+                  padding: "1px 5px", borderRadius: "2px", letterSpacing: "0.03em",
+                  marginRight: "6px",
+                }}>
+                  WTD
+                </span>
+                {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                {wtd.daysLeft > 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginLeft: "6px" }}>
+                    ({wtd.daysLeft}d left)
                   </span>
-                  {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  {wtd.daysLeft > 0 && (
-                    <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginLeft: "0.25rem" }}>
-                      ({wtd.daysLeft}d left)
-                    </span>
-                  )}
-                </td>
-                <td style={{ ...tdBase, fontSize: DS.text.sm, fontStyle: "italic" }}>
-                  {formatNumber(wtd.activePool7d)}
-                </td>
-                <td style={{ ...tdBase, fontSize: DS.text.sm, fontStyle: "italic" }}>
-                  {formatNumber(wtd.converts)}
-                </td>
-                <td style={{ ...tdBase, fontSize: DS.text.sm, fontStyle: "italic" }}>
-                  {wtd.conversionRate.toFixed(1)}%
-                </td>
-              </tr>
-            )}
+                )}
+              </td>
+              <td style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+                {formatNumber(wtd.activePool7d)}
+              </td>
+              <td style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+                {formatNumber(wtd.converts)}
+              </td>
+              <td style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+                {wtd.conversionRate.toFixed(1)}%
+              </td>
+            </tr>
           </tbody>
         </table>
       )}
