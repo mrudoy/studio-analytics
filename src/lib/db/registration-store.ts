@@ -953,6 +953,39 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
 
 // ── Conversion Pool Queries ──────────────────────────────────
 
+// Pool slice SQL fragments: filter which non-subscriber visits count
+export type PoolSliceKey = "all" | "drop-ins" | "intro-week" | "class-packs" | "high-intent";
+
+const POOL_SLICE_FILTERS: Record<PoolSliceKey, string> = {
+  "all": "",
+  "drop-ins": `AND (UPPER(r.pass) LIKE '%DROP-IN%' OR UPPER(r.pass) LIKE '%DROP IN%' OR UPPER(r.pass) LIKE '%DROPIN%' OR UPPER(r.pass) LIKE '%DROPLET%')`,
+  "intro-week": `AND (UPPER(r.pass) LIKE '%INTRO%' OR UPPER(r.pass) LIKE '%TRIAL%' OR UPPER(r.pass) LIKE '%FIRST%')`,
+  "class-packs": `AND (UPPER(r.pass) LIKE '%PACK%' OR UPPER(r.pass) LIKE '%SINGLE CLASS%')`,
+  "high-intent": "", // handled via subquery wrapping (≥2 visits in 30 days)
+};
+
+// For high-intent, we wrap the pool CTE with an additional filter
+function getHighIntentPoolCTE(baseDateFilter: string): string {
+  return `
+    SELECT week_start, COUNT(DISTINCT email) as pool_size
+    FROM (
+      SELECT LOWER(r.email) as email,
+             DATE_TRUNC('week', r.attended_at::date)::date as week_start,
+             COUNT(*) OVER (
+               PARTITION BY LOWER(r.email)
+               ORDER BY r.attended_at::date
+               RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW
+             ) as rolling_30d_visits
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${baseDateFilter}
+    ) sub
+    WHERE rolling_30d_visits >= 2
+    GROUP BY week_start`;
+}
+
 export interface ConversionPoolWeekRow {
   weekStart: string;
   weekEnd: string;
@@ -968,8 +1001,25 @@ export interface ConversionPoolWeekRow {
  * Converts = pool members whose FIRST in-studio auto-renew (MEMBER/SKY3) started that week,
  *            AND who had at least one prior non-subscriber visit.
  */
-export async function getConversionPoolWeekly(weeksBack = 16): Promise<ConversionPoolWeekRow[]> {
+export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKey = "all"): Promise<ConversionPoolWeekRow[]> {
   const pool = getPool();
+  const sliceFilter = POOL_SLICE_FILTERS[slice];
+  const baseDateFilter = `AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date`;
+
+  const poolCTE = slice === "high-intent"
+    ? `non_auto_pool AS (${getHighIntentPoolCTE(baseDateFilter)})`
+    : `non_auto_pool AS (
+      SELECT DATE_TRUNC('week', r.attended_at::date)::date as week_start,
+             COUNT(DISTINCT LOWER(r.email)) as pool_size
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${baseDateFilter}
+        ${sliceFilter}
+      GROUP BY DATE_TRUNC('week', r.attended_at::date)::date
+    )`;
 
   const query = `
     WITH week_series AS (
@@ -979,18 +1029,7 @@ export async function getConversionPoolWeekly(weeksBack = 16): Promise<Conversio
         '1 week'::interval
       )::date as week_start
     ),
-    -- Unique non-subscriber visitors per week
-    non_auto_pool AS (
-      SELECT DATE_TRUNC('week', r.attended_at::date)::date as week_start,
-             COUNT(DISTINCT LOWER(r.email)) as pool_size
-      FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
-        AND (r.subscription = 'false' OR r.subscription IS NULL)
-        AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
-        AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date
-      GROUP BY DATE_TRUNC('week', r.attended_at::date)::date
-    ),
+    ${poolCTE},
     -- Each person's first in-studio auto-renew start date
     first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
@@ -1012,6 +1051,7 @@ export async function getConversionPoolWeekly(weeksBack = 16): Promise<Conversio
           AND r.attended_at IS NOT NULL AND r.attended_at != ''
           AND (r.subscription = 'false' OR r.subscription IS NULL)
           AND r.attended_at::date < f.first_sub_date
+          ${sliceFilter}
       )
     ),
     weekly_converts AS (
@@ -1045,7 +1085,7 @@ export async function getConversionPoolWeekly(weeksBack = 16): Promise<Conversio
  * Get conversion pool week-to-date stats for the current partial week.
  * Includes both 7d pool (this week's visitors) and 30d pool (last 30 days).
  */
-export async function getConversionPoolWTD(): Promise<{
+export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise<{
   weekStart: string;
   weekEnd: string;
   activePool7d: number;
@@ -1054,9 +1094,23 @@ export async function getConversionPoolWTD(): Promise<{
   daysLeft: number;
 } | null> {
   const pool = getPool();
+  const sliceFilter = POOL_SLICE_FILTERS[slice];
 
-  const query = `
-    WITH pool_7d AS (
+  // For high-intent, we need a different pool CTE
+  const pool7dCTE = slice === "high-intent" ? `
+    pool_7d AS (
+      SELECT COUNT(DISTINCT email) as cnt FROM (
+        SELECT LOWER(r.email) as email,
+               COUNT(*) OVER (PARTITION BY LOWER(r.email) ORDER BY r.attended_at::date RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW) as rolling
+        FROM registrations r
+        WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+          AND r.email IS NOT NULL AND r.email != ''
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
+          AND r.attended_at::date <= CURRENT_DATE
+      ) sub WHERE rolling >= 2
+    )` : `
+    pool_7d AS (
       SELECT COUNT(DISTINCT LOWER(r.email)) as cnt
       FROM registrations r
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
@@ -1064,7 +1118,22 @@ export async function getConversionPoolWTD(): Promise<{
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
         AND r.attended_at::date <= CURRENT_DATE
-    ),
+        ${sliceFilter}
+    )`;
+
+  const pool30dCTE = slice === "high-intent" ? `
+    pool_30d AS (
+      SELECT COUNT(DISTINCT email) as cnt FROM (
+        SELECT LOWER(r.email) as email,
+               COUNT(*) OVER (PARTITION BY LOWER(r.email) ORDER BY r.attended_at::date RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW) as rolling
+        FROM registrations r
+        WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+          AND r.email IS NOT NULL AND r.email != ''
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
+          AND r.attended_at::date <= CURRENT_DATE
+      ) sub WHERE rolling >= 2
+    )` : `
     pool_30d AS (
       SELECT COUNT(DISTINCT LOWER(r.email)) as cnt
       FROM registrations r
@@ -1073,7 +1142,12 @@ export async function getConversionPoolWTD(): Promise<{
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
         AND r.attended_at::date <= CURRENT_DATE
-    ),
+        ${sliceFilter}
+    )`;
+
+  const query = `
+    WITH ${pool7dCTE},
+    ${pool30dCTE},
     first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
              MIN(created_at::date) as first_sub_date
@@ -1094,6 +1168,7 @@ export async function getConversionPoolWTD(): Promise<{
             AND r.attended_at IS NOT NULL AND r.attended_at != ''
             AND (r.subscription = 'false' OR r.subscription IS NULL)
             AND r.attended_at::date < f.first_sub_date
+            ${sliceFilter}
         )
     )
     SELECT
@@ -1125,7 +1200,7 @@ export async function getConversionPoolWTD(): Promise<{
  * Returns stats for both the current week's converters and a 12-week historical window.
  * Falls back to historical if current week has no converters.
  */
-export async function getConversionPoolLagStats(): Promise<{
+export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Promise<{
   medianTimeToConvert: number | null;
   avgVisitsBeforeConvert: number | null;
   timeBucket0to30: number;
@@ -1141,6 +1216,7 @@ export async function getConversionPoolLagStats(): Promise<{
   historicalAvgVisitsBeforeConvert: number | null;
 } | null> {
   const pool = getPool();
+  const sliceFilter = POOL_SLICE_FILTERS[slice];
 
   const query = `
     WITH first_in_studio_sub AS (
@@ -1165,6 +1241,7 @@ export async function getConversionPoolLagStats(): Promise<{
         AND r.attended_at IS NOT NULL AND r.attended_at != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         AND r.attended_at::date < f.first_sub_date
+        ${sliceFilter}
       WHERE f.first_sub_date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '12 weeks')::date
       GROUP BY f.email, f.first_sub_date
     ),

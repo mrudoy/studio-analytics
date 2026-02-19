@@ -17,6 +17,8 @@ import type {
   NewCustomerVolumeData,
   NewCustomerCohortData,
   ConversionPoolModuleData,
+  ConversionPoolSlice,
+  ConversionPoolSliceData,
 } from "@/types/dashboard";
 
 // ─── Client-only types ───────────────────────────────────────
@@ -2500,11 +2502,32 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const [showChart, setShowChart] = useState(false);
   const [chartMetric, setChartMetric] = useState<"pool" | "converts">("pool");
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
+  const [activeSlice, setActiveSlice] = useState<ConversionPoolSlice>("all");
 
-  const { completeWeeks, wtd, lagStats, lastCompleteWeek, avgPool7d, avgRate } = pool;
+  // Resolve active slice data (fall back to "all")
+  const data: ConversionPoolSliceData | null = pool.slices[activeSlice] ?? pool.slices.all ?? null;
+  if (!data) return null;
+
+  const { completeWeeks, wtd, lagStats, lastCompleteWeek, avgPool7d, avgRate } = data;
 
   // Display last 8 complete weeks in table
   const displayWeeks = completeWeeks.slice(-8);
+
+  // Second-to-last complete week for delta comparison (#1)
+  const prevCompleteWeek = completeWeeks.length >= 2 ? completeWeeks[completeWeeks.length - 2] : null;
+
+  // Deltas vs last complete week
+  const heroPool = wtd?.activePool7d ?? lastCompleteWeek?.activePool7d ?? 0;
+  const heroConverts = wtd?.converts ?? lastCompleteWeek?.converts ?? 0;
+  const heroRate = wtd ? wtd.conversionRate : (lastCompleteWeek?.conversionRate ?? 0);
+
+  const poolDelta = lastCompleteWeek && prevCompleteWeek ? lastCompleteWeek.activePool7d - prevCompleteWeek.activePool7d : null;
+  const convertsDelta = lastCompleteWeek && prevCompleteWeek ? lastCompleteWeek.converts - prevCompleteWeek.converts : null;
+  const rateDelta = lastCompleteWeek && prevCompleteWeek ? Math.round((lastCompleteWeek.conversionRate - prevCompleteWeek.conversionRate) * 10) / 10 : null;
+
+  // Rate badge: show warning if rate is down >20% vs 8-week avg (#1)
+  const rateVsAvg = avgRate > 0 ? heroRate - avgRate : null;
+  const showRateWarning = rateVsAvg !== null && rateVsAvg < -(avgRate * 0.2);
 
   // Chart data: all complete weeks + WTD
   const chartData = [
@@ -2514,8 +2537,12 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const barMax = Math.max(...chartData.map((d) => chartMetric === "pool" ? d.pool : d.converts), 1);
   const BAR_H = 80;
 
-  // Table styles (matching other modules)
-  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.45)", whiteSpace: "nowrap" };
+  // #2: Y-axis gridlines (2 lines: ~33% and ~66% of max)
+  const gridLine1 = Math.round(barMax / 3);
+  const gridLine2 = Math.round((barMax * 2) / 3);
+
+  // Table styles: softer header (#7-style)
+  const thStyle: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontSize: "0.6rem", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(65, 58, 58, 0.35)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
   const tdBase: React.CSSProperties = { textAlign: "right", padding: "0.3rem 0.5rem", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS };
 
   // Info icon
@@ -2532,20 +2559,57 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     </span>
   );
 
-  // Distribution bar renderer
+  // Delta pill renderer
+  const DeltaPill = ({ delta, suffix = "" }: { delta: number | null; suffix?: string }) => {
+    if (delta === null || delta === 0) return null;
+    const sign = delta > 0 ? "+" : "";
+    return (
+      <span style={{
+        fontSize: "0.55rem", fontWeight: DS.weight.medium,
+        color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
+        padding: "1px 4px", borderRadius: "3px", letterSpacing: "0.02em",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {sign}{typeof delta === "number" && suffix === "pp" ? delta.toFixed(1) : delta}{suffix}
+      </span>
+    );
+  };
+
+  // #3: Distribution bar with inline % on largest segment
   const DistBar = ({ buckets, labels, colors }: { buckets: number[]; labels: string[]; colors: string[] }) => {
     const total = buckets.reduce((s, b) => s + b, 0);
     if (total === 0) return <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>&mdash;</span>;
+    const maxIdx = buckets.indexOf(Math.max(...buckets));
     return (
       <div>
-        <div style={{ display: "flex", height: "10px", borderRadius: "3px", overflow: "hidden", gap: "1px" }}>
-          {buckets.map((b, i) => (
-            <div key={i} style={{ flex: b, backgroundColor: colors[i], minWidth: b > 0 ? "2px" : 0 }} title={`${labels[i]}: ${b} (${Math.round((b / total) * 100)}%)`} />
-          ))}
+        <div style={{ display: "flex", height: "12px", borderRadius: "3px", overflow: "hidden", gap: "1px" }}>
+          {buckets.map((b, i) => {
+            const pct = Math.round((b / total) * 100);
+            const isLargest = i === maxIdx && pct >= 20;
+            return (
+              <div
+                key={i}
+                style={{
+                  flex: Math.max(b, total * 0.03),
+                  backgroundColor: colors[i],
+                  minWidth: b > 0 ? "2px" : 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  position: "relative",
+                }}
+                title={`${labels[i]}: ${b} (${pct}%)`}
+              >
+                {isLargest && pct > 0 && (
+                  <span style={{ fontSize: "0.5rem", fontWeight: DS.weight.bold, color: "white", textShadow: "0 0 2px rgba(0,0,0,0.3)", lineHeight: 1 }}>
+                    {pct}%
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
           {buckets.map((b, i) => b > 0 ? (
-            <div key={i} style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "0.15rem" }}>
+            <div key={i} style={{ fontSize: "0.6rem", color: "var(--st-text-primary)", opacity: 0.7, display: "flex", alignItems: "center", gap: "0.15rem" }}>
               <span style={{ width: "5px", height: "5px", borderRadius: "1px", backgroundColor: colors[i], display: "inline-block" }} />
               {labels[i]}
             </div>
@@ -2555,7 +2619,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     );
   };
 
-  // Time + visit distribution colors (4 opacity levels of the module color)
+  // Distribution colors
   const distColors = [
     "rgba(107, 91, 123, 0.85)",
     "rgba(107, 91, 123, 0.60)",
@@ -2563,31 +2627,52 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     "rgba(107, 91, 123, 0.22)",
   ];
 
-  // Hero values
-  const heroPool = wtd?.activePool7d ?? lastCompleteWeek?.activePool7d ?? 0;
-  const heroConverts = wtd?.converts ?? lastCompleteWeek?.converts ?? 0;
-  const heroRate = wtd ? wtd.conversionRate : (lastCompleteWeek?.conversionRate ?? 0);
-  const heroYield = heroRate; // same number, different framing
+  // #5: Slice options
+  const sliceOptions: { key: ConversionPoolSlice; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "drop-ins", label: "Drop-ins" },
+    { key: "intro-week", label: "Intro Week" },
+    { key: "class-packs", label: "Class Packs" },
+    { key: "high-intent", label: "High intent" },
+  ];
 
   return (
     <Card>
-      {/* ── Module header ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-        <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.conversionPool, opacity: 0.85 }} />
-        <span style={{ ...DS.label }}>{LABELS.conversionPool}</span>
+      {/* ── Module header with Slice dropdown (#5) ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: COLORS.conversionPool, opacity: 0.85 }} />
+          <span style={{ ...DS.label }}>{LABELS.conversionPool}</span>
+        </div>
+        <select
+          value={activeSlice}
+          onChange={(e) => setActiveSlice(e.target.value as ConversionPoolSlice)}
+          title="Filter pool by visit type"
+          style={{
+            fontSize: "0.6rem", fontWeight: DS.weight.medium,
+            color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.04)",
+            border: "1px solid rgba(65, 58, 58, 0.1)", borderRadius: "3px",
+            padding: "2px 6px", cursor: "pointer", outline: "none",
+            fontFamily: FONT_SANS, letterSpacing: "0.02em",
+          }}
+        >
+          {sliceOptions.map((o) => (
+            <option key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</option>
+          ))}
+        </select>
       </div>
 
-      {/* ── KPI Row 1: 4 tiles ── */}
+      {/* ── KPI Row: 3 tiles (#1: removed Per 100, added deltas) ── */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "1fr 1px 1fr 1px 1fr 1px auto",
-        alignItems: "stretch",
+        gridTemplateColumns: "1fr 1px 1fr 1px 1fr",
+        alignItems: "center",
         padding: "0.4rem 0",
         marginBottom: "0.3rem",
         fontVariantNumeric: "tabular-nums",
       }}>
         {/* Tile 1: Active Pool (7d) */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ padding: "0 0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
             <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
               {formatNumber(heroPool)}
@@ -2597,18 +2682,21 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
             Active pool (7d)
           </div>
-          {wtd && wtd.activePool30d > 0 && (
-            <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginTop: "0.15rem", display: "flex", alignItems: "center", gap: "0.15rem" }}>
-              30d: {formatNumber(wtd.activePool30d)}
-              <InfoIcon tooltip="Unique non-subscriber studio visitors in the last 30 days." />
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.15rem", minHeight: "1rem" }}>
+            <DeltaPill delta={poolDelta} />
+            {wtd && wtd.activePool30d > 0 && (
+              <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)" }}>
+                30d: {formatNumber(wtd.activePool30d)}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+        {/* Hairline — full height via alignSelf */}
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5, alignSelf: "stretch" }} />
 
         {/* Tile 2: Converts */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ padding: "0 0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
             <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
               {formatNumber(heroConverts)}
@@ -2618,37 +2706,47 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
             Converts (week)
           </div>
+          <div style={{ marginTop: "0.15rem", minHeight: "1rem" }}>
+            <DeltaPill delta={convertsDelta} />
+          </div>
         </div>
 
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
+        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5, alignSelf: "stretch" }} />
 
-        {/* Tile 3: Rate */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        {/* Tile 3: Rate (with per-100 helper and warning badge) */}
+        <div style={{ padding: "0 0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.15rem" }}>
             <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
               {heroRate.toFixed(1)}%
             </span>
+            {showRateWarning && (
+              <span
+                title={`Rate is ${Math.abs(rateVsAvg!).toFixed(1)}pp below 8-week avg (${avgRate.toFixed(1)}%). Click Show trend.`}
+                onClick={() => setShowChart(true)}
+                style={{
+                  fontSize: "0.5rem", fontWeight: DS.weight.bold,
+                  color: COLORS.error, backgroundColor: "rgba(160, 64, 64, 0.08)",
+                  padding: "1px 4px", borderRadius: "2px", cursor: "pointer",
+                }}
+              >
+                &#9660; vs avg
+              </span>
+            )}
             <InfoIcon tooltip="Converts / Active pool (7d)." />
           </div>
           <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
             Rate
           </div>
-        </div>
-
-        <div style={{ width: "1px", backgroundColor: "var(--st-border)", opacity: 0.5 }} />
-
-        {/* Tile 4: Per 100 */}
-        <div style={{ padding: "0 0.5rem", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.lg, fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
-            {heroYield.toFixed(1)}
-          </span>
-          <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "0.1rem" }}>
-            Per 100
+          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.15rem", minHeight: "1rem" }}>
+            <DeltaPill delta={rateDelta} suffix="pp" />
+            <span style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", opacity: 0.6 }}>
+              = {heroRate.toFixed(1)} per 100
+            </span>
           </div>
         </div>
       </div>
 
-      {/* ── KPI Row 2: Lag stats + distributions ── */}
+      {/* ── Lag stats + distributions ── */}
       {lagStats && (
         <div style={{
           display: "grid",
@@ -2695,9 +2793,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             )}
           </div>
 
-          {/* Time distribution bar */}
+          {/* Time distribution bar (#3) */}
           <div>
-            <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ fontSize: "0.6rem", color: "var(--st-text-primary)", opacity: 0.6, marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Time to convert
             </div>
             <DistBar
@@ -2707,9 +2805,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             />
           </div>
 
-          {/* Visit distribution bar */}
+          {/* Visit distribution bar (#3) */}
           <div>
-            <div style={{ fontSize: "0.55rem", color: "var(--st-text-secondary)", marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ fontSize: "0.6rem", color: "var(--st-text-primary)", opacity: 0.6, marginBottom: "0.2rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Visits before convert
             </div>
             <DistBar
@@ -2721,9 +2819,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
         </div>
       )}
 
-      {/* ── Chart toggle (collapsed by default) ── */}
+      {/* ── Chart toggle (#2: gridlines + y-axis labels) ── */}
       {chartData.length > 0 && (
-        <div style={{ marginBottom: "1.1rem" }}>
+        <div style={{ marginBottom: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <button
               type="button"
@@ -2734,7 +2832,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 display: "flex", alignItems: "center", gap: "0.3rem",
               }}
             >
-              <span style={{ fontSize: "0.5rem", transition: "transform 0.2s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
+              <span style={{ fontSize: "0.5rem", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
               {showChart ? "Hide trend" : "Show trend"}
             </button>
             {showChart && (
@@ -2761,38 +2859,57 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           </div>
 
           {showChart && (
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: BAR_H, marginTop: "0.3rem" }}>
-              {chartData.map((d, i) => {
-                const val = chartMetric === "pool" ? d.pool : d.converts;
-                const h = barMax > 0 ? (val / barMax) * BAR_H : 0;
-                const isHovered = hoveredWeek === d.weekStart;
-                return (
-                  <div
-                    key={i}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: BAR_H, position: "relative" }}
-                    onMouseEnter={() => setHoveredWeek(d.weekStart)}
-                    onMouseLeave={() => setHoveredWeek(null)}
-                  >
-                    {isHovered && (
-                      <div style={{
-                        position: "absolute", top: -18, fontSize: "0.55rem",
-                        fontWeight: DS.weight.medium, color: "var(--st-text-primary)",
-                        whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
-                      }}>
-                        {formatNumber(val)}
+            <div style={{ display: "flex", marginTop: "0.3rem" }}>
+              {/* Y-axis labels (#2) */}
+              <div style={{ width: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-end", paddingRight: "4px", height: BAR_H }}>
+                <span style={{ fontSize: "0.45rem", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(barMax)}</span>
+                <span style={{ fontSize: "0.45rem", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(gridLine1)}</span>
+                <span style={{ fontSize: "0.45rem", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>0</span>
+              </div>
+              {/* Bars with gridlines */}
+              <div style={{ flex: 1, position: "relative", height: BAR_H }}>
+                {/* Gridlines */}
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
+                  <div style={{ position: "absolute", top: `${(1 - gridLine2 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
+                  <div style={{ position: "absolute", top: `${(1 - gridLine1 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
+                </div>
+                {/* Bars */}
+                <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: BAR_H, position: "relative" }}>
+                  {chartData.map((d, i) => {
+                    const val = chartMetric === "pool" ? d.pool : d.converts;
+                    const h = barMax > 0 ? (val / barMax) * BAR_H : 0;
+                    const isHovered = hoveredWeek === d.weekStart;
+                    return (
+                      <div
+                        key={i}
+                        style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: BAR_H, position: "relative" }}
+                        onMouseEnter={() => setHoveredWeek(d.weekStart)}
+                        onMouseLeave={() => setHoveredWeek(null)}
+                      >
+                        {/* #2/#4: Tooltip floats above, out of layout flow */}
+                        {isHovered && (
+                          <div style={{
+                            position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)",
+                            fontSize: "0.5rem", fontWeight: DS.weight.medium, color: "var(--st-text-primary)",
+                            whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+                            pointerEvents: "none", zIndex: 1,
+                          }}>
+                            {formatNumber(val)}
+                          </div>
+                        )}
+                        <div style={{
+                          width: "70%", maxWidth: "28px", borderRadius: "2px 2px 0 0",
+                          height: Math.max(h, val > 0 ? 2 : 0),
+                          ...(d.complete
+                            ? { backgroundColor: COLORS.conversionPool, opacity: isHovered ? 0.85 : 0.65 }
+                            : { backgroundColor: "rgba(107, 91, 123, 0.06)", border: `1.5px dashed ${COLORS.conversionPool}`, opacity: isHovered ? 0.5 : 0.35 }),
+                          transition: "opacity 0.15s",
+                        }} />
                       </div>
-                    )}
-                    <div style={{
-                      width: "100%", borderRadius: "2px 2px 0 0",
-                      height: Math.max(h, val > 0 ? 2 : 0),
-                      ...(d.complete
-                        ? { backgroundColor: COLORS.conversionPool, opacity: isHovered ? 0.85 : 0.65 }
-                        : { backgroundColor: "rgba(107, 91, 123, 0.06)", border: `1.5px dashed ${COLORS.conversionPool}`, opacity: isHovered ? 0.5 : 0.35 }),
-                      transition: "opacity 0.15s",
-                    }} />
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -2805,10 +2922,10 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           tableLayout: "fixed",
         }}>
           <colgroup>
-            <col style={{ width: "40%" }} />
+            <col style={{ width: "38%" }} />
             <col style={{ width: "18%" }} />
             <col style={{ width: "22%" }} />
-            <col style={{ width: "20%" }} />
+            <col style={{ width: "22%" }} />
           </colgroup>
           <thead>
             <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.1)" }}>
@@ -2819,8 +2936,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             </tr>
           </thead>
           <tbody>
-            {displayWeeks.map((w) => {
+            {displayWeeks.map((w, idx) => {
               const isHovered = hoveredWeek === w.weekStart;
+              const isLatest = idx === displayWeeks.length - 1;
               const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
               return (
                 <tr
@@ -2836,6 +2954,16 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 >
                   <td style={{ ...tdBase, textAlign: "left", fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
                     {weekLabel}
+                    {isLatest && (
+                      <span style={{
+                        fontSize: "0.5rem", fontWeight: DS.weight.medium,
+                        backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
+                        padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
+                        marginLeft: "0.3rem",
+                      }}>
+                        Latest
+                      </span>
+                    )}
                   </td>
                   <td style={{ ...tdBase, fontSize: DS.text.sm }}>
                     {formatNumber(w.activePool7d)}

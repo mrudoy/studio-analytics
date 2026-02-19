@@ -307,13 +307,19 @@ export interface ConversionPoolLagStats {
   historicalAvgVisitsBeforeConvert: number | null;
 }
 
-export interface ConversionPoolModuleData {
+export type ConversionPoolSlice = "all" | "drop-ins" | "intro-week" | "class-packs" | "high-intent";
+
+export interface ConversionPoolSliceData {
   completeWeeks: ConversionPoolWeekRow[];   // last 16 complete weeks
   wtd: ConversionPoolWTD | null;
   lagStats: ConversionPoolLagStats | null;
   lastCompleteWeek: ConversionPoolWeekRow | null;
   avgPool7d: number;                         // 8-week average of activePool7d
   avgRate: number;                           // 8-week average conversion rate
+}
+
+export interface ConversionPoolModuleData {
+  slices: Partial<Record<ConversionPoolSlice, ConversionPoolSliceData>>;
 }
 
 // ── Trends aggregate ───────────────────────────────────────
