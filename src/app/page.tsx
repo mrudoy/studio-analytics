@@ -1228,133 +1228,145 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
   );
 }
 
-// ─── Line Chart ──────────────────────────────────────────────
+// ─── Area Chart (responsive, fills container) ────────────────
 
-/** Line chart rule: each data point gets a fixed-width slot (LINE_POINT_SLOT_PX).
- *  The chart sizes to its content, never stretches to fill the card. */
-const LINE_POINT_SLOT_PX = 56;
-
-function LineChart({ data, height = 160, formatValue, color = "var(--st-accent)" }: {
+/**
+ * Full-width area chart with gradient fill.
+ * Renders inside a container div and uses viewBox for responsive scaling.
+ * Inspired by modern dashboard UIs (Square, Stripe, etc.)
+ */
+function AreaChart({ data, height = 200, formatValue, color = COLORS.member, showGrid = true }: {
   data: { label: string; value: number }[];
   height?: number;
   formatValue?: (v: number) => string;
   color?: string;
+  showGrid?: boolean;
 }) {
   if (data.length < 2) return null;
   const fmt = formatValue || ((v: number) => String(v));
   const values = data.map(d => d.value);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const dataMin = Math.min(...values);
+  // Add 10% padding above max for breathing room
+  const max = dataMax + (dataMax - dataMin) * 0.1;
+  const min = dataMin - (dataMax - dataMin) * 0.05;
   const range = max - min || 1;
 
-  // Unique gradient ID per chart instance
-  const gradId = `lineGrad-${data.length}-${Math.round(data[0]?.value || 0)}`;
-  // Chart width = fixed slot per data point (matches container)
-  const chartW = data.length * LINE_POINT_SLOT_PX;
-  const svgW = chartW;
-  const svgH = height;
-  const padL = 0;
-  const padR = 0;
-  const padT = 8;
-  const padB = 8;
-  const plotW = svgW - padL - padR;
-  const plotH = svgH - padT - padB;
+  // Internal SVG coordinate space
+  const svgW = 800;
+  const padLeft = 52;   // Y-axis labels
+  const padRight = 16;
+  const padTop = 12;
+  const padBot = 28;    // X-axis labels
+  const plotW = svgW - padLeft - padRight;
+  const plotH = height - padTop - padBot;
+
+  const gradId = `area-${data.length}-${Math.round(dataMax)}`;
 
   // Build points
-  const points = data.map((d, i) => ({
-    x: padL + (i / (data.length - 1)) * plotW,
-    y: padT + plotH - ((d.value - min) / range) * plotH,
-    value: d.value,
-    label: d.label,
-  }));
+  const points = data.map((d, i) => {
+    const x = padLeft + (i / (data.length - 1)) * plotW;
+    const yFrac = 1 - (d.value - min) / range;
+    const y = padTop + yFrac * plotH;
+    return { x, y, value: d.value, label: d.label };
+  });
 
-  // SVG path
-  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  // Smooth curve (cardinal spline approximation)
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${padTop + plotH} L${points[0].x.toFixed(1)},${padTop + plotH} Z`;
 
-  // Gradient fill path (area under line)
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${svgH - padB} L ${points[0].x} ${svgH - padB} Z`;
-
-  // Y-axis gridlines (4 lines)
-  const gridLines = [0.25, 0.5, 0.75, 1].map(frac => padT + plotH - frac * plotH);
+  // Grid lines (4 horizontal)
+  const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {
+    const val = min + frac * range;
+    const y = padTop + (1 - frac) * plotH;
+    return { y, val };
+  });
 
   return (
-    <div style={{ width: `${data.length * LINE_POINT_SLOT_PX}px`, maxWidth: "100%", position: "relative" }}>
-      {/* Y-axis labels */}
-      <div style={{ position: "absolute", top: 0, left: 0, height: `${svgH}px`, display: "flex", flexDirection: "column", justifyContent: "space-between", paddingTop: `${padT}px`, paddingBottom: `${padB}px`, pointerEvents: "none" }}>
-        {[max, min + range * 0.75, min + range * 0.5, min + range * 0.25, min].map((v, i) => (
-          <span key={i} style={{ fontFamily: FONT_SANS, fontSize: "0.65rem", color: "var(--st-text-secondary)", opacity: 0.6, lineHeight: 1 }}>
-            {fmt(v)}
-          </span>
-        ))}
-      </div>
-
-      {/* SVG chart */}
-      <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: `${svgW}px`, height: `${svgH}px`, display: "block" }}>
+    <div style={{ width: "100%", position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${svgW} ${height}`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height: `${height}px`, display: "block" }}
+      >
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
             <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
         </defs>
 
         {/* Grid lines */}
-        {gridLines.map((y, i) => (
-          <line key={i} x1={padL} y1={y} x2={svgW - padR} y2={y} stroke="var(--st-border)" strokeWidth="0.5" strokeDasharray="4 4" />
+        {showGrid && gridLines.map((g, i) => (
+          <g key={i}>
+            <line
+              x1={padLeft}
+              y1={g.y}
+              x2={svgW - padRight}
+              y2={g.y}
+              stroke="var(--st-border)"
+              strokeWidth="0.5"
+              strokeDasharray="4 4"
+            />
+            <text
+              x={padLeft - 8}
+              y={g.y + 3}
+              textAnchor="end"
+              style={{ fontFamily: FONT_SANS, fontSize: "9px", fontWeight: 400, fill: "var(--st-text-secondary)" }}
+            >
+              {fmt(g.val)}
+            </text>
+          </g>
         ))}
 
         {/* Area fill */}
         <path d={areaPath} fill={`url(#${gradId})`} />
 
         {/* Line */}
-        <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Data points */}
-        {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="var(--st-bg-card)" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        ))}
-      </svg>
-
-      {/* X-axis labels */}
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
-        {data.map((d, i) => (
-          <span key={i} style={{
-            fontFamily: FONT_SANS,
-            fontSize: "0.7rem",
-            color: "var(--st-text-secondary)",
-            textAlign: "center",
-            minWidth: 0,
-            flex: 1,
-          }}>
-            {d.label}
-          </span>
-        ))}
-      </div>
-
-      {/* Value labels on points */}
-      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: `${svgH}px`, pointerEvents: "none" }}>
+        {/* Dots — only first, last, and every other for spacing */}
         {points.map((p, i) => {
-          // Only show labels on first, last, and peaks/valleys
-          const isPeak = i > 0 && i < points.length - 1 &&
-            p.value >= points[i - 1].value && p.value >= points[i + 1].value;
-          const isEndpoint = i === 0 || i === points.length - 1;
-          if (!isEndpoint && !isPeak) return null;
+          const show = i === 0 || i === points.length - 1 || (data.length <= 8) || (i % Math.ceil(data.length / 8) === 0);
+          if (!show) return null;
           return (
-            <span key={i} style={{
-              position: "absolute",
-              left: `${(p.x / svgW) * 100}%`,
-              top: `${(p.y / svgH) * 100 - 8}%`,
-              transform: "translateX(-50%)",
-              fontFamily: FONT_SANS,
-              fontSize: "0.7rem",
-              fontWeight: DS.weight.medium,
-              color: "var(--st-text-primary)",
-              whiteSpace: "nowrap",
-            }}>
-              {fmt(p.value)}
-            </span>
+            <circle key={i} cx={p.x} cy={p.y} r="3" fill="var(--st-bg-card)" stroke={color} strokeWidth="1.5" />
           );
         })}
-      </div>
+
+        {/* X-axis labels — show subset if many points */}
+        {points.map((p, i) => {
+          const step = Math.max(1, Math.ceil(data.length / 8));
+          const show = i === 0 || i === points.length - 1 || i % step === 0;
+          if (!show) return null;
+          return (
+            <text
+              key={`x-${i}`}
+              x={p.x}
+              y={height - 4}
+              textAnchor="middle"
+              style={{ fontFamily: FONT_SANS, fontSize: "9px", fontWeight: 400, fill: "var(--st-text-secondary)" }}
+            >
+              {p.label}
+            </text>
+          );
+        })}
+
+        {/* Value on last point */}
+        {(() => {
+          const last = points[points.length - 1];
+          return (
+            <text
+              x={last.x}
+              y={last.y - 10}
+              textAnchor="end"
+              style={{ fontFamily: FONT_SANS, fontSize: "11px", fontWeight: 700, fill: "var(--st-text-primary)" }}
+            >
+              {fmt(last.value)}
+            </text>
+          );
+        })()}
+      </svg>
     </div>
   );
 }
@@ -1523,32 +1535,30 @@ interface HeroTile {
 
 function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   return (
-    <Card>
-      <div className="flex flex-wrap gap-x-6 gap-y-5">
-        {tiles.map((tile, i) => (
-          <div key={i} style={{ flex: "1 1 140px", minWidth: "140px", borderLeft: i > 0 ? "1px solid var(--st-border)" : "none", paddingLeft: i > 0 ? "0.75rem" : 0 }}>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "4px" }}>
-              {tile.label}
-            </p>
-            <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, whiteSpace: "nowrap" }}>
-              {tile.value}
-            </p>
-            {(tile.sublabel || tile.delta != null) && (
-              <div className="flex items-center gap-1.5" style={{ marginTop: "3px" }}>
-                {tile.delta != null && (
-                  <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
-                )}
-                {tile.sublabel && (
-                  <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-                    {tile.sublabel}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </Card>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${tiles.length}, 1fr)`, gap: "1rem" }}>
+      {tiles.map((tile, i) => (
+        <Card key={i}>
+          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "8px" }}>
+            {tile.label}
+          </p>
+          <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.0 }}>
+            {tile.value}
+          </p>
+          {(tile.sublabel || tile.delta != null) && (
+            <div className="flex items-center gap-2" style={{ marginTop: "8px" }}>
+              {tile.delta != null && (
+                <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
+              )}
+              {tile.sublabel && (
+                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                  {tile.sublabel}
+                </span>
+              )}
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
   );
 }
 
@@ -1570,11 +1580,10 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
   const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const monthlyRevenue = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
 
-  // Use actual monthly revenue data for the bar chart (last 12 months)
-  const revenueMonthlyBars: BarChartData[] = monthlyRevenue.slice(-12).map((m) => ({
+  // Area chart data (last 12 months)
+  const revenueAreaData = monthlyRevenue.slice(-12).map((m) => ({
     label: formatShortMonth(m.month),
     value: m.gross,
-    color: COLORS.member,
   }));
 
   // MoM delta from the last two months
@@ -1589,68 +1598,54 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
     : null;
 
   return (
-    <div className="space-y-3">
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <SectionHeader>Revenue</SectionHeader>
 
-      {/* Summary cards — 2 column */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Left: Latest completed month */}
+      {/* Full-width area chart */}
+      {revenueAreaData.length > 1 && (
         <Card>
-          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "2px" }}>
-            {currentMonth ? formatMonthLabel(currentMonth.month) : "Latest Month"} Gross Revenue
-          </p>
-
-          {currentMonth ? (
-            <>
-              <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, marginTop: "8px" }}>
-                {formatCurrency(currentMonth.gross)}
-              </p>
-              <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", marginTop: "4px" }}>
-                Net: {formatCurrency(currentMonth.net)}
-              </p>
-              {momDelta != null && prevMonth && (
-                <p style={{ marginTop: "8px" }}>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>vs {formatMonthLabel(prevMonth.month)}: </span>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+            <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Monthly Gross Revenue</p>
+            {currentMonth && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+                <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+                  {formatCurrency(currentMonth.gross)}
+                </span>
+                {momDelta != null && (
                   <DeltaBadge delta={momDelta} deltaPercent={momDeltaPct} isCurrency compact />
-                </p>
-              )}
-            </>
-          ) : (
-            <p style={{ color: "var(--st-text-secondary)", fontFamily: FONT_SANS, marginTop: "8px" }}>No monthly data yet</p>
-          )}
+                )}
+              </div>
+            )}
+          </div>
+          <AreaChart data={revenueAreaData} height={200} formatValue={formatCompactCurrency} color={COLORS.member} />
         </Card>
+      )}
 
-        {/* Right: Gross vs Net for latest month */}
-        {currentMonth && (
-          <Card>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "2px" }}>
-              {formatMonthLabel(currentMonth.month)} Breakdown
-            </p>
-            <div style={{ marginTop: "12px" }}>
-              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
-                <span style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>Gross</span>
-                <span style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold }}>{formatCurrency(currentMonth.gross)}</span>
-              </div>
-              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, padding: "6px 0", borderBottom: "1px solid var(--st-border)" }}>
-                <span style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>Net</span>
-                <span style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold }}>{formatCurrency(currentMonth.net)}</span>
-              </div>
-              <div className="flex justify-between" style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, padding: "6px 0" }}>
-                <span style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>Fees + Refunds</span>
-                <span style={{ color: "var(--st-error)", fontWeight: DS.weight.medium }}>-{formatCurrency(currentMonth.gross - currentMonth.net)}</span>
-              </div>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      {/* Full-width monthly trend chart */}
-      {revenueMonthlyBars.length > 0 && (
+      {/* Breakdown — simple list */}
+      {currentMonth && (
         <Card>
-          <p className="mb-3" style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-            Monthly Revenue Trend (Gross)
+          <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "0.75rem" }}>
+            {formatMonthLabel(currentMonth.month)} Breakdown
           </p>
-          <LineChart data={revenueMonthlyBars} height={180} formatValue={formatCompactCurrency} color={COLORS.member} />
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {[
+              { label: "Gross Revenue", value: formatCurrency(currentMonth.gross), bold: true },
+              { label: "Net Revenue", value: formatCurrency(currentMonth.net) },
+              { label: "Fees + Refunds", value: `-${formatCurrency(currentMonth.gross - currentMonth.net)}`, color: "var(--st-error)" },
+            ].map((row, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "0.6rem 0",
+                borderBottom: i < 2 ? "1px solid var(--st-border)" : "none",
+                fontFamily: FONT_SANS, fontSize: DS.text.sm,
+              }}>
+                <span style={{ color: "var(--st-text-secondary)" }}>{row.label}</span>
+                <span style={{ fontWeight: row.bold ? DS.weight.bold : DS.weight.medium, color: row.color || "var(--st-text-primary)" }}>
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
     </div>
@@ -1719,30 +1714,36 @@ function MonthOverMonthSection({ data }: { data: MonthOverMonthData }) {
 
 function MRRBreakdown({ data }: { data: DashboardStats }) {
   const segments = [
-    { label: "Member", value: data.mrr.member, color: COLORS.member },
-    { label: "SKY3", value: data.mrr.sky3, color: COLORS.sky3 },
-    { label: "TV", value: data.mrr.skyTingTv, color: COLORS.tv },
+    { label: "Members", value: data.mrr.member, color: COLORS.member },
+    { label: "SKY3 / Packs", value: data.mrr.sky3, color: COLORS.sky3 },
+    { label: "Sky Ting TV", value: data.mrr.skyTingTv, color: COLORS.tv },
     ...(data.mrr.unknown > 0 ? [{ label: "Other", value: data.mrr.unknown, color: "#999" }] : []),
   ].filter(s => s.value > 0);
 
   return (
     <Card>
-      <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: DS.space.sm }}>
-        Recurring Revenue (MRR)
-      </p>
-      <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em", marginBottom: DS.space.md }}>
-        {formatCurrency(data.mrr.total)}
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: DS.space.xs }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+        <p style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          Monthly Recurring Revenue
+        </p>
+        <p style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+          {formatCurrency(data.mrr.total)}
+        </p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         {segments.map((seg, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div className="flex items-center gap-1.5">
-              <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: seg.color, opacity: 0.8 }} />
+          <div key={i} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "0.6rem 0",
+            borderBottom: i < segments.length - 1 ? "1px solid var(--st-border)" : "none",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: seg.color, opacity: 0.85, flexShrink: 0 }} />
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
                 {seg.label}
               </span>
             </div>
-            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-primary)" }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
               {formatCurrency(seg.value)}
             </span>
           </div>
@@ -1978,212 +1979,9 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
 // ─── Churn Section ──────────────────────────────────────────
 
 function ChurnSection({ churnRates }: { churnRates: ChurnRateData }) {
-  const categories = [
-    { key: "member" as const, label: "Members", color: COLORS.member, data: churnRates.byCategory.member },
-    { key: "sky3" as const, label: "SKY3", color: COLORS.sky3, data: churnRates.byCategory.sky3 },
-    { key: "tv" as const, label: "SKY TING TV", color: COLORS.tv, data: churnRates.byCategory.skyTingTv },
-  ];
-
-  // Get completed months from the first category (they all share the same months)
-  const firstCat = churnRates.byCategory.member;
-  const completedMonths = firstCat?.monthly?.slice(0, -1).slice(-6) ?? [];
-
-  // Max rate across ALL categories for bar scaling
-  const maxRate = Math.max(
-    ...categories.flatMap((c) =>
-      (c.data?.monthly?.slice(0, -1).slice(-6) ?? []).map((m) => m.userChurnRate)
-    ),
-    1
-  );
-
-  // Total at-risk across all categories
-  const totalAtRisk = categories.reduce((sum, c) => sum + (c.data?.atRiskCount ?? 0), 0);
-
-  return (
-    <div className="space-y-3">
-      <SectionHeader subtitle={totalAtRisk > 0 ? `${totalAtRisk} at-risk subscribers` : undefined}>
-        Churn
-      </SectionHeader>
-
-      {/* ── Overview: 3 tiles ── */}
-      <div className="grid grid-cols-3 gap-3">
-        {categories.map(({ label, color, data }) => {
-          if (!data) return <div key={label} />;
-          return (
-            <div
-              key={label}
-              className="rounded-xl p-3"
-              style={{
-                backgroundColor: "var(--st-bg-card)",
-                border: "1px solid var(--st-border)",
-                fontFamily: FONT_SANS,
-              }}
-            >
-              {/* Category label */}
-              <div className="flex items-center gap-2 mb-3">
-                <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: color }} />
-                <span style={{ fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text)" }}>
-                  {label}
-                </span>
-              </div>
-
-              {/* User churn rate (primary metric) */}
-              <div style={{ marginBottom: "0.5rem" }}>
-                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 2 }}>
-                  User Churn (avg/mo)
-                </div>
-                <span style={{ fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(data.avgUserChurnRate) }}>
-                  {data.avgUserChurnRate.toFixed(1)}%
-                </span>
-              </div>
-
-              {/* MRR churn + at-risk row */}
-              <div className="flex items-center gap-3">
-                <div>
-                  <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 1 }}>
-                    MRR Churn
-                  </div>
-                  <span style={{ fontSize: DS.text.md, fontWeight: DS.weight.medium, color: churnBenchmarkColor(data.avgMrrChurnRate) }}>
-                    {data.avgMrrChurnRate.toFixed(1)}%
-                  </span>
-                </div>
-                {data.atRiskCount > 0 && (
-                  <div style={{ marginLeft: "auto" }}>
-                    <span
-                      className="rounded-full px-2 py-0.5"
-                      style={{
-                        fontSize: DS.text.xs,
-                        fontWeight: DS.weight.medium,
-                        color: COLORS.warning,
-                        backgroundColor: COLORS.warning + "15",
-                      }}
-                    >
-                      {data.atRiskCount} at-risk
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Monthly Trend Chart ── */}
-      <div
-        className="rounded-xl p-3"
-        style={{
-          backgroundColor: "var(--st-bg-card)",
-          border: "1px solid var(--st-border)",
-          fontFamily: FONT_SANS,
-        }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div style={{ fontFamily: FONT_SANS, ...DS.label }}>
-            Monthly User Churn Rate
-          </div>
-          <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
-            Healthy: 5-7%
-          </span>
-        </div>
-
-        {/* Grouped bar chart — one row per month, bars for each category */}
-        <div className="space-y-3">
-          {completedMonths.map((m) => {
-            const memberM = churnRates.byCategory.member?.monthly?.find((x) => x.month === m.month);
-            const sky3M = churnRates.byCategory.sky3?.monthly?.find((x) => x.month === m.month);
-            const tvM = churnRates.byCategory.skyTingTv?.monthly?.find((x) => x.month === m.month);
-
-            return (
-              <div key={m.month}>
-                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, marginBottom: 4 }}>
-                  {formatMonthLabel(m.month)}
-                </div>
-                <div className="flex flex-col gap-1">
-                  {/* Members bar */}
-                  {memberM && (
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 48, fontSize: DS.text.xs, color: COLORS.member, fontWeight: DS.weight.normal, flexShrink: 0 }}>Members</div>
-                      <div className="flex-1 flex items-center gap-1.5">
-                        <div style={{
-                          height: 8,
-                          width: `${Math.max((memberM.userChurnRate / maxRate) * 100, memberM.userChurnRate > 0 ? 2 : 0)}%`,
-                          backgroundColor: COLORS.member,
-                          borderRadius: 4,
-                          opacity: 0.75,
-                        }} />
-                        <span style={{ fontSize: DS.text.xs, color: COLORS.member, fontWeight: DS.weight.medium, flexShrink: 0 }}>
-                          {memberM.userChurnRate.toFixed(1)}%
-                        </span>
-                      </div>
-                      <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", flexShrink: 0 }}>
-                        {memberM.canceledCount}/{memberM.activeAtStart}
-                      </span>
-                    </div>
-                  )}
-                  {/* SKY3 bar */}
-                  {sky3M && (
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 48, fontSize: DS.text.xs, color: COLORS.sky3, fontWeight: DS.weight.normal, flexShrink: 0 }}>SKY3</div>
-                      <div className="flex-1 flex items-center gap-1.5">
-                        <div style={{
-                          height: 8,
-                          width: `${Math.max((sky3M.userChurnRate / maxRate) * 100, sky3M.userChurnRate > 0 ? 2 : 0)}%`,
-                          backgroundColor: COLORS.sky3,
-                          borderRadius: 4,
-                          opacity: 0.75,
-                        }} />
-                        <span style={{ fontSize: DS.text.xs, color: COLORS.sky3, fontWeight: DS.weight.medium, flexShrink: 0 }}>
-                          {sky3M.userChurnRate.toFixed(1)}%
-                        </span>
-                      </div>
-                      <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", flexShrink: 0 }}>
-                        {sky3M.canceledCount}/{sky3M.activeAtStart}
-                      </span>
-                    </div>
-                  )}
-                  {/* TV bar */}
-                  {tvM && (
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 48, fontSize: DS.text.xs, color: COLORS.tv, fontWeight: DS.weight.normal, flexShrink: 0 }}>TV</div>
-                      <div className="flex-1 flex items-center gap-1.5">
-                        <div style={{
-                          height: 8,
-                          width: `${Math.max((tvM.userChurnRate / maxRate) * 100, tvM.userChurnRate > 0 ? 2 : 0)}%`,
-                          backgroundColor: COLORS.tv,
-                          borderRadius: 4,
-                          opacity: 0.75,
-                        }} />
-                        <span style={{ fontSize: DS.text.xs, color: COLORS.tv, fontWeight: DS.weight.medium, flexShrink: 0 }}>
-                          {tvM.userChurnRate.toFixed(1)}%
-                        </span>
-                      </div>
-                      <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", flexShrink: 0 }}>
-                        {tvM.canceledCount}/{tvM.activeAtStart}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* MEMBER annual vs monthly breakdown for last completed month */}
-        {(() => {
-          const memberMonthly = churnRates.byCategory.member?.monthly ?? [];
-          const lastCompleted = memberMonthly.length >= 2 ? memberMonthly[memberMonthly.length - 2] : null;
-          if (!lastCompleted?.annualActiveAtStart) return null;
-          return (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic" }}>
-                Members last month: Annual {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned, Monthly {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
-              </div>
-            </div>
-          );
-        })()}
-      </div>
-    </div>
-  );
+  // Churn data is now shown inline within each CategoryDetail card
+  // This standalone section is kept for backward compatibility but not rendered in the main layout
+  return null;
 }
 
 // ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
@@ -2284,11 +2082,8 @@ function DropInCardNew({ dropIns }: { dropIns: DropInData }) {
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  LEGACY SECTIONS (kept for revert — not rendered in new layout)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// ─── Category Detail Section (Members / SKY3 / TV) ──────────
+// ─── Category Detail Card (Members / SKY3 / TV) ─────────────
+// Clean card: big count, simple metric rows, no chart clutter
 
 function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData }: {
   title: string;
@@ -2307,136 +2102,122 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
   const prevW = completedWeekly.length >= 2 ? completedWeekly[completedWeekly.length - 2] : null;
-  const latestM = monthly.length >= 1 ? monthly[monthly.length - 1] : null;
   const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
-  const weeklyNewBars: BarChartData[] = completedWeekly.slice(-6).map((w) => ({
-    label: formatWeekLabel(w.period),
-    value: weeklyKeyNew(w),
-    color,
-  }));
+
+  // Build metric rows
+  const metrics: { label: string; value: string; delta?: number | null; deltaPercent?: number | null; isPositiveGood?: boolean; color?: string }[] = [];
+
+  if (latestW) {
+    const newVal = weeklyKeyNew(latestW);
+    const newDelta = prevW ? newVal - weeklyKeyNew(prevW) : null;
+    const newDeltaPct = prevW && weeklyKeyNew(prevW) > 0
+      ? Math.round((newDelta! / weeklyKeyNew(prevW)) * 100)
+      : null;
+    metrics.push({ label: "New this week", value: String(newVal), delta: newDelta, deltaPercent: newDeltaPct, isPositiveGood: true });
+
+    const churnVal = weeklyKeyChurn(latestW);
+    const churnDelta = prevW ? -(churnVal - weeklyKeyChurn(prevW)) : null;
+    metrics.push({ label: "Churned this week", value: String(churnVal), delta: churnDelta, isPositiveGood: true });
+
+    const netVal = weeklyKeyNet(latestW);
+    metrics.push({
+      label: "Net change",
+      value: formatDelta(netVal) || "0",
+      color: netVal > 0 ? COLORS.success : netVal < 0 ? COLORS.error : undefined,
+    });
+  }
+
+  if (churnData) {
+    metrics.push({
+      label: "User churn rate (avg/mo)",
+      value: `${churnData.avgUserChurnRate.toFixed(1)}%`,
+      color: churnBenchmarkColor(churnData.avgUserChurnRate),
+    });
+    metrics.push({
+      label: "MRR churn rate (avg/mo)",
+      value: `${churnData.avgMrrChurnRate.toFixed(1)}%`,
+      color: churnBenchmarkColor(churnData.avgMrrChurnRate),
+    });
+    if (churnData.atRiskCount > 0) {
+      metrics.push({
+        label: "At risk",
+        value: String(churnData.atRiskCount),
+        color: COLORS.warning,
+      });
+    }
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: DS.space.sm }}>
-      {/* Section sub-header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <span className="rounded-full" style={{ width: "8px", height: "8px", backgroundColor: color, opacity: 0.85 }} />
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
-          {title}
-        </span>
-        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-secondary)", marginLeft: "auto" }}>
+    <Card>
+      {/* Header: title + big count */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
+          <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            {title}
+          </span>
+        </div>
+        <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em" }}>
           {formatNumber(count)}
         </span>
       </div>
 
-      {/* Card row: WoW metrics + New sign-ups chart + Churn */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: DS.space.sm }}>
-
-        {/* Card 1: WoW Metrics */}
-        {latestW && (
-          <Card>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: DS.space.sm }}>Week over Week</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: DS.space.xs }}>
-              <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>New</span>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", marginLeft: "auto" }}>
-                  {weeklyKeyNew(latestW)}
-                </span>
-                <DeltaBadge delta={prevW ? weeklyKeyNew(latestW) - weeklyKeyNew(prevW) : null} deltaPercent={null} isPositiveGood compact />
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>Churn</span>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", marginLeft: "auto" }}>
-                  {weeklyKeyChurn(latestW)}
-                </span>
-                <DeltaBadge delta={prevW ? -(weeklyKeyChurn(latestW) - weeklyKeyChurn(prevW)) : null} deltaPercent={null} isPositiveGood={false} compact />
-              </div>
-              <div style={{ borderTop: "1px solid var(--st-border)", paddingTop: DS.space.xs, display: "flex", alignItems: "center", gap: DS.space.lg }}>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>Net</span>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", marginLeft: "auto" }}>
-                  {formatDelta(weeklyKeyNet(latestW)) || "0"}
-                </span>
-              </div>
-            </div>
-            {latestM && isPacing && pacingNew && (
-              <div style={{ marginTop: DS.space.sm, paddingTop: DS.space.sm, borderTop: "1px solid var(--st-border)" }}>
-                <p style={{ fontFamily: FONT_SANS, ...DS.label, color: "var(--st-accent)", marginBottom: "4px", fontSize: DS.text.xs }}>
-                  Pacing ({pacing!.daysElapsed}/{pacing!.daysInMonth}d)
-                </p>
-                <div style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-primary)" }}>
-                  <b>{pacingNew(pacing!).actual}</b> new / {pacingNew(pacing!).paced} proj
-                  {pacingChurn && (
-                    <span style={{ marginLeft: "0.75rem" }}>
-                      <b>{pacingChurn(pacing!).actual}</b> churn / {pacingChurn(pacing!).paced} proj
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </Card>
-        )}
-
-        {/* Card 2: New Sign-ups Chart */}
-        {weeklyNewBars.length > 0 && (
-          <Card>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: DS.space.sm }}>New Sign-ups — Weekly</p>
-            <MiniBarChart data={weeklyNewBars} height={70} />
-          </Card>
-        )}
-
-        {/* Card 3: Churn */}
-        {churnData && (
-          <Card>
-            <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: DS.space.sm }}>Churn</p>
-            <div style={{ display: "flex", gap: DS.space.lg, marginBottom: DS.space.sm }}>
-              <div>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgUserChurnRate) }}>
-                  {churnData.avgUserChurnRate.toFixed(1)}%
-                </span>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.25rem" }}>
-                  user/mo
-                </span>
-              </div>
-              <div>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgMrrChurnRate) }}>
-                  {churnData.avgMrrChurnRate.toFixed(1)}%
-                </span>
-                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.25rem" }}>
-                  MRR/mo
-                </span>
-              </div>
-              {churnData.atRiskCount > 0 && (
-                <div>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: COLORS.warning }}>
-                    {churnData.atRiskCount}
-                  </span>
-                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.25rem" }}>
-                    at risk
-                  </span>
-                </div>
+      {/* Metric rows — clean table style */}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {metrics.map((m, i) => (
+          <div key={i} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "0.5rem 0",
+            borderBottom: i < metrics.length - 1 ? "1px solid var(--st-border)" : "none",
+          }}>
+            <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+              {m.label}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{
+                fontFamily: FONT_SANS, fontSize: DS.text.md, fontWeight: DS.weight.bold,
+                color: m.color || "var(--st-text-primary)",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {m.value}
+              </span>
+              {m.delta != null && (
+                <DeltaBadge delta={m.delta} deltaPercent={m.deltaPercent ?? null} isPositiveGood={m.isPositiveGood} compact />
               )}
             </div>
-            {(() => {
-              const completed = churnData.monthly.slice(0, -1).slice(-6);
-              if (completed.length < 2) return null;
-              const lineData = completed.map(m => ({
-                label: formatMonthLabel(m.month).split(" ")[0],
-                value: m.userChurnRate,
-              }));
-              return <LineChart data={lineData} height={90} formatValue={(v) => `${v.toFixed(1)}%`} color={color} />;
-            })()}
-            {churnData.category === "MEMBER" && (() => {
-              const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
-              if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
-              return (
-                <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "6px" }}>
-                  Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart}
-                </p>
-              );
-            })()}
-          </Card>
-        )}
+          </div>
+        ))}
       </div>
-    </div>
+
+      {/* Pacing (if mid-month) */}
+      {isPacing && pacingNew && (
+        <div style={{
+          marginTop: "0.75rem", paddingTop: "0.75rem",
+          borderTop: "1px solid var(--st-border)",
+          fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)",
+          display: "flex", gap: "1rem", flexWrap: "wrap",
+        }}>
+          <span style={{ textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: DS.weight.medium, color: "var(--st-accent)" }}>
+            Pacing ({pacing!.daysElapsed}/{pacing!.daysInMonth}d)
+          </span>
+          <span><b style={{ color: "var(--st-text-primary)" }}>{pacingNew(pacing!).actual}</b> new / {pacingNew(pacing!).paced} proj</span>
+          {pacingChurn && (
+            <span><b style={{ color: "var(--st-text-primary)" }}>{pacingChurn(pacing!).actual}</b> churn / {pacingChurn(pacing!).paced} proj</span>
+          )}
+        </div>
+      )}
+
+      {/* MEMBER annual/monthly breakdown */}
+      {churnData?.category === "MEMBER" && (() => {
+        const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
+        if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
+        return (
+          <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "0.5rem" }}>
+            Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
+          </p>
+        );
+      })()}
+    </Card>
   );
 }
 
@@ -2651,10 +2432,10 @@ function DashboardView() {
   const pacing = trends?.pacing || null;
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16">
+    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16" style={{ backgroundColor: "var(--st-bg-section)" }}>
       {/* ── Header ─────────────────────────────────── */}
-      <div className="text-center space-y-2 pt-2 mb-6">
-        <div className="flex justify-center">
+      <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
           <SkyTingLogo />
         </div>
         <h1
@@ -2664,6 +2445,7 @@ function DashboardView() {
             fontWeight: DS.weight.bold,
             fontSize: DS.text.lg,
             letterSpacing: "-0.01em",
+            marginBottom: "1rem",
           }}
         >
           Studio Dashboard
@@ -2671,8 +2453,8 @@ function DashboardView() {
         <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
       </div>
 
-      {/* ━━ Single column — centered, responsive ━━━━━━━━ */}
-      <div style={{ maxWidth: "1200px", width: "90%", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* ━━ Single column — centered, spacious ━━━━━━━━ */}
+      <div style={{ maxWidth: "960px", width: "92%", margin: "0 auto", display: "flex", flexDirection: "column", gap: "2rem" }}>
 
         {/* ── KPI Hero Strip ── */}
         <KPIHeroStrip tiles={(() => {
@@ -2709,13 +2491,13 @@ function DashboardView() {
               sublabel: heroSublabel,
             },
             {
-              label: "In-Studio Auto-Renews",
+              label: "In-Studio Subscribers",
               value: formatNumber(inStudioCount),
               delta: inStudioNet,
               sublabel: inStudioNet != null ? "net this week" : undefined,
             },
             {
-              label: "Sky Ting TV (Digital)",
+              label: "Sky Ting TV",
               value: formatNumber(data.activeSubscribers.skyTingTv),
               delta: digitalNet,
               sublabel: digitalNet != null ? "net this week" : undefined,
@@ -2727,59 +2509,94 @@ function DashboardView() {
         {/* ── Revenue ── */}
         <RevenueSection data={data} trends={trends} />
 
-        {/* ── Year-over-Year ── */}
-        {data.monthOverMonth && (
-          <MonthOverMonthSection data={data.monthOverMonth} />
-        )}
+        {/* ── MRR + Year-over-Year side by side ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          <MRRBreakdown data={data} />
+          {data.monthOverMonth ? (
+            <Card>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "1rem" }}>
+                <p style={{ fontFamily: FONT_SANS, ...DS.label }}>Year over Year</p>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                    {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
+                  </span>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                    {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
+                  </span>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                    {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                  </span>
+                </div>
+                {data.monthOverMonth.yoyGrossPct !== null && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.6rem 0" }}>
+                    <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>Change</span>
+                    <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
+                  </div>
+                )}
+              </div>
+            </Card>
+          ) : (
+            <Card>
+              <p style={{ fontFamily: FONT_SANS, ...DS.label, marginBottom: "1rem" }}>Year over Year</p>
+              <p style={{ fontFamily: FONT_SANS, fontSize: DS.text.sm, color: "var(--st-text-secondary)", opacity: 0.6 }}>No data available</p>
+            </Card>
+          )}
+        </div>
 
-        {/* ── MRR Breakdown ── */}
-        <MRRBreakdown data={data} />
+        {/* ── Subscriptions ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <SectionHeader>Subscriptions</SectionHeader>
 
-        {/* ── Auto-Renews ── */}
-        <SectionHeader>Auto-Renews</SectionHeader>
+          <CategoryDetail
+            title="Members"
+            color={COLORS.member}
+            count={data.activeSubscribers.member}
+            weekly={weekly}
+            monthly={monthly}
+            pacing={pacing}
+            weeklyKeyNew={(r) => r.newMembers}
+            weeklyKeyChurn={(r) => r.memberChurn}
+            weeklyKeyNet={(r) => r.netMemberGrowth}
+            pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
+            pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+            churnData={trends?.churnRates?.byCategory?.member}
+          />
 
-        <CategoryDetail
-          title="Members"
-          color={COLORS.member}
-          count={data.activeSubscribers.member}
-          weekly={weekly}
-          monthly={monthly}
-          pacing={pacing}
-          weeklyKeyNew={(r) => r.newMembers}
-          weeklyKeyChurn={(r) => r.memberChurn}
-          weeklyKeyNet={(r) => r.netMemberGrowth}
-          pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
-          pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
-          churnData={trends?.churnRates?.byCategory?.member}
-        />
+          <CategoryDetail
+            title="SKY3 / Packs"
+            color={COLORS.sky3}
+            count={data.activeSubscribers.sky3}
+            weekly={weekly}
+            monthly={monthly}
+            pacing={pacing}
+            weeklyKeyNew={(r) => r.newSky3}
+            weeklyKeyChurn={(r) => r.sky3Churn}
+            weeklyKeyNet={(r) => r.netSky3Growth}
+            pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
+            pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+            churnData={trends?.churnRates?.byCategory?.sky3}
+          />
 
-        <CategoryDetail
-          title="SKY3"
-          color={COLORS.sky3}
-          count={data.activeSubscribers.sky3}
-          weekly={weekly}
-          monthly={monthly}
-          pacing={pacing}
-          weeklyKeyNew={(r) => r.newSky3}
-          weeklyKeyChurn={(r) => r.sky3Churn}
-          weeklyKeyNet={(r) => r.netSky3Growth}
-          pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
-          pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
-          churnData={trends?.churnRates?.byCategory?.sky3}
-        />
-
-        <CategoryDetail
-          title="SKY TING TV"
-          color={COLORS.tv}
-          count={data.activeSubscribers.skyTingTv}
-          weekly={weekly}
-          monthly={monthly}
-          pacing={pacing}
-          weeklyKeyNew={(r) => r.newSkyTingTv}
-          weeklyKeyChurn={(r) => r.skyTingTvChurn}
-          weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
-          churnData={trends?.churnRates?.byCategory?.skyTingTv}
-        />
+          <CategoryDetail
+            title="Sky Ting TV"
+            color={COLORS.tv}
+            count={data.activeSubscribers.skyTingTv}
+            weekly={weekly}
+            monthly={monthly}
+            pacing={pacing}
+            weeklyKeyNew={(r) => r.newSkyTingTv}
+            weeklyKeyChurn={(r) => r.skyTingTvChurn}
+            weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+            churnData={trends?.churnRates?.byCategory?.skyTingTv}
+          />
+        </div>
 
         {/* ── Non Members ── */}
         {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
@@ -2789,13 +2606,8 @@ function DashboardView() {
         )}
 
         {/* ── Revenue Projection ── */}
-        {trends?.projection ? (
+        {trends?.projection && (
           <RevenueProjectionSection projection={trends.projection} />
-        ) : (
-          <div className="space-y-3">
-            <SectionHeader>Revenue</SectionHeader>
-            <NoData label="Revenue Projection" />
-          </div>
         )}
 
         {/* ── Year-over-Year Revenue ── */}
@@ -2804,8 +2616,8 @@ function DashboardView() {
         )}
 
         {/* ── Footer ── */}
-        <div className="text-center pt-6">
-          <div className="flex justify-center gap-8 text-sm" style={{ color: "var(--st-text-secondary)" }}>
+        <div style={{ textAlign: "center", paddingTop: "2rem", paddingBottom: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: "2rem" }}>
             <NavLink href="/settings">Settings</NavLink>
             <NavLink href="/results">Results</NavLink>
           </div>
