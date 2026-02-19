@@ -2382,71 +2382,55 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
       {/* ─── Churn Section ─── */}
       {churnData && (
         <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--st-border)" }}>
-          <p className="mb-3" style={{ fontFamily: FONT_SANS, ...DS.label }}>
+          <p className="mb-2" style={{ fontFamily: FONT_SANS, ...DS.label }}>
             Churn
           </p>
 
-          {/* Metric pills */}
-          <div className="flex gap-3 mb-3">
-            <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
-                User Churn (avg/mo)
-              </div>
+          {/* Summary metrics inline */}
+          <div style={{ display: "flex", gap: DS.space.lg, marginBottom: DS.space.md }}>
+            <div>
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgUserChurnRate) }}>
                 {churnData.avgUserChurnRate.toFixed(1)}%
               </span>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                user/mo
+              </span>
             </div>
-
-            <div className="flex-1 rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)" }}>
-              <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
-                MRR Churn (avg/mo)
-              </div>
+            <div>
               <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: churnBenchmarkColor(churnData.avgMrrChurnRate) }}>
                 {churnData.avgMrrChurnRate.toFixed(1)}%
               </span>
+              <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                MRR/mo
+              </span>
             </div>
-
             {churnData.atRiskCount > 0 && (
-              <div className="rounded-lg" style={{ padding: "0.6rem 0.75rem", backgroundColor: "var(--st-bg-elevated, rgba(0,0,0,0.02))", border: "1px solid var(--st-border)", minWidth: "60px", textAlign: "center" }}>
-                <div style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontWeight: DS.weight.normal, letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: "2px" }}>
-                  At Risk
-                </div>
+              <div>
                 <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.lg, fontWeight: DS.weight.bold, color: COLORS.warning }}>
                   {churnData.atRiskCount}
+                </span>
+                <span style={{ fontFamily: FONT_SANS, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.35rem" }}>
+                  at risk
                 </span>
               </div>
             )}
           </div>
 
-          {/* Monthly trend bars (last 6 completed months) */}
+          {/* Monthly churn rate line chart */}
           {(() => {
             const completed = churnData.monthly.slice(0, -1).slice(-6);
-            const maxRate = Math.max(...completed.map((m) => m.userChurnRate), 1);
+            if (completed.length < 2) return null;
+            const lineData = completed.map(m => ({
+              label: formatMonthLabel(m.month).split(" ")[0],
+              value: m.userChurnRate,
+            }));
             return (
-              <div className="space-y-1">
-                {completed.map((m) => (
-                  <div key={m.month} className="flex items-center gap-2" style={{ fontSize: DS.text.xs }}>
-                    <span style={{ width: "38px", color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal, flexShrink: 0 }}>
-                      {formatMonthLabel(m.month)}
-                    </span>
-                    <div className="flex-1 flex items-center gap-1.5">
-                      <div style={{
-                        height: "6px",
-                        width: `${Math.max((m.userChurnRate / maxRate) * 100, m.userChurnRate > 0 ? 3 : 0)}%`,
-                        backgroundColor: color,
-                        borderRadius: "3px",
-                        opacity: 0.7,
-                      }} />
-                      <span style={{ fontSize: DS.text.xs, color, fontFamily: FONT_SANS, fontWeight: DS.weight.medium, flexShrink: 0 }}>
-                        {m.userChurnRate.toFixed(1)}%
-                      </span>
-                    </div>
-                    <span style={{ fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontFamily: FONT_SANS, fontWeight: DS.weight.normal, flexShrink: 0 }}>
-                      {m.canceledCount}/{m.activeAtStart}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <LineChart
+                data={lineData}
+                height={100}
+                formatValue={(v) => `${v.toFixed(1)}%`}
+                color={color}
+              />
             );
           })()}
 
@@ -2807,13 +2791,6 @@ function DashboardView() {
           weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
           churnData={trends?.churnRates?.byCategory?.skyTingTv}
         />
-
-        {/* ── Churn ── */}
-        {trends?.churnRates ? (
-          <ChurnSection churnRates={trends.churnRates} />
-        ) : (
-          <NoData label="Churn" />
-        )}
 
         {/* ── Non Members ── */}
         {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns) ? (
