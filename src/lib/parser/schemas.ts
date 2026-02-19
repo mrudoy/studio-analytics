@@ -95,11 +95,14 @@ export const RevenueCategorySchema = z.object({
  */
 export const FullRegistrationSchema = z.object({
   eventName: z.string().default(""),
+  performanceStartsAt: z.string().default(""),
   locationName: z.string().default(""),
+  videoName: z.string().default(""),
   teacherName: z.string().default(""),
   firstName: z.string().default(""),
   lastName: z.string().default(""),
   email: z.string().default(""),
+  registeredAt: z.string().default(""),
   attendedAt: z.string().default(""),
   registrationType: z.string().default(""),
   state: z.string().default(""),

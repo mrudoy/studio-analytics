@@ -29,6 +29,26 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] Gmail-only pipeline (`gmail-pipeline.ts`) — reads CSVs from Gmail without browser trigger. For future use when emails are pre-triggered.
 - [ ] User note: NO SCRAPING — pipeline triggers CSV downloads via Playwright locally, emails arrive, data gets processed. Browser part must run locally (not Railway).
 
+### Data Report Key (from Data.pdf)
+When user asks about data, tell them which report to pull based on this mapping:
+
+**SALES:**
+| Data | Report Name | Path | What it tells you |
+|------|------------|------|-------------------|
+| Net Revenue | Sales by Revenue Category | Reports > Sales > "Sales by Revenue Category" | Where the revenue came from |
+| Itemized Sales | Sales By Service | Reports > Sales > Sales By Service | The number (#) of services sold by service |
+| New Auto-renew Purchases | New | Reports > Auto Renew > New | New auto-renew purchases within a specified window |
+| New Customers | New customers | Reports > Customers > New customers | New Accounts Created |
+| First Visits | First Visit | Reports > Registrations > First Visit | Anyone who redeemed their first class in studio or online |
+| Registrations | All | Reports > Registrations > All | All registrations |
+
+**AUTO-RENEW** (includes Sky Ting TV, Sky3, Member):
+| Data | Report Name | Path | What it tells you |
+|------|------------|------|-------------------|
+| Auto-Renewing Count | Summary | Reports > Auto Renew > Summary | Total people currently subscribed (net of churn) |
+| Auto-Renew Cancellations | Cancelled | Reports > Auto Renew > Cancelled | Total people that cancelled during a specific window |
+| Auto-Renew New | New | Reports > Auto Renew > New | Total people that signed up for an auto-renew during a specific window |
+
 ### Monthly Revenue Rule (NEW)
 **RULE**: Revenue data MUST be stored at monthly granularity so we can do MoM comparisons and growth analysis. Each month gets its own `period_start` / `period_end` (e.g. `2024-01-01` to `2024-01-31`). The report source is "Sales by Revenue Category" (`/reports/revenue`) on Union.fit, pulled once per month with the date range set to that month.
 - User will manually upload historical months (Jan 2024 through present)

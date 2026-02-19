@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { saveUploadedData, saveRevenueCategories } from "@/lib/db/revenue-store";
 import { saveAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
+import { saveFirstVisits, saveRegistrations, type RegistrationRow } from "@/lib/db/registration-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
-import { RevenueCategorySchema, AutoRenewSchema } from "@/lib/parser/schemas";
+import { RevenueCategorySchema, AutoRenewSchema, FullRegistrationSchema } from "@/lib/parser/schemas";
+import { z } from "zod";
 import { writeFileSync } from "fs";
 import { join } from "path";
 import { mkdirSync, existsSync } from "fs";
@@ -86,6 +88,40 @@ export async function POST(request: Request) {
         await saveAutoRenews(snapshotId, arRows);
         parsedCount = arRows.length;
         console.log(`[api/upload] Saved ${arRows.length} auto-renews from ${filename} (snapshot: ${snapshotId})`);
+      }
+      warnings.push(...result.warnings);
+    }
+
+    // ── First visits CSV upload ──────────────────────────────
+    if (dataType === "first_visits" || dataType === "registrations") {
+      const result = parseCSV<z.infer<typeof FullRegistrationSchema>>(savedPath, FullRegistrationSchema);
+      if (result.data.length > 0) {
+        const rows: RegistrationRow[] = result.data
+          .filter((r) => r.email && r.attendedAt) // skip rows without email or attended date
+          .map((r) => ({
+            eventName: r.eventName,
+            performanceStartsAt: r.performanceStartsAt || r.attendedAt,
+            locationName: r.locationName,
+            videoName: r.videoName || undefined,
+            teacherName: r.teacherName,
+            firstName: r.firstName,
+            lastName: r.lastName,
+            email: r.email,
+            registeredAt: r.registeredAt || undefined,
+            attendedAt: r.attendedAt,
+            registrationType: r.registrationType,
+            state: r.state,
+            pass: r.pass,
+            subscription: String(r.subscription),
+            revenue: r.revenue,
+          }));
+        if (dataType === "first_visits") {
+          await saveFirstVisits(rows);
+        } else {
+          await saveRegistrations(rows);
+        }
+        parsedCount = rows.length;
+        console.log(`[api/upload] Saved ${rows.length} ${dataType} from ${filename}`);
       }
       warnings.push(...result.warnings);
     }
