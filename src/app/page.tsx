@@ -1467,7 +1467,7 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
 }) {
   return (
     <div style={{ padding: "0.5rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}
+      <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}>
         <span style={{ fontFamily: FONT_SANS, fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
           {label}
         </span>
