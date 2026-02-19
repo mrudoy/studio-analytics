@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Override Tailwind's default font so all elements use Helvetica Neue */
+@theme {
+  --default-font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
 /* SKY TING Brand Design Tokens */
 :root {
   --st-bg-primary: #EDEBE8;
