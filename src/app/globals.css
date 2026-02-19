@@ -39,11 +39,8 @@ body {
   font-family: inherit;
 }
 
-h1, h2, h3, .font-heading {
-  font-family: 'Cormorant Garamond', 'Times New Roman', Times, serif;
-  font-weight: 400;
-  letter-spacing: -0.03em;
-}
+/* Brand font (Cormorant Garamond) is applied ONLY via inline style on SkyTingLogo.
+   Never set it on h1/h2/h3 globally — that overrides FONT_SANS on dashboard headings. */
 
 /* Spin animation for refresh button */
 @keyframes spin {

@@ -6,7 +6,8 @@
 - **Brand font**: `FONT_BRAND` = `'Cormorant Garamond', 'Times New Roman', serif`
 - FONT_SANS must be applied as an inline style on the Card component and the outer dashboard wrapper. Do NOT rely on CSS inheritance alone — Tailwind v4 Preflight overrides it.
 - Never remove FONT_SANS inline declarations. They exist to beat Tailwind's specificity.
-- FONT_BRAND is only used on the SkyTingLogo component and h1/h2/h3 via globals.css.
+- FONT_BRAND is only used on the SkyTingLogo component via inline style. It must NEVER appear in globals.css on h1/h2/h3 — that overrides FONT_SANS on dashboard headings.
+- Never add a global CSS rule that sets font-family on h1, h2, or h3 elements.
 
 ## Design System Tokens (DS object)
 
