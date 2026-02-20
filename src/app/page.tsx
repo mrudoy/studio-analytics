@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { Area, AreaChart as RechartsAreaChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Card as ShadCard, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import type {
   DashboardStats,
   TrendRowData,
@@ -3134,6 +3136,18 @@ function MembersAreaChart({ data }: {
   );
 }
 
+function TrendIcon({ direction, className }: { direction: "up" | "down"; className?: string }) {
+  return direction === "up" ? (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} style={{ width: "1em", height: "1em" }}>
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" />
+    </svg>
+  ) : (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} style={{ width: "1em", height: "1em" }}>
+      <polyline points="22 17 13.5 8.5 8.5 13.5 2 7" /><polyline points="16 17 22 17 22 11" />
+    </svg>
+  );
+}
+
 function MembersModule({ count, weekly, pacing, churnData }: {
   count: number;
   weekly: TrendRowData[];
@@ -3154,6 +3168,9 @@ function MembersModule({ count, weekly, pacing, churnData }: {
 
   const prevWeek = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
   const wtdDelta = currentPartial && prevWeek ? currentPartial.newMembers - prevWeek.newMembers : null;
+  const wtdDeltaPct = wtdDelta != null && prevWeek && prevWeek.newMembers > 0
+    ? Math.round((wtdDelta / prevWeek.newMembers) * 100)
+    : null;
 
   const sparkData = last4.map((w) => {
     const mon = isoWeekToDate(w.period);
@@ -3164,143 +3181,108 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   const wtdChurned = currentPartial ? currentPartial.memberChurn : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].memberChurn : 0);
   const atRisk = churnData?.atRiskCount ?? 0;
   const churnRate = churnData?.avgUserChurnRate ?? null;
-  const netColor = wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-secondary)";
 
-  // ── Shared card surface ──
-  const cardSt: React.CSSProperties = {
-    backgroundColor: "var(--st-bg-card)",
-    borderRadius: "1rem",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.05)",
-    border: "none",
-    fontFamily: FONT_SANS,
-    display: "flex",
-    flexDirection: "column",
-    minWidth: 0,
-  };
-
-  const labelSt: React.CSSProperties = {
-    fontFamily: FONT_SANS,
-    fontSize: "0.8125rem",
-    fontWeight: DS.weight.medium,
-    color: "var(--st-text-secondary)",
-    letterSpacing: "0.01em",
-    lineHeight: 1,
-  };
-
-  const chipSt: React.CSSProperties = {
-    fontFamily: FONT_SANS,
-    fontSize: "0.6875rem",
-    fontWeight: DS.weight.medium,
-    color: "var(--st-text-secondary)",
-    backgroundColor: "rgba(0,0,0,0.035)",
-    borderRadius: "100px",
-    padding: "3px 10px",
-    fontVariantNumeric: "tabular-nums",
-    whiteSpace: "nowrap",
-    display: "inline-flex",
-    alignItems: "baseline",
-    gap: "3px",
-  };
-
-  const diagLabel: React.CSSProperties = {
-    fontFamily: FONT_SANS,
-    fontSize: "0.6875rem",
-    fontWeight: DS.weight.normal,
-    color: "var(--st-text-secondary)",
-  };
-  const diagValue: React.CSSProperties = {
-    fontFamily: FONT_SANS,
-    fontWeight: DS.weight.bold,
-    fontSize: "1.125rem",
-    fontVariantNumeric: "tabular-nums",
-    lineHeight: 1,
-  };
+  const netTrend = wtdNet >= 0 ? "up" : "down";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+    <div className="flex flex-col gap-3">
       <SubsectionHeader>{LABELS.members}</SubsectionHeader>
 
-      <div className="members-mod-grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
+      <div className="members-mod-grid grid grid-cols-1 gap-2.5">
 
         {/* ── Hero: Active Members ── */}
-        <div style={cardSt} className="members-card-hero">
-          <span style={labelSt}>Active members</span>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "6px" }}>
-            <span style={{
-              fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: "2.25rem",
-              color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums",
-              letterSpacing: "-0.03em", lineHeight: 1,
-            }}>
+        <ShadCard className="@container/card members-card-hero">
+          <CardHeader>
+            <CardDescription>Active members</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
               {formatNumber(count)}
-            </span>
-            <span style={{
-              fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: "1rem",
-              fontVariantNumeric: "tabular-nums", color: netColor, lineHeight: 1,
-            }}>
-              {wtdNet > 0 ? "+" : ""}{wtdNet}
-            </span>
-            <span style={{
-              fontFamily: FONT_SANS, fontSize: "0.6875rem", fontWeight: DS.weight.normal,
-              color: "var(--st-text-secondary)", lineHeight: 1,
-            }}>
-              net this week
-            </span>
-          </div>
-        </div>
-
-        {/* ── Growth: chart card ── */}
-        <div style={cardSt} className="members-card-growth">
-          {/* Header: title + chips on same baseline */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-            <span style={labelSt}>New members</span>
-            <div style={{ display: "flex", gap: "5px", alignItems: "baseline" }}>
-              <span style={chipSt}>
-                WTD{" "}<strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{wtdNew}</strong>
-                {wtdDelta != null && wtdDelta !== 0 && <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />}
-              </span>
-              <span style={chipSt}>
-                Avg/wk{" "}<strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{avgNew4w}</strong>
-              </span>
+            </CardTitle>
+            <CardAction>
+              <Badge variant="outline">
+                <TrendIcon direction={netTrend} />
+                {wtdNet > 0 ? "+" : ""}{wtdNet} net
+              </Badge>
+            </CardAction>
+          </CardHeader>
+          <CardFooter className="flex-col items-start gap-1.5 text-sm">
+            <div className="line-clamp-1 flex gap-2 font-medium">
+              {wtdNet > 0 ? "Growing" : wtdNet < 0 ? "Declining" : "Flat"} this week
+              <TrendIcon direction={netTrend} className="size-4" />
             </div>
-          </div>
-          {/* Chart fills remaining space */}
-          {sparkData.length >= 2 && <MembersAreaChart data={sparkData} />}
-        </div>
+            <div className="text-muted-foreground">
+              {avgNew4w} new members avg/week (4-week)
+            </div>
+          </CardFooter>
+        </ShadCard>
+
+        {/* ── Growth: New Members chart card ── */}
+        <ShadCard className="@container/card members-card-growth">
+          <CardHeader>
+            <CardDescription>New members</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+              {wtdNew}
+            </CardTitle>
+            <CardAction>
+              {wtdDeltaPct != null && wtdDeltaPct !== 0 && (
+                <Badge variant="outline">
+                  <TrendIcon direction={wtdDeltaPct >= 0 ? "up" : "down"} />
+                  {wtdDeltaPct > 0 ? "+" : ""}{wtdDeltaPct}%
+                </Badge>
+              )}
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            {sparkData.length >= 2 && <MembersAreaChart data={sparkData} />}
+          </CardContent>
+          <CardFooter className="flex-col items-start gap-1.5 text-sm">
+            <div className="line-clamp-1 flex gap-2 font-medium">
+              {wtdDelta != null && wtdDelta > 0 ? "Trending up" : wtdDelta != null && wtdDelta < 0 ? "Trending down" : "Holding steady"} vs last week
+              {wtdDelta != null && wtdDelta !== 0 && <TrendIcon direction={wtdDelta >= 0 ? "up" : "down"} className="size-4" />}
+            </div>
+            <div className="text-muted-foreground">
+              4-week average: {avgNew4w} per week
+            </div>
+          </CardFooter>
+        </ShadCard>
 
         {/* ── Churn & Retention ── */}
-        <div style={cardSt} className="members-card-churn">
-          <span style={labelSt}>Churn &amp; retention</span>
-          <div style={{ display: "flex", gap: "20px", marginTop: "8px", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={diagLabel}>Churned this week</span>
-              <span style={{ ...diagValue, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>{wtdChurned}</span>
+        <ShadCard className="@container/card members-card-churn">
+          <CardHeader>
+            <CardDescription>Churn &amp; retention</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+              {wtdChurned}
+            </CardTitle>
+            <CardAction>
+              {churnRate != null && churnRate > 0 && (
+                <Badge variant="outline">
+                  <TrendIcon direction="down" />
+                  {churnRate.toFixed(1)}%/mo
+                </Badge>
+              )}
+            </CardAction>
+          </CardHeader>
+          <CardFooter className="flex-col items-start gap-1.5 text-sm">
+            <div className="line-clamp-1 flex gap-2 font-medium">
+              {wtdChurned > 0 ? `${wtdChurned} churned this week` : "No churn this week"}
+              {wtdChurned > 0 && <TrendIcon direction="down" className="size-4" />}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={diagLabel}>At risk</span>
-              <span style={{ ...diagValue, color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)" }}>{atRisk}</span>
+            <div className="text-muted-foreground">
+              {atRisk > 0 ? `${atRisk} members at risk` : "No members flagged at risk"}
             </div>
-            {churnRate != null && churnRate > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={diagLabel}>Avg monthly rate</span>
-                <span style={{ ...diagValue, color: "var(--st-text-primary)" }}>{churnRate.toFixed(1)}%</span>
-              </div>
-            )}
-          </div>
-        </div>
+          </CardFooter>
+        </ShadCard>
+
       </div>
 
       <style>{`
-        .members-card-hero   { padding: 14px 16px !important; }
-        .members-card-churn  { padding: 14px 16px !important; }
-        .members-card-growth { padding: 16px 16px 10px 16px !important; }
         @media (min-width: 768px) {
           .members-mod-grid {
             grid-template-columns: 36fr 64fr !important;
             grid-template-rows: auto 1fr;
           }
-          .members-card-hero   { grid-column: 1; grid-row: 1; padding: 18px !important; }
-          .members-card-churn  { grid-column: 1; grid-row: 2; padding: 18px !important; }
-          .members-card-growth { grid-column: 2; grid-row: 1 / 3; padding: 18px 18px 10px 18px !important; }
+          .members-card-hero   { grid-column: 1; grid-row: 1; }
+          .members-card-churn  { grid-column: 1; grid-row: 2; }
+          .members-card-growth { grid-column: 2; grid-row: 1 / 3; }
         }
       `}</style>
     </div>
