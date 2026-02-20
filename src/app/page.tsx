@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, Fragment } from "react";
+import { Area, AreaChart as RechartsAreaChart, XAxis, YAxis, CartesianGrid } from "recharts";
+import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type {
   DashboardStats,
   TrendRowData,
@@ -3049,99 +3051,86 @@ function MetricKPI({ label, value, delta, deltaPercent, isPositiveGood = true, s
 
 // ─── Members Module (3-card grid) ────────────────────────────
 
-// ─── Quiet sparkline (Apple Health style) ────────────────────
-// No point labels, no hollow markers, no axis chrome.
-// Thin stroke, very subtle area fill, optional latest-point halo.
-function MembersSparkline({ data, color }: {
+// ─── Members Area Chart (Recharts + shadcn/ui) ──────────────
+// Linear interpolation, quiet Apple Health styling, minimal chrome.
+// Uses shadcn ChartContainer for responsive sizing + Recharts AreaChart.
+
+const membersChartConfig = {
+  newMembers: {
+    label: "New members",
+    color: COLORS.member,
+  },
+} satisfies ChartConfig;
+
+function MembersAreaChart({ data }: {
   data: { label: string; value: number }[];
-  color: string;
 }) {
   if (data.length < 2) return null;
+
+  // Compute Y domain with 12% padding
   const values = data.map((d) => d.value);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  // Ensure y-scale shows real variance: pad range by 20% on each side
-  const rangePad = Math.max((max - min) * 0.2, 1);
-  const yMin = min - rangePad;
-  const yMax = max + rangePad;
-  const yRange = yMax - yMin;
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const range = dataMax - dataMin || 1;
+  const pad = Math.ceil(range * 0.12);
+  const yDomain: [number, number] = [Math.max(0, dataMin - pad), dataMax + pad];
 
-  // Fixed-ratio viewBox so geometry is correct regardless of container
-  const vW = 200;
-  const vH = 80;
-  const insetX = 12; // horizontal inset
-  const insetTop = 6;
-  const insetBot = 18; // room for x-axis labels
-
-  const chartH = vH - insetTop - insetBot;
-  const chartW = vW - insetX * 2;
-
-  const pts = data.map((d, i) => ({
-    x: insetX + (i / (data.length - 1)) * chartW,
-    y: insetTop + (1 - (d.value - yMin) / yRange) * chartH,
-  }));
-
-  // Smooth cubic bezier path (monotone x interpolation)
-  function smoothPath(points: { x: number; y: number }[]): string {
-    if (points.length < 2) return "";
-    let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1];
-      const cur = points[i];
-      const cpx = (prev.x + cur.x) / 2;
-      d += ` C ${cpx} ${prev.y}, ${cpx} ${cur.y}, ${cur.x} ${cur.y}`;
-    }
-    return d;
-  }
-
-  const linePath = smoothPath(pts);
-  const last = pts[pts.length - 1];
-  const first = pts[0];
-  const areaPath = `${linePath} L ${last.x} ${insetTop + chartH} L ${first.x} ${insetTop + chartH} Z`;
+  // Custom dot: only show on last data point
+  const renderDot = (props: { cx?: number; cy?: number; index?: number }) => {
+    const { cx, cy, index } = props;
+    if (index !== data.length - 1 || cx == null || cy == null) return <Fragment />;
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={5} fill={COLORS.member} opacity={0.12} />
+        <circle cx={cx} cy={cy} r={2.5} fill={COLORS.member} />
+      </g>
+    );
+  };
 
   return (
-    <div style={{ width: "100%", flexGrow: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-      <svg
-        viewBox={`0 0 ${vW} ${vH}`}
-        preserveAspectRatio="xMidYMid meet"
-        style={{ width: "100%", height: "100%", display: "block", overflow: "visible" }}
+    <ChartContainer config={membersChartConfig} className="min-h-[100px] w-full flex-1">
+      <RechartsAreaChart
+        data={data}
+        margin={{ top: 8, right: 4, bottom: 0, left: -20 }}
       >
-        {/* Gradient fill */}
         <defs>
-          <linearGradient id="members-area-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.12" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          <linearGradient id="membersFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={COLORS.member} stopOpacity={0.10} />
+            <stop offset="100%" stopColor={COLORS.member} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        {/* Area fill */}
-        <path d={areaPath} fill="url(#members-area-grad)" />
-        {/* Line — thin, smooth */}
-        <path d={linePath} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Latest point — subtle halo */}
-        <circle cx={last.x} cy={last.y} r="5" fill={color} opacity="0.12" />
-        <circle cx={last.x} cy={last.y} r="2.5" fill={color} />
-        {/* X-axis labels (inside SVG for correct alignment) */}
-        {data.map((d, i) => {
-          const px = insetX + (i / (data.length - 1)) * chartW;
-          return (
-            <text
-              key={i}
-              x={px}
-              y={vH - 2}
-              textAnchor="middle"
-              style={{
-                fontFamily: FONT_SANS,
-                fontSize: "8px",
-                fill: "var(--st-text-secondary)",
-                opacity: 0.6,
-              }}
-            >
-              {d.label}
-            </text>
-          );
-        })}
-      </svg>
-    </div>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--st-border)" strokeOpacity={0.5} />
+        <XAxis
+          dataKey="label"
+          tickLine={false}
+          axisLine={false}
+          tick={{ fontSize: 11, fill: "var(--st-text-secondary)", fontFamily: FONT_SANS }}
+          tickMargin={8}
+        />
+        <YAxis
+          domain={yDomain}
+          hide
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              indicator="line"
+              labelFormatter={(value) => value}
+            />
+          }
+        />
+        <Area
+          type="linear"
+          dataKey="value"
+          name="newMembers"
+          stroke={COLORS.member}
+          strokeWidth={2}
+          fill="url(#membersFill)"
+          dot={renderDot}
+          activeDot={{ r: 3, fill: COLORS.member, stroke: "var(--st-bg-card)", strokeWidth: 2 }}
+        />
+      </RechartsAreaChart>
+    </ChartContainer>
   );
 }
 
@@ -3151,56 +3140,44 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   pacing: PacingData | null;
   churnData?: CategoryChurnData;
 }) {
-  // Completed weeks (exclude current partial week)
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const currentPartial = weekly.length > 1 ? weekly[weekly.length - 1] : null;
 
-  // Last 4 full weeks for sparkline + avg
   const last4 = completedWeekly.slice(-4);
   const avgNew4w = last4.length > 0
     ? Math.round(last4.reduce((s, w) => s + w.newMembers, 0) / last4.length)
     : 0;
 
-  // WTD metrics
   const wtdSource = currentPartial || (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1] : null);
   const wtdNet = wtdSource ? wtdSource.netMemberGrowth : 0;
   const wtdNew = currentPartial ? currentPartial.newMembers : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].newMembers : 0);
 
-  // Comparison: WTD new vs same days last week
   const prevWeek = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
   const wtdDelta = currentPartial && prevWeek ? currentPartial.newMembers - prevWeek.newMembers : null;
 
-  // Sparkline data for last 4 full weeks
   const sparkData = last4.map((w) => {
     const mon = isoWeekToDate(w.period);
     const label = mon ? mon.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : formatWeekShort(w.period);
     return { label, value: w.newMembers };
   });
 
-  // Churn WTD
   const wtdChurned = currentPartial ? currentPartial.memberChurn : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].memberChurn : 0);
-
-  // Churn diagnostics
   const atRisk = churnData?.atRiskCount ?? 0;
   const churnRate = churnData?.avgUserChurnRate ?? null;
-
-  // Net WTD color
   const netColor = wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-secondary)";
 
-  // ── Shared card surface (Apple Health) ──
+  // ── Shared card surface ──
   const cardSt: React.CSSProperties = {
     backgroundColor: "var(--st-bg-card)",
     borderRadius: "1rem",
     boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.05)",
     border: "none",
-    padding: "20px",
     fontFamily: FONT_SANS,
     display: "flex",
     flexDirection: "column",
     minWidth: 0,
   };
 
-  // Sentence-case label
   const labelSt: React.CSSProperties = {
     fontFamily: FONT_SANS,
     fontSize: "0.8125rem",
@@ -3210,7 +3187,6 @@ function MembersModule({ count, weekly, pacing, churnData }: {
     lineHeight: 1,
   };
 
-  // Chip style for inline metrics
   const chipSt: React.CSSProperties = {
     fontFamily: FONT_SANS,
     fontSize: "0.6875rem",
@@ -3218,7 +3194,7 @@ function MembersModule({ count, weekly, pacing, churnData }: {
     color: "var(--st-text-secondary)",
     backgroundColor: "rgba(0,0,0,0.035)",
     borderRadius: "100px",
-    padding: "4px 10px",
+    padding: "3px 10px",
     fontVariantNumeric: "tabular-nums",
     whiteSpace: "nowrap",
     display: "inline-flex",
@@ -3226,17 +3202,16 @@ function MembersModule({ count, weekly, pacing, churnData }: {
     gap: "3px",
   };
 
-  // Diagnostic metric (churn card)
   const diagLabel: React.CSSProperties = {
     fontFamily: FONT_SANS,
-    fontSize: "0.75rem",
+    fontSize: "0.6875rem",
     fontWeight: DS.weight.normal,
     color: "var(--st-text-secondary)",
   };
   const diagValue: React.CSSProperties = {
     fontFamily: FONT_SANS,
     fontWeight: DS.weight.bold,
-    fontSize: "1.25rem",
+    fontSize: "1.125rem",
     fontVariantNumeric: "tabular-nums",
     lineHeight: 1,
   };
@@ -3245,131 +3220,87 @@ function MembersModule({ count, weekly, pacing, churnData }: {
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <SubsectionHeader>{LABELS.members}</SubsectionHeader>
 
-      {/* Two-column grid:
-          Left col (~38%): Hero stacked on Churn (matched height to Growth)
-          Right col (~62%): Growth chart spans full left-stack height
-          Mobile: stacked */}
-      <div className="members-mod-grid" style={{
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        gap: "10px",
-      }}>
+      <div className="members-mod-grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
 
-        {/* ── Card A: Active Members (Hero) ── */}
+        {/* ── Hero: Active Members ── */}
         <div style={cardSt} className="members-card-hero">
           <span style={labelSt}>Active members</span>
-          {/* Baseline-aligned row: big number + delta + descriptor */}
-          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "8px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "6px" }}>
             <span style={{
-              fontFamily: FONT_SANS,
-              fontWeight: DS.weight.bold,
-              fontSize: "2.5rem",
-              color: "var(--st-text-primary)",
-              fontVariantNumeric: "tabular-nums",
-              letterSpacing: "-0.03em",
-              lineHeight: 1,
+              fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: "2.25rem",
+              color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums",
+              letterSpacing: "-0.03em", lineHeight: 1,
             }}>
               {formatNumber(count)}
             </span>
             <span style={{
-              fontFamily: FONT_SANS,
-              fontWeight: DS.weight.bold,
-              fontSize: "1rem",
-              fontVariantNumeric: "tabular-nums",
-              color: netColor,
-              lineHeight: 1,
+              fontFamily: FONT_SANS, fontWeight: DS.weight.bold, fontSize: "1rem",
+              fontVariantNumeric: "tabular-nums", color: netColor, lineHeight: 1,
             }}>
               {wtdNet > 0 ? "+" : ""}{wtdNet}
             </span>
             <span style={{
-              fontFamily: FONT_SANS,
-              fontSize: "0.75rem",
-              fontWeight: DS.weight.normal,
-              color: "var(--st-text-secondary)",
-              lineHeight: 1,
+              fontFamily: FONT_SANS, fontSize: "0.6875rem", fontWeight: DS.weight.normal,
+              color: "var(--st-text-secondary)", lineHeight: 1,
             }}>
               net this week
             </span>
           </div>
         </div>
 
-        {/* ── Card B: Growth (trend card, spans full height of left stack) ── */}
-        <div style={{ ...cardSt, padding: "20px 20px 8px 20px", gap: "0px" }} className="members-card-growth">
-          {/* Header: label + metric chips, baseline-aligned */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+        {/* ── Growth: chart card ── */}
+        <div style={cardSt} className="members-card-growth">
+          {/* Header: title + chips on same baseline */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
             <span style={labelSt}>New members</span>
-            <div style={{ display: "flex", gap: "6px", alignItems: "baseline" }}>
+            <div style={{ display: "flex", gap: "5px", alignItems: "baseline" }}>
               <span style={chipSt}>
-                WTD{" "}
-                <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{wtdNew}</strong>
-                {wtdDelta != null && wtdDelta !== 0 && (
-                  <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />
-                )}
+                WTD{" "}<strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{wtdNew}</strong>
+                {wtdDelta != null && wtdDelta !== 0 && <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />}
               </span>
               <span style={chipSt}>
-                Avg/wk{" "}
-                <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{avgNew4w}</strong>
+                Avg/wk{" "}<strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{avgNew4w}</strong>
               </span>
             </div>
           </div>
-
-          {/* Sparkline — quiet, fills remaining card space */}
-          {sparkData.length >= 2 && (
-            <MembersSparkline data={sparkData} color={COLORS.member} />
-          )}
+          {/* Chart fills remaining space */}
+          {sparkData.length >= 2 && <MembersAreaChart data={sparkData} />}
         </div>
 
-        {/* ── Card C: Churn & Retention (diagnostic) ── */}
+        {/* ── Churn & Retention ── */}
         <div style={cardSt} className="members-card-churn">
           <span style={labelSt}>Churn &amp; retention</span>
-
-          {/* Baseline-aligned metric row */}
-          <div style={{ display: "flex", gap: "20px", marginTop: "10px", alignItems: "baseline", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          <div style={{ display: "flex", gap: "20px", marginTop: "8px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
               <span style={diagLabel}>Churned this week</span>
-              <span style={{ ...diagValue, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>
-                {wtdChurned}
-              </span>
+              <span style={{ ...diagValue, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>{wtdChurned}</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
               <span style={diagLabel}>At risk</span>
-              <span style={{ ...diagValue, color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)" }}>
-                {atRisk}
-              </span>
+              <span style={{ ...diagValue, color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)" }}>{atRisk}</span>
             </div>
             {churnRate != null && churnRate > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                 <span style={diagLabel}>Avg monthly rate</span>
-                <span style={{ ...diagValue, color: "var(--st-text-primary)" }}>
-                  {churnRate.toFixed(1)}%
-                </span>
+                <span style={{ ...diagValue, color: "var(--st-text-primary)" }}>{churnRate.toFixed(1)}%</span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Desktop: left col (hero + churn stacked) | right col (growth, full height)
-          Mobile: stack all three */}
       <style>{`
-        .members-mod-grid {
-          grid-template-columns: 1fr !important;
-        }
-        .members-card-hero { padding: 16px !important; }
-        .members-card-churn { padding: 16px !important; }
-        .members-card-growth { padding: 16px 16px 6px 16px !important; }
+        .members-card-hero   { padding: 14px 16px !important; }
+        .members-card-churn  { padding: 14px 16px !important; }
+        .members-card-growth { padding: 16px 16px 10px 16px !important; }
         @media (min-width: 768px) {
           .members-mod-grid {
-            grid-template-columns: 38fr 62fr !important;
+            grid-template-columns: 36fr 64fr !important;
             grid-template-rows: auto 1fr;
           }
-          .members-card-hero   { grid-column: 1; grid-row: 1; padding: 20px !important; }
-          .members-card-churn  { grid-column: 1; grid-row: 2; padding: 20px !important; }
-          .members-card-growth {
-            grid-column: 2;
-            grid-row: 1 / 3;
-            padding: 20px 20px 8px 20px !important;
-          }
+          .members-card-hero   { grid-column: 1; grid-row: 1; padding: 18px !important; }
+          .members-card-churn  { grid-column: 1; grid-row: 2; padding: 18px !important; }
+          .members-card-growth { grid-column: 2; grid-row: 1 / 3; padding: 18px 18px 10px 18px !important; }
         }
       `}</style>
     </div>
