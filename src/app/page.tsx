@@ -1365,9 +1365,9 @@ function KPIRow({ children }: { children: React.ReactNode }) {
 }
 
 /** Strict-alignment KPI component with 3 fixed-height rows.
- *  Row A: value (h=56px, baseline-aligned)
- *  Row B: label (h=40px, locked)
- *  Row C: meta  (h=28px, delta pill + subtext) */
+ *  Row A: value (h-[56px], baseline-aligned)
+ *  Row B: label (h-[40px], locked)
+ *  Row C: meta  (h-[28px], delta pill + subtext) */
 function KPI({
   value,
   valueSuffix,
@@ -1384,47 +1384,30 @@ function KPI({
   metaRight?: React.ReactNode;
 }) {
   return (
-    <div style={{ minWidth: 0 }}>
+    <div className="min-w-0">
       {/* Row A: Value (LOCK HEIGHT + BASELINE ALIGN) */}
-      <div style={{ height: "56px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "8px" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: "8px", minWidth: 0 }}>
-          <div style={{
-            fontSize: "52px", lineHeight: "52px", fontWeight: 600,
-            letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums",
-            color: "var(--st-text-primary)", fontFamily: FONT_SANS,
-          }}>
+      <div className="h-[56px] flex items-end justify-between gap-2">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <div className="text-[52px] leading-[52px] font-semibold tracking-[-0.02em] tabular-nums text-neutral-900">
             {value}
           </div>
           {valueSuffix ? (
-            <div style={{
-              fontSize: "18px", lineHeight: "18px", fontWeight: 600,
-              color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums",
-            }}>
+            <div className="text-[18px] leading-[18px] font-semibold text-neutral-600 tabular-nums">
               {valueSuffix}
             </div>
           ) : null}
         </div>
-        {topRight ? <div style={{ flexShrink: 0, transform: "translateY(-6px)" }}>{topRight}</div> : null}
+        {topRight ? <div className="shrink-0 translate-y-[-6px]">{topRight}</div> : null}
       </div>
       {/* Row B: Label (LOCK HEIGHT) */}
-      <div style={{
-        height: "40px", marginTop: "4px",
-        fontSize: "16px", lineHeight: "20px",
-        color: "var(--st-text-secondary)",
-      }}>
+      <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-neutral-600">
         {label}
       </div>
       {/* Row C: Meta (CONSISTENT) */}
-      <div style={{
-        height: "28px", marginTop: "8px",
-        display: "flex", alignItems: "center", gap: "8px", minWidth: 0,
-      }}>
-        {metaLeft ? <div style={{ flexShrink: 0 }}>{metaLeft}</div> : null}
+      <div className="h-[28px] mt-2 flex items-center gap-2 min-w-0">
+        {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
         {metaRight ? (
-          <div style={{
-            fontSize: "14px", color: "var(--st-text-secondary)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>
+          <div className="truncate text-[14px] text-neutral-500">
             {metaRight}
           </div>
         ) : null}
@@ -1436,14 +1419,7 @@ function KPI({
 /** 3-column KPI grid for Non-Members cards */
 function KPIGrid3({ children }: { children: React.ReactNode }) {
   return (
-    <div className="kpi-grid-3" style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(3, 1fr)",
-      gap: "40px",
-      alignItems: "start",
-      padding: "8px 0",
-      marginBottom: MOD.kpiToToggle,
-    }}>
+    <div className="kpi-grid-3 grid grid-cols-3 gap-10 items-start" style={{ padding: "8px 0", marginBottom: MOD.kpiToToggle }}>
       {children}
     </div>
   );
@@ -2349,8 +2325,6 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
   const BAR_H = 80;
 
   // Trend
-  const trendSymbol = trend === "up" ? "\u25B2" : trend === "down" ? "\u25BC" : "\u2014";
-  const trendLabel = trend === "up" ? "Up" : trend === "down" ? "Down" : "Flat";
   const wtdDeltaSign = wtdDelta > 0 ? "+" : "";
 
   // Mix bar colors: First (dark) vs Repeat (light) — high contrast per spec
