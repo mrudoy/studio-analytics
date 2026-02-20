@@ -2961,6 +2961,250 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   );
 }
 
+// ─── Reusable: SubsectionHeader ──────────────────────────────
+
+function SubsectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 style={{
+      fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+      fontWeight: DS.weight.medium,
+      fontSize: DS.text.sm,
+      color: "var(--st-text-secondary)",
+      textTransform: "uppercase" as const,
+      letterSpacing: "0.06em",
+    }}>
+      {children}
+    </h3>
+  );
+}
+
+// ─── Reusable: MetricKPI ─────────────────────────────────────
+
+function MetricKPI({ label, value, delta, deltaPercent, isPositiveGood = true, subtle = false }: {
+  label: string;
+  value: string | number;
+  delta?: number | null;
+  deltaPercent?: number | null;
+  isPositiveGood?: boolean;
+  subtle?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+      <span style={{
+        fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+        fontSize: DS.text.xs,
+        fontWeight: DS.weight.medium,
+        color: "var(--st-text-secondary)",
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.05em",
+      }}>
+        {label}
+      </span>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+        <span style={{
+          fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+          fontWeight: DS.weight.bold,
+          fontSize: subtle ? DS.text.md : DS.text.lg,
+          color: "var(--st-text-primary)",
+          fontVariantNumeric: "tabular-nums",
+          letterSpacing: "-0.02em",
+        }}>
+          {typeof value === "number" ? formatNumber(value) : value}
+        </span>
+        {delta != null && (
+          <DeltaBadge delta={delta} deltaPercent={deltaPercent ?? null} isPositiveGood={isPositiveGood} compact />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Members Module (3-card grid) ────────────────────────────
+
+function MembersModule({ count, weekly, pacing, churnData }: {
+  count: number;
+  weekly: TrendRowData[];
+  pacing: PacingData | null;
+  churnData?: CategoryChurnData;
+}) {
+  const HELVETICA = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+
+  // Completed weeks (exclude current partial week)
+  const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+  const currentPartial = weekly.length > 1 ? weekly[weekly.length - 1] : null;
+
+  // Last 4 full weeks for bar chart + avg
+  const last4 = completedWeekly.slice(-4);
+  const avgNew4w = last4.length > 0
+    ? Math.round(last4.reduce((s, w) => s + w.newMembers, 0) / last4.length)
+    : 0;
+
+  // WTD net adds (from current partial week if available, else last completed)
+  const wtdSource = currentPartial || (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1] : null);
+  const wtdNet = wtdSource ? wtdSource.netMemberGrowth : 0;
+  const wtdNew = currentPartial ? currentPartial.newMembers : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].newMembers : 0);
+
+  // Comparison: WTD new vs same days last week
+  const prevWeek = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
+  const wtdDelta = currentPartial && prevWeek ? currentPartial.newMembers - prevWeek.newMembers : null;
+
+  // Bar chart data for last 4 full weeks
+  const barData: BarChartData[] = last4.map((w) => {
+    const mon = isoWeekToDate(w.period);
+    if (mon) {
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      const mStr = mon.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const sStr = sun.getDate().toString();
+      return { label: `${mStr}-${sStr}`, value: w.newMembers, color: COLORS.member };
+    }
+    return { label: formatWeekShort(w.period), value: w.newMembers, color: COLORS.member };
+  });
+
+  // Churn WTD
+  const wtdChurned = currentPartial ? currentPartial.memberChurn : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].memberChurn : 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <SubsectionHeader>{LABELS.members}</SubsectionHeader>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.75rem" }}>
+        {/* ── Card A: Members Overview ── */}
+        <Card>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <span style={{
+              fontFamily: HELVETICA,
+              fontSize: DS.text.xs,
+              fontWeight: DS.weight.medium,
+              color: "var(--st-text-secondary)",
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.06em",
+            }}>
+              Active Members
+            </span>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span style={{
+                fontFamily: HELVETICA,
+                fontWeight: DS.weight.bold,
+                fontSize: "2.75rem",
+                color: "var(--st-text-primary)",
+                fontVariantNumeric: "tabular-nums",
+                letterSpacing: "-0.03em",
+                lineHeight: 1,
+              }}>
+                {formatNumber(count)}
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "1px" }}>
+                <span style={{
+                  fontFamily: HELVETICA,
+                  fontWeight: DS.weight.bold,
+                  fontSize: DS.text.md,
+                  fontVariantNumeric: "tabular-nums",
+                  color: wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-primary)",
+                }}>
+                  {wtdNet > 0 ? "+" : ""}{wtdNet}
+                </span>
+                <span style={{
+                  fontFamily: HELVETICA,
+                  fontSize: "0.625rem",
+                  color: "var(--st-text-secondary)",
+                  textTransform: "uppercase" as const,
+                  letterSpacing: "0.04em",
+                }}>
+                  Net WTD
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* ── Card B: Growth ── */}
+        <Card>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <span style={{
+              fontFamily: HELVETICA,
+              fontSize: DS.text.xs,
+              fontWeight: DS.weight.medium,
+              color: "var(--st-text-secondary)",
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.06em",
+            }}>
+              Growth
+            </span>
+
+            {/* Top metrics row */}
+            <div style={{ display: "flex", gap: "1.5rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                  New (WTD)
+                </span>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "0.375rem" }}>
+                  <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                    {wtdNew}
+                  </span>
+                  {wtdDelta != null && wtdDelta !== 0 && (
+                    <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                  Avg / week (4w)
+                </span>
+                <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                  {avgNew4w}
+                </span>
+              </div>
+            </div>
+
+            {/* Mini bar chart */}
+            {barData.length > 0 && (
+              <MiniBarChart data={barData} height={56} />
+            )}
+          </div>
+        </Card>
+
+        {/* ── Card C: Churn (minimal) ── */}
+        <Card>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <span style={{
+              fontFamily: HELVETICA,
+              fontSize: DS.text.xs,
+              fontWeight: DS.weight.medium,
+              color: "var(--st-text-secondary)",
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.06em",
+            }}>
+              Churn
+            </span>
+
+            <div style={{ display: "flex", gap: "1.5rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                  Churned (WTD)
+                </span>
+                <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                  {wtdChurned}
+                </span>
+              </div>
+              {churnData && churnData.atRiskCount > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                  <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                    At risk
+                  </span>
+                  <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: COLORS.warning, fontVariantNumeric: "tabular-nums" }}>
+                    {churnData.atRiskCount}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── Category Detail Card (Members / SKY3 / TV) ─────────────
 // Clean card: big count, simple metric rows, no chart clutter
 
@@ -3422,18 +3666,10 @@ function DashboardView() {
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <SectionHeader>{LABELS.autoRenews}</SectionHeader>
 
-          <CategoryDetail
-            title={LABELS.members}
-            color={COLORS.member}
+          <MembersModule
             count={data.activeSubscribers.member}
             weekly={weekly}
-            monthly={monthly}
             pacing={pacing}
-            weeklyKeyNew={(r) => r.newMembers}
-            weeklyKeyChurn={(r) => r.memberChurn}
-            weeklyKeyNet={(r) => r.netMemberGrowth}
-            pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
-            pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
             churnData={trends?.churnRates?.byCategory?.member}
           />
 
