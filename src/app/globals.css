@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
-/* Override Tailwind's default font so all elements use Helvetica Neue */
+/* Override Tailwind's default font — single system font stack */
 @theme {
-  --default-font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --default-font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
 /* SKY TING Brand Design Tokens */
@@ -12,7 +12,7 @@
   --st-bg-card: #FAF9F8;
   --st-bg-dark: #30302E;
   --st-text-primary: #413A3A;
-  --st-text-secondary: rgba(65, 58, 58, 0.65);
+  --st-text-secondary: rgba(65, 58, 58, 0.72);
   --st-text-light: #EDEBE8;
   --st-accent: #413A3A;
   --st-accent-hover: #2E2828;
@@ -27,18 +27,26 @@
   --st-grid-gap: 16px;
   --st-card-pad: 20px;
   --st-row-h: 48px;
-  --st-kpi-value: clamp(2rem, 4vw, 3rem);
+  --st-kpi-value: 40px;
   --st-th-size: 12px;
 }
 
 html, body {
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
 }
 
 body {
   background-color: var(--st-bg-primary);
   color: var(--st-text-primary);
   overflow-x: hidden;
+  letter-spacing: 0;
+  font-stretch: normal;
 }
 
 * {
@@ -68,6 +76,15 @@ body {
 /* ── Responsive: mobile card padding ── */
 @media (max-width: 639px) {
   :root { --st-card-pad: 16px; }
+}
+
+/* ── Conversion Pool 5-col KPI strip responsive ── */
+@media (max-width: 1023px) {
+  .cp-kpi-strip { grid-template-columns: repeat(3, 1fr) !important; }
+}
+@media (max-width: 639px) {
+  .cp-kpi-strip { grid-template-columns: repeat(2, 1fr) !important; }
+  .cp-dist-bars { grid-template-columns: 1fr !important; }
 }
 
 /* ── Bento grid responsive breakpoints ── */

@@ -39,18 +39,18 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 
 // ─── Font constants ─────────────────────────────────────────
 
-const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const FONT_SANS = "ui-sans-serif, system-ui, -apple-system, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji'";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
 // ─── Design System Tokens ────────────────────────────────────
 // Strict type scale — only these sizes are allowed
 const DS = {
-  // Typography scale (5 sizes only)
+  // Typography scale (strict — only these sizes)
   text: {
-    xs: "0.75rem",     // uppercase labels, captions, fine print
-    sm: "0.9rem",      // secondary text, sublabels, table content
-    md: "1.05rem",     // body text, card titles, category names
-    lg: "var(--st-kpi-value)",  // module KPI values (32-48px responsive)
+    xs: "0.75rem",     // uppercase labels, captions, fine print (12px)
+    sm: "0.875rem",    // secondary text, sublabels, table content (14px)
+    md: "1rem",        // body text, card titles, category names (16px)
+    lg: "var(--st-kpi-value)",  // module KPI values (40px)
     xl: "2.5rem",      // page-level hero KPIs (only in KPIHeroStrip and CategoryDetail headers)
   },
   // Font weights (3 only)
@@ -75,7 +75,7 @@ const DS = {
   label: {
     fontSize: "var(--st-th-size)",
     fontWeight: 600,
-    letterSpacing: "0.05em",
+    letterSpacing: "0.06em",
     textTransform: "uppercase" as const,
     color: "var(--st-text-secondary)",
   },
@@ -1251,7 +1251,7 @@ function ModuleHeader({ color, title, children }: {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: MOD.headerToKpi }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
-        <span style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" as const, color: "var(--st-text-secondary)" }}>{title}</span>
+        <span style={{ fontSize: "13px", lineHeight: "16px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: "var(--st-text-secondary)" }}>{title}</span>
       </div>
       {children}
     </div>
@@ -1318,13 +1318,13 @@ function KPIBlock({ value, label, sublabel, tooltip, delta, deltaSuffix, deltaSu
   return (
     <div style={{ padding: "0 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-        <span style={{ fontWeight: 600, fontSize: "var(--st-kpi-value)", fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontWeight: 600, fontSize: "var(--st-kpi-value)", fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: "44px", fontVariantNumeric: "tabular-nums" }}>
           {value}
         </span>
         {badge}
         {tooltip && <MInfoIcon tooltip={tooltip} />}
       </div>
-      <div style={{ fontSize: "14px", color: "var(--st-text-secondary)", marginTop: "2px", lineHeight: 1.3 }}>
+      <div style={{ fontSize: "14px", lineHeight: "18px", color: "var(--st-text-secondary)", marginTop: "2px", fontWeight: 400 }}>
         {label}
       </div>
       {(delta != null && delta !== 0) || sublabel || children ? (
@@ -1366,7 +1366,7 @@ function ToggleRow({ show, onToggle, label, children }: {
   show: boolean; onToggle: () => void; label?: string; children?: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: show ? "8px" : MOD.toggleToTabs }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: show ? "12px" : MOD.toggleToTabs }}>
       <button
         type="button"
         onClick={onToggle}
@@ -1444,15 +1444,17 @@ function UnderlineTabs({ tabs, active, onChange }: {
 
 /** Shared table styles for module tables */
 const modTh: React.CSSProperties = {
-  textAlign: "right", padding: "8px 12px", fontSize: "var(--st-th-size)", fontWeight: 400,
-  letterSpacing: "0.05em", textTransform: "uppercase",
-  color: "var(--st-text-secondary)", opacity: 0.55,
+  textAlign: "right", padding: "8px 12px", fontSize: "var(--st-th-size)", fontWeight: 500,
+  letterSpacing: "0.04em", textTransform: "uppercase",
+  color: "var(--st-text-secondary)",
   whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+  lineHeight: "16px",
 };
 const modTd: React.CSSProperties = {
   textAlign: "right", padding: "8px 12px",
   fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS,
   height: "var(--st-row-h)", verticalAlign: "middle",
+  fontSize: "14px", lineHeight: "20px",
 };
 
 /** Mini segmented bar (timing, mix, distribution). High-contrast segment spec. */
@@ -2491,29 +2493,33 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
               { count: frequency.bucket5to10, label: "5\u201310", opacity: 0.7 },
               { count: frequency.bucket11plus, label: "11+", opacity: 0.9 },
             ];
+            const nonZero = segs.filter((s) => s.count > 0);
+            const gridCols = nonZero.map((s) => `${Math.max(s.count, frequency.totalCustomers * 0.03)}fr`).join(" ");
             return (
-              <>
-                <SegmentedBar
-                  segments={segs.map((s) => ({ value: s.count, label: s.label }))}
-                  height={10}
-                  colors={freqColors}
-                />
-                {/* Labels with ticks and bold % */}
-                <div style={{ display: "flex", gap: 1, marginTop: 0 }}>
-                  {segs.map((seg) => seg.count > 0 ? (
-                    <div key={seg.label} style={{
-                      flex: Math.max(seg.count, frequency.totalCustomers * 0.03),
-                      textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", minWidth: 24,
-                    }} title={`${seg.count} customers`}>
-                      <div style={{ width: 1, height: 6, backgroundColor: "rgba(65, 58, 58, 0.15)" }} />
-                      <span style={{ fontSize: "10px", color: "var(--st-text-secondary)", lineHeight: 1.3 }}>{seg.label}</span>
-                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-                        {Math.round((seg.count / frequency.totalCustomers) * 100)}%
-                      </span>
-                    </div>
-                  ) : null)}
-                </div>
-              </>
+              <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: 0 }}>
+                {/* Row 1: colored bar segments */}
+                {nonZero.map((seg, i) => (
+                  <div key={seg.label + "-bar"} style={{
+                    height: 10,
+                    backgroundColor: freqColors[segs.indexOf(seg)],
+                    borderRadius: i === 0 ? "5px 0 0 5px" : i === nonZero.length - 1 ? "0 5px 5px 0" : 0,
+                  }} />
+                ))}
+                {/* Row 2: labels anchored to segment columns */}
+                {nonZero.map((seg, i) => (
+                  <div key={seg.label + "-label"} style={{
+                    textAlign: "center",
+                    display: "flex", flexDirection: "column", alignItems: "center",
+                    borderLeft: i > 0 ? "1px solid rgba(65, 58, 58, 0.12)" : "none",
+                    paddingTop: "4px",
+                  }} title={`${seg.count} customers`}>
+                    <span style={{ fontSize: "10px", color: "var(--st-text-secondary)", lineHeight: 1.3 }}>{seg.label}</span>
+                    <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                      {Math.round((seg.count / frequency.totalCustomers) * 100)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
             );
           })()}
         </div>
@@ -2611,8 +2617,15 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
         </select>
       </ModuleHeader>
 
-      {/* ── KPI Row: 3 blocks (Pool, Converts, Rate) — no dividers ── */}
-      <KPIRow>
+      {/* ── KPI Strip: 5 blocks (Pool, Converts, Rate, Median time, Avg visits) ── */}
+      <div className="cp-kpi-strip" style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(5, 1fr)",
+        alignItems: "stretch",
+        padding: "8px 0",
+        marginBottom: MOD.kpiToToggle,
+        fontVariantNumeric: "tabular-nums",
+      }}>
         <KPIBlock
           value={formatNumber(heroPool)}
           label="Active pool (7d)"
@@ -2661,58 +2674,37 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             </Chip>
           )}
         </KPIBlock>
-      </KPIRow>
+        {lagStats ? (
+          <KPIBlock
+            value={lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
+            label="Median time"
+            tooltip="Median days between first non-auto studio visit and auto-renew start."
+            sublabel={lagStats.historicalMedianTimeToConvert != null ? `12wk: ${lagStats.historicalMedianTimeToConvert}d` : undefined}
+          />
+        ) : <div />}
+        {lagStats ? (
+          <KPIBlock
+            value={lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
+            label="Avg visits"
+            tooltip="Average distinct non-subscriber visits before conversion."
+            sublabel={lagStats.historicalAvgVisitsBeforeConvert != null ? `12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}` : undefined}
+          />
+        ) : <div />}
+      </div>
 
-      {/* ── Lag stats + distribution bars ── */}
+      {/* ── Distribution bars (Time to convert / Visits before convert) ── */}
       {lagStats && (
-        <div style={{
+        <div className="cp-dist-bars" style={{
           display: "grid",
-          gridTemplateColumns: "auto auto 1fr 1fr",
-          gap: "12px",
-          alignItems: "start",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "16px",
           padding: "8px 0 12px",
           marginBottom: "12px",
           borderTop: "1px solid rgba(65, 58, 58, 0.06)",
         }}>
-          {/* Median time-to-convert */}
-          <div style={{ padding: "0 4px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-              <span style={{ fontWeight: 600, fontSize: "15px", fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-                {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
-              </span>
-              <MInfoIcon tooltip="Median days between first non-auto studio visit and auto-renew start." />
-            </div>
-            <div style={{ fontSize: "12px", color: "var(--st-text-secondary)", marginTop: "1px" }}>
-              Median time
-            </div>
-            {lagStats.historicalMedianTimeToConvert != null && (
-              <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginTop: "2px" }}>
-                12wk: {lagStats.historicalMedianTimeToConvert}d
-              </div>
-            )}
-          </div>
-
-          {/* Avg visits */}
-          <div style={{ padding: "0 4px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-              <span style={{ fontWeight: 600, fontSize: "15px", fontFamily: FONT_SANS, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-                {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
-              </span>
-              <MInfoIcon tooltip="Average distinct non-subscriber visits before conversion." />
-            </div>
-            <div style={{ fontSize: "12px", color: "var(--st-text-secondary)", marginTop: "1px" }}>
-              Avg visits
-            </div>
-            {lagStats.historicalAvgVisitsBeforeConvert != null && (
-              <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginTop: "2px" }}>
-                12wk: {lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}
-              </div>
-            )}
-          </div>
-
-          {/* Time distribution bar — using SegmentedBar */}
+          {/* Time distribution bar */}
           <div>
-            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 400 }}>
+            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
               Time to convert
             </div>
             <SegmentedBar
@@ -2725,7 +2717,6 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               height={12}
               colors={distColors}
             />
-            {/* Legend */}
             <div style={{ display: "flex", gap: "6px", marginTop: "3px", flexWrap: "wrap" }}>
               {[
                 { label: "0-30d", val: lagStats.timeBucket0to30 },
@@ -2741,9 +2732,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             </div>
           </div>
 
-          {/* Visit distribution bar — using SegmentedBar */}
+          {/* Visit distribution bar */}
           <div>
-            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 400 }}>
+            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
               Visits before convert
             </div>
             <SegmentedBar
@@ -2756,7 +2747,6 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               height={12}
               colors={distColors}
             />
-            {/* Legend */}
             <div style={{ display: "flex", gap: "6px", marginTop: "3px", flexWrap: "wrap" }}>
               {[
                 { label: "1-2", val: lagStats.visitBucket1to2 },
@@ -2800,7 +2790,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
       )}
 
       {showChart && chartData.length > 0 && (
-        <div style={{ display: "flex", marginBottom: MOD.toggleToTabs }}>
+        <div style={{ display: "flex", marginTop: "4px", marginBottom: MOD.toggleToTabs }}>
           {/* Y-axis labels */}
           <div style={{ width: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-end", paddingRight: "4px", height: BAR_H }}>
             <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(barMax)}</span>
@@ -2901,17 +2891,17 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                     height: MOD.rowH,
                   }}
                 >
-                  <td style={{ ...modTd, textAlign: "left", fontSize: "12px", color: "var(--st-text-secondary)" }}>
+                  <td style={{ ...modTd, textAlign: "left", fontWeight: 500, color: "var(--st-text-secondary)" }}>
                     {weekLabel}
-                    {isLatest && <Chip variant="accent">Latest</Chip>}
+                    {isLatest && <> <Chip variant="accent">Latest</Chip></>}
                   </td>
-                  <td data-label="Pool" style={{ ...modTd, fontSize: "13px" }}>
+                  <td data-label="Pool" style={{ ...modTd, fontWeight: 600 }}>
                     {formatNumber(w.activePool7d)}
                   </td>
-                  <td data-label="Converts" style={{ ...modTd, fontSize: "13px" }}>
+                  <td data-label="Converts" style={{ ...modTd, fontWeight: 600 }}>
                     {formatNumber(w.converts)}
                   </td>
-                  <td data-label="Rate" style={{ ...modTd, fontSize: "13px" }}>
+                  <td data-label="Rate" style={{ ...modTd, fontWeight: 600 }}>
                     {w.conversionRate.toFixed(1)}%
                   </td>
                 </tr>
@@ -2945,7 +2935,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               background: "rgba(107, 91, 123, 0.03)",
               height: MOD.rowH,
             }}>
-              <td style={{ ...modTd, textAlign: "left", fontSize: "12px", color: "var(--st-text-secondary)" }}>
+              <td style={{ ...modTd, textAlign: "left", fontWeight: 500, color: "var(--st-text-secondary)" }}>
                 <Chip variant="accent">WTD</Chip>{" "}
                 {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                 {wtd.daysLeft > 0 && (
@@ -2954,13 +2944,13 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                   </span>
                 )}
               </td>
-              <td data-label="Pool" style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+              <td data-label="Pool" style={{ ...modTd, fontWeight: 600, fontStyle: "italic" }}>
                 {formatNumber(wtd.activePool7d)}
               </td>
-              <td data-label="Converts" style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+              <td data-label="Converts" style={{ ...modTd, fontWeight: 600, fontStyle: "italic" }}>
                 {formatNumber(wtd.converts)}
               </td>
-              <td data-label="Rate" style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+              <td data-label="Rate" style={{ ...modTd, fontWeight: 600, fontStyle: "italic" }}>
                 {wtd.conversionRate.toFixed(1)}%
               </td>
             </tr>
