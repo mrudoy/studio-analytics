@@ -3055,8 +3055,6 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   pacing: PacingData | null;
   churnData?: CategoryChurnData;
 }) {
-  const HELVETICA = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-
   // Completed weeks (exclude current partial week)
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const currentPartial = weekly.length > 1 ? weekly[weekly.length - 1] : null;
@@ -3076,15 +3074,12 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   const prevWeek = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
   const wtdDelta = currentPartial && prevWeek ? currentPartial.newMembers - prevWeek.newMembers : null;
 
-  // Bar chart data for last 4 full weeks
+  // Bar chart data for last 4 full weeks — short "Jan 19" style labels
   const barData: BarChartData[] = last4.map((w) => {
     const mon = isoWeekToDate(w.period);
     if (mon) {
-      const sun = new Date(mon);
-      sun.setDate(mon.getDate() + 6);
-      const mStr = mon.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const sStr = sun.getDate().toString();
-      return { label: `${mStr}-${sStr}`, value: w.newMembers, color: COLORS.member };
+      const label = mon.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return { label, value: w.newMembers, color: COLORS.member };
     }
     return { label: formatWeekShort(w.period), value: w.newMembers, color: COLORS.member };
   });
@@ -3092,143 +3087,172 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   // Churn WTD
   const wtdChurned = currentPartial ? currentPartial.memberChurn : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].memberChurn : 0);
 
+  // Shared label style
+  const labelSt: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontSize: "0.625rem",
+    fontWeight: DS.weight.medium,
+    color: "var(--st-text-secondary)",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+  const valSt: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontWeight: DS.weight.bold,
+    fontSize: DS.text.md,
+    fontVariantNumeric: "tabular-nums",
+    color: "var(--st-text-primary)",
+    textAlign: "right",
+  };
+
+  // Net WTD color
+  const netColor = wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-primary)";
+
+  // At-risk count (show 0 when no data)
+  const atRisk = churnData?.atRiskCount ?? 0;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <SubsectionHeader>{LABELS.members}</SubsectionHeader>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.75rem" }}>
-        {/* ── Card A: Members Overview ── */}
-        <Card>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            <span style={{
-              fontFamily: HELVETICA,
-              fontSize: DS.text.xs,
-              fontWeight: DS.weight.medium,
-              color: "var(--st-text-secondary)",
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.06em",
-            }}>
+      {/* Desktop: Active(1) Growth(2) — Churn tucks under Active.
+          Mobile: stack all three. */}
+      <div className="members-mod-grid" style={{
+        display: "grid",
+        gridTemplateColumns: "1fr",
+        gap: "0.625rem",
+      }}>
+        {/* ── Card A: Active Members ── */}
+        <Card padding="14px 16px">
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+            {/* Header label */}
+            <span style={{ ...labelSt, fontSize: DS.text.xs }}>
               Active Members
             </span>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-              <span style={{
-                fontFamily: HELVETICA,
-                fontWeight: DS.weight.bold,
-                fontSize: "2.75rem",
-                color: "var(--st-text-primary)",
-                fontVariantNumeric: "tabular-nums",
-                letterSpacing: "-0.03em",
-                lineHeight: 1,
-              }}>
-                {formatNumber(count)}
-              </span>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "1px" }}>
-                <span style={{
-                  fontFamily: HELVETICA,
-                  fontWeight: DS.weight.bold,
-                  fontSize: DS.text.md,
-                  fontVariantNumeric: "tabular-nums",
-                  color: wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-primary)",
-                }}>
+
+            {/* Hero KPI */}
+            <span style={{
+              fontFamily: FONT_SANS,
+              fontWeight: DS.weight.bold,
+              fontSize: "2.25rem",
+              color: "var(--st-text-primary)",
+              fontVariantNumeric: "tabular-nums",
+              letterSpacing: "-0.03em",
+              lineHeight: 1,
+            }}>
+              {formatNumber(count)}
+            </span>
+
+            {/* Mini-metric grid: 3 cols under the big number */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: "0px",
+              borderTop: "1px solid var(--st-border)",
+              paddingTop: "0.5rem",
+            }}>
+              {/* Net WTD */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <span style={labelSt}>Net WTD</span>
+                <span style={{ ...valSt, textAlign: "left", color: netColor }}>
                   {wtdNet > 0 ? "+" : ""}{wtdNet}
                 </span>
-                <span style={{
-                  fontFamily: HELVETICA,
-                  fontSize: "0.625rem",
-                  color: "var(--st-text-secondary)",
-                  textTransform: "uppercase" as const,
-                  letterSpacing: "0.04em",
-                }}>
-                  Net WTD
+              </div>
+              {/* New WTD */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <span style={labelSt}>New WTD</span>
+                <span style={{ ...valSt, textAlign: "left" }}>{wtdNew}</span>
+              </div>
+              {/* Churned WTD */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <span style={labelSt}>Churned WTD</span>
+                <span style={{ ...valSt, textAlign: "left", color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>
+                  {wtdChurned}
                 </span>
               </div>
             </div>
           </div>
         </Card>
 
-        {/* ── Card B: Growth ── */}
-        <Card>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <span style={{
-              fontFamily: HELVETICA,
-              fontSize: DS.text.xs,
-              fontWeight: DS.weight.medium,
-              color: "var(--st-text-secondary)",
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.06em",
-            }}>
-              Growth
-            </span>
-
-            {/* Top metrics row */}
-            <div style={{ display: "flex", gap: "1.5rem" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
-                <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                  New (WTD)
-                </span>
-                <div style={{ display: "flex", alignItems: "baseline", gap: "0.375rem" }}>
-                  <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+        {/* ── Card B: Growth (hero card — spans 2 cols on desktop) ── */}
+        <Card padding="14px 16px">
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {/* Header row: title left, summary metrics right */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ ...labelSt, fontSize: DS.text.xs }}>
+                Growth
+              </span>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "baseline" }}>
+                <span style={{ ...labelSt, fontWeight: DS.weight.normal }}>
+                  WTD{" "}
+                  <span style={{ ...valSt, fontSize: DS.text.sm }}>
                     {wtdNew}
                   </span>
                   {wtdDelta != null && wtdDelta !== 0 && (
-                    <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />
+                    <>{" "}<DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact /></>
                   )}
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
-                <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                  Avg / week (4w)
                 </span>
-                <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-                  {avgNew4w}
+                <span style={{ ...labelSt, fontWeight: DS.weight.normal }}>
+                  Avg/wk{" "}
+                  <span style={{ ...valSt, fontSize: DS.text.sm }}>
+                    {avgNew4w}
+                  </span>
                 </span>
               </div>
             </div>
 
-            {/* Mini bar chart */}
+            {/* Chart sub-label */}
+            <span style={{ fontFamily: FONT_SANS, fontSize: "0.6rem", color: "var(--st-text-secondary)", letterSpacing: "0.02em" }}>
+              Last 4 full weeks
+            </span>
+
+            {/* Mini bar chart — compact */}
             {barData.length > 0 && (
-              <MiniBarChart data={barData} height={56} />
+              <MiniBarChart data={barData} height={44} />
             )}
           </div>
         </Card>
 
-        {/* ── Card C: Churn (minimal) ── */}
-        <Card>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <span style={{
-              fontFamily: HELVETICA,
-              fontSize: DS.text.xs,
-              fontWeight: DS.weight.medium,
-              color: "var(--st-text-secondary)",
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.06em",
-            }}>
+        {/* ── Card C: Churn (secondary weight) ── */}
+        <Card padding="10px 16px">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+            <span style={{ ...labelSt, fontSize: DS.text.xs, flexShrink: 0 }}>
               Churn
             </span>
 
-            <div style={{ display: "flex", gap: "1.5rem" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
-                <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                  Churned (WTD)
-                </span>
-                <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ display: "flex", gap: "1.25rem", alignItems: "baseline" }}>
+              <span style={labelSt}>
+                Churned WTD{" "}
+                <span style={{ ...valSt, fontSize: DS.text.sm, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>
                   {wtdChurned}
                 </span>
-              </div>
-              {churnData && churnData.atRiskCount > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
-                  <span style={{ fontFamily: HELVETICA, fontSize: "0.625rem", color: "var(--st-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                    At risk
-                  </span>
-                  <span style={{ fontFamily: HELVETICA, fontWeight: DS.weight.bold, fontSize: DS.text.md, color: COLORS.warning, fontVariantNumeric: "tabular-nums" }}>
-                    {churnData.atRiskCount}
-                  </span>
-                </div>
-              )}
+              </span>
+              <span style={labelSt}>
+                At risk{" "}
+                <span style={{ ...valSt, fontSize: DS.text.sm, color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)" }}>
+                  {atRisk}
+                </span>
+              </span>
             </div>
           </div>
         </Card>
       </div>
+
+      {/* Responsive grid: desktop = Active+Churn in col 1, Growth hero in col 2 (span 2) */}
+      <style>{`
+        .members-mod-grid {
+          grid-template-columns: 1fr !important;
+        }
+        @media (min-width: 768px) {
+          .members-mod-grid {
+            grid-template-columns: 1fr 2fr !important;
+            grid-template-rows: auto auto;
+          }
+          .members-mod-grid > :nth-child(1) { grid-column: 1; grid-row: 1; }
+          .members-mod-grid > :nth-child(2) { grid-column: 2; grid-row: 1 / 3; }
+          .members-mod-grid > :nth-child(3) { grid-column: 1; grid-row: 2; }
+        }
+      `}</style>
     </div>
   );
 }
