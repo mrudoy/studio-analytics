@@ -3049,82 +3049,98 @@ function MetricKPI({ label, value, delta, deltaPercent, isPositiveGood = true, s
 
 // ─── Members Module (3-card grid) ────────────────────────────
 
-// ─── Sparkline with filled area (Apple Health style) ─────────
-function MembersSparkline({ data, color, height = 64 }: {
+// ─── Quiet sparkline (Apple Health style) ────────────────────
+// No point labels, no hollow markers, no axis chrome.
+// Thin stroke, very subtle area fill, optional latest-point halo.
+function MembersSparkline({ data, color }: {
   data: { label: string; value: number }[];
   color: string;
-  height?: number;
 }) {
   if (data.length < 2) return null;
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const min = Math.min(...data.map((d) => d.value), 0);
-  const range = max - min || 1;
-  const pad = 4; // horizontal padding
-  const topPad = 18; // space for value labels above peaks
-  const w = 100; // SVG viewBox width (%)
-  const h = height;
+  const values = data.map((d) => d.value);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  // Ensure y-scale shows real variance: pad range by 20% on each side
+  const rangePad = Math.max((max - min) * 0.2, 1);
+  const yMin = min - rangePad;
+  const yMax = max + rangePad;
+  const yRange = yMax - yMin;
 
-  // Build points
-  const points = data.map((d, i) => ({
-    x: pad + (i / (data.length - 1)) * (w - pad * 2),
-    y: topPad + (1 - (d.value - min) / range) * (h - topPad - 4),
-    value: d.value,
-    label: d.label,
+  // Fixed-ratio viewBox so geometry is correct regardless of container
+  const vW = 200;
+  const vH = 80;
+  const insetX = 12; // horizontal inset
+  const insetTop = 6;
+  const insetBot = 18; // room for x-axis labels
+
+  const chartH = vH - insetTop - insetBot;
+  const chartW = vW - insetX * 2;
+
+  const pts = data.map((d, i) => ({
+    x: insetX + (i / (data.length - 1)) * chartW,
+    y: insetTop + (1 - (d.value - yMin) / yRange) * chartH,
   }));
 
-  // SVG path for line
-  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-  // Filled area path
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${h} L ${points[0].x} ${h} Z`;
+  // Smooth cubic bezier path (monotone x interpolation)
+  function smoothPath(points: { x: number; y: number }[]): string {
+    if (points.length < 2) return "";
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const cur = points[i];
+      const cpx = (prev.x + cur.x) / 2;
+      d += ` C ${cpx} ${prev.y}, ${cpx} ${cur.y}, ${cur.x} ${cur.y}`;
+    }
+    return d;
+  }
+
+  const linePath = smoothPath(pts);
+  const last = pts[pts.length - 1];
+  const first = pts[0];
+  const areaPath = `${linePath} L ${last.x} ${insetTop + chartH} L ${first.x} ${insetTop + chartH} Z`;
 
   return (
-    <div style={{ width: "100%", position: "relative" }}>
+    <div style={{ width: "100%", flexGrow: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <svg
-        viewBox={`0 0 ${w} ${h}`}
-        preserveAspectRatio="none"
-        style={{ width: "100%", height: `${h}px`, display: "block" }}
+        viewBox={`0 0 ${vW} ${vH}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ width: "100%", height: "100%", display: "block", overflow: "visible" }}
       >
-        {/* Filled area */}
-        <path d={areaPath} fill={color} opacity={0.08} />
-        {/* Line */}
-        <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Data points */}
-        {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 2.5 : 1.5} fill={i === points.length - 1 ? color : "white"} stroke={color} strokeWidth="1" />
-        ))}
+        {/* Gradient fill */}
+        <defs>
+          <linearGradient id="members-area-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.12" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#members-area-grad)" />
+        {/* Line — thin, smooth */}
+        <path d={linePath} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Latest point — subtle halo */}
+        <circle cx={last.x} cy={last.y} r="5" fill={color} opacity="0.12" />
+        <circle cx={last.x} cy={last.y} r="2.5" fill={color} />
+        {/* X-axis labels (inside SVG for correct alignment) */}
+        {data.map((d, i) => {
+          const px = insetX + (i / (data.length - 1)) * chartW;
+          return (
+            <text
+              key={i}
+              x={px}
+              y={vH - 2}
+              textAnchor="middle"
+              style={{
+                fontFamily: FONT_SANS,
+                fontSize: "8px",
+                fill: "var(--st-text-secondary)",
+                opacity: 0.6,
+              }}
+            >
+              {d.label}
+            </text>
+          );
+        })}
       </svg>
-      {/* Value labels above each point */}
-      <div style={{ display: "flex", justifyContent: "space-between", position: "absolute", top: 0, left: 0, right: 0, padding: `0 ${pad}%` }}>
-        {data.map((d, i) => (
-          <span key={i} style={{
-            fontFamily: FONT_SANS,
-            fontSize: "0.6rem",
-            fontWeight: i === data.length - 1 ? DS.weight.bold : DS.weight.medium,
-            color: i === data.length - 1 ? color : "var(--st-text-secondary)",
-            fontVariantNumeric: "tabular-nums",
-            textAlign: "center",
-            minWidth: 0,
-          }}>
-            {d.value}
-          </span>
-        ))}
-      </div>
-      {/* X-axis labels below */}
-      <div style={{ display: "flex", justifyContent: "space-between", padding: `2px ${pad}% 0` }}>
-        {data.map((d, i) => (
-          <span key={i} style={{
-            fontFamily: FONT_SANS,
-            fontSize: "0.55rem",
-            fontWeight: DS.weight.normal,
-            color: "var(--st-text-secondary)",
-            textAlign: "center",
-            minWidth: 0,
-            opacity: 0.7,
-          }}>
-            {d.label}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -3171,13 +3187,13 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   // Net WTD color
   const netColor = wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-secondary)";
 
-  // ── Apple Health card style ──
+  // ── Shared card surface (Apple Health) ──
   const cardSt: React.CSSProperties = {
     backgroundColor: "var(--st-bg-card)",
-    borderRadius: "16px",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.05)",
+    borderRadius: "1rem",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.05)",
     border: "none",
-    padding: "16px 18px",
+    padding: "20px",
     fontFamily: FONT_SANS,
     display: "flex",
     flexDirection: "column",
@@ -3191,6 +3207,7 @@ function MembersModule({ count, weekly, pacing, churnData }: {
     fontWeight: DS.weight.medium,
     color: "var(--st-text-secondary)",
     letterSpacing: "0.01em",
+    lineHeight: 1,
   };
 
   // Chip style for inline metrics
@@ -3199,20 +3216,39 @@ function MembersModule({ count, weekly, pacing, churnData }: {
     fontSize: "0.6875rem",
     fontWeight: DS.weight.medium,
     color: "var(--st-text-secondary)",
-    backgroundColor: "rgba(0,0,0,0.04)",
+    backgroundColor: "rgba(0,0,0,0.035)",
     borderRadius: "100px",
-    padding: "3px 10px",
+    padding: "4px 10px",
     fontVariantNumeric: "tabular-nums",
     whiteSpace: "nowrap",
     display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
+    alignItems: "baseline",
+    gap: "3px",
+  };
+
+  // Diagnostic metric (churn card)
+  const diagLabel: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontSize: "0.75rem",
+    fontWeight: DS.weight.normal,
+    color: "var(--st-text-secondary)",
+  };
+  const diagValue: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontWeight: DS.weight.bold,
+    fontSize: "1.25rem",
+    fontVariantNumeric: "tabular-nums",
+    lineHeight: 1,
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <SubsectionHeader>{LABELS.members}</SubsectionHeader>
 
+      {/* Two-column grid:
+          Left col (~38%): Hero stacked on Churn (matched height to Growth)
+          Right col (~62%): Growth chart spans full left-stack height
+          Mobile: stacked */}
       <div className="members-mod-grid" style={{
         display: "grid",
         gridTemplateColumns: "1fr",
@@ -3221,15 +3257,13 @@ function MembersModule({ count, weekly, pacing, churnData }: {
 
         {/* ── Card A: Active Members (Hero) ── */}
         <div style={cardSt} className="members-card-hero">
-          {/* Label */}
           <span style={labelSt}>Active members</span>
-
-          {/* Hero number + net delta on same line */}
-          <div style={{ display: "flex", alignItems: "baseline", gap: "12px", marginTop: "6px" }}>
+          {/* Baseline-aligned row: big number + delta + descriptor */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "8px" }}>
             <span style={{
               fontFamily: FONT_SANS,
               fontWeight: DS.weight.bold,
-              fontSize: "2.75rem",
+              fontSize: "2.5rem",
               color: "var(--st-text-primary)",
               fontVariantNumeric: "tabular-nums",
               letterSpacing: "-0.03em",
@@ -3240,17 +3274,16 @@ function MembersModule({ count, weekly, pacing, churnData }: {
             <span style={{
               fontFamily: FONT_SANS,
               fontWeight: DS.weight.bold,
-              fontSize: "1.125rem",
+              fontSize: "1rem",
               fontVariantNumeric: "tabular-nums",
               color: netColor,
-              letterSpacing: "-0.01em",
               lineHeight: 1,
             }}>
               {wtdNet > 0 ? "+" : ""}{wtdNet}
             </span>
             <span style={{
               fontFamily: FONT_SANS,
-              fontSize: "0.6875rem",
+              fontSize: "0.75rem",
               fontWeight: DS.weight.normal,
               color: "var(--st-text-secondary)",
               lineHeight: 1,
@@ -3260,83 +3293,54 @@ function MembersModule({ count, weekly, pacing, churnData }: {
           </div>
         </div>
 
-        {/* ── Card B: Growth (supporting, wider) ── */}
-        <div style={{ ...cardSt, gap: "0px" }} className="members-card-growth">
-          {/* Header: label + metric chips */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+        {/* ── Card B: Growth (trend card, spans full height of left stack) ── */}
+        <div style={{ ...cardSt, padding: "20px 20px 8px 20px", gap: "0px" }} className="members-card-growth">
+          {/* Header: label + metric chips, baseline-aligned */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
             <span style={labelSt}>New members</span>
-            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "6px", alignItems: "baseline" }}>
               <span style={chipSt}>
-                WTD <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>{wtdNew}</strong>
+                WTD{" "}
+                <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{wtdNew}</strong>
                 {wtdDelta != null && wtdDelta !== 0 && (
                   <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />
                 )}
               </span>
               <span style={chipSt}>
-                Avg/wk <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>{avgNew4w}</strong>
+                Avg/wk{" "}
+                <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>{avgNew4w}</strong>
               </span>
             </div>
           </div>
 
-          {/* Sparkline chart — fills width, anchored to bottom */}
+          {/* Sparkline — quiet, fills remaining card space */}
           {sparkData.length >= 2 && (
-            <MembersSparkline data={sparkData} color={COLORS.member} height={72} />
+            <MembersSparkline data={sparkData} color={COLORS.member} />
           )}
         </div>
 
-        {/* ── Card C: Churn / Retention (diagnostic) ── */}
+        {/* ── Card C: Churn & Retention (diagnostic) ── */}
         <div style={cardSt} className="members-card-churn">
           <span style={labelSt}>Churn &amp; retention</span>
 
-          <div style={{ display: "flex", gap: "24px", marginTop: "10px", flexWrap: "wrap" }}>
-            {/* Churned WTD */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.6875rem", color: "var(--st-text-secondary)" }}>
-                Churned this week
-              </span>
-              <span style={{
-                fontFamily: FONT_SANS,
-                fontWeight: DS.weight.bold,
-                fontSize: "1.5rem",
-                fontVariantNumeric: "tabular-nums",
-                color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)",
-                lineHeight: 1.1,
-              }}>
+          {/* Baseline-aligned metric row */}
+          <div style={{ display: "flex", gap: "20px", marginTop: "10px", alignItems: "baseline", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <span style={diagLabel}>Churned this week</span>
+              <span style={{ ...diagValue, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>
                 {wtdChurned}
               </span>
             </div>
-
-            {/* At risk */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={{ fontFamily: FONT_SANS, fontSize: "0.6875rem", color: "var(--st-text-secondary)" }}>
-                At risk
-              </span>
-              <span style={{
-                fontFamily: FONT_SANS,
-                fontWeight: DS.weight.bold,
-                fontSize: "1.5rem",
-                fontVariantNumeric: "tabular-nums",
-                color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)",
-                lineHeight: 1.1,
-              }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <span style={diagLabel}>At risk</span>
+              <span style={{ ...diagValue, color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)" }}>
                 {atRisk}
               </span>
             </div>
-
-            {/* Avg churn rate (if available) */}
             {churnRate != null && churnRate > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={{ fontFamily: FONT_SANS, fontSize: "0.6875rem", color: "var(--st-text-secondary)" }}>
-                  Avg monthly rate
-                </span>
-                <span style={{
-                  fontFamily: FONT_SANS,
-                  fontWeight: DS.weight.bold,
-                  fontSize: "1.5rem",
-                  fontVariantNumeric: "tabular-nums",
-                  color: "var(--st-text-primary)",
-                  lineHeight: 1.1,
-                }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                <span style={diagLabel}>Avg monthly rate</span>
+                <span style={{ ...diagValue, color: "var(--st-text-primary)" }}>
                   {churnRate.toFixed(1)}%
                 </span>
               </div>
@@ -3345,22 +3349,27 @@ function MembersModule({ count, weekly, pacing, churnData }: {
         </div>
       </div>
 
-      {/* Responsive layout:
-          Desktop Row 1: Hero (narrow) + Growth (wide)
-          Desktop Row 2: Churn (full width)
-          Mobile: stack all */}
+      {/* Desktop: left col (hero + churn stacked) | right col (growth, full height)
+          Mobile: stack all three */}
       <style>{`
         .members-mod-grid {
           grid-template-columns: 1fr !important;
         }
+        .members-card-hero { padding: 16px !important; }
+        .members-card-churn { padding: 16px !important; }
+        .members-card-growth { padding: 16px 16px 6px 16px !important; }
         @media (min-width: 768px) {
           .members-mod-grid {
-            grid-template-columns: 5fr 8fr !important;
-            grid-template-rows: auto auto;
+            grid-template-columns: 38fr 62fr !important;
+            grid-template-rows: auto 1fr;
           }
-          .members-card-hero  { grid-column: 1; grid-row: 1; }
-          .members-card-growth { grid-column: 2; grid-row: 1; }
-          .members-card-churn  { grid-column: 1 / -1; grid-row: 2; }
+          .members-card-hero   { grid-column: 1; grid-row: 1; padding: 20px !important; }
+          .members-card-churn  { grid-column: 1; grid-row: 2; padding: 20px !important; }
+          .members-card-growth {
+            grid-column: 2;
+            grid-row: 1 / 3;
+            padding: 20px 20px 8px 20px !important;
+          }
         }
       `}</style>
     </div>
