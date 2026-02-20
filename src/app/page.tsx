@@ -3049,6 +3049,86 @@ function MetricKPI({ label, value, delta, deltaPercent, isPositiveGood = true, s
 
 // ─── Members Module (3-card grid) ────────────────────────────
 
+// ─── Sparkline with filled area (Apple Health style) ─────────
+function MembersSparkline({ data, color, height = 64 }: {
+  data: { label: string; value: number }[];
+  color: string;
+  height?: number;
+}) {
+  if (data.length < 2) return null;
+  const max = Math.max(...data.map((d) => d.value), 1);
+  const min = Math.min(...data.map((d) => d.value), 0);
+  const range = max - min || 1;
+  const pad = 4; // horizontal padding
+  const topPad = 18; // space for value labels above peaks
+  const w = 100; // SVG viewBox width (%)
+  const h = height;
+
+  // Build points
+  const points = data.map((d, i) => ({
+    x: pad + (i / (data.length - 1)) * (w - pad * 2),
+    y: topPad + (1 - (d.value - min) / range) * (h - topPad - 4),
+    value: d.value,
+    label: d.label,
+  }));
+
+  // SVG path for line
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  // Filled area path
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${h} L ${points[0].x} ${h} Z`;
+
+  return (
+    <div style={{ width: "100%", position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height: `${h}px`, display: "block" }}
+      >
+        {/* Filled area */}
+        <path d={areaPath} fill={color} opacity={0.08} />
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Data points */}
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 2.5 : 1.5} fill={i === points.length - 1 ? color : "white"} stroke={color} strokeWidth="1" />
+        ))}
+      </svg>
+      {/* Value labels above each point */}
+      <div style={{ display: "flex", justifyContent: "space-between", position: "absolute", top: 0, left: 0, right: 0, padding: `0 ${pad}%` }}>
+        {data.map((d, i) => (
+          <span key={i} style={{
+            fontFamily: FONT_SANS,
+            fontSize: "0.6rem",
+            fontWeight: i === data.length - 1 ? DS.weight.bold : DS.weight.medium,
+            color: i === data.length - 1 ? color : "var(--st-text-secondary)",
+            fontVariantNumeric: "tabular-nums",
+            textAlign: "center",
+            minWidth: 0,
+          }}>
+            {d.value}
+          </span>
+        ))}
+      </div>
+      {/* X-axis labels below */}
+      <div style={{ display: "flex", justifyContent: "space-between", padding: `2px ${pad}% 0` }}>
+        {data.map((d, i) => (
+          <span key={i} style={{
+            fontFamily: FONT_SANS,
+            fontSize: "0.55rem",
+            fontWeight: DS.weight.normal,
+            color: "var(--st-text-secondary)",
+            textAlign: "center",
+            minWidth: 0,
+            opacity: 0.7,
+          }}>
+            {d.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MembersModule({ count, weekly, pacing, churnData }: {
   count: number;
   weekly: TrendRowData[];
@@ -3059,13 +3139,13 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const currentPartial = weekly.length > 1 ? weekly[weekly.length - 1] : null;
 
-  // Last 4 full weeks for bar chart + avg
+  // Last 4 full weeks for sparkline + avg
   const last4 = completedWeekly.slice(-4);
   const avgNew4w = last4.length > 0
     ? Math.round(last4.reduce((s, w) => s + w.newMembers, 0) / last4.length)
     : 0;
 
-  // WTD net adds (from current partial week if available, else last completed)
+  // WTD metrics
   const wtdSource = currentPartial || (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1] : null);
   const wtdNet = wtdSource ? wtdSource.netMemberGrowth : 0;
   const wtdNew = currentPartial ? currentPartial.newMembers : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].newMembers : 0);
@@ -3074,67 +3154,82 @@ function MembersModule({ count, weekly, pacing, churnData }: {
   const prevWeek = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
   const wtdDelta = currentPartial && prevWeek ? currentPartial.newMembers - prevWeek.newMembers : null;
 
-  // Bar chart data for last 4 full weeks — short "Jan 19" style labels
-  const barData: BarChartData[] = last4.map((w) => {
+  // Sparkline data for last 4 full weeks
+  const sparkData = last4.map((w) => {
     const mon = isoWeekToDate(w.period);
-    if (mon) {
-      const label = mon.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      return { label, value: w.newMembers, color: COLORS.member };
-    }
-    return { label: formatWeekShort(w.period), value: w.newMembers, color: COLORS.member };
+    const label = mon ? mon.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : formatWeekShort(w.period);
+    return { label, value: w.newMembers };
   });
 
   // Churn WTD
   const wtdChurned = currentPartial ? currentPartial.memberChurn : (completedWeekly.length > 0 ? completedWeekly[completedWeekly.length - 1].memberChurn : 0);
 
-  // Shared label style
-  const labelSt: React.CSSProperties = {
-    fontFamily: FONT_SANS,
-    fontSize: "0.625rem",
-    fontWeight: DS.weight.medium,
-    color: "var(--st-text-secondary)",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  };
-  const valSt: React.CSSProperties = {
-    fontFamily: FONT_SANS,
-    fontWeight: DS.weight.bold,
-    fontSize: DS.text.md,
-    fontVariantNumeric: "tabular-nums",
-    color: "var(--st-text-primary)",
-    textAlign: "right",
-  };
+  // Churn diagnostics
+  const atRisk = churnData?.atRiskCount ?? 0;
+  const churnRate = churnData?.avgUserChurnRate ?? null;
 
   // Net WTD color
-  const netColor = wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-primary)";
+  const netColor = wtdNet > 0 ? "var(--st-success)" : wtdNet < 0 ? "var(--st-error)" : "var(--st-text-secondary)";
 
-  // At-risk count (show 0 when no data)
-  const atRisk = churnData?.atRiskCount ?? 0;
+  // ── Apple Health card style ──
+  const cardSt: React.CSSProperties = {
+    backgroundColor: "var(--st-bg-card)",
+    borderRadius: "16px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.05)",
+    border: "none",
+    padding: "16px 18px",
+    fontFamily: FONT_SANS,
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+  };
+
+  // Sentence-case label
+  const labelSt: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontSize: "0.8125rem",
+    fontWeight: DS.weight.medium,
+    color: "var(--st-text-secondary)",
+    letterSpacing: "0.01em",
+  };
+
+  // Chip style for inline metrics
+  const chipSt: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontSize: "0.6875rem",
+    fontWeight: DS.weight.medium,
+    color: "var(--st-text-secondary)",
+    backgroundColor: "rgba(0,0,0,0.04)",
+    borderRadius: "100px",
+    padding: "3px 10px",
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <SubsectionHeader>{LABELS.members}</SubsectionHeader>
 
-      {/* Desktop: Active(1) Growth(2) — Churn tucks under Active.
-          Mobile: stack all three. */}
       <div className="members-mod-grid" style={{
         display: "grid",
         gridTemplateColumns: "1fr",
-        gap: "0.625rem",
+        gap: "10px",
       }}>
-        {/* ── Card A: Active Members ── */}
-        <Card padding="14px 16px">
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-            {/* Header label */}
-            <span style={{ ...labelSt, fontSize: DS.text.xs }}>
-              Active Members
-            </span>
 
-            {/* Hero KPI */}
+        {/* ── Card A: Active Members (Hero) ── */}
+        <div style={cardSt} className="members-card-hero">
+          {/* Label */}
+          <span style={labelSt}>Active members</span>
+
+          {/* Hero number + net delta on same line */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: "12px", marginTop: "6px" }}>
             <span style={{
               fontFamily: FONT_SANS,
               fontWeight: DS.weight.bold,
-              fontSize: "2.25rem",
+              fontSize: "2.75rem",
               color: "var(--st-text-primary)",
               fontVariantNumeric: "tabular-nums",
               letterSpacing: "-0.03em",
@@ -3142,115 +3237,130 @@ function MembersModule({ count, weekly, pacing, churnData }: {
             }}>
               {formatNumber(count)}
             </span>
-
-            {/* Mini-metric grid: 3 cols under the big number */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: "0px",
-              borderTop: "1px solid var(--st-border)",
-              paddingTop: "0.5rem",
+            <span style={{
+              fontFamily: FONT_SANS,
+              fontWeight: DS.weight.bold,
+              fontSize: "1.125rem",
+              fontVariantNumeric: "tabular-nums",
+              color: netColor,
+              letterSpacing: "-0.01em",
+              lineHeight: 1,
             }}>
-              {/* Net WTD */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={labelSt}>Net WTD</span>
-                <span style={{ ...valSt, textAlign: "left", color: netColor }}>
-                  {wtdNet > 0 ? "+" : ""}{wtdNet}
-                </span>
-              </div>
-              {/* New WTD */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={labelSt}>New WTD</span>
-                <span style={{ ...valSt, textAlign: "left" }}>{wtdNew}</span>
-              </div>
-              {/* Churned WTD */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={labelSt}>Churned WTD</span>
-                <span style={{ ...valSt, textAlign: "left", color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>
-                  {wtdChurned}
-                </span>
-              </div>
+              {wtdNet > 0 ? "+" : ""}{wtdNet}
+            </span>
+            <span style={{
+              fontFamily: FONT_SANS,
+              fontSize: "0.6875rem",
+              fontWeight: DS.weight.normal,
+              color: "var(--st-text-secondary)",
+              lineHeight: 1,
+            }}>
+              net this week
+            </span>
+          </div>
+        </div>
+
+        {/* ── Card B: Growth (supporting, wider) ── */}
+        <div style={{ ...cardSt, gap: "0px" }} className="members-card-growth">
+          {/* Header: label + metric chips */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+            <span style={labelSt}>New members</span>
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <span style={chipSt}>
+                WTD <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>{wtdNew}</strong>
+                {wtdDelta != null && wtdDelta !== 0 && (
+                  <DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact />
+                )}
+              </span>
+              <span style={chipSt}>
+                Avg/wk <strong style={{ fontWeight: DS.weight.bold, color: "var(--st-text-primary)" }}>{avgNew4w}</strong>
+              </span>
             </div>
           </div>
-        </Card>
 
-        {/* ── Card B: Growth (hero card — spans 2 cols on desktop) ── */}
-        <Card padding="14px 16px">
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {/* Header row: title left, summary metrics right */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ ...labelSt, fontSize: DS.text.xs }}>
-                Growth
+          {/* Sparkline chart — fills width, anchored to bottom */}
+          {sparkData.length >= 2 && (
+            <MembersSparkline data={sparkData} color={COLORS.member} height={72} />
+          )}
+        </div>
+
+        {/* ── Card C: Churn / Retention (diagnostic) ── */}
+        <div style={cardSt} className="members-card-churn">
+          <span style={labelSt}>Churn &amp; retention</span>
+
+          <div style={{ display: "flex", gap: "24px", marginTop: "10px", flexWrap: "wrap" }}>
+            {/* Churned WTD */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.6875rem", color: "var(--st-text-secondary)" }}>
+                Churned this week
               </span>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "baseline" }}>
-                <span style={{ ...labelSt, fontWeight: DS.weight.normal }}>
-                  WTD{" "}
-                  <span style={{ ...valSt, fontSize: DS.text.sm }}>
-                    {wtdNew}
-                  </span>
-                  {wtdDelta != null && wtdDelta !== 0 && (
-                    <>{" "}<DeltaBadge delta={wtdDelta} deltaPercent={null} isPositiveGood compact /></>
-                  )}
-                </span>
-                <span style={{ ...labelSt, fontWeight: DS.weight.normal }}>
-                  Avg/wk{" "}
-                  <span style={{ ...valSt, fontSize: DS.text.sm }}>
-                    {avgNew4w}
-                  </span>
-                </span>
-              </div>
+              <span style={{
+                fontFamily: FONT_SANS,
+                fontWeight: DS.weight.bold,
+                fontSize: "1.5rem",
+                fontVariantNumeric: "tabular-nums",
+                color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)",
+                lineHeight: 1.1,
+              }}>
+                {wtdChurned}
+              </span>
             </div>
 
-            {/* Chart sub-label */}
-            <span style={{ fontFamily: FONT_SANS, fontSize: "0.6rem", color: "var(--st-text-secondary)", letterSpacing: "0.02em" }}>
-              Last 4 full weeks
-            </span>
+            {/* At risk */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              <span style={{ fontFamily: FONT_SANS, fontSize: "0.6875rem", color: "var(--st-text-secondary)" }}>
+                At risk
+              </span>
+              <span style={{
+                fontFamily: FONT_SANS,
+                fontWeight: DS.weight.bold,
+                fontSize: "1.5rem",
+                fontVariantNumeric: "tabular-nums",
+                color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)",
+                lineHeight: 1.1,
+              }}>
+                {atRisk}
+              </span>
+            </div>
 
-            {/* Mini bar chart — compact */}
-            {barData.length > 0 && (
-              <MiniBarChart data={barData} height={44} />
+            {/* Avg churn rate (if available) */}
+            {churnRate != null && churnRate > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <span style={{ fontFamily: FONT_SANS, fontSize: "0.6875rem", color: "var(--st-text-secondary)" }}>
+                  Avg monthly rate
+                </span>
+                <span style={{
+                  fontFamily: FONT_SANS,
+                  fontWeight: DS.weight.bold,
+                  fontSize: "1.5rem",
+                  fontVariantNumeric: "tabular-nums",
+                  color: "var(--st-text-primary)",
+                  lineHeight: 1.1,
+                }}>
+                  {churnRate.toFixed(1)}%
+                </span>
+              </div>
             )}
           </div>
-        </Card>
-
-        {/* ── Card C: Churn (secondary weight) ── */}
-        <Card padding="10px 16px">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-            <span style={{ ...labelSt, fontSize: DS.text.xs, flexShrink: 0 }}>
-              Churn
-            </span>
-
-            <div style={{ display: "flex", gap: "1.25rem", alignItems: "baseline" }}>
-              <span style={labelSt}>
-                Churned WTD{" "}
-                <span style={{ ...valSt, fontSize: DS.text.sm, color: wtdChurned > 0 ? COLORS.error : "var(--st-text-primary)" }}>
-                  {wtdChurned}
-                </span>
-              </span>
-              <span style={labelSt}>
-                At risk{" "}
-                <span style={{ ...valSt, fontSize: DS.text.sm, color: atRisk > 0 ? COLORS.warning : "var(--st-text-primary)" }}>
-                  {atRisk}
-                </span>
-              </span>
-            </div>
-          </div>
-        </Card>
+        </div>
       </div>
 
-      {/* Responsive grid: desktop = Active+Churn in col 1, Growth hero in col 2 (span 2) */}
+      {/* Responsive layout:
+          Desktop Row 1: Hero (narrow) + Growth (wide)
+          Desktop Row 2: Churn (full width)
+          Mobile: stack all */}
       <style>{`
         .members-mod-grid {
           grid-template-columns: 1fr !important;
         }
         @media (min-width: 768px) {
           .members-mod-grid {
-            grid-template-columns: 1fr 2fr !important;
+            grid-template-columns: 5fr 8fr !important;
             grid-template-rows: auto auto;
           }
-          .members-mod-grid > :nth-child(1) { grid-column: 1; grid-row: 1; }
-          .members-mod-grid > :nth-child(2) { grid-column: 2; grid-row: 1 / 3; }
-          .members-mod-grid > :nth-child(3) { grid-column: 1; grid-row: 2; }
+          .members-card-hero  { grid-column: 1; grid-row: 1; }
+          .members-card-growth { grid-column: 2; grid-row: 1; }
+          .members-card-churn  { grid-column: 1 / -1; grid-row: 2; }
         }
       `}</style>
     </div>
