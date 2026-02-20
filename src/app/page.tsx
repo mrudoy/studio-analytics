@@ -2064,27 +2064,19 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
 // ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
 
-function NonMembersSection({ firstVisits, returningNonMembers, dropIns, newCustomerVolume, newCustomerCohorts, conversionPool }: {
-  firstVisits: FirstVisitData | null;
-  returningNonMembers: ReturningNonMemberData | null;
+function NonMembersSection({ dropIns, newCustomerVolume, newCustomerCohorts, conversionPool }: {
   dropIns: DropInModuleData | null;
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
   conversionPool: ConversionPoolModuleData | null;
 }) {
-  if (!firstVisits && !returningNonMembers && !dropIns && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
+  if (!dropIns && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
 
   return (
     <div className="space-y-3">
       <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">{LABELS.nonMembers}</SectionHeader>
 
       {dropIns && <DropInsModule dropIns={dropIns} />}
-      {(firstVisits || returningNonMembers) && (
-        <div className={`grid gap-3 ${firstVisits && returningNonMembers ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
-          {firstVisits && <FirstVisitsCard firstVisits={firstVisits} />}
-          {returningNonMembers && <ReturningNonMembersCard returningNonMembers={returningNonMembers} />}
-        </div>
-      )}
       {(newCustomerVolume || newCustomerCohorts) && (
         <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
       )}
@@ -3339,10 +3331,10 @@ function DashboardView() {
         </div>
 
         {/* ── Non Members ── */}
-        {(trends?.firstVisits || trends?.returningNonMembers || trends?.dropIns || trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
-          <NonMembersSection firstVisits={trends?.firstVisits ?? null} returningNonMembers={trends?.returningNonMembers ?? null} dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
+        {(trends?.dropIns || trends?.newCustomerVolume || trends?.newCustomerCohorts || trends?.conversionPool) ? (
+          <NonMembersSection dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
         ) : (
-          <NoData label="Non-Members (First Visits, Drop-Ins)" />
+          <NoData label="Non-Members (Drop-Ins, Funnel)" />
         )}
 
         {/* ── Annual Revenue Comparison ── */}
