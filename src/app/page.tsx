@@ -50,7 +50,7 @@ const DS = {
     xs: "0.75rem",     // uppercase labels, captions, fine print
     sm: "0.9rem",      // secondary text, sublabels, table content
     md: "1.05rem",     // body text, card titles, category names
-    lg: "1.75rem",     // metric values, card hero numbers
+    lg: "var(--st-kpi-value)",  // module KPI values (32-48px responsive)
     xl: "2.5rem",      // page-level hero KPIs (only in KPIHeroStrip and CategoryDetail headers)
   },
   // Font weights (3 only)
@@ -67,13 +67,13 @@ const DS = {
     lg: "1.5rem",      // card padding (universal)
     xl: "2rem",        // section spacing
   },
-  // Card padding — one value everywhere
-  cardPad: "0.75rem",
+  // Card padding — responsive via CSS var (16px mobile / 20px desktop)
+  cardPad: "var(--st-card-pad)",
   // Gap between card header (label row) and content below
   cardHeaderMb: "0.5rem",
   // Uppercase label style
   label: {
-    fontSize: "0.75rem",
+    fontSize: "var(--st-th-size)",
     fontWeight: 600,
     letterSpacing: "0.05em",
     textTransform: "uppercase" as const,
@@ -1198,12 +1198,12 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
 // ─── Module spacing tokens ───────────────────────────────────
 /** Spacing tokens (px) for module anatomy */
 const MOD = {
-  cardPad: "24px",
+  cardPad: "var(--st-card-pad)",
   headerToKpi: "16px",
   kpiToToggle: "14px",
   toggleToTabs: "20px",
   tabsToTable: "12px",
-  rowH: "52px",
+  rowH: "var(--st-row-h)",
 } as const;
 
 // ─── Card wrapper (used selectively) ─────────────────────────
@@ -1219,6 +1219,9 @@ function Card({ children, padding = MOD.cardPad }: { children: React.ReactNode; 
         overflow: "hidden",
         minWidth: 0,
         fontFamily: FONT_SANS,
+        display: "flex",
+        flexDirection: "column" as const,
+        height: "100%",
       }}
     >
       {children}
@@ -1257,16 +1260,43 @@ function ModuleHeader({ color, title, children }: {
 
 /** Info tooltip icon (24x24 hit area) — shared across modules */
 function MInfoIcon({ tooltip }: { tooltip: string }) {
+  const [show, setShow] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleEnter() {
+    timerRef.current = setTimeout(() => setShow(true), 250);
+  }
+  function handleLeave() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setShow(false);
+  }
+
   return (
     <span
-      title={tooltip}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
       style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         width: 24, height: 24, cursor: "help", flexShrink: 0,
         fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.6,
+        position: "relative",
       }}
     >
       &#9432;
+      {show && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
+          transform: "translateX(-50%)",
+          padding: "8px 12px", borderRadius: 6,
+          backgroundColor: "var(--st-bg-dark)", color: "var(--st-text-light)",
+          fontSize: "12px", lineHeight: 1.4, maxWidth: 240, minWidth: 120,
+          whiteSpace: "normal", zIndex: 50,
+          pointerEvents: "none",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        }}>
+          {tooltip}
+        </span>
+      )}
     </span>
   );
 }
@@ -1284,10 +1314,11 @@ function KPIBlock({ value, label, sublabel, tooltip, delta, deltaSuffix, deltaSu
   children?: React.ReactNode;
 }) {
   const sign = delta && delta > 0 ? "+" : "";
+  const chipVariant: ChipVariant = delta && delta > 0 ? "positive" : delta && delta < 0 ? "negative" : "neutral";
   return (
     <div style={{ padding: "0 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-        <span style={{ fontWeight: 600, fontSize: "1.75rem", fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontWeight: 600, fontSize: "var(--st-kpi-value)", fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
           {value}
         </span>
         {badge}
@@ -1299,13 +1330,9 @@ function KPIBlock({ value, label, sublabel, tooltip, delta, deltaSuffix, deltaSu
       {(delta != null && delta !== 0) || sublabel || children ? (
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "4px", minHeight: "16px" }}>
           {delta != null && delta !== 0 && (
-            <span style={{
-              fontSize: "11px", fontWeight: 500,
-              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-              padding: "1px 5px", borderRadius: "3px", fontVariantNumeric: "tabular-nums",
-            }}>
+            <Chip variant={chipVariant}>
               {sign}{deltaSuffix === "pp" ? delta.toFixed(1) : delta}{deltaSuffix ?? ""}{deltaSublabel ? ` ${deltaSublabel}` : ""}
-            </span>
+            </Chip>
           )}
           {sublabel && (
             <span style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}>{sublabel}</span>
@@ -1357,48 +1384,67 @@ function ToggleRow({ show, onToggle, label, children }: {
   );
 }
 
-/** Underline tabs row */
+/** Underline tabs row with sliding indicator */
 function UnderlineTabs({ tabs, active, onChange }: {
   tabs: { key: string; label: string }[];
   active: string;
   onChange: (key: string) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState({ left: 0, width: 0 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const activeBtn = containerRef.current.querySelector(`[data-tab-key="${active}"]`) as HTMLElement | null;
+    if (activeBtn) {
+      setIndicator({ left: activeBtn.offsetLeft, width: activeBtn.offsetWidth });
+    }
+  }, [active, tabs]);
+
   return (
-    <div style={{ display: "flex", gap: 0, borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: MOD.tabsToTable }}>
-      {tabs.map((t) => {
-        const isActive = t.key === active;
-        return (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => onChange(t.key)}
-            style={{
-              padding: "6px 12px 8px",
-              marginBottom: "-1px",
-              fontSize: "13px",
-              fontWeight: isActive ? 600 : 400,
-              color: isActive ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-              backgroundColor: "transparent",
-              border: "none",
-              borderBottom: isActive ? "2px solid var(--st-text-primary)" : "2px solid transparent",
-              borderRadius: 0,
-              cursor: "pointer",
-              transition: "color 0.15s, border-color 0.15s",
-              letterSpacing: "0.02em",
-              outline: "none",
-            }}
-          >
-            {t.label}
-          </button>
-        );
-      })}
+    <div ref={containerRef} style={{ position: "relative", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: MOD.tabsToTable }}>
+      <div style={{ display: "flex", gap: 0 }}>
+        {tabs.map((t) => {
+          const isActive = t.key === active;
+          return (
+            <button
+              key={t.key}
+              data-tab-key={t.key}
+              type="button"
+              onClick={() => onChange(t.key)}
+              style={{
+                padding: "6px 12px 8px",
+                fontSize: "13px",
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? "var(--st-text-primary)" : "var(--st-text-secondary)",
+                backgroundColor: "transparent",
+                border: "none",
+                borderRadius: 0,
+                cursor: "pointer",
+                transition: "color 0.15s",
+                letterSpacing: "0.02em",
+                outline: "none",
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      {/* Sliding indicator */}
+      <div style={{
+        position: "absolute", bottom: -1, height: 2,
+        backgroundColor: "var(--st-text-primary)",
+        left: indicator.left, width: indicator.width,
+        transition: "left 0.2s ease, width 0.2s ease",
+      }} />
     </div>
   );
 }
 
 /** Shared table styles for module tables */
 const modTh: React.CSSProperties = {
-  textAlign: "right", padding: "8px 12px", fontSize: "11px", fontWeight: 400,
+  textAlign: "right", padding: "8px 12px", fontSize: "var(--st-th-size)", fontWeight: 400,
   letterSpacing: "0.05em", textTransform: "uppercase",
   color: "var(--st-text-secondary)", opacity: 0.55,
   whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
@@ -1406,7 +1452,7 @@ const modTh: React.CSSProperties = {
 const modTd: React.CSSProperties = {
   textAlign: "right", padding: "8px 12px",
   fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS,
-  height: MOD.rowH, verticalAlign: "middle",
+  height: "var(--st-row-h)", verticalAlign: "middle",
 };
 
 /** Mini segmented bar (timing, mix, distribution). High-contrast segment spec. */
@@ -1451,6 +1497,100 @@ function SegmentedBar({ segments, height = 8, colors, tooltip }: {
         );
       })}
     </div>
+  );
+}
+
+// ─── Chip (shared badge/label) ───────────────────────────────
+
+type ChipVariant = "neutral" | "positive" | "negative" | "accent";
+
+function Chip({ children, variant = "neutral", title: chipTitle }: {
+  children: React.ReactNode;
+  variant?: ChipVariant;
+  title?: string;
+}) {
+  const styles: Record<ChipVariant, { color: string; bg: string }> = {
+    neutral: { color: "var(--st-text-secondary)", bg: "rgba(65, 58, 58, 0.06)" },
+    positive: { color: "var(--st-success)", bg: "rgba(74, 124, 89, 0.1)" },
+    negative: { color: "var(--st-error)", bg: "rgba(160, 64, 64, 0.1)" },
+    accent: { color: "var(--st-text-primary)", bg: "rgba(65, 58, 58, 0.08)" },
+  };
+  const s = styles[variant];
+  return (
+    <span
+      title={chipTitle}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: "3px",
+        fontSize: "11px", fontWeight: 500,
+        color: s.color, backgroundColor: s.bg,
+        padding: "1px 6px", borderRadius: "3px",
+        letterSpacing: "0.03em", fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap", lineHeight: 1.4,
+        transition: "background-color 0.15s",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+// ─── Dashboard Grid (bento container) ────────────────────────
+
+function DashboardGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="bento-grid"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(12, 1fr)",
+        gap: "var(--st-grid-gap)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Skeleton (loading placeholder) ──────────────────────────
+
+function Skeleton({ width, height = 16, style: extraStyle }: {
+  width?: string | number;
+  height?: number;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        width: width ?? "100%",
+        height,
+        borderRadius: 4,
+        backgroundColor: "rgba(65, 58, 58, 0.06)",
+        animation: "skeleton-pulse 1.5s ease-in-out infinite",
+        ...extraStyle,
+      }}
+    />
+  );
+}
+
+function ModuleSkeleton() {
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: MOD.headerToKpi }}>
+        <Skeleton width={7} height={7} style={{ borderRadius: "50%" }} />
+        <Skeleton width={120} height={12} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: MOD.kpiToToggle }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ padding: "0 12px" }}>
+            <Skeleton width={80} height={28} />
+            <Skeleton width={100} height={12} style={{ marginTop: 6 }} />
+          </div>
+        ))}
+      </div>
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} height={48} style={{ marginBottom: 2 }} />
+      ))}
+    </Card>
   );
 }
 
@@ -1924,8 +2064,8 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
       {/* Complete table */}
       {cohorts && activeTab === "complete" && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS }}>
+        <div>
+          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS }}>
             <thead>
               <tr>
                 <th style={{ ...modTh, textAlign: "left" }}>Cohort</th>
@@ -1958,10 +2098,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
-                      <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
-                      <td style={{ ...modTd, fontWeight: 600 }}>{c.total3Week}</td>
-                      <td style={{ ...modTd, fontWeight: 500, color: "var(--st-text-primary)" }}>{rate}%</td>
-                      <td style={{ ...modTd, textAlign: "center" }}>
+                      <td data-label="New" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
+                      <td data-label="Converts" style={{ ...modTd, fontWeight: 600 }}>{c.total3Week}</td>
+                      <td data-label="Rate" style={{ ...modTd, fontWeight: 500, color: "var(--st-text-primary)" }}>{rate}%</td>
+                      <td className="mod-bar-cell" style={{ ...modTd, textAlign: "center" }}>
                         <SegmentedBar
                           segments={[
                             { value: c.week1, label: "Same week" },
@@ -1994,8 +2134,8 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
       {/* In-progress table */}
       {cohorts && activeTab === "inProgress" && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+        <div>
+          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "42%" }} />
               <col style={{ width: "14%" }} />
@@ -2033,9 +2173,9 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       <td style={{ ...modTd, textAlign: "left", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
-                      <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
-                      <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{convertsSoFar}</td>
-                      <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"}</td>
+                      <td data-label="New" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
+                      <td data-label="Converts" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{convertsSoFar}</td>
+                      <td data-label="Days left" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"}</td>
                     </tr>
                     {isExpanded && (
                       <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
@@ -2073,14 +2213,28 @@ function NonMembersSection({ dropIns, newCustomerVolume, newCustomerCohorts, con
   if (!dropIns && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
 
   return (
-    <div className="space-y-3">
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">{LABELS.nonMembers}</SectionHeader>
 
-      {dropIns && <DropInsModule dropIns={dropIns} />}
-      {(newCustomerVolume || newCustomerCohorts) && (
-        <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
-      )}
-      {conversionPool && <ConversionPoolModule pool={conversionPool} />}
+      <DashboardGrid>
+        {/* Row A: Drop-ins (span 7) + New Customer Funnel (span 5) */}
+        {dropIns && (
+          <div style={{ gridColumn: "span 7" }} className="bento-cell-a1">
+            <DropInsModule dropIns={dropIns} />
+          </div>
+        )}
+        {(newCustomerVolume || newCustomerCohorts) && (
+          <div style={{ gridColumn: "span 5" }} className="bento-cell-a2">
+            <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
+          </div>
+        )}
+        {/* Row B: Conversion Pool (span 12) */}
+        {conversionPool && (
+          <div style={{ gridColumn: "span 12" }} className="bento-cell-b">
+            <ConversionPoolModule pool={conversionPool} />
+          </div>
+        )}
+      </DashboardGrid>
     </div>
   );
 }
@@ -2204,8 +2358,8 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
 
       {/* Complete weeks table: WEEK | VISITS | CUSTOMERS | FIRST % | MIX */}
       {activeTab === "complete" && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+        <div>
+          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "32%" }} />
               <col style={{ width: "16%" }} />
@@ -2241,21 +2395,12 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                   >
                     <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
                       {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
-                      {isLatest && (
-                        <span style={{
-                          fontSize: "10px", fontWeight: 500,
-                          backgroundColor: "rgba(155, 118, 83, 0.10)", color: COLORS.dropIn,
-                          padding: "1px 4px", borderRadius: "2px", letterSpacing: "0.03em",
-                          marginLeft: "6px",
-                        }}>
-                          Latest
-                        </span>
-                      )}
+                      {isLatest && <Chip variant="accent">Latest</Chip>}
                     </td>
-                    <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(w.visits)}</td>
-                    <td style={{ ...modTd, fontWeight: 500 }}>{formatNumber(w.uniqueCustomers)}</td>
-                    <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{firstPct}%</td>
-                    <td style={{ ...modTd, textAlign: "center" }}>
+                    <td data-label="Visits" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(w.visits)}</td>
+                    <td data-label="Customers" style={{ ...modTd, fontWeight: 500 }}>{formatNumber(w.uniqueCustomers)}</td>
+                    <td data-label="First %" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{firstPct}%</td>
+                    <td className="mod-bar-cell" style={{ ...modTd, textAlign: "center" }}>
                       {w.uniqueCustomers > 0 ? (
                         <SegmentedBar
                           segments={[
@@ -2279,8 +2424,8 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
 
       {/* WTD table */}
       {activeTab === "wtd" && wtd && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+        <div>
+          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "30%" }} />
               <col style={{ width: "16%" }} />
@@ -2299,13 +2444,16 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             </thead>
             <tbody>
               <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)" }}>
-                <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>{formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}</td>
-                <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(wtd.visits)}</td>
-                <td style={{ ...modTd, fontWeight: 500 }}>{formatNumber(wtd.uniqueCustomers)}</td>
-                <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>
+                <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
+                  {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                  {" "}<Chip variant="accent">WTD</Chip>
+                </td>
+                <td data-label="Visits" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(wtd.visits)}</td>
+                <td data-label="Customers" style={{ ...modTd, fontWeight: 500 }}>{formatNumber(wtd.uniqueCustomers)}</td>
+                <td data-label="First %" style={{ ...modTd, color: "var(--st-text-secondary)" }}>
                   {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
                 </td>
-                <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
+                <td data-label="Days left" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
               </tr>
               {lastCompleteWeek && (
                 <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", opacity: 0.55 }}>
@@ -2313,12 +2461,12 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                     {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
                     <span style={{ fontSize: "11px", marginLeft: "6px", fontWeight: 400, fontStyle: "italic" }}>prev</span>
                   </td>
-                  <td style={{ ...modTd, fontWeight: 600, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.visits)}</td>
-                  <td style={{ ...modTd, fontWeight: 500, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
-                  <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>
+                  <td data-label="Visits" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.visits)}</td>
+                  <td data-label="Customers" style={{ ...modTd, fontWeight: 500, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
+                  <td data-label="First %" style={{ ...modTd, color: "var(--st-text-secondary)" }}>
                     {lastCompleteWeek.uniqueCustomers > 0 ? `${Math.round((lastCompleteWeek.firstTime / lastCompleteWeek.uniqueCustomers) * 100)}%` : "\u2014"}
                   </td>
-                  <td style={{ ...modTd, color: "var(--st-text-secondary)" }}>{"\u2014"}</td>
+                  <td data-label="Days left" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{"\u2014"}</td>
                 </tr>
               )}
             </tbody>
@@ -2499,28 +2647,18 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           deltaSuffix="pp"
           deltaSublabel="vs wk"
           badge={showRateWarning ? (
-            <span
+            <Chip
+              variant="negative"
               title={`Rate is ${Math.abs(rateVsBaseline!).toFixed(1)}pp below 8-week avg (${avgRate.toFixed(1)}%). Click to expand trend.`}
-              onClick={() => setShowChart(true)}
-              style={{
-                fontSize: "10px", fontWeight: 600,
-                color: COLORS.error, backgroundColor: "rgba(160, 64, 64, 0.08)",
-                padding: "1px 5px", borderRadius: "2px", cursor: "pointer",
-                letterSpacing: "0.02em",
-              }}
             >
               Down vs baseline
-            </span>
+            </Chip>
           ) : undefined}
         >
           {rateVsBaseline !== null && rateVsBaseline !== 0 && (
-            <span style={{
-              fontSize: "11px", fontWeight: 500,
-              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-              padding: "1px 5px", borderRadius: "3px", fontVariantNumeric: "tabular-nums",
-            }}>
+            <Chip variant={rateVsBaseline > 0 ? "positive" : "negative"}>
               {rateVsBaseline > 0 ? "+" : ""}{rateVsBaseline.toFixed(1)}pp vs avg
-            </span>
+            </Chip>
           )}
         </KPIBlock>
       </KPIRow>
@@ -2730,7 +2868,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 
       {/* ── Weekly Table (Complete weeks tab) ── */}
       {activeTab === "complete" && displayWeeks.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+        <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "38%" }} />
             <col style={{ width: "18%" }} />
@@ -2765,24 +2903,15 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 >
                   <td style={{ ...modTd, textAlign: "left", fontSize: "12px", color: "var(--st-text-secondary)" }}>
                     {weekLabel}
-                    {isLatest && (
-                      <span style={{
-                        fontSize: "10px", fontWeight: 500,
-                        backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
-                        padding: "1px 5px", borderRadius: "2px", letterSpacing: "0.03em",
-                        marginLeft: "6px",
-                      }}>
-                        Latest
-                      </span>
-                    )}
+                    {isLatest && <Chip variant="accent">Latest</Chip>}
                   </td>
-                  <td style={{ ...modTd, fontSize: "13px" }}>
+                  <td data-label="Pool" style={{ ...modTd, fontSize: "13px" }}>
                     {formatNumber(w.activePool7d)}
                   </td>
-                  <td style={{ ...modTd, fontSize: "13px" }}>
+                  <td data-label="Converts" style={{ ...modTd, fontSize: "13px" }}>
                     {formatNumber(w.converts)}
                   </td>
-                  <td style={{ ...modTd, fontSize: "13px" }}>
+                  <td data-label="Rate" style={{ ...modTd, fontSize: "13px" }}>
                     {w.conversionRate.toFixed(1)}%
                   </td>
                 </tr>
@@ -2794,7 +2923,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 
       {/* ── WTD Tab ── */}
       {activeTab === "wtd" && wtd && (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+        <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "38%" }} />
             <col style={{ width: "18%" }} />
@@ -2817,14 +2946,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               height: MOD.rowH,
             }}>
               <td style={{ ...modTd, textAlign: "left", fontSize: "12px", color: "var(--st-text-secondary)" }}>
-                <span style={{
-                  fontSize: "10px", fontWeight: 500,
-                  backgroundColor: "rgba(107, 91, 123, 0.10)", color: COLORS.conversionPool,
-                  padding: "1px 5px", borderRadius: "2px", letterSpacing: "0.03em",
-                  marginRight: "6px",
-                }}>
-                  WTD
-                </span>
+                <Chip variant="accent">WTD</Chip>{" "}
                 {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                 {wtd.daysLeft > 0 && (
                   <span style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginLeft: "6px" }}>
@@ -2832,13 +2954,13 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                   </span>
                 )}
               </td>
-              <td style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+              <td data-label="Pool" style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
                 {formatNumber(wtd.activePool7d)}
               </td>
-              <td style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+              <td data-label="Converts" style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
                 {formatNumber(wtd.converts)}
               </td>
-              <td style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
+              <td data-label="Rate" style={{ ...modTd, fontSize: "13px", fontStyle: "italic" }}>
                 {wtd.conversionRate.toFixed(1)}%
               </td>
             </tr>
@@ -3108,10 +3230,34 @@ function DashboardView() {
 
   if (loadState.state === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>
-          Loading...
-        </p>
+      <div className="min-h-screen p-4 sm:p-6 lg:p-8" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
+        <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
+            <SkyTingLogo />
+          </div>
+          <h1 style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold, fontSize: "1.75rem", letterSpacing: "-0.01em", marginBottom: "1rem" }}>
+            Studio Dashboard
+          </h1>
+          <Skeleton width={200} height={24} style={{ margin: "0 auto", borderRadius: 12 }} />
+        </div>
+        <div style={{ maxWidth: "1280px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
+          {/* KPI hero skeleton */}
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Card key={i}>
+                <Skeleton width={80} height={12} style={{ marginBottom: 8 }} />
+                <Skeleton width={140} height={36} style={{ marginBottom: 8 }} />
+                <Skeleton width={100} height={14} />
+              </Card>
+            ))}
+          </div>
+          {/* Module skeletons */}
+          <DashboardGrid>
+            <div style={{ gridColumn: "span 7" }} className="bento-cell-a1"><ModuleSkeleton /></div>
+            <div style={{ gridColumn: "span 5" }} className="bento-cell-a2"><ModuleSkeleton /></div>
+            <div style={{ gridColumn: "span 12" }} className="bento-cell-b"><ModuleSkeleton /></div>
+          </DashboardGrid>
+        </div>
       </div>
     );
   }
@@ -3171,8 +3317,8 @@ function DashboardView() {
         <h1
           style={{
             color: "var(--st-text-primary)",
-                       fontWeight: DS.weight.bold,
-            fontSize: DS.text.lg,
+            fontWeight: DS.weight.bold,
+            fontSize: "1.75rem",
             letterSpacing: "-0.01em",
             marginBottom: "1rem",
           }}
@@ -3183,7 +3329,7 @@ function DashboardView() {
       </div>
 
       {/* ━━ Single column — centered, spacious ━━━━━━━━ */}
-      <div style={{ maxWidth: "960px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem", boxSizing: "border-box" }}>
+      <div style={{ maxWidth: "1280px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem", boxSizing: "border-box" }}>
 
         {/* ── KPI Hero Strip ── */}
         <KPIHeroStrip tiles={(() => {

@@ -22,6 +22,13 @@
   --st-success: #4A7C59;
   --st-error: #A04040;
   --st-warning: #8B7340;
+
+  /* Bento grid tokens */
+  --st-grid-gap: 16px;
+  --st-card-pad: 20px;
+  --st-row-h: 48px;
+  --st-kpi-value: clamp(2rem, 4vw, 3rem);
+  --st-th-size: 12px;
 }
 
 html, body {
@@ -50,5 +57,75 @@ body {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Skeleton pulse */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+}
+
+/* ── Responsive: mobile card padding ── */
+@media (max-width: 639px) {
+  :root { --st-card-pad: 16px; }
+}
+
+/* ── Bento grid responsive breakpoints ── */
+@media (max-width: 1023px) {
+  .bento-grid { grid-template-columns: repeat(6, 1fr) !important; }
+  .bento-cell-a1, .bento-cell-a2, .bento-cell-b { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 639px) {
+  .bento-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── Mobile table row-card collapse ── */
+@media (max-width: 639px) {
+  .mod-table-responsive { table-layout: auto !important; }
+  .mod-table-responsive thead { display: none; }
+  .mod-table-responsive tbody tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 8px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--st-border) !important;
+    border-left: none !important;
+  }
+  .mod-table-responsive tbody tr td {
+    text-align: left !important;
+    height: auto !important;
+    padding: 2px 0 !important;
+    font-size: 13px;
+  }
+  .mod-table-responsive tbody tr td:first-child {
+    grid-column: 1 / -1;
+    font-weight: 500;
+    padding-bottom: 4px !important;
+  }
+  .mod-table-responsive .mod-bar-cell {
+    grid-column: 1 / -1;
+    padding-top: 4px !important;
+  }
+  /* Mobile data labels */
+  .mod-table-responsive tbody td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--st-text-secondary);
+    display: block;
+    margin-bottom: 1px;
+  }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.5; }
+  }
 }
 
