@@ -2221,18 +2221,18 @@ function NonMembersSection({ dropIns, newCustomerVolume, newCustomerCohorts, con
       <DashboardGrid>
         {/* Row A: Drop-ins (span 7) + New Customer Funnel (span 5) */}
         {dropIns && (
-          <div style={{ gridColumn: "span 7" }} className="bento-cell-a1">
+          <div style={{ gridColumn: "span 7", minWidth: 0 }} className="bento-cell-a1">
             <DropInsModule dropIns={dropIns} />
           </div>
         )}
         {(newCustomerVolume || newCustomerCohorts) && (
-          <div style={{ gridColumn: "span 5" }} className="bento-cell-a2">
+          <div style={{ gridColumn: "span 5", minWidth: 0 }} className="bento-cell-a2">
             <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
           </div>
         )}
         {/* Row B: Conversion Pool (span 12) */}
         {conversionPool && (
-          <div style={{ gridColumn: "span 12" }} className="bento-cell-b">
+          <div style={{ gridColumn: "span 12", minWidth: 0 }} className="bento-cell-b">
             <ConversionPoolModule pool={conversionPool} />
           </div>
         )}
@@ -2360,7 +2360,7 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
 
       {/* Complete weeks table: WEEK | VISITS | CUSTOMERS | FIRST % | MIX */}
       {activeTab === "complete" && (
-        <div>
+        <div style={{ overflowX: "auto", minWidth: 0 }}>
           <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "32%" }} />
@@ -2426,7 +2426,7 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
 
       {/* WTD table */}
       {activeTab === "wtd" && wtd && (
-        <div>
+        <div style={{ overflowX: "auto", minWidth: 0 }}>
           <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "30%" }} />
@@ -2494,31 +2494,35 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
               { count: frequency.bucket11plus, label: "11+", opacity: 0.9 },
             ];
             const nonZero = segs.filter((s) => s.count > 0);
-            const gridCols = nonZero.map((s) => `${Math.max(s.count, frequency.totalCustomers * 0.03)}fr`).join(" ");
+            const total = nonZero.reduce((s, seg) => s + seg.count, 0);
             return (
-              <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: 0 }}>
-                {/* Row 1: colored bar segments */}
-                {nonZero.map((seg, i) => (
-                  <div key={seg.label + "-bar"} style={{
-                    height: 10,
-                    backgroundColor: freqColors[segs.indexOf(seg)],
-                    borderRadius: i === 0 ? "5px 0 0 5px" : i === nonZero.length - 1 ? "0 5px 5px 0" : 0,
-                  }} />
-                ))}
-                {/* Row 2: labels anchored to segment columns */}
-                {nonZero.map((seg, i) => (
-                  <div key={seg.label + "-label"} style={{
-                    textAlign: "center",
-                    display: "flex", flexDirection: "column", alignItems: "center",
-                    borderLeft: i > 0 ? "1px solid rgba(65, 58, 58, 0.12)" : "none",
-                    paddingTop: "4px",
-                  }} title={`${seg.count} customers`}>
-                    <span style={{ fontSize: "10px", color: "var(--st-text-secondary)", lineHeight: 1.3 }}>{seg.label}</span>
-                    <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-                      {Math.round((seg.count / frequency.totalCustomers) * 100)}%
-                    </span>
-                  </div>
-                ))}
+              <div>
+                {/* Bar: flex row with proportional widths */}
+                <div style={{ display: "flex", borderRadius: "5px", overflow: "hidden" }}>
+                  {nonZero.map((seg) => (
+                    <div key={seg.label + "-bar"} style={{
+                      flex: Math.max(seg.count / total, 0.03),
+                      height: 10,
+                      backgroundColor: freqColors[segs.indexOf(seg)],
+                    }} />
+                  ))}
+                </div>
+                {/* Labels: flex row matching bar proportions, text-left */}
+                <div style={{ display: "flex", paddingTop: "4px" }}>
+                  {nonZero.map((seg, i) => (
+                    <div key={seg.label + "-label"} style={{
+                      flex: Math.max(seg.count / total, 0.03),
+                      textAlign: "left",
+                      paddingLeft: i > 0 ? "4px" : 0,
+                      minWidth: 0,
+                    }} title={`${seg.count} customers`}>
+                      <span style={{ fontSize: "10px", color: "var(--st-text-secondary)", lineHeight: 1.3, display: "block" }}>{seg.label}</span>
+                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2, display: "block" }}>
+                        {Math.round((seg.count / frequency.totalCustomers) * 100)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })()}
@@ -2597,24 +2601,40 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 
   return (
     <Card>
-      {/* ── Header with Slice dropdown ── */}
+      {/* ── Header with Slice dropdown + trend toggle ── */}
       <ModuleHeader color={COLORS.conversionPool} title={LABELS.conversionPool}>
-        <select
-          value={activeSlice}
-          onChange={(e) => setActiveSlice(e.target.value as ConversionPoolSlice)}
-          title="Filter pool by visit type"
-          style={{
-            fontSize: "11px", fontWeight: 500,
-            color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.04)",
-            border: "1px solid rgba(65, 58, 58, 0.1)", borderRadius: "3px",
-            padding: "2px 8px", cursor: "pointer", outline: "none",
-            fontFamily: FONT_SANS, letterSpacing: "0.02em",
-          }}
-        >
-          {sliceOptions.map((o) => (
-            <option key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</option>
-          ))}
-        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {chartData.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowChart(!showChart)}
+              style={{
+                background: "none", border: "none", padding: "2px 0", cursor: "pointer",
+                fontSize: "12px", color: "var(--st-text-secondary)",
+                display: "flex", alignItems: "center", gap: "6px",
+              }}
+            >
+              <span style={{ fontSize: "8px", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
+              {showChart ? "Hide trend" : "Show trend"}
+            </button>
+          )}
+          <select
+            value={activeSlice}
+            onChange={(e) => setActiveSlice(e.target.value as ConversionPoolSlice)}
+            title="Filter pool by visit type"
+            style={{
+              fontSize: "11px", fontWeight: 500,
+              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.04)",
+              border: "1px solid rgba(65, 58, 58, 0.1)", borderRadius: "3px",
+              padding: "2px 8px", cursor: "pointer", outline: "none",
+              fontFamily: FONT_SANS, letterSpacing: "0.02em",
+            }}
+          >
+            {sliceOptions.map((o) => (
+              <option key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</option>
+            ))}
+          </select>
+        </div>
       </ModuleHeader>
 
       {/* ── KPI Strip: 5 blocks (Pool, Converts, Rate, Median time, Avg visits) ── */}
@@ -2764,29 +2784,30 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
         </div>
       )}
 
-      {/* ── Chart toggle — uses ToggleRow ── */}
-      {chartData.length > 0 && (
-        <ToggleRow show={showChart} onToggle={() => setShowChart(!showChart)}>
-          <div style={{ display: "flex", gap: "2px" }}>
-            {(["pool", "converts"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setChartMetric(m)}
-                style={{
-                  background: chartMetric === m ? "rgba(107, 91, 123, 0.12)" : "none",
-                  border: `1px solid ${chartMetric === m ? "rgba(107, 91, 123, 0.25)" : "transparent"}`,
-                  borderRadius: "3px", padding: "1px 8px", cursor: "pointer",
-                  fontSize: "11px", color: chartMetric === m ? COLORS.conversionPool : "var(--st-text-secondary)",
-                  fontWeight: chartMetric === m ? 500 : 400,
-                  letterSpacing: "0.02em", textTransform: "capitalize" as const,
-                }}
-              >
-                {m === "pool" ? "Pool" : "Converts"}
-              </button>
-            ))}
-          </div>
-        </ToggleRow>
+      {/* ── Chart (visible when toggled from header) ── */}
+      {showChart && chartData.length > 0 && (
+        <>
+        {/* Chart metric pills */}
+        <div style={{ display: "flex", gap: "2px", marginBottom: "8px" }}>
+          {(["pool", "converts"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setChartMetric(m)}
+              style={{
+                background: chartMetric === m ? "rgba(107, 91, 123, 0.12)" : "none",
+                border: `1px solid ${chartMetric === m ? "rgba(107, 91, 123, 0.25)" : "transparent"}`,
+                borderRadius: "3px", padding: "1px 8px", cursor: "pointer",
+                fontSize: "11px", color: chartMetric === m ? COLORS.conversionPool : "var(--st-text-secondary)",
+                fontWeight: chartMetric === m ? 500 : 400,
+                letterSpacing: "0.02em", textTransform: "capitalize" as const,
+              }}
+            >
+              {m === "pool" ? "Pool" : "Converts"}
+            </button>
+          ))}
+        </div>
+        </>
       )}
 
       {showChart && chartData.length > 0 && (
@@ -2858,6 +2879,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 
       {/* ── Weekly Table (Complete weeks tab) ── */}
       {activeTab === "complete" && displayWeeks.length > 0 && (
+        <div style={{ overflowX: "auto", minWidth: 0 }}>
         <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "38%" }} />
@@ -2909,10 +2931,12 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* ── WTD Tab ── */}
       {activeTab === "wtd" && wtd && (
+        <div style={{ overflowX: "auto", minWidth: 0 }}>
         <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "38%" }} />
@@ -2956,6 +2980,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             </tr>
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );
