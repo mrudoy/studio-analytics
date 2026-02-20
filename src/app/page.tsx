@@ -1364,6 +1364,91 @@ function KPIRow({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Strict-alignment KPI component with 3 fixed-height rows.
+ *  Row A: value (h=56px, baseline-aligned)
+ *  Row B: label (h=40px, locked)
+ *  Row C: meta  (h=28px, delta pill + subtext) */
+function KPI({
+  value,
+  valueSuffix,
+  label,
+  topRight,
+  metaLeft,
+  metaRight,
+}: {
+  value: React.ReactNode;
+  valueSuffix?: React.ReactNode;
+  label: string;
+  topRight?: React.ReactNode;
+  metaLeft?: React.ReactNode;
+  metaRight?: React.ReactNode;
+}) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      {/* Row A: Value (LOCK HEIGHT + BASELINE ALIGN) */}
+      <div style={{ height: "56px", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "8px", minWidth: 0 }}>
+          <div style={{
+            fontSize: "52px", lineHeight: "52px", fontWeight: 600,
+            letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums",
+            color: "var(--st-text-primary)", fontFamily: FONT_SANS,
+          }}>
+            {value}
+          </div>
+          {valueSuffix ? (
+            <div style={{
+              fontSize: "18px", lineHeight: "18px", fontWeight: 600,
+              color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums",
+            }}>
+              {valueSuffix}
+            </div>
+          ) : null}
+        </div>
+        {topRight ? <div style={{ flexShrink: 0, transform: "translateY(-6px)" }}>{topRight}</div> : null}
+      </div>
+      {/* Row B: Label (LOCK HEIGHT) */}
+      <div style={{
+        height: "40px", marginTop: "4px",
+        fontSize: "16px", lineHeight: "20px",
+        color: "var(--st-text-secondary)",
+      }}>
+        {label}
+      </div>
+      {/* Row C: Meta (CONSISTENT) */}
+      <div style={{
+        height: "28px", marginTop: "8px",
+        display: "flex", alignItems: "center", gap: "8px", minWidth: 0,
+      }}>
+        {metaLeft ? <div style={{ flexShrink: 0 }}>{metaLeft}</div> : null}
+        {metaRight ? (
+          <div style={{
+            fontSize: "14px", color: "var(--st-text-secondary)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {metaRight}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** 3-column KPI grid for Non-Members cards */
+function KPIGrid3({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="kpi-grid-3" style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(3, 1fr)",
+      gap: "40px",
+      alignItems: "start",
+      padding: "8px 0",
+      marginBottom: MOD.kpiToToggle,
+    }}>
+      {children}
+    </div>
+  );
+}
+
 /** Toggle row for collapsible trend chart */
 function ToggleRow({ show, onToggle, label, children }: {
   show: boolean; onToggle: () => void; label?: string; children?: React.ReactNode;
@@ -1991,22 +2076,22 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     <Card>
       <ModuleHeader color={COLORS.newCustomer} title={LABELS.newCustomerFunnel} />
 
-      {/* KPI Row: 3 blocks, no dividers (whitespace only) */}
-      <KPIRow>
-        <KPIBlock
+      {/* KPI Row: strict 3-col grid with fixed-height KPI components */}
+      <KPIGrid3>
+        <KPI
           value={formatNumber(currentCohortCount ?? 0)}
           label="New customers (this week)"
         />
-        <KPIBlock
-          value={avgRate !== null ? `${avgRate.toFixed(1)}%` : "\u2014"}
+        <KPI
+          value={avgRate !== null ? avgRate.toFixed(1) : "\u2014"}
+          valueSuffix={avgRate !== null ? "%" : undefined}
           label="3-wk conversion"
-          tooltip={convTooltip}
+          topRight={<MInfoIcon tooltip={convTooltip} />}
         />
-        <KPIBlock
+        <KPI
           value={expectedAutoRenews !== null ? `\u2248${expectedAutoRenews}` : "\u2014"}
           label="Expected converts"
-          tooltip={expectedAutoRenews !== null ? projTooltip : undefined}
-          badge={expectedAutoRenews !== null ? (
+          topRight={expectedAutoRenews !== null ? (
             <span style={{
               fontSize: "11px", fontWeight: 500,
               color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
@@ -2014,9 +2099,9 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
             }}>
               Proj
             </span>
-          ) : undefined}
+          ) : (projTooltip ? <MInfoIcon tooltip={projTooltip} /> : undefined)}
         />
-      </KPIRow>
+      </KPIGrid3>
 
       {/* Toggle row */}
       {chartData.length > 0 && (
@@ -2289,28 +2374,36 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
     <Card>
       <ModuleHeader color={COLORS.dropIn} title={LABELS.dropIns} />
 
-      {/* KPI Row: 3 blocks, no dividers */}
-      <KPIRow>
-        <KPIBlock
+      {/* KPI Row: strict 3-col grid with fixed-height KPI components */}
+      <KPIGrid3>
+        <KPI
           value={formatNumber(wtd?.visits ?? 0)}
           label="Drop-in visits (WTD)"
-          delta={wtdDelta !== 0 ? wtdDelta : null}
-          sublabel={`${wtdDayLabel} \u00b7 vs last wk WTD`}
+          metaLeft={wtdDelta !== 0 ? (
+            <Chip variant={wtdDelta > 0 ? "positive" : "negative"}>
+              {wtdDeltaSign}{wtdDelta}
+            </Chip>
+          ) : null}
+          metaRight={`${wtdDayLabel} \u00b7 vs last wk WTD`}
         />
-        <KPIBlock
+        <KPI
           value={formatNumber(typicalWeekVisits)}
           label="Typical week (8-wk avg)"
-          tooltip="Average visits per week over the last 8 complete weeks."
+          topRight={<MInfoIcon tooltip="Average visits per week over the last 8 complete weeks." />}
         />
-        <KPIBlock
-          value={`${trendSymbol} ${trendLabel}`}
+        <KPI
+          value={trendDeltaPercent !== 0 ? `${trendDeltaPercent > 0 ? "+" : ""}${trendDeltaPercent.toFixed(1)}` : "0"}
+          valueSuffix="%"
           label="Trend"
-          delta={trendDeltaPercent !== 0 ? trendDeltaPercent : null}
-          deltaSuffix="%"
-          sublabel="vs prior 4 wks"
-          tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%."
+          metaLeft={trend !== "flat" ? (
+            <Chip variant={trend === "up" ? "positive" : "negative"}>
+              {trend === "up" ? "Up" : "Down"}
+            </Chip>
+          ) : null}
+          metaRight="vs prior 4 wks"
+          topRight={<MInfoIcon tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%." />}
         />
-      </KPIRow>
+      </KPIGrid3>
 
       {/* Toggle row */}
       {chartData.length > 0 && (

@@ -87,6 +87,11 @@ body {
   .cp-dist-bars { grid-template-columns: 1fr !important; }
 }
 
+/* ── Non-Members KPI grid responsive ── */
+@media (max-width: 639px) {
+  .kpi-grid-3 { grid-template-columns: 1fr !important; gap: 24px !important; }
+}
+
 /* ── Bento grid responsive breakpoints ── */
 @media (max-width: 1023px) {
   .bento-grid { grid-template-columns: repeat(6, 1fr) !important; }
