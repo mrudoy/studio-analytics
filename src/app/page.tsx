@@ -18,6 +18,8 @@ import {
 } from "recharts";
 import {
   ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -2230,7 +2232,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
   const timingColors = ["rgba(65, 58, 58, 0.65)", "rgba(65, 58, 58, 0.38)", "rgba(65, 58, 58, 0.18)"];
 
-  const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers }));
+  const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total3Week }));
 
   return (
     <DashboardCard matchHeight>
@@ -2240,12 +2242,19 @@ function NewCustomerChartCard({ volume, cohorts }: {
       </CardHeader>
 
       <CardContent className="space-y-6">
-        <ChartContainer config={{ newCustomers: { label: "New Customers", color: COLORS.newCustomer } } satisfies ChartConfig} className="h-[200px] w-full">
+        <ChartContainer config={{
+          newCustomers: { label: "New Customers", color: COLORS.newCustomer },
+          converts: { label: "Converts", color: "hsl(150, 45%, 42%)" },
+        } satisfies ChartConfig} className="h-[200px] w-full">
           <RAreaChart accessibilityLayer data={lineData} margin={{ top: 20, left: 12, right: 12 }}>
             <defs>
               <linearGradient id="fillNewCustomers" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--color-newCustomers)" stopOpacity={0.8} />
                 <stop offset="95%" stopColor="var(--color-newCustomers)" stopOpacity={0.1} />
+              </linearGradient>
+              <linearGradient id="fillConverts" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-converts)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
             <XAxis
@@ -2253,10 +2262,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent indicator="line" formatter={(v) => formatNumber(v as number)} />}
             />
             <Area
               dataKey="newCustomers"
@@ -2277,6 +2282,17 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 />
               )}
             </Area>
+            <Area
+              dataKey="converts"
+              type="natural"
+              fill="url(#fillConverts)"
+              fillOpacity={0.4}
+              stroke="var(--color-converts)"
+              strokeWidth={2}
+              dot={{ fill: "var(--color-converts)" }}
+              activeDot={{ r: 6 }}
+            />
+            <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
 
