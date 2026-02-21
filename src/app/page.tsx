@@ -7,6 +7,7 @@ import {
   Area,
   Bar,
   BarChart,
+  CartesianGrid,
   Line,
   LineChart,
   LabelList,
@@ -2267,14 +2268,15 @@ function NewCustomerChartCard({ volume, cohorts }: {
           <RAreaChart accessibilityLayer data={lineData} margin={{ top: 20, left: 12, right: 12 }}>
             <defs>
               <linearGradient id="fillNewCustomers" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-newCustomers)" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="var(--color-newCustomers)" stopOpacity={0.05} />
+                <stop offset="5%" stopColor="var(--color-newCustomers)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-newCustomers)" stopOpacity={0.1} />
               </linearGradient>
               <linearGradient id="fillConverts" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-converts)" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.05} />
+                <stop offset="5%" stopColor="var(--color-converts)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -2283,11 +2285,9 @@ function NewCustomerChartCard({ volume, cohorts }: {
             />
             <Area
               dataKey="newCustomers"
-              type="monotone"
+              type="natural"
+              fill="url(#fillNewCustomers)"
               stroke="var(--color-newCustomers)"
-              strokeWidth={2}
-              dot={{ fill: "var(--color-newCustomers)" }}
-              activeDot={{ r: 6 }}
             >
               {!isMobile && (
                 <LabelList
@@ -2302,11 +2302,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
               dataKey="converts"
               type="natural"
               fill="url(#fillConverts)"
-              fillOpacity={0.4}
               stroke="var(--color-converts)"
-              strokeWidth={2}
-              dot={{ fill: "var(--color-converts)" }}
-              activeDot={{ r: 6 }}
             >
               {!isMobile && (
                 <LabelList
@@ -2485,7 +2481,7 @@ function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
   return (
     <DashboardCard matchHeight>
       <CardHeader>
-        <CardTitle>Intro Week</CardTitle>
+        <CardTitle>Customers By Week</CardTitle>
         <CardDescription>New intro week customers by week</CardDescription>
       </CardHeader>
 
@@ -2538,7 +2534,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
 
       {/* ── Subsection B: Other pass types ── */}
       <div className="flex flex-col gap-3">
-        <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Other Pass Types</SubsectionHeader>
+        <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Intro Week</SubsectionHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
           <IntroWeekModule introWeek={introWeek} />
         </div>
@@ -2548,14 +2544,27 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       <div className="flex flex-col gap-3">
         <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
         {(newCustomerVolume || newCustomerCohorts) && (
+          <p className="text-sm font-medium text-muted-foreground">New Customers</p>
+        )}
+        {(newCustomerVolume || newCustomerCohorts) && (
           <NewCustomerKPICards volume={newCustomerVolume} cohorts={newCustomerCohorts} />
         )}
         {(newCustomerVolume || newCustomerCohorts) && (
           <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
         )}
         {conversionPool && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-            <ConversionPoolModule pool={conversionPool} />
+          <p className="text-sm font-medium text-muted-foreground">All Non Auto-Renew Customers</p>
+        )}
+        {conversionPool && (
+          <ConversionPoolKPICards pool={conversionPool} />
+        )}
+        {conversionPool && (
+          <ConversionPoolModule pool={conversionPool} />
+        )}
+        {conversionPool && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <ConversionTimeCard pool={conversionPool} />
+            <ConversionVisitsCard pool={conversionPool} />
           </div>
         )}
       </div>
@@ -2679,7 +2688,6 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                 margin={{ top: 20 }}
               >
                 <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />} />
                 <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
                   {!isMobile && (
                     <LabelList
@@ -2880,43 +2888,184 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
 
 // ─── Conversion Pool Module (non-auto → auto-renew) ─────────
 
+function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
+  const data: ConversionPoolSliceData | null = pool.slices.all ?? null;
+  if (!data) return null;
+
+  const { wtd, lastCompleteWeek, avgRate } = data;
+  const heroPool = wtd?.activePool7d ?? lastCompleteWeek?.activePool7d ?? 0;
+  const heroConverts = wtd?.converts ?? lastCompleteWeek?.converts ?? 0;
+  const heroRate = wtd ? wtd.conversionRate : (lastCompleteWeek?.conversionRate ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <DashboardCard>
+        <CardHeader className="pb-2">
+          <CardDescription>Total Customers</CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums">
+            {formatNumber(heroPool)}
+          </CardTitle>
+        </CardHeader>
+        <CardFooter className="text-sm text-muted-foreground">
+          Active pool (7d)
+        </CardFooter>
+      </DashboardCard>
+
+      <DashboardCard>
+        <CardHeader className="pb-2">
+          <CardDescription className="flex items-center gap-1">
+            3-Week Conv. Rate
+            <InfoTooltip tooltip="Converts / Active pool (7d). 3-week window." />
+          </CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums">
+            {heroRate.toFixed(1)}%
+          </CardTitle>
+        </CardHeader>
+        <CardFooter className="text-sm text-muted-foreground">
+          {avgRate > 0 ? `${avgRate.toFixed(1)}% avg` : "Calculating"}
+        </CardFooter>
+      </DashboardCard>
+
+      <DashboardCard>
+        <CardHeader className="pb-2">
+          <CardDescription className="flex items-center gap-1">
+            Converts
+            <InfoTooltip tooltip="Pool members who started their first in-studio auto-renew this week." />
+          </CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums">
+            {formatNumber(heroConverts)}
+          </CardTitle>
+        </CardHeader>
+        <CardFooter className="text-sm text-muted-foreground">
+          This week
+        </CardFooter>
+      </DashboardCard>
+    </div>
+  );
+}
+
+// ─── Conversion Time Pie Card ────────────────────────────────
+
+function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
+  const data: ConversionPoolSliceData | null = pool.slices.all ?? null;
+  if (!data?.lagStats) return null;
+  const { lagStats } = data;
+
+  const pieColors = ["hsl(270, 15%, 42%)", "hsl(270, 15%, 58%)", "hsl(270, 15%, 72%)", "hsl(270, 15%, 84%)"];
+  const pieData = [
+    { bucket: "0-30d", count: lagStats.timeBucket0to30, fill: pieColors[0] },
+    { bucket: "31-90d", count: lagStats.timeBucket31to90, fill: pieColors[1] },
+    { bucket: "91-180d", count: lagStats.timeBucket91to180, fill: pieColors[2] },
+    { bucket: "180d+", count: lagStats.timeBucket180plus, fill: pieColors[3] },
+  ].filter((d) => d.count > 0);
+
+  const pieConfig = Object.fromEntries(pieData.map((d) => [d.bucket, { label: d.bucket, color: d.fill }])) as ChartConfig;
+
+  return (
+    <DashboardCard>
+      <CardHeader className="pb-2">
+        <CardTitle>Time to Convert</CardTitle>
+        <CardDescription>
+          Median: {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
+          {lagStats.historicalMedianTimeToConvert != null && ` (12wk: ${lagStats.historicalMedianTimeToConvert}d)`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex-1 pb-0">
+        {pieData.length > 0 ? (
+          <ChartContainer config={pieConfig} className="mx-auto h-[250px] w-full">
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="count"
+                labelLine={false}
+                label={({ payload, ...props }) => (
+                  <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
+                    <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
+                    <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
+                  </text>
+                )}
+                nameKey="bucket"
+              />
+            </PieChart>
+          </ChartContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[200px]">
+            <span className="text-sm text-muted-foreground">No data available</span>
+          </div>
+        )}
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Conversion Visits Pie Card ──────────────────────────────
+
+function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
+  const data: ConversionPoolSliceData | null = pool.slices.all ?? null;
+  if (!data?.lagStats) return null;
+  const { lagStats } = data;
+
+  const pieColors = ["hsl(270, 15%, 42%)", "hsl(270, 15%, 58%)", "hsl(270, 15%, 72%)", "hsl(270, 15%, 84%)"];
+  const pieData = [
+    { bucket: "1-2 visits", count: lagStats.visitBucket1to2, fill: pieColors[0] },
+    { bucket: "3-5 visits", count: lagStats.visitBucket3to5, fill: pieColors[1] },
+    { bucket: "6-10 visits", count: lagStats.visitBucket6to10, fill: pieColors[2] },
+    { bucket: "11+ visits", count: lagStats.visitBucket11plus, fill: pieColors[3] },
+  ].filter((d) => d.count > 0);
+
+  const pieConfig = Object.fromEntries(pieData.map((d) => [d.bucket, { label: d.bucket, color: d.fill }])) as ChartConfig;
+
+  return (
+    <DashboardCard>
+      <CardHeader className="pb-2">
+        <CardTitle>Visits Before Convert</CardTitle>
+        <CardDescription>
+          Avg: {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
+          {lagStats.historicalAvgVisitsBeforeConvert != null && ` (12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)})`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex-1 pb-0">
+        {pieData.length > 0 ? (
+          <ChartContainer config={pieConfig} className="mx-auto h-[250px] w-full">
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="count"
+                labelLine={false}
+                label={({ payload, ...props }) => (
+                  <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
+                    <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
+                    <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
+                  </text>
+                )}
+                nameKey="bucket"
+              />
+            </PieChart>
+          </ChartContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[200px]">
+            <span className="text-sm text-muted-foreground">No data available</span>
+          </div>
+        )}
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Conversion Pool Chart Card (area chart + tables) ───────
+
 function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const isMobile = useIsMobile();
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
   const [activeSlice, setActiveSlice] = useState<ConversionPoolSlice>("all");
   const [activeTab, setActiveTab] = useState<string>("complete");
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
-  // Resolve active slice data (fall back to "all")
   const data: ConversionPoolSliceData | null = pool.slices[activeSlice] ?? pool.slices.all ?? null;
   if (!data) return null;
 
-  const { completeWeeks, wtd, lagStats, lastCompleteWeek, avgPool7d, avgRate } = data;
-
-  // Display last 8 complete weeks in table
+  const { completeWeeks, wtd } = data;
   const displayWeeks = completeWeeks.slice(-8);
 
-  // Second-to-last complete week for delta comparison
-  const prevCompleteWeek = completeWeeks.length >= 2 ? completeWeeks[completeWeeks.length - 2] : null;
-
-  // Deltas vs last complete week
-  const heroPool = wtd?.activePool7d ?? lastCompleteWeek?.activePool7d ?? 0;
-  const heroConverts = wtd?.converts ?? lastCompleteWeek?.converts ?? 0;
-  const heroRate = wtd ? wtd.conversionRate : (lastCompleteWeek?.conversionRate ?? 0);
-
-  const poolDelta = lastCompleteWeek && prevCompleteWeek ? lastCompleteWeek.activePool7d - prevCompleteWeek.activePool7d : null;
-  const convertsDelta = lastCompleteWeek && prevCompleteWeek ? lastCompleteWeek.converts - prevCompleteWeek.converts : null;
-  const rateDelta = lastCompleteWeek && prevCompleteWeek ? Math.round((lastCompleteWeek.conversionRate - prevCompleteWeek.conversionRate) * 10) / 10 : null;
-
-  // Rate vs 8-week avg baseline
-  const rateVsBaseline = avgRate > 0 ? Math.round((heroRate - avgRate) * 10) / 10 : null;
-  const showRateWarning = rateVsBaseline !== null && rateVsBaseline < -(avgRate * 0.2);
-
-  // Hot pool: high-intent slice's pool count (≥2 visits in 30d, no auto-renew)
-  const highIntentSlice = pool.slices["high-intent"];
-  const hotPoolCount = highIntentSlice?.wtd?.activePool7d ?? highIntentSlice?.lastCompleteWeek?.activePool7d ?? null;
-
-  // Slice options
   const sliceOptions: { key: ConversionPoolSlice; label: string }[] = [
     { key: "all", label: "All" },
     { key: "drop-ins", label: "Drop-ins" },
@@ -2925,26 +3074,21 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     { key: "high-intent", label: "High intent" },
   ];
 
-  // Distribution colors — high-contrast spec
-  const distColors = [
-    "rgba(107, 91, 123, 0.85)",
-    "rgba(107, 91, 123, 0.55)",
-    "rgba(107, 91, 123, 0.32)",
-    "rgba(107, 91, 123, 0.16)",
-  ];
+  const chartData = displayWeeks.map((w) => ({
+    date: formatWeekShort(w.weekStart),
+    pool: w.activePool7d,
+    converts: w.converts,
+  }));
 
   return (
-    <DashboardCard matchHeight>
-      {/* ── Header: title + slice filter ── */}
-      <DModuleHeader
-        color={COLORS.conversionPool}
-        title={LABELS.conversionPool}
-        summaryPill={`${displayWeeks.length} weeks`}
-        detailsOpen={detailsOpen}
-        onToggleDetails={() => setDetailsOpen(!detailsOpen)}
-      >
+    <DashboardCard>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Weekly Conversion Pool</CardTitle>
+          <CardDescription>Complete weeks and pool breakdown</CardDescription>
+        </div>
         <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
-          <SelectTrigger size="sm" className="h-7 text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
+          <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -2953,31 +3097,37 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             ))}
           </SelectContent>
         </Select>
-      </DModuleHeader>
+      </CardHeader>
 
       <CardContent className="space-y-6">
-        <MetricRow
-          slots={[
-            { value: formatNumber(heroPool), label: "Total Customers" },
-            { value: heroRate.toFixed(1), valueSuffix: "%", label: "3-Week Conversion Rate", labelExtra: <InfoTooltip tooltip="Converts / Active pool (7d). 3-week window." /> },
-            { value: formatNumber(heroConverts), label: "Converts", labelExtra: <InfoTooltip tooltip="Pool members who started their first in-studio auto-renew this week." /> },
-          ]}
-        />
-
-        <ChartContainer config={{ converts: { label: "Converts", color: COLORS.conversionPool } } satisfies ChartConfig} className="h-[200px] w-full">
-          <BarChart accessibilityLayer data={displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), converts: w.converts }))} margin={{ top: 20 }}>
-
+        <ChartContainer config={{
+          pool: { label: "Pool", color: COLORS.conversionPool },
+          converts: { label: "Converts", color: "hsl(150, 45%, 42%)" },
+        } satisfies ChartConfig} className="h-[250px] w-full">
+          <RAreaChart accessibilityLayer data={chartData} margin={{ top: 20, left: 12, right: 12 }}>
+            <defs>
+              <linearGradient id="fillPool" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-pool)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-pool)" stopOpacity={0.1} />
+              </linearGradient>
+              <linearGradient id="fillPoolConverts" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-converts)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="date"
               tickLine={false}
-              tickMargin={10}
               axisLine={false}
+              tickMargin={8}
             />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
-            />
-            <Bar dataKey="converts" fill="var(--color-converts)" radius={8}>
+            <Area
+              dataKey="pool"
+              type="natural"
+              fill="url(#fillPool)"
+              stroke="var(--color-pool)"
+            >
               {!isMobile && (
                 <LabelList
                   position="top"
@@ -2986,208 +3136,116 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                   fontSize={12}
                 />
               )}
-            </Bar>
-          </BarChart>
+            </Area>
+            <Area
+              dataKey="converts"
+              type="natural"
+              fill="url(#fillPoolConverts)"
+              stroke="var(--color-converts)"
+            >
+              {!isMobile && (
+                <LabelList
+                  position="bottom"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                />
+              )}
+            </Area>
+            <ChartLegend content={<ChartLegendContent />} />
+          </RAreaChart>
         </ChartContainer>
-      </CardContent>
 
-      <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 leading-none font-medium">
-          {heroRate.toFixed(1)}% conversion rate
-        </div>
-        <div className="text-muted-foreground leading-none">
-          Weekly pool conversions to auto-renew
-        </div>
-      </CardFooter>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList variant="line" className="w-full justify-start">
+            <TabsTrigger value="complete">Complete weeks</TabsTrigger>
+            {wtd && <TabsTrigger value="wtd">Week to date</TabsTrigger>}
+          </TabsList>
 
-      <CardFooter className="flex-col items-stretch p-0">
-        <DCardDisclosure open={detailsOpen}>
-
-      {/* ── Secondary: Conversion quality (mini-KPI 2-up strip) ── */}
-      {lagStats && (
-        <div className="grid grid-cols-2 gap-6 items-start border-t border-neutral-900/6 py-3 mb-2 tabular-nums">
-          <div title="Median days between first non-auto studio visit and auto-renew start.">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-0.5">Median time</div>
-            <div className="text-[13px] font-medium text-neutral-800">
-              {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
-              {lagStats.historicalMedianTimeToConvert != null && (
-                <span className="text-[12px] text-neutral-500 ml-1.5">{`12wk: ${lagStats.historicalMedianTimeToConvert}d`}</span>
-              )}
-            </div>
-          </div>
-          <div title="Average distinct non-subscriber visits before conversion.">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-0.5">Avg visits</div>
-            <div className="text-[13px] font-medium text-neutral-800">
-              {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
-              {lagStats.historicalAvgVisitsBeforeConvert != null && (
-                <span className="text-[12px] text-neutral-500 ml-1.5">{`12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}`}</span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Distribution bars (Time to convert / Visits before convert) ── */}
-      {lagStats && (
-        <div className="grid grid-cols-2 gap-8 w-full pt-2 pb-3 mb-3 border-t border-neutral-900/6">
-          {/* Time distribution bar */}
-          <div>
-            <div className="text-[12px] font-medium text-neutral-600 mb-1.5">Time to convert</div>
-            <SegmentedBar
-              segments={[
-                { value: lagStats.timeBucket0to30, label: "0-30d" },
-                { value: lagStats.timeBucket31to90, label: "31-90d" },
-                { value: lagStats.timeBucket91to180, label: "91-180d" },
-                { value: lagStats.timeBucket180plus, label: "180d+" },
-              ]}
-              height={16}
-              colors={distColors}
-            />
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {[
-                { label: "0-30d", val: lagStats.timeBucket0to30 },
-                { label: "31-90d", val: lagStats.timeBucket31to90 },
-                { label: "91-180d", val: lagStats.timeBucket91to180 },
-                { label: "180d+", val: lagStats.timeBucket180plus },
-              ].map((b, i) => b.val > 0 ? (
-                <div key={i} className="text-[11px] text-neutral-600 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-sm inline-block" style={{ backgroundColor: distColors[i] }} />
-                  {b.label}
+          <TabsContent value="complete">
+            {displayWeeks.length > 0 && (
+              <div className="w-full min-w-0 mt-4">
+                <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
+                  <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Week</div>
+                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
+                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
+                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
                 </div>
-              ) : null)}
-            </div>
-          </div>
+                {displayWeeks.map((w, idx) => {
+                  const isHovered = hoveredWeek === w.weekStart;
+                  const isLatest = idx === displayWeeks.length - 1;
+                  const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  return (
+                    <div
+                      key={w.weekStart}
+                      className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6 transition-colors duration-100"
+                      onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                      onMouseLeave={() => setHoveredWeek(null)}
+                      style={{
+                        borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
+                        background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
+                      }}
+                    >
+                      <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
+                        {weekLabel}
+                        {isLatest && <> <span className="text-[10px] bg-zinc-100 text-zinc-500 rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                      </div>
+                      <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                        {formatNumber(w.activePool7d)}
+                      </div>
+                      <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                        {formatNumber(w.converts)}
+                      </div>
+                      <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                        {w.conversionRate.toFixed(1)}%
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
 
-          {/* Visit distribution bar */}
-          <div>
-            <div className="text-[12px] font-medium text-neutral-600 mb-1.5">Visits before convert</div>
-            <SegmentedBar
-              segments={[
-                { value: lagStats.visitBucket1to2, label: "1-2" },
-                { value: lagStats.visitBucket3to5, label: "3-5" },
-                { value: lagStats.visitBucket6to10, label: "6-10" },
-                { value: lagStats.visitBucket11plus, label: "11+" },
-              ]}
-              height={16}
-              colors={distColors}
-            />
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {[
-                { label: "1-2", val: lagStats.visitBucket1to2 },
-                { label: "3-5", val: lagStats.visitBucket3to5 },
-                { label: "6-10", val: lagStats.visitBucket6to10 },
-                { label: "11+", val: lagStats.visitBucket11plus },
-              ].map((b, i) => b.val > 0 ? (
-                <div key={i} className="text-[11px] text-neutral-600 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-sm inline-block" style={{ backgroundColor: distColors[i] }} />
-                  {b.label}
+          <TabsContent value="wtd">
+            {wtd && (
+              <div className="w-full min-w-0 mt-4">
+                <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
+                  <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Period</div>
+                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
+                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
+                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
                 </div>
-              ) : null)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Tabs: Complete | WTD ── */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-        <TabsList variant="line" className="w-full justify-start">
-          <TabsTrigger value="complete">Complete weeks</TabsTrigger>
-          {wtd && <TabsTrigger value="wtd">Week to date</TabsTrigger>}
-        </TabsList>
-
-      <TabsContent value="complete">
-      {/* ── Weekly Grid-Table (Complete weeks tab) ── */}
-      {displayWeeks.length > 0 && (
-        <div className="w-full min-w-0 mt-4">
-          {/* Header */}
-          <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
-            <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Week</div>
-            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
-            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
-            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
-          </div>
-          {/* Rows */}
-          {displayWeeks.map((w, idx) => {
-            const isHovered = hoveredWeek === w.weekStart;
-            const isLatest = idx === displayWeeks.length - 1;
-            const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-            return (
-              <div
-                key={w.weekStart}
-                className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6 transition-colors duration-100"
-                onMouseEnter={() => setHoveredWeek(w.weekStart)}
-                onMouseLeave={() => setHoveredWeek(null)}
-                style={{
-                  borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
-                  background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
-                }}
-              >
-                <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
-                  {weekLabel}
-                  {isLatest && <> <span className="text-[10px] bg-zinc-100 text-zinc-500 rounded-full px-2 py-0.5 ml-1">Latest</span></>}
-                </div>
-                <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                  {formatNumber(w.activePool7d)}
-                </div>
-                <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                  {formatNumber(w.converts)}
-                </div>
-                <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                  {w.conversionRate.toFixed(1)}%
+                <div
+                  className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6"
+                  style={{
+                    borderLeft: `2px solid ${COLORS.conversionPool}`,
+                    background: "rgba(107, 91, 123, 0.03)",
+                  }}
+                >
+                  <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
+                    <DChip variant="accent">WTD</DChip>{" "}
+                    {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    {wtd.daysLeft > 0 && (
+                      <span className="text-[11px] text-muted-foreground ml-1.5">
+                        ({wtd.daysLeft}d left)
+                      </span>
+                    )}
+                  </div>
+                  <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                    {formatNumber(wtd.activePool7d)}
+                  </div>
+                  <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                    {formatNumber(wtd.converts)}
+                  </div>
+                  <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                    {wtd.conversionRate.toFixed(1)}%
+                  </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      </TabsContent>
-
-      <TabsContent value="wtd">
-      {/* ── WTD Tab (CSS grid) ── */}
-      {wtd && (
-        <div className="w-full min-w-0 mt-4">
-          {/* Header */}
-          <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
-            <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Period</div>
-            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
-            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
-            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
-          </div>
-          {/* Row */}
-          <div
-            className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6"
-            style={{
-              borderLeft: `2px solid ${COLORS.conversionPool}`,
-              background: "rgba(107, 91, 123, 0.03)",
-            }}
-          >
-            <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
-              <DChip variant="accent">WTD</DChip>{" "}
-              {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              {wtd.daysLeft > 0 && (
-                <span className="text-[11px] text-muted-foreground ml-1.5">
-                  ({wtd.daysLeft}d left)
-                </span>
-              )}
-            </div>
-            <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
-              {formatNumber(wtd.activePool7d)}
-            </div>
-            <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
-              {formatNumber(wtd.converts)}
-            </div>
-            <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
-              {wtd.conversionRate.toFixed(1)}%
-            </div>
-          </div>
-        </div>
-      )}
-      </TabsContent>
-      </Tabs>
-
-      </DCardDisclosure>
-      </CardFooter>
+            )}
+          </TabsContent>
+        </Tabs>
+      </CardContent>
     </DashboardCard>
   );
 }
@@ -3574,6 +3632,13 @@ function DashboardView() {
         {/* ── Revenue ── */}
         <RevenueSection data={data} trends={trends} />
 
+        {/* ── Annual Net Revenue ── */}
+        {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+            <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+          </div>
+        )}
+
         {/* ── MRR + Year-over-Year side by side ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <MRRBreakdown data={data} />
@@ -3688,15 +3753,7 @@ function DashboardView() {
           <NoData label="Non-auto-renew (Drop-Ins, Funnel)" />
         )}
 
-        {/* ── Revenue (top-level section) ── */}
-        {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <SectionHeader>Revenue</SectionHeader>
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-              <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
-            </div>
-          </div>
-        )}
+        {/* ── Revenue section removed — moved AnnualRevenueCard to top ── */}
 
         {/* ── Footer ── */}
         <div style={{ textAlign: "center", paddingTop: "2rem", paddingBottom: "1rem" }}>
