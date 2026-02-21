@@ -2555,97 +2555,42 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* ── Row 1: Overview KPIs (50%) + Frequency pie (50%) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-
-        {/* Card 1: Drop-ins Overview (KPIs only) */}
-        <DashboardCard matchHeight>
+      {/* ── Row 1: Three KPI cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <DashboardCard>
           <CardHeader>
-            <CardTitle>Overview</CardTitle>
-            <CardDescription>Class visits by non-subscribers</CardDescription>
+            <CardDescription>Visits (WTD)</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatNumber(wtd?.visits ?? 0)}</CardTitle>
           </CardHeader>
-
-          <CardContent>
-            <MetricRow
-              slots={[
-                { value: formatNumber(wtd?.visits ?? 0), label: "Visits (WTD)" },
-                { value: formatNumber(typicalWeekVisits), label: "Typical Week" },
-                { value: trendDeltaPercent !== 0 ? `${trendDeltaPercent > 0 ? "+" : ""}${trendDeltaPercent.toFixed(1)}` : "0", valueSuffix: "%", label: "Trend (4-wk vs prior)" },
-              ]}
-            />
-          </CardContent>
-
-          <CardFooter className="flex-col items-start gap-2 text-sm">
-            <div className="flex gap-2 leading-none font-medium">
-              {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}% vs prior 4 weeks
-            </div>
-            <div className="text-muted-foreground leading-none">
-              Weekly drop-in visits
-            </div>
+          <CardFooter className="text-sm text-muted-foreground">
+            {wtdDayLabel ? `Through ${wtdDayLabel}` : "Week to date"}
           </CardFooter>
         </DashboardCard>
 
-        {/* Card 2: Drop-in Frequency (pie chart) */}
-        <DashboardCard matchHeight>
+        <DashboardCard>
           <CardHeader>
-            <div className="flex items-center gap-1.5">
-              <CardTitle>Drop-in Frequency</CardTitle>
-              <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
-            </div>
-            <CardDescription>Last 90 days</CardDescription>
+            <CardDescription>Typical Week</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatNumber(typicalWeekVisits)}</CardTitle>
           </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            4-week average
+          </CardFooter>
+        </DashboardCard>
 
-          <CardContent className="flex-1 pb-0">
-            {frequency && frequency.totalCustomers > 0 && freqData.length > 0 ? (
-              <ChartContainer
-                config={freqConfig}
-                className="mx-auto h-[250px] w-full"
-              >
-                <PieChart>
-                  <ChartTooltip
-                    content={<ChartTooltipContent nameKey="count" hideLabel />}
-                  />
-                  <Pie
-                    data={freqData}
-                    dataKey="count"
-                    labelLine={false}
-                    label={({ payload, ...props }) => (
-                      <text
-                        x={props.x}
-                        y={props.y}
-                        textAnchor={props.textAnchor}
-                        dominantBaseline={props.dominantBaseline}
-                        fill="hsla(var(--foreground))"
-                      >
-                        <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                        <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
-                      </text>
-                    )}
-                    nameKey="bucket"
-                  />
-                </PieChart>
-              </ChartContainer>
-            ) : (
-              <div className="flex items-center justify-center h-[200px]">
-                <span className="text-sm text-muted-foreground">No data available</span>
-              </div>
-            )}
-          </CardContent>
-
-          {frequency && frequency.totalCustomers > 0 && (
-            <CardFooter className="flex-col gap-2 text-sm">
-              <div className="leading-none font-medium">
-                {formatNumber(frequency.totalCustomers)} unique visitors
-              </div>
-              <div className="text-muted-foreground leading-none">
-                Drop-in customers in the last 90 days
-              </div>
-            </CardFooter>
-          )}
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Trend</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">
+              {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}%
+            </CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            vs prior 4 weeks
+          </CardFooter>
         </DashboardCard>
       </div>
 
-      {/* ── Row 2: Weekly Drop-ins — chart + tabbed table (full-width, shadcn blocks pattern) ── */}
+      {/* ── Row 2: Weekly Drop-ins — chart + tabbed table ── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <DashboardCard className="@container/card">
           <CardHeader>
@@ -2829,6 +2774,67 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
           </CardContent>
         </DashboardCard>
       </Tabs>
+
+      {/* ── Row 3: Drop-in Frequency (pie chart) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+        <DashboardCard matchHeight>
+          <CardHeader>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Drop-in Frequency</CardTitle>
+              <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
+            </div>
+            <CardDescription>Last 90 days</CardDescription>
+          </CardHeader>
+
+          <CardContent className="flex-1 pb-0">
+            {frequency && frequency.totalCustomers > 0 && freqData.length > 0 ? (
+              <ChartContainer
+                config={freqConfig}
+                className="mx-auto h-[250px] w-full"
+              >
+                <PieChart>
+                  <ChartTooltip
+                    content={<ChartTooltipContent nameKey="count" hideLabel />}
+                  />
+                  <Pie
+                    data={freqData}
+                    dataKey="count"
+                    labelLine={false}
+                    label={({ payload, ...props }) => (
+                      <text
+                        x={props.x}
+                        y={props.y}
+                        textAnchor={props.textAnchor}
+                        dominantBaseline={props.dominantBaseline}
+                        fill="hsla(var(--foreground))"
+                      >
+                        <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
+                        <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
+                      </text>
+                    )}
+                    nameKey="bucket"
+                  />
+                </PieChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[200px]">
+                <span className="text-sm text-muted-foreground">No data available</span>
+              </div>
+            )}
+          </CardContent>
+
+          {frequency && frequency.totalCustomers > 0 && (
+            <CardFooter className="flex-col gap-2 text-sm">
+              <div className="leading-none font-medium">
+                {formatNumber(frequency.totalCustomers)} unique visitors
+              </div>
+              <div className="text-muted-foreground leading-none">
+                Drop-in customers in the last 90 days
+              </div>
+            </CardFooter>
+          )}
+        </DashboardCard>
+      </div>
     </div>
   );
 }
