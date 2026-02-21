@@ -2225,7 +2225,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
   const [activeTab, setActiveTab] = useState<string>("complete");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const { completeCohorts, incompleteCohorts, displayComplete, daysElapsed } = useNewCustomerData(volume, cohorts);
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
@@ -2235,15 +2234,12 @@ function NewCustomerChartCard({ volume, cohorts }: {
 
   return (
     <DashboardCard matchHeight>
-      <DModuleHeader
-        color={COLORS.newCustomer}
-        title="Weekly New Customers"
-        summaryPill={`${completeCohorts.length} cohort${completeCohorts.length !== 1 ? "s" : ""}`}
-        detailsOpen={detailsOpen}
-        onToggleDetails={() => setDetailsOpen(!detailsOpen)}
-      />
+      <CardHeader>
+        <CardTitle>Weekly New Customers</CardTitle>
+        <CardDescription>Complete weeks and cohort breakdown</CardDescription>
+      </CardHeader>
 
-      <CardContent>
+      <CardContent className="space-y-6">
         <ChartContainer config={{ newCustomers: { label: "New Customers", color: COLORS.newCustomer } } satisfies ChartConfig} className="h-[200px] w-full">
           <RAreaChart accessibilityLayer data={lineData} margin={{ top: 20, left: 12, right: 12 }}>
             <defs>
@@ -2283,16 +2279,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
             </Area>
           </RAreaChart>
         </ChartContainer>
-      </CardContent>
-
-      <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="text-muted-foreground leading-none">
-          Last {lineData.length} complete weekly cohorts
-        </div>
-      </CardFooter>
-
-      <CardFooter className="flex-col items-stretch p-0">
-        <DCardDisclosure open={detailsOpen}>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList variant="line" className="w-full justify-start">
@@ -2438,9 +2424,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
       )}
       </TabsContent>
       </Tabs>
-
-      </DCardDisclosure>
-      </CardFooter>
+      </CardContent>
     </DashboardCard>
   );
 }
