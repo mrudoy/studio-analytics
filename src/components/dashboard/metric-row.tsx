@@ -15,18 +15,18 @@ interface MetricRowProps {
 
 function MetricRow({ slots }: MetricRowProps) {
   return (
-    <div className="grid grid-cols-3 gap-6 items-start">
+    <div className="grid grid-cols-3 gap-3 sm:gap-6 items-start">
       {slots.map((slot, i) => (
         <div
           key={i}
-          className={`min-w-0${i > 0 ? " border-l border-border pl-6" : ""}`}
+          className={`min-w-0${i > 0 ? " border-l border-border pl-3 sm:pl-6" : ""}`}
         >
           <div className="flex items-baseline">
-            <span className="text-4xl font-semibold tracking-tight tabular-nums">
+            <span className="text-2xl sm:text-4xl font-semibold tracking-tight tabular-nums">
               {slot.value}
             </span>
             {slot.valueSuffix && (
-              <span className="text-lg font-semibold tracking-tight text-muted-foreground ml-0.5 tabular-nums">
+              <span className="text-sm sm:text-lg font-semibold tracking-tight text-muted-foreground ml-0.5 tabular-nums">
                 {slot.valueSuffix}
               </span>
             )}

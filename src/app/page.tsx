@@ -68,6 +68,20 @@ import type {
   IntroWeekData,
 } from "@/types/dashboard";
 
+// ─── Mobile detection ────────────────────────────────────────
+
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 // ─── Client-only types ───────────────────────────────────────
 
 type DashboardLoadState =
@@ -1843,6 +1857,7 @@ function formatShortMonth(period: string): string {
 }
 
 function RevenueSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
+  const isMobile = useIsMobile();
   // Only show completed months (exclude current calendar month)
   const nowDate = new Date();
   const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
@@ -1887,7 +1902,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           </CardHeader>
           <CardContent>
             <ChartContainer config={revenueChartConfig} className="h-[250px] w-full">
-              <RAreaChart accessibilityLayer data={revenueBarData} margin={{ top: 20, left: 24, right: 24 }}>
+              <RAreaChart accessibilityLayer data={revenueBarData} margin={{ top: 20, left: isMobile ? 8 : 24, right: isMobile ? 8 : 24 }}>
                 <defs>
                   <linearGradient id="fillGross" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-gross)" stopOpacity={0.8} />
@@ -1900,6 +1915,8 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
+                  interval={isMobile ? 2 : 0}
+                  fontSize={isMobile ? 11 : 12}
                 />
                 <ChartTooltip
                   cursor={false}
@@ -1915,13 +1932,15 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                   dot={{ fill: "var(--color-gross)" }}
                   activeDot={{ r: 6 }}
                 >
-                  <LabelList
-                    position="top"
-                    offset={12}
-                    className="fill-foreground"
-                    fontSize={12}
-                    formatter={(v: number) => formatCompactCurrency(v)}
-                  />
+                  {!isMobile && (
+                    <LabelList
+                      position="top"
+                      offset={12}
+                      className="fill-foreground"
+                      fontSize={12}
+                      formatter={(v: number) => formatCompactCurrency(v)}
+                    />
+                  )}
                 </Area>
               </RAreaChart>
             </ChartContainer>
@@ -2121,6 +2140,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   volume: NewCustomerVolumeData | null;
   cohorts: NewCustomerCohortData | null;
 }) {
+  const isMobile = useIsMobile();
   if (!volume && !cohorts) return null;
 
   const [activeTab, setActiveTab] = useState<string>("complete");
@@ -2205,12 +2225,14 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
               content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
             />
             <Bar dataKey="newCustomers" fill="var(--color-newCustomers)" radius={8}>
-              <LabelList
-                position="top"
-                offset={12}
-                className="fill-foreground"
-                fontSize={12}
-              />
+              {!isMobile && (
+                <LabelList
+                  position="top"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                />
+              )}
             </Bar>
           </BarChart>
         </ChartContainer>
@@ -2771,6 +2793,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
 // ─── Conversion Pool Module (non-auto → auto-renew) ─────────
 
 function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
+  const isMobile = useIsMobile();
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
   const [activeSlice, setActiveSlice] = useState<ConversionPoolSlice>("all");
   const [activeTab, setActiveTab] = useState<string>("complete");
@@ -2867,12 +2890,14 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
             />
             <Bar dataKey="converts" fill="var(--color-converts)" radius={8}>
-              <LabelList
-                position="top"
-                offset={12}
-                className="fill-foreground"
-                fontSize={12}
-              />
+              {!isMobile && (
+                <LabelList
+                  position="top"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                />
+              )}
             </Bar>
           </BarChart>
         </ChartContainer>
@@ -3208,6 +3233,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
   monthlyRevenue: { month: string; gross: number; net: number }[];
   projection?: ProjectionData | null;
 }) {
+  const isMobile = useIsMobile();
   const currentYear = new Date().getFullYear();
   const priorYear = currentYear - 1;
   const twoYearsAgo = currentYear - 2;
@@ -3255,13 +3281,15 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
               content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
             />
             <Bar dataKey="net" fill="var(--color-net)" radius={8}>
-              <LabelList
-                position="top"
-                offset={12}
-                className="fill-foreground"
-                fontSize={12}
-                formatter={(v: number) => formatCompactCurrency(v)}
-              />
+              {!isMobile && (
+                <LabelList
+                  position="top"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                  formatter={(v: number) => formatCompactCurrency(v)}
+                />
+              )}
             </Bar>
           </BarChart>
         </ChartContainer>
