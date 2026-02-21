@@ -2140,18 +2140,8 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
 
 // ─── Layer 3: New Customer Volume Card ──────────────────────
 
-function NewCustomerFunnelModule({ volume, cohorts }: {
-  volume: NewCustomerVolumeData | null;
-  cohorts: NewCustomerCohortData | null;
-}) {
-  const isMobile = useIsMobile();
-  if (!volume && !cohorts) return null;
-
-  const [activeTab, setActiveTab] = useState<string>("complete");
-  const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-
+/** Shared logic for both New Customer cards */
+function useNewCustomerData(volume: NewCustomerVolumeData | null, cohorts: NewCustomerCohortData | null) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -2160,19 +2150,16 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     return Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  // Partition cohorts
   const allCohorts = cohorts?.cohorts ?? [];
   const completeCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) >= 21);
   const incompleteCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) < 21);
   const displayComplete = completeCohorts.slice(-5);
 
-  // KPI values
   const avgRate = cohorts?.avgConversionRate ?? null;
   const currentCohortCount = volume?.currentWeekCount ?? (incompleteCohorts.length > 0 ? incompleteCohorts[incompleteCohorts.length - 1].newCustomers : null);
   const expectedAutoRenews = (currentCohortCount !== null && currentCohortCount !== undefined && avgRate !== null)
     ? Math.round(currentCohortCount * avgRate / 100) : null;
 
-  // Insight for tooltip
   const insightCohorts = displayComplete.filter((c) => c.total3Week > 0);
   const totalWk1 = insightCohorts.reduce((s, c) => s + c.week1, 0);
   const totalConv = insightCohorts.reduce((s, c) => s + c.total3Week, 0);
@@ -2185,39 +2172,80 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
     ? `${formatNumber(currentCohortCount ?? 0)} new \u00d7 ${avgRate?.toFixed(1)}% conversion. Based on last ${Math.min(completeCohorts.length, 5)} complete cohorts.`
     : "";
 
-  const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
+  return { completeCohorts, incompleteCohorts, displayComplete, avgRate, currentCohortCount, expectedAutoRenews, convTooltip, projTooltip, daysElapsed };
+}
 
-  // High-contrast timing colors (A: dark→mid→light)
+// ─── New Customer Overview Card ─────────────────────────────
+
+function NewCustomerOverviewCard({ volume, cohorts }: {
+  volume: NewCustomerVolumeData | null;
+  cohorts: NewCustomerCohortData | null;
+}) {
+  if (!volume && !cohorts) return null;
+  const { completeCohorts, avgRate, currentCohortCount, expectedAutoRenews, convTooltip, projTooltip } = useNewCustomerData(volume, cohorts);
+
+  return (
+    <DashboardCard matchHeight>
+      <CardHeader>
+        <CardTitle>{LABELS.newCustomerFunnel}</CardTitle>
+        <CardDescription>{completeCohorts.length} complete cohort{completeCohorts.length !== 1 ? "s" : ""}</CardDescription>
+      </CardHeader>
+
+      <CardContent>
+        <MetricRow
+          slots={[
+            { value: currentCohortCount != null ? formatNumber(currentCohortCount) : "\u2014", label: "New Customers" },
+            { value: avgRate != null ? avgRate.toFixed(1) : "\u2014", valueSuffix: avgRate != null ? "%" : undefined, label: "3-Week Conv. Rate", labelExtra: convTooltip ? <InfoTooltip tooltip={convTooltip} /> : undefined },
+            { value: expectedAutoRenews != null ? formatNumber(expectedAutoRenews) : "\u2014", label: "Expected Converts", labelExtra: projTooltip ? <InfoTooltip tooltip={projTooltip} /> : undefined },
+          ]}
+        />
+      </CardContent>
+
+      <CardFooter className="flex-col items-start gap-2 text-sm">
+        <div className="flex gap-2 leading-none font-medium">
+          {avgRate != null ? `${avgRate.toFixed(1)}% avg conversion rate` : "Calculating..."}
+        </div>
+        <div className="text-muted-foreground leading-none">
+          Weekly new customer cohorts
+        </div>
+      </CardFooter>
+    </DashboardCard>
+  );
+}
+
+// ─── New Customer Chart Card (line chart + cohort tables) ───
+
+function NewCustomerChartCard({ volume, cohorts }: {
+  volume: NewCustomerVolumeData | null;
+  cohorts: NewCustomerCohortData | null;
+}) {
+  const isMobile = useIsMobile();
+  if (!volume && !cohorts) return null;
+
+  const [activeTab, setActiveTab] = useState<string>("complete");
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const { completeCohorts, incompleteCohorts, displayComplete, daysElapsed } = useNewCustomerData(volume, cohorts);
+  const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
   const timingColors = ["rgba(65, 58, 58, 0.65)", "rgba(65, 58, 58, 0.38)", "rgba(65, 58, 58, 0.18)"];
 
-  // Tabs config
-  const tabsConfig = [
-    { key: "complete", label: `Complete (${displayComplete.length})` },
-    ...(incompleteCohorts.length > 0 ? [{ key: "inProgress", label: `In progress (${incompleteCohorts.length})` }] : []),
-  ];
+  const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers }));
 
   return (
     <DashboardCard matchHeight>
       <DModuleHeader
         color={COLORS.newCustomer}
-        title={LABELS.newCustomerFunnel}
+        title="Weekly New Customers"
         summaryPill={`${completeCohorts.length} cohort${completeCohorts.length !== 1 ? "s" : ""}`}
         detailsOpen={detailsOpen}
         onToggleDetails={() => setDetailsOpen(!detailsOpen)}
       />
 
-      <CardContent className="space-y-6">
-        <MetricRow
-          slots={[
-            { value: currentCohortCount != null ? formatNumber(currentCohortCount) : "\u2014", label: "New Customers" },
-            { value: avgRate != null ? avgRate.toFixed(1) : "\u2014", valueSuffix: avgRate != null ? "%" : undefined, label: "3-Week Conversion Rate", labelExtra: convTooltip ? <InfoTooltip tooltip={convTooltip} /> : undefined },
-            { value: expectedAutoRenews != null ? formatNumber(expectedAutoRenews) : "\u2014", label: "Expected Converts", labelExtra: projTooltip ? <InfoTooltip tooltip={projTooltip} /> : undefined },
-          ]}
-        />
-
+      <CardContent>
         <ChartContainer config={{ newCustomers: { label: "New Customers", color: COLORS.newCustomer } } satisfies ChartConfig} className="h-[200px] w-full">
-          <BarChart accessibilityLayer data={completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers }))} margin={{ top: 20 }}>
-
+          <LineChart accessibilityLayer data={lineData} margin={{ top: 20 }}>
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -2228,7 +2256,13 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
               cursor={false}
               content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
             />
-            <Bar dataKey="newCustomers" fill="var(--color-newCustomers)" radius={8}>
+            <Line
+              dataKey="newCustomers"
+              stroke="var(--color-newCustomers)"
+              strokeWidth={2}
+              dot={{ fill: "var(--color-newCustomers)", r: 4 }}
+              activeDot={{ r: 6 }}
+            >
               {!isMobile && (
                 <LabelList
                   position="top"
@@ -2237,17 +2271,14 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                   fontSize={12}
                 />
               )}
-            </Bar>
-          </BarChart>
+            </Line>
+          </LineChart>
         </ChartContainer>
       </CardContent>
 
       <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 leading-none font-medium">
-          {avgRate != null ? `${avgRate.toFixed(1)}% avg conversion rate` : "Calculating..."}
-        </div>
         <div className="text-muted-foreground leading-none">
-          Weekly new customer cohorts
+          Last {lineData.length} complete weekly cohorts
         </div>
       </CardFooter>
 
@@ -2484,12 +2515,17 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
         <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
           {(newCustomerVolume || newCustomerCohorts) && (
-            <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
+            <NewCustomerOverviewCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
           )}
-          {conversionPool && (
-            <ConversionPoolModule pool={conversionPool} />
+          {(newCustomerVolume || newCustomerCohorts) && (
+            <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
           )}
         </div>
+        {conversionPool && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+            <ConversionPoolModule pool={conversionPool} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2498,6 +2534,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
 // ─── Drop-Ins Subsection (3-card layout: Overview + Frequency | Distribution) ──
 
 function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<string>("complete");
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
 
@@ -2666,7 +2703,16 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
               >
                 <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
                 <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />} />
-                <Bar dataKey="visits" fill="var(--color-visits)" radius={8} />
+                <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
+                  {!isMobile && (
+                    <LabelList
+                      position="top"
+                      offset={12}
+                      className="fill-foreground"
+                      fontSize={12}
+                    />
+                  )}
+                </Bar>
               </BarChart>
             </ChartContainer>
 
