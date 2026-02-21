@@ -1,3 +1,4 @@
+/** Operational endpoint: debugging/diagnostics. Development use only. */
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db/database";
 import { parseDate } from "@/lib/analytics/date-utils";

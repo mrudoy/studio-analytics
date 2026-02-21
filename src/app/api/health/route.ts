@@ -1,3 +1,4 @@
+/** Operational endpoint: health check for Railway deployment monitoring. */
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db/database";
 import { getPipelineQueue } from "@/lib/queue/pipeline-queue";

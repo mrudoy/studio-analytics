@@ -77,10 +77,9 @@ function normalizeHeader(header: string): string {
  * Parse a CSV file and validate each row against a Zod schema.
  * Returns validated rows and any warnings for rows that failed validation.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseCSV<T>(
   filePath: string,
-  schema: z.ZodType<T, any, any>
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>
 ): { data: T[]; warnings: string[] } {
   const fileContent = readFileSync(filePath, "utf8");
 

@@ -148,9 +148,13 @@ const COLORS = {
 
 // ─── Formatting helpers ──────────────────────────────────────
 
+// Churn benchmark thresholds (monthly %)
+const CHURN_GOOD_MAX = 7;   // <= 7% = healthy (green)
+const CHURN_WARN_MAX = 12;  // <= 12% = caution (amber), > 12% = concerning (red)
+
 function churnBenchmarkColor(rate: number): string {
-  if (rate <= 7) return COLORS.success;
-  if (rate <= 12) return COLORS.warning;
+  if (rate <= CHURN_GOOD_MAX) return COLORS.success;
+  if (rate <= CHURN_WARN_MAX) return COLORS.warning;
   return COLORS.error;
 }
 

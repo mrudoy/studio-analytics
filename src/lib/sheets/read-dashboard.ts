@@ -1,33 +1,16 @@
 import { getSpreadsheet } from "./sheets-client";
 import type { GoogleSpreadsheet } from "google-spreadsheet";
-
-export interface DashboardStats {
-  lastUpdated: string | null;
-  dateRange: string | null;
-  mrr: {
-    member: number;
-    sky3: number;
-    skyTingTv: number;
-    unknown: number;
-    total: number;
-  };
-  activeSubscribers: {
-    member: number;
-    sky3: number;
-    skyTingTv: number;
-    unknown: number;
-    total: number;
-  };
-  arpu: {
-    member: number;
-    sky3: number;
-    skyTingTv: number;
-    overall: number;
-  };
-  currentMonthRevenue: number;
-  previousMonthRevenue: number;
-  spreadsheetUrl?: string;
-}
+import type {
+  DashboardStats,
+  TrendRowData,
+  PacingData,
+  ProjectionData,
+  DropInData,
+  FirstVisitSegment,
+  FirstVisitData,
+  ReturningNonMemberData,
+  TrendsData,
+} from "@/types/dashboard";
 
 // In-memory cache with 5-minute TTL
 let cached: { data: DashboardStats; fetchedAt: number } | null = null;
@@ -126,157 +109,7 @@ export async function readDashboardStats(
 }
 
 // ─── Trends Data Reader ─────────────────────────────────────
-
-export interface TrendRowData {
-  period: string;
-  type: string;
-  newMembers: number;
-  newSky3: number;
-  newSkyTingTv: number;
-  memberChurn: number;
-  sky3Churn: number;
-  skyTingTvChurn: number;
-  netMemberGrowth: number;
-  netSky3Growth: number;
-  revenueAdded: number;
-  revenueLost: number;
-  deltaNewMembers: number | null;
-  deltaNewSky3: number | null;
-  deltaRevenue: number | null;
-  deltaPctNewMembers: number | null;
-  deltaPctNewSky3: number | null;
-  deltaPctRevenue: number | null;
-}
-
-export interface PacingData {
-  month: string;
-  daysElapsed: number;
-  daysInMonth: number;
-  newMembersActual: number;
-  newMembersPaced: number;
-  newSky3Actual: number;
-  newSky3Paced: number;
-  revenueActual: number;
-  revenuePaced: number;
-  memberCancellationsActual: number;
-  memberCancellationsPaced: number;
-  sky3CancellationsActual: number;
-  sky3CancellationsPaced: number;
-}
-
-export interface ProjectionData {
-  year: number;
-  projectedAnnualRevenue: number;
-  currentMRR: number;
-  projectedYearEndMRR: number;
-  monthlyGrowthRate: number;
-  priorYearRevenue: number;
-  /** Actual total revenue from revenue_categories table for the prior calendar year */
-  priorYearActualRevenue: number | null;
-}
-
-export interface DropInData {
-  currentMonthTotal: number;
-  currentMonthDaysElapsed: number;
-  currentMonthDaysInMonth: number;
-  currentMonthPaced: number;
-  previousMonthTotal: number;
-  weeklyAvg6w: number;
-  weeklyBreakdown: { week: string; count: number }[];
-}
-
-export type FirstVisitSegment = "introWeek" | "dropIn" | "guest" | "other";
-
-export interface FirstVisitData {
-  currentWeekTotal: number;
-  currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
-  aggregateSegments: Record<FirstVisitSegment, number>;
-  otherBreakdownTop5: { passName: string; count: number }[];
-}
-
-export interface ReturningNonMemberData {
-  currentWeekTotal: number;
-  currentWeekSegments: Record<FirstVisitSegment, number>;
-  completedWeeks: { week: string; uniqueVisitors: number; segments: Record<FirstVisitSegment, number> }[];
-  aggregateSegments: Record<FirstVisitSegment, number>;
-  otherBreakdownTop5: { passName: string; count: number }[];
-}
-
-/** Per-category churn data for a single month */
-export interface CategoryMonthlyChurn {
-  month: string;
-  userChurnRate: number;         // count-based: canceledCount / activeAtStart * 100
-  mrrChurnRate: number;          // revenue-based: canceledMRR / activeMRR * 100
-  activeAtStart: number;
-  activeMrrAtStart: number;
-  canceledCount: number;
-  canceledMrr: number;
-  // MEMBER-only: annual vs monthly breakdown
-  annualCanceledCount?: number;
-  annualActiveAtStart?: number;
-  monthlyCanceledCount?: number;
-  monthlyActiveAtStart?: number;
-}
-
-/** Churn summary for one auto-renew category */
-export interface CategoryChurnData {
-  category: "MEMBER" | "SKY3" | "SKY_TING_TV";
-  monthly: CategoryMonthlyChurn[];
-  avgUserChurnRate: number;
-  avgMrrChurnRate: number;
-  atRiskCount: number;
-}
-
-export interface ChurnRateData {
-  /** Per-category churn data */
-  byCategory: {
-    member: CategoryChurnData;
-    sky3: CategoryChurnData;
-    skyTingTv: CategoryChurnData;
-  };
-  totalAtRisk: number;
-  /** Legacy flat fields (backward compat) */
-  monthly: {
-    month: string;
-    memberRate: number;
-    sky3Rate: number;
-    memberActiveStart: number;
-    sky3ActiveStart: number;
-    memberCanceled: number;
-    sky3Canceled: number;
-  }[];
-  avgMemberRate: number;
-  avgSky3Rate: number;
-  atRisk: number;
-}
-
-// Stub types for fields only populated by the DB path (always null here)
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-type IntroWeekData = Record<string, unknown>;
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-type NewCustomerVolumeData = Record<string, unknown>;
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-type NewCustomerCohortData = Record<string, unknown>;
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-type ConversionPoolModuleData = Record<string, unknown>;
-
-export interface TrendsData {
-  weekly: TrendRowData[];
-  monthly: TrendRowData[];
-  pacing: PacingData | null;
-  projection: ProjectionData | null;
-  dropIns: DropInData | null;
-  introWeek: IntroWeekData | null;
-  firstVisits: FirstVisitData | null;
-  returningNonMembers: ReturningNonMemberData | null;
-  churnRates: ChurnRateData | null;
-  newCustomerVolume: NewCustomerVolumeData | null;
-  newCustomerCohorts: NewCustomerCohortData | null;
-  conversionPool: ConversionPoolModuleData | null;
-}
-
-// cachedTrends declared at top of file alongside cached
+// All types imported from @/types/dashboard (single source of truth)
 
 function parseNum(val: string | undefined | null): number {
   if (!val) return 0;
@@ -531,7 +364,10 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
     ? { currentWeekTotal: rnmCurrentWeekTotal, currentWeekSegments: rnmCurrentWeekSegments, completedWeeks: rnmCompletedWeeks, aggregateSegments: rnmAggregateSegments, otherBreakdownTop5: [] }
     : null;
 
-  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns, introWeek: null, firstVisits, returningNonMembers, churnRates: null, newCustomerVolume: null, newCustomerCohorts: null, conversionPool: null };
+  // Legacy sheets path: only weekly/monthly/pacing/projection are fully typed.
+  // Module-level data (dropIns, firstVisits, etc.) would need conversion to match
+  // the DB-path types (DropInModuleData, etc.), so we null them out here.
+  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns: null, introWeek: null, firstVisits: null, returningNonMembers: null, churnRates: null, newCustomerVolume: null, newCustomerCohorts: null, conversionPool: null };
   cachedTrends = { data, fetchedAt: Date.now() };
 
   console.log(

@@ -238,21 +238,6 @@ export async function getCanceledAutoRenews(startDate: string, endDate: string):
 }
 
 /**
- * Get all auto-renews (any state).
- */
-export async function getAllAutoRenews(): Promise<StoredAutoRenew[]> {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
-            customer_name, customer_email, created_at, canceled_at
-     FROM auto_renews
-     ORDER BY plan_name`
-  );
-
-  return (rows as RawAutoRenewRow[]).map(mapRow);
-}
-
-/**
  * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
  */

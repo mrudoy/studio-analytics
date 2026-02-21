@@ -1,3 +1,4 @@
+/** Operational endpoint: database backup/restore. Not called by the frontend. */
 import { NextRequest, NextResponse } from "next/server";
 import {
   createBackup,

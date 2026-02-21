@@ -103,10 +103,6 @@ body {
 /* Brand font (Cormorant Garamond) is applied ONLY via inline style on SkyTingLogo.
    Never set it on h1/h2/h3 globally — that overrides FONT_SANS on dashboard headings. */
 
-/* Funnel tab focus: remove default ring, show subtle underline only for keyboard nav */
-.funnel-tab:focus { outline: none; }
-.funnel-tab:focus-visible { outline: 2px solid var(--st-border-hover); outline-offset: -2px; border-radius: 2px; }
-
 /* Spin animation for refresh button */
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -122,20 +118,6 @@ body {
 /* ── Responsive: mobile card padding ── */
 @media (max-width: 639px) {
   :root { --st-card-pad: 16px; }
-}
-
-/* ── Conversion Pool 5-col KPI strip responsive ── */
-@media (max-width: 1023px) {
-  .cp-kpi-strip { grid-template-columns: repeat(3, 1fr) !important; }
-}
-@media (max-width: 639px) {
-  .cp-kpi-strip { grid-template-columns: repeat(2, 1fr) !important; }
-  .cp-dist-bars { grid-template-columns: 1fr !important; }
-}
-
-/* ── Non-Members KPI grid responsive ── */
-@media (max-width: 639px) {
-  .kpi-grid-3 { grid-template-columns: 1fr !important; gap: 24px !important; }
 }
 
 /* ── Bento grid responsive breakpoints ── */
