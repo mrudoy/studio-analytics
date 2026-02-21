@@ -490,6 +490,41 @@ export async function getFirstTimeSourceBreakdown(
 }
 
 /**
+ * Get unique INTRO WEEK customers per week (Monday-based weeks).
+ * Counts distinct emails from first_visits where pass = 'INTRO WEEK'.
+ */
+export async function getIntroWeekCustomersByWeek(
+  startDate?: string,
+): Promise<{ weekStart: string; customers: number }[]> {
+  const pool = getPool();
+  const params: string[] = [];
+  let dateFilter = "";
+
+  if (startDate) {
+    dateFilter = ` AND attended_at >= $1`;
+    params.push(startDate);
+  }
+
+  const query = `
+    SELECT DATE_TRUNC('week', attended_at::date)::date::text as "weekStart",
+           COUNT(DISTINCT email)::int as "customers"
+    FROM first_visits
+    WHERE attended_at IS NOT NULL AND attended_at != ''
+      AND email IS NOT NULL AND email != ''
+      AND UPPER(pass) LIKE '%INTRO%'
+      ${dateFilter}
+    GROUP BY "weekStart"
+    ORDER BY "weekStart"
+  `;
+
+  const { rows } = await pool.query(query, params);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    customers: Number(r.customers),
+  }));
+}
+
+/**
  * Get unique returning non-member visitors per week (Monday-based weeks).
  * Returning = non-subscriber emails that are NOT in the first_visits table for the same window.
  */

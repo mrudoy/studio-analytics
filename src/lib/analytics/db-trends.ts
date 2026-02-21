@@ -32,6 +32,7 @@ import {
   getDropInWTD,
   getDropInLastWeekWTD,
   getDropInFrequencyDistribution,
+  getIntroWeekCustomersByWeek,
   getConversionPoolWeekly,
   getConversionPoolWTD,
   getConversionPoolLagStats,
@@ -582,6 +583,35 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
+  // ── 6b. Intro Week data ──────────────────────────────────
+  let introWeekData: import("../../types/dashboard").IntroWeekData | null = null;
+
+  if (await hasFirstVisitData()) {
+    try {
+      const sixWeeksAgo = new Date(now);
+      sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
+      const startStr = sixWeeksAgo.toISOString().split("T")[0];
+
+      const iwWeeks = await getIntroWeekCustomersByWeek(startStr);
+      if (iwWeeks.length > 0) {
+        const sorted = [...iwWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+        const lastWeek = sorted[sorted.length - 1];
+        const completed = sorted.slice(0, -1).slice(-4);
+        const avg = completed.length > 0
+          ? Math.round(completed.reduce((s, w) => s + w.customers, 0) / completed.length)
+          : 0;
+
+        introWeekData = {
+          lastWeek: { weekStart: lastWeek.weekStart, customers: lastWeek.customers },
+          last4Weeks: completed,
+          last4WeekAvg: avg,
+        };
+      }
+    } catch (err) {
+      console.warn("[db-trends] Failed to compute intro week data:", err);
+    }
+  }
+
   // ── 7. Returning non-members (unique visitors) ─────────
   let returningNonMembers: ReturningNonMemberData | null = null;
 
@@ -803,6 +833,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     pacing,
     projection,
     dropIns,
+    introWeek: introWeekData,
     firstVisits,
     returningNonMembers,
     churnRates,

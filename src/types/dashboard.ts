@@ -239,6 +239,19 @@ export interface MonthOverMonthData {
   yoyNetPct: number | null;
 }
 
+// ── Intro Week types ──────────────────────────────────────
+
+export interface IntroWeekWeekRow {
+  weekStart: string;   // Monday YYYY-MM-DD
+  customers: number;   // unique intro-week customers that week
+}
+
+export interface IntroWeekData {
+  lastWeek: IntroWeekWeekRow | null;
+  last4Weeks: IntroWeekWeekRow[];
+  last4WeekAvg: number;
+}
+
 // ── New Customer types ─────────────────────────────────────
 
 export interface NewCustomerVolumeWeek {
@@ -330,6 +343,7 @@ export interface TrendsData {
   pacing: PacingData | null;
   projection: ProjectionData | null;
   dropIns: DropInModuleData | null;
+  introWeek: IntroWeekData | null;
   firstVisits: FirstVisitData | null;
   returningNonMembers: ReturningNonMemberData | null;
   churnRates: ChurnRateData | null;

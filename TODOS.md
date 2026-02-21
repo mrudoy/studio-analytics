@@ -28,6 +28,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [x] ~~Auto-renew upload endpoint~~ — `/api/upload` now accepts `type=auto_renews` to upload auto-renew CSVs directly
 - [ ] Gmail-only pipeline (`gmail-pipeline.ts`) — reads CSVs from Gmail without browser trigger. For future use when emails are pre-triggered.
 - [ ] User note: NO SCRAPING — pipeline triggers CSV downloads via Playwright locally, emails arrive, data gets processed. Browser part must run locally (not Railway).
+- [ ] User note: Mike works on TWO machines — another machine may be running dev server or making changes simultaneously. Watch for port conflicts, stale processes, and git divergence.
 
 ### Data Report Key (from Data.pdf)
 When user asks about data, tell them which report to pull based on this mapping:

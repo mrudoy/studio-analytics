@@ -1,13 +1,17 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
+import { Ticket, Tag, ArrowRightLeft } from "lucide-react";
 import {
   AreaChart as RAreaChart,
   Area,
   Bar,
   BarChart,
-  CartesianGrid,
+  Line,
+  LineChart,
   LabelList,
+  Pie,
+  PieChart,
   XAxis,
   YAxis,
   ReferenceLine,
@@ -19,6 +23,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
@@ -60,6 +65,7 @@ import type {
   ConversionPoolModuleData,
   ConversionPoolSlice,
   ConversionPoolSliceData,
+  IntroWeekData,
 } from "@/types/dashboard";
 
 // ─── Client-only types ───────────────────────────────────────
@@ -1201,12 +1207,15 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
   );
 }
 
-/** Subsection header within a top-level section */
-function SubsectionHeader({ children }: { children: React.ReactNode }) {
+/** Subsection header — Apple Health style: icon + colored label */
+function SubsectionHeader({ children, icon: Icon, color }: { children: React.ReactNode; icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color?: string }) {
   return (
-    <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
-      {children}
-    </p>
+    <div className="flex items-center gap-2.5 pt-3">
+      {Icon && <Icon className="size-[22px]" style={color ? { color } : undefined} />}
+      <p className="text-[17px] leading-none font-bold capitalize" style={color ? { color } : undefined}>
+        {children}
+      </p>
+    </div>
   );
 }
 
@@ -1878,19 +1887,34 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           </CardHeader>
           <CardContent>
             <ChartContainer config={revenueChartConfig} className="h-[250px] w-full">
-              <BarChart accessibilityLayer data={revenueBarData} margin={{ top: 20 }}>
-                <CartesianGrid vertical={false} />
+              <RAreaChart accessibilityLayer data={revenueBarData} margin={{ top: 20, left: 24, right: 24 }}>
+                <defs>
+                  <linearGradient id="fillGross" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-gross)" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="var(--color-gross)" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <YAxis hide domain={["dataMin - 20000", "dataMax + 10000"]} />
                 <XAxis
                   dataKey="month"
                   tickLine={false}
-                  tickMargin={10}
                   axisLine={false}
+                  tickMargin={8}
                 />
                 <ChartTooltip
                   cursor={false}
-                  content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
+                  content={<ChartTooltipContent indicator="line" formatter={(v) => formatCurrency(v as number)} />}
                 />
-                <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
+                <Area
+                  dataKey="gross"
+                  type="natural"
+                  fill="url(#fillGross)"
+                  fillOpacity={0.4}
+                  stroke="var(--color-gross)"
+                  strokeWidth={2}
+                  dot={{ fill: "var(--color-gross)" }}
+                  activeDot={{ r: 6 }}
+                >
                   <LabelList
                     position="top"
                     offset={12}
@@ -1898,8 +1922,8 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                     fontSize={12}
                     formatter={(v: number) => formatCompactCurrency(v)}
                   />
-                </Bar>
-              </BarChart>
+                </Area>
+              </RAreaChart>
             </ChartContainer>
           </CardContent>
           {momDelta != null && momDeltaPct != null && (
@@ -2169,7 +2193,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
         <ChartContainer config={{ newCustomers: { label: "New Customers", color: COLORS.newCustomer } } satisfies ChartConfig} className="h-[200px] w-full">
           <BarChart accessibilityLayer data={completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers }))} margin={{ top: 20 }}>
-            <CartesianGrid vertical={false} />
+
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -2359,59 +2383,79 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
 
 // ─── Intro Week Placeholder ─────────────────────────────────
 
-function IntroWeekModule() {
+function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
+  if (!introWeek) return null;
+
+  const { lastWeek, last4Weeks, last4WeekAvg } = introWeek;
+  const lastWeekDelta = lastWeek && last4WeekAvg > 0
+    ? Math.round(((lastWeek.customers - last4WeekAvg) / last4WeekAvg) * 100)
+    : null;
+
   return (
     <DashboardCard matchHeight>
-      <DModuleHeader color={COLORS.copper} title="Intro Week" />
+      <CardHeader>
+        <CardTitle>Intro Week</CardTitle>
+        <CardDescription>New intro week customers by week</CardDescription>
+      </CardHeader>
 
-      <CardContent className="space-y-6">
-        {/* KPI band — placeholder skeleton blocks */}
-        <div className="grid grid-cols-3 gap-6 items-start">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className={`min-w-0${i > 0 ? " border-l border-border pl-6" : ""}`}>
-              <div className="h-10 w-16 rounded-md bg-muted animate-pulse" />
-              <div className="mt-1 h-3.5 w-20 rounded bg-muted animate-pulse" />
-            </div>
-          ))}
-        </div>
-
-        {/* Chart band — placeholder */}
-        <SparklineSlot className="flex flex-col justify-center" style={{ height: 132 }}>
-          <div className="border border-dashed border-border rounded-xl flex items-center justify-center" style={{ height: 96 }}>
-            <span className="text-sm font-medium text-muted-foreground">Coming soon</span>
-          </div>
-        </SparklineSlot>
+      <CardContent>
+        <MetricRow
+          slots={[
+            { value: lastWeek ? formatNumber(lastWeek.customers) : "\u2014", label: "This Week" },
+            { value: formatNumber(last4WeekAvg), label: "4-wk Avg" },
+            { value: lastWeekDelta !== null ? `${lastWeekDelta > 0 ? "+" : ""}${lastWeekDelta}` : "\u2014", valueSuffix: lastWeekDelta !== null ? "%" : "", label: "vs Avg" },
+          ]}
+        />
       </CardContent>
+
+      {lastWeekDelta !== null && (
+        <CardFooter className="flex-col items-start gap-2 text-sm">
+          <div className="flex gap-2 leading-none font-medium">
+            {lastWeekDelta > 0 ? "+" : ""}{lastWeekDelta}% vs 4-week average
+          </div>
+          <div className="text-muted-foreground leading-none">
+            Intro week signups
+          </div>
+        </CardFooter>
+      )}
     </DashboardCard>
   );
 }
 
 // ─── Non-auto-renew Section (Pass types + Conversion) ───────
 
-function NonAutoRenewSection({ dropIns, newCustomerVolume, newCustomerCohorts, conversionPool }: {
+function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustomerCohorts, conversionPool }: {
   dropIns: DropInModuleData | null;
+  introWeek: IntroWeekData | null;
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
   conversionPool: ConversionPoolModuleData | null;
 }) {
-  if (!dropIns && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
+  if (!dropIns && !introWeek && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
 
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader subtitle="Drop-ins, Intro Week, and other non-subscribed activity">{LABELS.nonAutoRenew}</SectionHeader>
 
-      {/* ── Subsection A: Pass types ── */}
+      {/* ── Subsection A: Drop-ins ── */}
+      {dropIns && (
+        <div className="flex flex-col gap-3">
+          <SubsectionHeader icon={Ticket} color={COLORS.dropIn}>Drop-ins</SubsectionHeader>
+          <DropInsSubsection dropIns={dropIns} />
+        </div>
+      )}
+
+      {/* ── Subsection B: Other pass types ── */}
       <div className="flex flex-col gap-3">
-        <SubsectionHeader>Pass types</SubsectionHeader>
+        <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Other Pass Types</SubsectionHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-          {dropIns && <DropInsModule dropIns={dropIns} />}
-          <IntroWeekModule />
+          <IntroWeekModule introWeek={introWeek} />
         </div>
       </div>
 
-      {/* ── Subsection B: Conversion ── */}
+      {/* ── Subsection C: Conversion ── */}
       <div className="flex flex-col gap-3">
-        <SubsectionHeader>Conversion</SubsectionHeader>
+        <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
           {(newCustomerVolume || newCustomerCohorts) && (
             <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
@@ -2425,274 +2469,302 @@ function NonAutoRenewSection({ dropIns, newCustomerVolume, newCustomerCohorts, c
   );
 }
 
-// ─── Drop-Ins Module (weekly-first, matching funnel module quality) ──
+// ─── Drop-Ins Subsection (3-card layout: Overview + Frequency | Distribution) ──
 
-function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
+function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
   const [activeTab, setActiveTab] = useState<string>("complete");
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency } = dropIns;
   const displayWeeks = completeWeeks.slice(-8);
 
-  // Trend
-  const wtdDeltaSign = wtdDelta > 0 ? "+" : "";
-
-  // Mix bar colors: First (dark) vs Repeat (light) — high contrast per spec
+  // Mix bar colors: First (dark) vs Repeat (light)
   const mixColors = ["rgba(155, 118, 83, 0.70)", "rgba(155, 118, 83, 0.28)"];
 
-  // Frequency distribution colors (dark→light)
-  const freqColors = [
-    `rgba(155, 118, 83, 0.30)`,
-    `rgba(155, 118, 83, 0.50)`,
-    `rgba(155, 118, 83, 0.70)`,
-    `rgba(155, 118, 83, 0.90)`,
-  ];
+  // Frequency pie chart data + config
+  const freqData = frequency ? [
+    { bucket: "1 visit", count: frequency.bucket1, fill: "var(--color-bucket1)" },
+    { bucket: "2\u20134", count: frequency.bucket2to4, fill: "var(--color-bucket2to4)" },
+    { bucket: "5\u201310", count: frequency.bucket5to10, fill: "var(--color-bucket5to10)" },
+    { bucket: "11+", count: frequency.bucket11plus, fill: "var(--color-bucket11plus)" },
+  ].filter(d => d.count > 0) : [];
 
-  // Tabs
-  const tabsConfig = [
-    { key: "complete", label: `Complete weeks (${displayWeeks.length})` },
-    ...(wtd ? [{ key: "wtd", label: "This week (WTD)" }] : []),
-  ];
+  const freqConfig = {
+    count: { label: "Visitors" },
+    bucket1: { label: "1 visit", color: "rgba(155, 118, 83, 0.30)" },
+    bucket2to4: { label: "2\u20134", color: "rgba(155, 118, 83, 0.50)" },
+    bucket5to10: { label: "5\u201310", color: "rgba(155, 118, 83, 0.70)" },
+    bucket11plus: { label: "11+", color: "rgba(155, 118, 83, 0.90)" },
+  } satisfies ChartConfig;
 
   return (
-    <DashboardCard matchHeight>
-      <DModuleHeader
-        color={COLORS.dropIn}
-        title={LABELS.dropIns}
-        summaryPill={`${displayWeeks.length} weeks`}
-        detailsOpen={detailsOpen}
-        onToggleDetails={() => setDetailsOpen(!detailsOpen)}
-      />
+    <div className="flex flex-col gap-3">
+      {/* ── Row 1: Overview KPIs (50%) + Frequency pie (50%) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
 
-      <CardContent className="space-y-6">
-        <MetricRow
-          slots={[
-            { value: formatNumber(wtd?.visits ?? 0), label: "Visits (WTD)" },
-            { value: formatNumber(typicalWeekVisits), label: "Typical Week" },
-            { value: trendDeltaPercent !== 0 ? `${trendDeltaPercent > 0 ? "+" : ""}${trendDeltaPercent.toFixed(1)}` : "0", valueSuffix: "%", label: "Trend (4-wk vs prior)" },
-          ]}
-        />
+        {/* Card 1: Drop-ins Overview (KPIs only) */}
+        <DashboardCard matchHeight>
+          <CardHeader>
+            <CardTitle>Overview</CardTitle>
+            <CardDescription>Class visits by non-subscribers</CardDescription>
+          </CardHeader>
 
-        <ChartContainer config={{ visits: { label: "Visits", color: COLORS.dropIn } } satisfies ChartConfig} className="h-[200px] w-full">
-          <BarChart accessibilityLayer data={displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), visits: w.visits }))} margin={{ top: 20 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickLine={false}
-              tickMargin={10}
-              axisLine={false}
+          <CardContent>
+            <MetricRow
+              slots={[
+                { value: formatNumber(wtd?.visits ?? 0), label: "Visits (WTD)" },
+                { value: formatNumber(typicalWeekVisits), label: "Typical Week" },
+                { value: trendDeltaPercent !== 0 ? `${trendDeltaPercent > 0 ? "+" : ""}${trendDeltaPercent.toFixed(1)}` : "0", valueSuffix: "%", label: "Trend (4-wk vs prior)" },
+              ]}
             />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
-            />
-            <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
-              <LabelList
-                position="top"
-                offset={12}
-                className="fill-foreground"
-                fontSize={12}
-              />
-            </Bar>
-          </BarChart>
-        </ChartContainer>
-      </CardContent>
+          </CardContent>
 
-      <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 leading-none font-medium">
-          {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}% vs prior 4 weeks
-        </div>
-        <div className="text-muted-foreground leading-none">
-          Weekly drop-in visits
-        </div>
-      </CardFooter>
+          <CardFooter className="flex-col items-start gap-2 text-sm">
+            <div className="flex gap-2 leading-none font-medium">
+              {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}% vs prior 4 weeks
+            </div>
+            <div className="text-muted-foreground leading-none">
+              Weekly drop-in visits
+            </div>
+          </CardFooter>
+        </DashboardCard>
 
-      <CardFooter className="flex-col items-stretch p-0">
-        <DCardDisclosure open={detailsOpen}>
+        {/* Card 2: Drop-in Frequency (pie chart) */}
+        <DashboardCard matchHeight>
+          <CardHeader>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Drop-in Frequency</CardTitle>
+              <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
+            </div>
+            <CardDescription>Last 90 days</CardDescription>
+          </CardHeader>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList variant="line" className="w-full justify-start">
-          <TabsTrigger value="complete">Complete weeks ({displayWeeks.length})</TabsTrigger>
-          {wtd && <TabsTrigger value="wtd">This week (WTD)</TabsTrigger>}
-        </TabsList>
-
-      <TabsContent value="complete">
-      {/* Complete weeks table */}
-        <div className="overflow-x-auto min-w-0">
-          <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
-            <colgroup>
-              <col style={{ width: "32%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "20%" }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th className={`${modThClass} !text-left`}>Week</th>
-                <th className={modThClass}>Visits</th>
-                <th className={modThClass}>Customers</th>
-                <th className={modThClass}>First %</th>
-                <th className={`${modThClass} !text-center`}>Mix</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayWeeks.map((w) => {
-                const isHovered = hoveredWeek === w.weekStart;
-                const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
-                const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
-                return (
-                  <tr
-                    key={w.weekStart}
-                    className="transition-colors border-b border-border"
-                    style={{
-                      borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
-                      backgroundColor: isHovered ? "rgba(65, 58, 58, 0.02)" : "transparent",
-                    }}
-                    onMouseEnter={() => setHoveredWeek(w.weekStart)}
-                    onMouseLeave={() => setHoveredWeek(null)}
-                  >
-                    <td className={`${modTdClass} !text-left font-medium`}>
-                      {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
-                      {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
-                    </td>
-                    <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
-                    <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
-                    <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
-                    <td className={`mod-bar-cell ${modTdClass} !text-center`}>
-                      {w.uniqueCustomers > 0 ? (
-                        <SegmentedBar
-                          segments={[
-                            { value: w.firstTime, label: `First: ${w.firstTime}` },
-                            { value: w.repeatCustomers, label: `Repeat: ${w.repeatCustomers}` },
-                          ]}
-                          colors={mixColors}
-                          tooltip={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
-                        />
-                      ) : (
-                        <span className="text-muted-foreground opacity-40">{"\u2014"}</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </TabsContent>
-
-      <TabsContent value="wtd">
-      {/* WTD table */}
-      {wtd && (
-        <div className="overflow-x-auto min-w-0">
-          <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
-            <colgroup>
-              <col style={{ width: "30%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "22%" }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th className={`${modThClass} !text-left`}>Week</th>
-                <th className={modThClass}>Visits</th>
-                <th className={modThClass}>Customers</th>
-                <th className={modThClass}>First %</th>
-                <th className={modThClass}>Days left</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-border">
-                <td className={`${modTdClass} !text-left font-medium`}>
-                  {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
-                  {" "}<DChip variant="accent">WTD</DChip>
-                </td>
-                <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(wtd.visits)}</td>
-                <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(wtd.uniqueCustomers)}</td>
-                <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
-                  {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
-                </td>
-                <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
-              </tr>
-              {lastCompleteWeek && (
-                <tr className="border-b border-border opacity-55">
-                  <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
-                    {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
-                    <span className="text-[11px] ml-1.5 font-normal italic">prev</span>
-                  </td>
-                  <td data-label="Visits" className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(lastCompleteWeek.visits)}</td>
-                  <td data-label="Customers" className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
-                  <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
-                    {lastCompleteWeek.uniqueCustomers > 0 ? `${Math.round((lastCompleteWeek.firstTime / lastCompleteWeek.uniqueCustomers) * 100)}%` : "\u2014"}
-                  </td>
-                  <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{"\u2014"}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-      </TabsContent>
-      </Tabs>
-
-      {/* Footer: 90-Day Frequency Distribution */}
-      {frequency && frequency.totalCustomers > 0 && (
-        <div className="mt-4 pt-3 border-t border-border">
-          <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Drop-in frequency (last 90 days)
-            </span>
-            <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
-          </div>
-
-          {(() => {
-            const segs = [
-              { count: frequency.bucket1, label: "1 visit", opacity: 0.3 },
-              { count: frequency.bucket2to4, label: "2\u20134", opacity: 0.5 },
-              { count: frequency.bucket5to10, label: "5\u201310", opacity: 0.7 },
-              { count: frequency.bucket11plus, label: "11+", opacity: 0.9 },
-            ];
-            const nonZero = segs.filter((s) => s.count > 0);
-            const total = nonZero.reduce((s, seg) => s + seg.count, 0);
-            return (
-              <div>
-                {/* Bar: flex row with proportional widths */}
-                <div style={{ display: "flex", borderRadius: "5px", overflow: "hidden" }}>
-                  {nonZero.map((seg) => (
-                    <div key={seg.label + "-bar"} style={{
-                      flex: Math.max(seg.count / total, 0.03),
-                      height: 10,
-                      backgroundColor: freqColors[segs.indexOf(seg)],
-                    }} />
-                  ))}
-                </div>
-                {/* Labels: flex row matching bar proportions, text-left */}
-                <div style={{ display: "flex", paddingTop: "4px" }}>
-                  {nonZero.map((seg, i) => (
-                    <div key={seg.label + "-label"} style={{
-                      flex: Math.max(seg.count / total, 0.03),
-                      textAlign: "left",
-                      paddingLeft: i > 0 ? "4px" : 0,
-                      minWidth: 0,
-                    }} title={`${seg.count} customers`}>
-                      <span className="block text-[10px] text-muted-foreground leading-tight">{seg.label}</span>
-                      <span className="block text-[11px] font-semibold tabular-nums leading-tight">
-                        {Math.round((seg.count / frequency.totalCustomers) * 100)}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
+          <CardContent className="flex-1 pb-0">
+            {frequency && frequency.totalCustomers > 0 && freqData.length > 0 ? (
+              <ChartContainer
+                config={freqConfig}
+                className="mx-auto h-[250px] w-full"
+              >
+                <PieChart>
+                  <ChartTooltip
+                    content={<ChartTooltipContent nameKey="count" hideLabel />}
+                  />
+                  <Pie
+                    data={freqData}
+                    dataKey="count"
+                    labelLine={false}
+                    label={({ payload, ...props }) => (
+                      <text
+                        x={props.x}
+                        y={props.y}
+                        textAnchor={props.textAnchor}
+                        dominantBaseline={props.dominantBaseline}
+                        fill="hsla(var(--foreground))"
+                      >
+                        <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
+                        <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
+                      </text>
+                    )}
+                    nameKey="bucket"
+                  />
+                </PieChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[200px]">
+                <span className="text-sm text-muted-foreground">No data available</span>
               </div>
-            );
-          })()}
-        </div>
-      )}
+            )}
+          </CardContent>
 
-      </DCardDisclosure>
-      </CardFooter>
-    </DashboardCard>
+          {frequency && frequency.totalCustomers > 0 && (
+            <CardFooter className="flex-col gap-2 text-sm">
+              <div className="leading-none font-medium">
+                {formatNumber(frequency.totalCustomers)} unique visitors
+              </div>
+              <div className="text-muted-foreground leading-none">
+                Drop-in customers in the last 90 days
+              </div>
+            </CardFooter>
+          )}
+        </DashboardCard>
+      </div>
+
+      {/* ── Row 2: Weekly Drop-ins — chart + tabbed table (full-width, shadcn blocks pattern) ── */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <DashboardCard className="@container/card">
+          <CardHeader>
+            <CardTitle>Weekly Drop-ins</CardTitle>
+            <CardDescription>
+              <span className="hidden @[540px]/card:block">Complete weeks and week-to-date breakdown</span>
+              <span className="@[540px]/card:hidden">Weekly data</span>
+            </CardDescription>
+            <CardAction>
+              <ToggleGroup
+                variant="outline"
+                type="single"
+                value={activeTab}
+                onValueChange={(v) => { if (v) setActiveTab(v); }}
+                className="hidden @[540px]/card:flex"
+              >
+                <ToggleGroupItem value="complete">Complete weeks ({displayWeeks.length})</ToggleGroupItem>
+                {wtd && <ToggleGroupItem value="wtd">This week (WTD)</ToggleGroupItem>}
+              </ToggleGroup>
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="complete" className="rounded-lg">Complete weeks ({displayWeeks.length})</SelectItem>
+                  {wtd && <SelectItem value="wtd" className="rounded-lg">This week (WTD)</SelectItem>}
+                </SelectContent>
+              </Select>
+            </CardAction>
+          </CardHeader>
+
+          <CardContent className="space-y-6">
+            {/* Bar chart — responds to active toggle */}
+            <ChartContainer config={{ visits: { label: "Visits", color: COLORS.dropIn } } satisfies ChartConfig} className="h-[200px] w-full">
+              <BarChart
+                accessibilityLayer
+                data={
+                  activeTab === "wtd" && wtd
+                    ? [
+                        ...(lastCompleteWeek
+                          ? [{ date: formatWeekShort(lastCompleteWeek.weekStart), visits: lastCompleteWeek.visits }]
+                          : []),
+                        { date: `${formatWeekShort(wtd.weekStart)} (WTD)`, visits: wtd.visits },
+                      ]
+                    : displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), visits: w.visits }))
+                }
+                margin={{ top: 20 }}
+              >
+                <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />} />
+                <Bar dataKey="visits" fill="var(--color-visits)" radius={8} />
+              </BarChart>
+            </ChartContainer>
+
+            {/* Tabbed tables — below the chart */}
+            <TabsContent value="complete" className="mt-0">
+              <div className="overflow-x-auto min-w-0">
+                <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
+                  <colgroup>
+                    <col style={{ width: "32%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "20%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th className={`${modThClass} !text-left`}>Week</th>
+                      <th className={modThClass}>Visits</th>
+                      <th className={modThClass}>Customers</th>
+                      <th className={modThClass}>First %</th>
+                      <th className={`${modThClass} !text-center`}>Mix</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayWeeks.map((w) => {
+                      const isHovered = hoveredWeek === w.weekStart;
+                      const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
+                      const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
+                      return (
+                        <tr
+                          key={w.weekStart}
+                          className="transition-colors border-b border-border"
+                          style={{
+                            borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
+                            backgroundColor: isHovered ? "rgba(65, 58, 58, 0.02)" : "transparent",
+                          }}
+                          onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                          onMouseLeave={() => setHoveredWeek(null)}
+                        >
+                          <td className={`${modTdClass} !text-left font-medium`}>
+                            {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
+                            {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                          </td>
+                          <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
+                          <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
+                          <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
+                          <td className={`mod-bar-cell ${modTdClass} !text-center`}>
+                            {w.uniqueCustomers > 0 ? (
+                              <SegmentedBar
+                                segments={[
+                                  { value: w.firstTime, label: `First: ${w.firstTime}` },
+                                  { value: w.repeatCustomers, label: `Repeat: ${w.repeatCustomers}` },
+                                ]}
+                                colors={mixColors}
+                                tooltip={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground opacity-40">{"\u2014"}</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="wtd" className="mt-0">
+              {wtd && (
+                <div className="overflow-x-auto min-w-0">
+                  <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
+                    <colgroup>
+                      <col style={{ width: "30%" }} />
+                      <col style={{ width: "16%" }} />
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "22%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className={`${modThClass} !text-left`}>Week</th>
+                        <th className={modThClass}>Visits</th>
+                        <th className={modThClass}>Customers</th>
+                        <th className={modThClass}>First %</th>
+                        <th className={modThClass}>Days left</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-border">
+                        <td className={`${modTdClass} !text-left font-medium`}>
+                          {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                          {" "}<DChip variant="accent">WTD</DChip>
+                        </td>
+                        <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(wtd.visits)}</td>
+                        <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(wtd.uniqueCustomers)}</td>
+                        <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
+                          {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
+                        </td>
+                        <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
+                      </tr>
+                      {lastCompleteWeek && (
+                        <tr className="border-b border-border opacity-55">
+                          <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
+                            {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
+                            <span className="text-[11px] ml-1.5 font-normal italic">prev</span>
+                          </td>
+                          <td data-label="Visits" className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(lastCompleteWeek.visits)}</td>
+                          <td data-label="Customers" className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
+                          <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
+                            {lastCompleteWeek.uniqueCustomers > 0 ? `${Math.round((lastCompleteWeek.firstTime / lastCompleteWeek.uniqueCustomers) * 100)}%` : "\u2014"}
+                          </td>
+                          <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{"\u2014"}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
+          </CardContent>
+        </DashboardCard>
+      </Tabs>
+    </div>
   );
 }
 
@@ -2783,7 +2855,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 
         <ChartContainer config={{ converts: { label: "Converts", color: COLORS.conversionPool } } satisfies ChartConfig} className="h-[200px] w-full">
           <BarChart accessibilityLayer data={displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), converts: w.converts }))} margin={{ top: 20 }}>
-            <CartesianGrid vertical={false} />
+
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -3171,7 +3243,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
       <CardContent>
         <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
           <BarChart accessibilityLayer data={barData} margin={{ top: 20 }}>
-            <CartesianGrid vertical={false} />
+
             <XAxis
               dataKey="year"
               tickLine={false}
@@ -3494,8 +3566,8 @@ function DashboardView() {
         </div>
 
         {/* ── Non-auto-renew ── */}
-        {(trends?.dropIns || trends?.newCustomerVolume || trends?.newCustomerCohorts || trends?.conversionPool) ? (
-          <NonAutoRenewSection dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
+        {(trends?.dropIns || trends?.introWeek || trends?.newCustomerVolume || trends?.newCustomerCohorts || trends?.conversionPool) ? (
+          <NonAutoRenewSection dropIns={trends?.dropIns ?? null} introWeek={trends?.introWeek ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
         ) : (
           <NoData label="Non-auto-renew (Drop-Ins, Funnel)" />
         )}
