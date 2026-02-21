@@ -78,10 +78,11 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 ## Architecture
 
-- `src/app/page.tsx` — single-file dashboard, all components live here
+- `src/app/page.tsx` — single-file dashboard, data logic and module-level components live here
 - `src/types/dashboard.ts` — canonical type definitions, page.tsx imports from it
 - `src/app/globals.css` — CSS variables, Tailwind import, font rules
-- Do not create new component files. Everything stays in page.tsx.
+- `src/components/dashboard/` — shared dashboard UI primitives (DashboardCard, ModuleHeader, MetricRow, InfoTooltip, Chip, CardDisclosure, SparklineSlot, SectionHeader). Barrel-exported from `index.ts`.
+- `src/components/ui/` — shadcn/ui primitives (Card, Chart, Tabs, Select, Tooltip, Badge, Separator). Do not modify these directly.
 - Do not add new npm dependencies without explicit approval.
 
 ## Do NOT

@@ -1,6 +1,47 @@
 "use client";
 
-import { useState, useEffect, useRef, Fragment } from "react";
+import React, { useState, useEffect, useRef, Fragment, Children } from "react";
+import {
+  AreaChart as RAreaChart,
+  Area,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  LabelList,
+  XAxis,
+  YAxis,
+  ReferenceLine,
+} from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DashboardCard,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+  CardFooter,
+  ModuleHeader as DModuleHeader,
+  MetricRow,
+  InfoTooltip,
+  Chip as DChip,
+  CardDisclosure as DCardDisclosure,
+  SparklineSlot,
+  SectionHeader as DSectionHeader,
+} from "@/components/dashboard";
 import type {
   DashboardStats,
   TrendRowData,
@@ -42,44 +83,9 @@ type AppMode = "loading" | "pipeline" | "dashboard";
 const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 const FONT_BRAND = "'Cormorant Garamond', 'Times New Roman', serif";
 
-// ─── Design System Tokens ────────────────────────────────────
-// Strict type scale — only these sizes are allowed
-const DS = {
-  // Typography scale (strict — only these sizes)
-  text: {
-    xs: "0.75rem",     // uppercase labels, captions, fine print (12px)
-    sm: "0.875rem",    // secondary text, sublabels, table content (14px)
-    md: "1rem",        // body text, card titles, category names (16px)
-    lg: "var(--st-kpi-value)",  // module KPI values (40px)
-    xl: "2.5rem",      // page-level hero KPIs (only in KPIHeroStrip and CategoryDetail headers)
-  },
-  // Font weights (3 only)
-  weight: {
-    normal: 400,
-    medium: 500,
-    bold: 600,
-  },
-  // Spacing scale
-  space: {
-    xs: "0.25rem",     // tight gaps
-    sm: "0.5rem",      // small inner gaps
-    md: "1rem",        // standard inner padding/gaps
-    lg: "1.5rem",      // card padding (universal)
-    xl: "2rem",        // section spacing
-  },
-  // Card padding — responsive via CSS var (16px mobile / 20px desktop)
-  cardPad: "var(--st-card-pad)",
-  // Gap between card header (label row) and content below
-  cardHeaderMb: "0.5rem",
-  // Uppercase label style
-  label: {
-    fontSize: "var(--st-th-size)",
-    fontWeight: 600,
-    letterSpacing: "0.06em",
-    textTransform: "uppercase" as const,
-    color: "var(--st-text-secondary)",
-  },
-} as const;
+// ─── Design System ──────────────────────────────────────────
+// Typography now uses shadcn/ui utility classes (text-sm, font-semibold, etc.)
+// See /src/components/dashboard/ for shared components.
 
 // ─── Section & Category Labels ──────────────────────────────
 // RULE: Use honest data labels that match Union.fit terminology.
@@ -90,13 +96,13 @@ const LABELS = {
   members: "Members",
   sky3: "Sky3",
   tv: "Sky Ting TV",
-  nonMembers: "Non Members",
+  nonAutoRenew: "Non-Auto-Renew",
   firstVisits: "First Visits",
   dropIns: "Drop-Ins",
   returningNonMembers: "Returning Non-Members",
   newCustomers: "New Customers",
   newCustomerFunnel: "New Customer Funnel",
-  conversionPool: "Conversion Pool",
+  conversionPool: "Non-Auto-Renew Funnel",
   revenue: "Revenue",
   mrr: "Monthly Recurring Revenue",
   yoy: "Year over Year",
@@ -115,9 +121,9 @@ const COLORS = {
   warning: "#8B7340",
   teal: "#3A8A8A",       // teal for first visits
   copper: "#B87333",     // copper for returning non-members
-  newCustomer: "#5A6B7A", // slate for new customer funnel
-  dropIn: "#9B7653",     // warm sienna for drop-ins
-  conversionPool: "#6B5B7B", // muted plum for conversion pool
+  newCustomer: "#5F6D7A", // slate for new customer funnel
+  dropIn: "#8F7A5E",     // warm sienna for drop-ins (desaturated)
+  conversionPool: "#6B5F78", // muted plum for conversion pool (desaturated)
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -304,14 +310,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   return (
     <a
       href={href}
-      className="hover:underline transition-colors"
-      style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}
-      onMouseOver={(e) =>
-        (e.currentTarget.style.color = "var(--st-text-primary)")
-      }
-      onMouseOut={(e) =>
-        (e.currentTarget.style.color = "var(--st-text-secondary)")
-      }
+      className="text-muted-foreground hover:text-foreground hover:underline transition-colors"
     >
       {children}
     </a>
@@ -415,17 +414,10 @@ function PipelineView() {
           <div className="flex justify-center">
             <SkyTingLogo />
           </div>
-          <h1
-            style={{
-              color: "var(--st-text-primary)",
-                           fontWeight: 700,
-              fontSize: "2.4rem",
-              letterSpacing: "-0.03em",
-            }}
-          >
+          <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight">
             Studio Analytics
           </h1>
-          <p style={{ color: "var(--st-text-secondary)", fontSize: "0.95rem" }}>
+          <p className="text-muted-foreground leading-7">
             Pull data from Union.fit, run analytics, export to Google Sheets
           </p>
         </div>
@@ -440,7 +432,7 @@ function PipelineView() {
                          }}
           >
             No credentials configured.{" "}
-            <a href="/settings" className="underline font-medium" style={{ color: "var(--st-text-primary)" }}>
+            <a href="/settings" className="underline font-medium text-foreground">
               Go to Settings
             </a>{" "}
             to set up Union.fit and Google Sheets.
@@ -457,13 +449,10 @@ function PipelineView() {
           <button
             onClick={runPipeline}
             disabled={status.state === "running" || !hasCredentials}
-            className="w-full px-6 py-4 text-base font-medium tracking-wide uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full px-6 py-4 text-base font-bold tracking-widest uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-full"
             style={{
               backgroundColor: "var(--st-accent)",
               color: "var(--st-text-light)",
-              borderRadius: "var(--st-radius-pill)",
-                           fontWeight: 700,
-              letterSpacing: "0.08em",
             }}
             onMouseOver={(e) => {
               if (!(e.currentTarget as HTMLButtonElement).disabled)
@@ -484,8 +473,8 @@ function PipelineView() {
             return (
               <div className="space-y-3">
                 <div className="flex justify-between items-baseline">
-                  <span className="text-sm" style={{ color: "var(--st-text-secondary)" }}>{status.step}</span>
-                  <span className="text-lg font-bold" style={{ color: "var(--st-text-primary)" }}>{status.percent}%</span>
+                  <span className="text-sm text-muted-foreground">{status.step}</span>
+                  <span className="text-lg font-semibold">{status.percent}%</span>
                 </div>
                 <div
                   className="h-2 rounded-full overflow-hidden"
@@ -500,14 +489,13 @@ function PipelineView() {
                   />
                 </div>
                 {etaMs > 3000 && (
-                  <p className="text-xs text-center" style={{ color: "var(--st-text-secondary)", opacity: 0.7 }}>
+                  <p className="text-xs text-center text-muted-foreground opacity-70">
                     {formatEta(etaMs)}
                   </p>
                 )}
                 <button
                   onClick={resetPipeline}
-                  className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
-                  style={{ color: "var(--st-text-secondary)" }}
+                  className="text-xs underline text-muted-foreground opacity-60 hover:opacity-100 transition-opacity"
                 >
                   Reset if stuck
                 </button>
@@ -524,10 +512,10 @@ function PipelineView() {
               }}
             >
               <div className="text-center space-y-1">
-                <p className="font-medium" style={{ color: "var(--st-success)" }}>
+                <p className="font-medium text-emerald-700">
                   Pipeline complete
                 </p>
-                <p className="text-sm" style={{ color: "var(--st-success)", opacity: 0.8 }}>
+                <p className="text-sm text-emerald-700 opacity-80">
                   Finished in {Math.round(status.duration / 1000)}s
                 </p>
               </div>
@@ -550,14 +538,13 @@ function PipelineView() {
                                                backgroundColor: i % 2 === 0 ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.3)",
                       }}
                     >
-                      <span style={{ color: "var(--st-text-secondary)" }}>{check.name}</span>
+                      <span className="text-muted-foreground">{check.name}</span>
                       <div className="flex items-center gap-2">
-                        <span style={{ fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        <span className="font-semibold tabular-nums">
                           {check.count.toLocaleString()}
                         </span>
-                        <span style={{
+                        <span className="text-[0.7rem]" style={{
                           color: check.status === "ok" ? COLORS.success : check.status === "warn" ? COLORS.warning : COLORS.error,
-                          fontSize: "0.7rem",
                         }}>
                           {check.status === "ok" ? "\u2713" : check.status === "warn" ? "\u26A0" : "\u2717"}
                         </span>
@@ -569,9 +556,9 @@ function PipelineView() {
 
               {/* Warnings */}
               {status.warnings && status.warnings.length > 0 && (
-                <details className="text-xs" style={{color: COLORS.warning }}>
+                <details className="text-xs" style={{ color: COLORS.warning }}>
                   <summary className="cursor-pointer font-medium">{status.warnings.length} warning{status.warnings.length > 1 ? "s" : ""}</summary>
-                  <ul className="mt-1 ml-4 space-y-0.5 list-disc" style={{ color: "var(--st-text-secondary)" }}>
+                  <ul className="mt-1 ml-4 space-y-0.5 list-disc text-muted-foreground">
                     {status.warnings.slice(0, 10).map((w, i) => <li key={i}>{w}</li>)}
                   </ul>
                 </details>
@@ -582,13 +569,7 @@ function PipelineView() {
                   href={status.sheetUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block px-5 py-2 text-sm font-medium uppercase tracking-wider transition-colors"
-                  style={{
-                    backgroundColor: "var(--st-success)",
-                    color: "#fff",
-                    borderRadius: "var(--st-radius-pill)",
-                                       letterSpacing: "0.06em",
-                  }}
+                  className="inline-block px-5 py-2 text-sm font-medium uppercase tracking-wider transition-colors rounded-full bg-emerald-700 text-white hover:bg-emerald-800"
                 >
                   Open Google Sheet
                 </a>
@@ -597,21 +578,14 @@ function PipelineView() {
           )}
 
           {status.state === "error" && (
-            <div
-              className="rounded-2xl p-5 text-center"
-              style={{
-                backgroundColor: "#F5EFEF",
-                border: "1px solid rgba(160, 64, 64, 0.2)",
-              }}
-            >
-              <p className="font-medium" style={{ color: "var(--st-error)" }}>Error</p>
-              <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85 }}>
+            <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
+              <p className="font-medium text-destructive">Error</p>
+              <p className="text-sm mt-1 text-destructive opacity-85">
                 {status.message}
               </p>
               <button
                 onClick={() => setStatus({ state: "idle" })}
-                className="mt-3 text-sm underline"
-                style={{ color: "var(--st-error)", opacity: 0.7 }}
+                className="mt-3 text-sm underline text-destructive opacity-70"
               >
                 Dismiss
               </button>
@@ -619,7 +593,7 @@ function PipelineView() {
           )}
         </div>
 
-        <div className="flex justify-center gap-8 text-sm" style={{ color: "var(--st-text-secondary)" }}>
+        <div className="flex justify-center gap-8 text-sm text-muted-foreground">
           <NavLink href="/settings">Settings</NavLink>
           <NavLink href="/results">Results</NavLink>
         </div>
@@ -637,19 +611,11 @@ function PipelineView() {
 function SectionHeader({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
   return (
     <div>
-      <h2
-        style={{
-          color: "var(--st-text-primary)",
-          fontFamily: FONT_SANS,
-          fontWeight: DS.weight.bold,
-          fontSize: DS.text.md,
-          letterSpacing: "0.02em",
-        }}
-      >
+      <h2 className="scroll-m-20 text-xl font-semibold tracking-tight">
         {children}
       </h2>
       {subtitle && (
-        <p style={{ color: "var(--st-text-secondary)", fontSize: DS.text.xs, marginTop: "2px", opacity: 0.7 }}>
+        <p className="text-muted-foreground text-sm mt-0.5">
           {subtitle}
         </p>
       )}
@@ -670,45 +636,28 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
 
   const isPositive = delta > 0;
   const isGood = isPositiveGood ? isPositive : !isPositive;
-  const color = delta === 0 ? "var(--st-text-secondary)" : isGood ? "var(--st-success)" : "var(--st-error)";
+  const colorClass = delta === 0 ? "text-muted-foreground" : isGood ? "text-emerald-700" : "text-destructive";
+  const bgClass = delta === 0 ? "bg-muted" : isGood ? "bg-emerald-50" : "bg-red-50";
   const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "";
 
   if (compact) {
-    const compactBg = delta === 0
-      ? "rgba(128, 128, 128, 0.1)"
-      : isGood
-        ? "rgba(74, 124, 89, 0.1)"
-        : "rgba(160, 64, 64, 0.1)";
-
     return (
-      <span
-        className="inline-flex items-center rounded-full px-2 py-0.5"
-        style={{ color, fontWeight: DS.weight.medium, fontSize: DS.text.xs, whiteSpace: "nowrap", backgroundColor: compactBg, gap: "2px" }}
-      >
-        <span style={{ fontSize: "0.55rem" }}>{arrow}</span>
+      <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap tabular-nums ${colorClass} ${bgClass}`}>
+        <span className="text-[0.55rem]">{arrow}</span>
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
-        {deltaPercent != null && <span style={{ opacity: 0.75 }}>({formatDeltaPercent(deltaPercent)})</span>}
+        {deltaPercent != null && <span className="opacity-75">({formatDeltaPercent(deltaPercent)})</span>}
       </span>
     );
   }
 
-  const bgColor = delta === 0
-    ? "rgba(128, 128, 128, 0.1)"
-    : isGood
-      ? "rgba(74, 124, 89, 0.1)"
-      : "rgba(160, 64, 64, 0.1)";
-
   return (
-    <div
-      className="inline-flex items-center rounded-full px-2.5 py-0.5 mt-1.5"
-      style={{ color, backgroundColor: bgColor, gap: "3px" }}
-    >
-      <span style={{ fontSize: DS.text.xs, fontWeight: DS.weight.bold }}>{arrow}</span>
-      <span style={{ fontWeight: DS.weight.bold, fontSize: DS.text.md, letterSpacing: "-0.01em" }}>
+    <div className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 mt-1.5 ${colorClass} ${bgClass}`}>
+      <span className="text-xs font-semibold">{arrow}</span>
+      <span className="text-base font-semibold tracking-tight tabular-nums">
         {isCurrency ? formatDeltaCurrency(delta) : formatDelta(delta)}
       </span>
       {deltaPercent != null && (
-        <span style={{ fontWeight: DS.weight.medium, fontSize: DS.text.sm, opacity: 0.8 }}>
+        <span className="text-sm font-medium opacity-80 tabular-nums">
           ({formatDeltaPercent(deltaPercent)})
         </span>
       )}
@@ -846,7 +795,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
           <span style={{ color: isStale ? "var(--st-error)" : "var(--st-success)" }}>
             Updated {formatRelativeTime(lastUpdated)}
           </span>
-          <span style={{ color: "var(--st-text-secondary)", fontWeight: 400 }}>
+          <span className="text-muted-foreground font-normal">
             {formatDateTime(lastUpdated)}
           </span>
         </div>
@@ -939,9 +888,9 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
 
       {refreshState === "running" && (
         <div style={{ marginTop: "0.5rem", maxWidth: "340px", width: "100%" }}>
-          <div className="flex justify-between items-baseline" style={{fontSize: "0.72rem", marginBottom: "4px" }}>
-            <span style={{ color: "var(--st-text-secondary)" }}>{pipelineStep}</span>
-            <span style={{ color: "var(--st-text-primary)", fontWeight: 700 }}>{pipelinePercent}%</span>
+          <div className="flex justify-between items-baseline text-[0.72rem] mb-1">
+            <span className="text-muted-foreground">{pipelineStep}</span>
+            <span className="font-bold">{pipelinePercent}%</span>
           </div>
           <div className="rounded-full overflow-hidden" style={{ height: "6px", backgroundColor: "var(--st-border)" }}>
             <div
@@ -950,7 +899,7 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
             />
           </div>
           {etaMs > 3000 && (
-            <p style={{fontSize: "0.68rem", color: "var(--st-text-secondary)", opacity: 0.7, marginTop: "3px", textAlign: "center" }}>
+            <p className="text-[0.68rem] text-muted-foreground opacity-70 mt-0.5 text-center">
               {formatEta(etaMs)}
             </p>
           )}
@@ -1004,9 +953,8 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
             <div key={i} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
               {showValues && (
                 <span style={{
-                                   fontSize: "0.65rem",
-                  fontWeight: DS.weight.medium,
-                  color: "var(--st-text-primary)",
+                  fontSize: "0.65rem",
+                  fontWeight: 500,
                   marginBottom: "2px",
                   whiteSpace: "nowrap",
                   textAlign: "center",
@@ -1037,8 +985,8 @@ function MiniBarChart({ data, height = 80, showValues = true, formatValue }: {
             flex: 1,
             minWidth: 0,
             textAlign: "center",
-                       fontSize: "0.65rem",
-            fontWeight: DS.weight.normal,
+            fontSize: "0.65rem",
+            fontWeight: 400,
             color: "var(--st-text-secondary)",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -1176,20 +1124,6 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
           );
         })}
 
-        {/* Value on last point */}
-        {(() => {
-          const last = points[points.length - 1];
-          return (
-            <text
-              x={last.x}
-              y={last.y - 10}
-              textAnchor="end"
-              style={{fontSize: "11px", fontWeight: 700, fill: "var(--st-text-primary)" }}
-            >
-              {fmt(last.value)}
-            </text>
-          );
-        })()}
       </svg>
     </div>
   );
@@ -1199,8 +1133,8 @@ function AreaChart({ data, height = 200, formatValue, color = COLORS.member, sho
 /** Spacing tokens (px) for module anatomy */
 const MOD = {
   cardPad: "var(--st-card-pad)",
-  headerToKpi: "16px",
-  kpiToToggle: "14px",
+  headerToKpi: "12px",
+  kpiToToggle: "0px",
   toggleToTabs: "20px",
   tabsToTable: "12px",
   rowH: "var(--st-row-h)",
@@ -1208,32 +1142,21 @@ const MOD = {
 
 // ─── Card wrapper (used selectively) ─────────────────────────
 
-function Card({ children, padding = MOD.cardPad }: { children: React.ReactNode; padding?: string }) {
+function Card({ children, padding, matchHeight = false }: { children: React.ReactNode; padding?: string; matchHeight?: boolean }) {
   return (
-    <div
-      className="rounded-2xl"
-      style={{
-        backgroundColor: "var(--st-bg-card)",
-        border: "1px solid var(--st-border)",
-        padding,
-        overflow: "hidden",
-        minWidth: 0,
-        fontFamily: FONT_SANS,
-        display: "flex",
-        flexDirection: "column" as const,
-        height: "100%",
-      }}
-    >
-      {children}
-    </div>
+    <DashboardCard matchHeight={matchHeight}>
+      <CardContent>
+        {children}
+      </CardContent>
+    </DashboardCard>
   );
 }
 
 function NoData({ label }: { label: string }) {
   return (
     <Card>
-      <p style={{fontWeight: DS.weight.normal, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-        {label}: <span style={{ opacity: 0.6 }}>No data available</span>
+      <p className="text-sm text-muted-foreground">
+        {label}: <span className="opacity-60">No data available</span>
       </p>
     </Card>
   );
@@ -1244,17 +1167,46 @@ function NoData({ label }: { label: string }) {
 // and Conversion Pool. Identical anatomy, spacing, and behavior.
 
 /** Module header: left dot + title, right optional control */
-function ModuleHeader({ color, title, children }: {
-  color: string; title: string; children?: React.ReactNode;
+function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails, children }: {
+  color: string; title: string; summaryPill?: string;
+  detailsOpen?: boolean; onToggleDetails?: () => void;
+  children?: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: MOD.headerToKpi }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
-        <span style={{ fontSize: "13px", lineHeight: "16px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: "var(--st-text-secondary)" }}>{title}</span>
+    <div className="flex items-center justify-between shrink-0 pb-1">
+      <div className="flex items-center gap-3">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+        <span className="text-[16px] leading-[20px] font-semibold tracking-[-0.01em] text-zinc-900">{title}</span>
+        {summaryPill && (
+          <span className="text-[12px] leading-[16px] font-medium text-zinc-500 bg-zinc-100 rounded-full px-2 py-0.5">{summaryPill}</span>
+        )}
       </div>
-      {children}
+      <div className="flex items-center gap-3">
+        {children}
+        {onToggleDetails && (
+          <button
+            type="button"
+            onClick={onToggleDetails}
+            className="text-[12px] leading-[16px] text-zinc-500 hover:text-zinc-900 font-medium inline-flex items-center gap-1 transition-colors"
+          >
+            {detailsOpen ? "Hide" : "Details"}
+            <span
+              className="text-[8px] transition-transform duration-150"
+              style={{ transform: detailsOpen ? "rotate(90deg)" : "rotate(0)" }}
+            >&#9654;</span>
+          </button>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** Subsection header within a top-level section */
+function SubsectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
+      {children}
+    </p>
   );
 }
 
@@ -1275,12 +1227,7 @@ function MInfoIcon({ tooltip }: { tooltip: string }) {
     <span
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: 24, height: 24, cursor: "help", flexShrink: 0,
-        fontSize: "0.75rem", color: "var(--st-text-secondary)", opacity: 0.6,
-        position: "relative",
-      }}
+      className="inline-flex items-center justify-center h-3.5 w-3.5 shrink-0 cursor-help text-[11px] text-neutral-400 relative"
     >
       &#9432;
       {show && (
@@ -1301,150 +1248,271 @@ function MInfoIcon({ tooltip }: { tooltip: string }) {
   );
 }
 
-/** Single KPI block within a KPI row */
-function KPIBlock({ value, label, sublabel, tooltip, delta, deltaSuffix, deltaSublabel, badge, children }: {
-  value: string;
-  label: string;
-  sublabel?: string;
-  tooltip?: string;
-  delta?: number | null;
-  deltaSuffix?: string;
-  deltaSublabel?: string;
-  badge?: React.ReactNode;
-  children?: React.ReactNode;
-}) {
-  const sign = delta && delta > 0 ? "+" : "";
-  const chipVariant: ChipVariant = delta && delta > 0 ? "positive" : delta && delta < 0 ? "negative" : "neutral";
-  return (
-    <div style={{ padding: "0 12px", display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}>
-      {/* Row 1: value */}
-      <div style={{ display: "flex", alignItems: "center", gap: "4px", minWidth: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: "var(--st-kpi-value)", fontFamily: FONT_SANS, color: "var(--st-text-primary)", letterSpacing: "-0.02em", lineHeight: "44px", fontVariantNumeric: "tabular-nums" }}>
-          {value}
-        </span>
-        {badge}
-        {tooltip && <MInfoIcon tooltip={tooltip} />}
-      </div>
-      {/* Row 2: label */}
-      <div style={{ fontSize: "14px", lineHeight: "18px", color: "var(--st-text-secondary)", marginTop: "2px", fontWeight: 400 }}>
-        {label}
-      </div>
-      {/* Row 3: deltas / subtext */}
-      {(delta != null && delta !== 0) || sublabel || children ? (
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "4px", minHeight: "16px" }}>
-          {delta != null && delta !== 0 && (
-            <Chip variant={chipVariant}>
-              {sign}{deltaSuffix === "pp" ? delta.toFixed(1) : delta}{deltaSuffix ?? ""}{deltaSublabel ? ` ${deltaSublabel}` : ""}
-            </Chip>
-          )}
-          {sublabel && (
-            <span style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}>{sublabel}</span>
-          )}
-          {children}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** KPI row container: up to 3 blocks separated by whitespace (no dividers) */
-function KPIRow({ children }: { children: React.ReactNode }) {
-  const items = Array.isArray(children) ? children.filter(Boolean) : [children];
-  return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: items.map(() => "1fr").join(" "),
-      alignItems: "stretch",
-      padding: "8px 0",
-      marginBottom: MOD.kpiToToggle,
-      fontVariantNumeric: "tabular-nums",
-    }}>
-      {items}
-    </div>
-  );
-}
-
-/** Strict-alignment KPI component with 3 fixed-height rows.
- *  Row A: value (h-[56px], baseline-aligned)
- *  Row B: label (h-[40px], locked)
- *  Row C: meta  (h-[28px], delta pill + subtext) */
+/** Strict-alignment KPI component.
+ *  size="hero"    — top-of-page KPIs (52px value, fixed 56/40/28 rows)
+ *  size="section" — subsection cards (40px value, collapsed label+meta support block)
+ *  emphasis       — "primary" (default) full weight, "secondary" slightly muted value
+ *  tooltip        — renders (i) icon anchored to label (not floating in topRight) */
 function KPI({
   value,
   valueSuffix,
   label,
+  tooltip,
   topRight,
   metaLeft,
   metaRight,
+  size = "hero",
+  emphasis = "primary",
 }: {
   value: React.ReactNode;
   valueSuffix?: React.ReactNode;
   label: string;
+  tooltip?: string;
   topRight?: React.ReactNode;
   metaLeft?: React.ReactNode;
   metaRight?: React.ReactNode;
+  size?: "hero" | "section";
+  emphasis?: "primary" | "secondary";
 }) {
+  const s = size === "section";
+  const sec = emphasis === "secondary";
   return (
     <div className="min-w-0">
       {/* Row A: Value (LOCK HEIGHT + BASELINE ALIGN) */}
-      <div className="h-[56px] flex items-end justify-between gap-2">
+      <div className={`${s ? "h-[48px]" : "h-[56px]"} flex items-end justify-between gap-2`}>
         <div className="flex items-baseline gap-2 min-w-0">
-          <div className="text-[52px] leading-[52px] font-semibold tracking-[-0.02em] tabular-nums text-neutral-900">
+          <div className={`${s ? (sec ? "text-[34px] leading-[34px] text-neutral-700" : "text-[40px] leading-[40px] text-neutral-900") : "text-[52px] leading-[52px] text-neutral-900"} font-semibold tracking-[-0.02em] tabular-nums`}>
             {value}
           </div>
           {valueSuffix ? (
-            <div className="text-[18px] leading-[18px] font-semibold text-neutral-600 tabular-nums">
+            <div className={`${s ? (sec ? "text-[14px] leading-[14px] text-neutral-400" : "text-[16px] leading-[16px] text-neutral-500") : "text-[18px] leading-[18px] text-neutral-600"} font-semibold tabular-nums`}>
               {valueSuffix}
             </div>
           ) : null}
         </div>
-        {topRight ? <div className="shrink-0 translate-y-[-6px]">{topRight}</div> : null}
+        {topRight ? <div className={`shrink-0 ${s ? "translate-y-[-4px]" : "translate-y-[-6px]"}`}>{topRight}</div> : null}
       </div>
-      {/* Row B: Label (LOCK HEIGHT) */}
-      <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-neutral-600">
-        {label}
-      </div>
-      {/* Row C: Meta (CONSISTENT) */}
-      <div className="h-[28px] mt-2 flex items-center gap-2 min-w-0">
-        {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
-        {metaRight ? (
-          <div className="truncate text-[14px] text-neutral-500">
-            {metaRight}
+
+      {s ? (
+        /* Section variant: collapsed label + meta support block (no fixed heights) */
+        <div className="mt-1">
+          <div className="inline-flex items-center gap-1 max-w-full">
+            <span className="text-[14px] leading-[18px] text-neutral-600 whitespace-nowrap truncate">{label}</span>
+            {tooltip ? <MInfoIcon tooltip={tooltip} /> : null}
           </div>
-        ) : null}
-      </div>
+          {(metaLeft || metaRight) ? (
+            <div className="mt-1 flex items-center gap-2 min-w-0 leading-none">
+              {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
+              {metaRight ? (
+                <div className="truncate text-[12px] text-neutral-500 leading-none">{metaRight}</div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        /* Hero variant: fixed-height rows for cross-component alignment */
+        <>
+          <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-neutral-600">
+            <span className="inline-flex items-center gap-1">
+              <span>{label}</span>
+              {tooltip ? <MInfoIcon tooltip={tooltip} /> : null}
+            </span>
+          </div>
+          <div className="h-[28px] mt-2 flex items-center gap-2 min-w-0 leading-none">
+            {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
+            {metaRight ? (
+              <div className="truncate leading-none text-[14px] text-neutral-500">{metaRight}</div>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-/** 3-column KPI grid for Non-Members cards */
+/** 3-column KPI grid for Non-Members cards — vertical dividers between columns */
 function KPIGrid3({ children }: { children: React.ReactNode }) {
+  const items = Children.toArray(children);
   return (
-    <div className="kpi-grid-3 grid grid-cols-3 gap-10 items-start" style={{ padding: "8px 0", marginBottom: MOD.kpiToToggle }}>
-      {children}
+    <div className="grid grid-cols-3 gap-4 items-start" style={{ padding: "8px 0" }}>
+      {items.map((child, i) => (
+        <div key={i} className={`flex flex-col items-start${i > 0 ? " border-l border-zinc-200 pl-4" : ""}`}>
+          {child}
+        </div>
+      ))}
     </div>
   );
 }
 
-/** Toggle row for collapsible trend chart */
-function ToggleRow({ show, onToggle, label, children }: {
-  show: boolean; onToggle: () => void; label?: string; children?: React.ReactNode;
+/** Shared funnel KPI row: Total / 3-Week Conversion Rate / Expected Converts */
+function FunnelSummaryRow({ total, totalLabel, rate, rateTooltip, expected, expectedTooltip, expectedLabel }: {
+  total: number | null;
+  totalLabel: string;
+  rate: number | null;
+  rateTooltip?: string;
+  expected: number | null;
+  expectedTooltip?: string;
+  expectedLabel?: string;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: show ? "12px" : MOD.toggleToTabs }}>
-      <button
-        type="button"
-        onClick={onToggle}
-        style={{
-          background: "none", border: "none", padding: "2px 0", cursor: "pointer",
-          fontSize: "12px", color: "var(--st-text-secondary)",
-          display: "flex", alignItems: "center", gap: "6px",
-        }}
-      >
-        <span style={{ fontSize: "8px", transition: "transform 0.15s", transform: show ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
-        {label ?? (show ? "Hide trend" : "Show trend")}
-      </button>
-      {show && children}
+    <div className="min-h-[76px] shrink-0 grid grid-cols-3 gap-6 items-start pt-1">
+      {/* Left: Total */}
+      <div className="min-w-0">
+        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+          {total != null ? formatNumber(total) : "\u2014"}
+        </span>
+        <div className="mt-1 text-[13px] leading-[16px] font-medium text-zinc-500">{totalLabel}</div>
+      </div>
+      {/* Middle: 3-Week Conversion Rate */}
+      <div className="min-w-0 border-l border-zinc-200/50 pl-6">
+        <div className="flex items-baseline">
+          <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+            {rate != null ? rate.toFixed(1) : "\u2014"}
+          </span>
+          {rate != null && (
+            <span className="text-[18px] leading-[22px] font-semibold tracking-[-0.01em] text-zinc-500 ml-0.5 tabular-nums">%</span>
+          )}
+        </div>
+        <div className="mt-1 inline-flex items-center gap-1">
+          <span className="text-[13px] leading-[16px] font-medium text-zinc-500">3-Week Conversion Rate</span>
+          {rateTooltip && <MInfoIcon tooltip={rateTooltip} />}
+        </div>
+      </div>
+      {/* Right: Expected Converts */}
+      <div className="min-w-0 border-l border-zinc-200/50 pl-6">
+        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+          {expected != null ? formatNumber(expected) : "\u2014"}
+        </span>
+        <div className="mt-1 inline-flex items-center gap-1">
+          <span className="text-[13px] leading-[16px] font-medium text-zinc-500">{expectedLabel ?? "Expected Converts"}</span>
+          {expectedTooltip && <MInfoIcon tooltip={expectedTooltip} />}
+        </div>
+      </div>
     </div>
+  );
+}
+
+/** Compute padded Y domain so the signal fills the chart height */
+function paddedDomain(values: number[], minPad: number): [number, number] {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 0);
+  const pad = Math.max(range * 0.18, minPad);
+  return [min - pad, max + pad];
+}
+
+/** Premium sparkline using shadcn/ui ChartContainer — tight domain, area fill, last-dot emphasis */
+function Sparkline({ values, labels, color = "#71717a", minPad = 8, formatValue, chartLabel }: {
+  values: number[];
+  labels?: string[];
+  color?: string;
+  minPad?: number;
+  formatValue?: (v: number) => string;
+  chartLabel?: string;
+}) {
+  if (values.length < 2) return null;
+
+  const safeLabels = labels ?? values.map(() => "");
+  // Use raw weekly data — no interpolation
+  const data = values.map((v, i) => ({ value: v, label: safeLabels[i] ?? "" }));
+  const [yMin, yMax] = paddedDomain(values, minPad);
+
+  const lastValue = values[values.length - 1];
+  const displayValue = formatValue ? formatValue(lastValue) : formatNumber(lastValue);
+
+  // shadcn ChartConfig — maps "value" key to color + label
+  const chartConfig = {
+    value: { label: chartLabel ?? "Value", color },
+  } satisfies ChartConfig;
+
+  // Unique gradient ID per color to avoid collisions
+  const gradId = `spark-${color.replace(/[^a-zA-Z0-9]/g, "")}`;
+
+  return (
+    <ChartContainer config={chartConfig} className="h-[132px] w-full mt-1 [&_.recharts-surface]:overflow-visible">
+      <RAreaChart
+        data={data}
+        margin={{ top: 18, right: 20, bottom: 18, left: 12 }}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.12} />
+            <stop offset="100%" stopColor="var(--color-value)" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+
+        <XAxis dataKey="label" hide />
+        <YAxis domain={[yMin, yMax]} hide />
+
+        {/* Subtle reference line at mid-domain */}
+        <ReferenceLine
+          y={(yMin + yMax) / 2}
+          stroke="var(--color-value)"
+          strokeOpacity={0.10}
+          strokeDasharray="3 3"
+        />
+
+        {/* Tooltip on hover */}
+        <ChartTooltip
+          content={<ChartTooltipContent hideLabel hideIndicator formatter={(v) => formatNumber(v as number)} />}
+          cursor={false}
+        />
+
+        {/* Gradient fill under line (no tooltip) */}
+        <Area
+          type="monotone"
+          dataKey="value"
+          stroke="none"
+          fill={`url(#${gradId})`}
+          isAnimationActive={false}
+          tooltipType="none"
+        />
+
+        {/* Main trend line */}
+        <Area
+          type="monotone"
+          dataKey="value"
+          stroke="var(--color-value)"
+          strokeWidth={2.25}
+          fill="none"
+          dot={false}
+          activeDot={false}
+          isAnimationActive={false}
+        />
+
+        {/* Last-point dot + value label (no tooltip) */}
+        <Area
+          type="monotone"
+          dataKey="value"
+          stroke="none"
+          fill="none"
+          isAnimationActive={false}
+          tooltipType="none"
+          dot={(props: Record<string, unknown>) => {
+            const { cx, cy, index } = props as { cx: number; cy: number; index: number };
+            if (index !== data.length - 1) return <circle r="0" cx={0} cy={0} fill="none" />;
+            return (
+              <g>
+                <circle cx={cx} cy={cy} r={4} fill="white" stroke="var(--color-value)" strokeWidth={2} />
+                <text
+                  x={cx}
+                  y={cy - 10}
+                  textAnchor="middle"
+                  fill="var(--color-value)"
+                  fontSize={12}
+                  fontWeight={500}
+                  fontFamily="'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif"
+                  style={{ fontVariantNumeric: "tabular-nums" }}
+                >
+                  {displayValue}
+                </text>
+              </g>
+            );
+          }}
+          activeDot={false}
+        />
+      </RAreaChart>
+    </ChartContainer>
   );
 }
 
@@ -1466,8 +1534,8 @@ function UnderlineTabs({ tabs, active, onChange }: {
   }, [active, tabs]);
 
   return (
-    <div ref={containerRef} style={{ position: "relative", borderBottom: "1px solid rgba(65, 58, 58, 0.08)", marginBottom: MOD.tabsToTable }}>
-      <div style={{ display: "flex", gap: 0 }}>
+    <div ref={containerRef} className="relative border-b border-border" style={{ marginBottom: MOD.tabsToTable }}>
+      <div className="flex">
         {tabs.map((t) => {
           const isActive = t.key === active;
           return (
@@ -1476,19 +1544,7 @@ function UnderlineTabs({ tabs, active, onChange }: {
               data-tab-key={t.key}
               type="button"
               onClick={() => onChange(t.key)}
-              style={{
-                padding: "6px 12px 8px",
-                fontSize: "13px",
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-                backgroundColor: "transparent",
-                border: "none",
-                borderRadius: 0,
-                cursor: "pointer",
-                transition: "color 0.15s",
-                letterSpacing: "0.02em",
-                outline: "none",
-              }}
+              className={`px-3 pt-1.5 pb-2 text-[13px] tracking-wide bg-transparent border-none cursor-pointer transition-colors outline-none ${isActive ? "font-semibold text-foreground" : "font-normal text-muted-foreground"}`}
             >
               {t.label}
             </button>
@@ -1496,30 +1552,16 @@ function UnderlineTabs({ tabs, active, onChange }: {
         })}
       </div>
       {/* Sliding indicator */}
-      <div style={{
-        position: "absolute", bottom: -1, height: 2,
-        backgroundColor: "var(--st-text-primary)",
+      <div className="absolute -bottom-px h-0.5 bg-foreground transition-all duration-200 ease-in-out" style={{
         left: indicator.left, width: indicator.width,
-        transition: "left 0.2s ease, width 0.2s ease",
       }} />
     </div>
   );
 }
 
-/** Shared table styles for module tables */
-const modTh: React.CSSProperties = {
-  textAlign: "right", padding: "8px 12px", fontSize: "var(--st-th-size)", fontWeight: 500,
-  letterSpacing: "0.04em", textTransform: "uppercase",
-  color: "var(--st-text-secondary)",
-  whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
-  lineHeight: "16px",
-};
-const modTd: React.CSSProperties = {
-  textAlign: "right", padding: "8px 12px",
-  fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS,
-  height: "var(--st-row-h)", verticalAlign: "middle",
-  fontSize: "14px", lineHeight: "20px",
-};
+/** Shared table class strings for module tables */
+const modThClass = "text-right px-3 pt-1 pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap tabular-nums leading-none border-b border-border";
+const modTdClass = "text-right px-3 py-1.5 tabular-nums text-sm leading-5";
 
 /** Mini segmented bar (timing, mix, distribution). High-contrast segment spec. */
 function SegmentedBar({ segments, height = 8, colors, tooltip }: {
@@ -1529,7 +1571,7 @@ function SegmentedBar({ segments, height = 8, colors, tooltip }: {
   tooltip?: string;
 }) {
   const total = segments.reduce((s, seg) => s + seg.value, 0);
-  if (total === 0) return <span style={{ fontSize: "12px", color: "var(--st-text-secondary)" }}>&mdash;</span>;
+  if (total === 0) return <span className="text-xs text-muted-foreground">&mdash;</span>;
   // Default colors: dark→mid→light
   const defaultColors = [
     "rgba(65, 58, 58, 0.65)",
@@ -1546,7 +1588,7 @@ function SegmentedBar({ segments, height = 8, colors, tooltip }: {
       {segments.map((seg, i) => {
         if (seg.value <= 0) return null;
         const pct = Math.round((seg.value / total) * 100);
-        const showInline = pct >= 25 && height >= 10;
+        const showInline = pct >= 12 && height >= 10;
         return (
           <div key={i} style={{
             flex: Math.max(seg.value, total * 0.03),
@@ -1575,28 +1617,65 @@ function Chip({ children, variant = "neutral", title: chipTitle }: {
   variant?: ChipVariant;
   title?: string;
 }) {
-  const styles: Record<ChipVariant, { color: string; bg: string }> = {
-    neutral: { color: "var(--st-text-secondary)", bg: "rgba(65, 58, 58, 0.06)" },
-    positive: { color: "var(--st-success)", bg: "rgba(74, 124, 89, 0.1)" },
-    negative: { color: "var(--st-error)", bg: "rgba(160, 64, 64, 0.1)" },
-    accent: { color: "var(--st-text-primary)", bg: "rgba(65, 58, 58, 0.08)" },
+  const variantClass: Record<ChipVariant, string> = {
+    neutral: "text-muted-foreground bg-muted",
+    positive: "text-emerald-700 bg-emerald-50",
+    negative: "text-destructive bg-red-50",
+    accent: "text-foreground bg-muted",
   };
-  const s = styles[variant];
   return (
     <span
       title={chipTitle}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: "3px",
-        fontSize: "11px", fontWeight: 500,
-        color: s.color, backgroundColor: s.bg,
-        padding: "1px 6px", borderRadius: "3px",
-        letterSpacing: "0.03em", fontVariantNumeric: "tabular-nums",
-        whiteSpace: "nowrap", lineHeight: 1.4,
-        transition: "background-color 0.15s",
-      }}
+      className={`inline-flex items-center gap-[3px] text-[11px] font-medium px-2 py-0.5 rounded tracking-wide tabular-nums whitespace-nowrap leading-none transition-colors ${variantClass[variant]}`}
     >
       {children}
     </span>
+  );
+}
+
+// ─── CardDisclosure (collapse details by default) ────────────
+
+function CardDisclosure({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="overflow-hidden transition-all duration-300 ease-in-out"
+      style={{
+        maxHeight: open ? "2000px" : "0px",
+        opacity: open ? 1 : 0,
+      }}
+    >
+      <div className="mt-4 pt-4 border-t border-zinc-200 space-y-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── MiniBars (micro-trend sparkline) ────────────────────────
+
+function MiniBars({ values }: { values: number[] }) {
+  if (values.length === 0) return null;
+  const max = Math.max(...values, 1);
+  return (
+    <div className="mt-3 h-10 flex items-end gap-1.5">
+      {values.map((v, i) => {
+        const isLast = i === values.length - 1;
+        const h = max > 0 ? Math.max(Math.round((v / max) * 34), v > 0 ? 2 : 0) : 0;
+        return (
+          <div
+            key={i}
+            className={`w-6 rounded-[3px] ${isLast ? "bg-zinc-500/80" : "bg-zinc-200/70"}`}
+            style={{ height: h }}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -1610,6 +1689,7 @@ function DashboardGrid({ children }: { children: React.ReactNode }) {
         display: "grid",
         gridTemplateColumns: "repeat(12, 1fr)",
         gap: "var(--st-grid-gap)",
+        alignItems: "start",
       }}
     >
       {children}
@@ -1673,20 +1753,20 @@ function TrendRow({ label, value, delta, deltaPercent, isPositiveGood = true, is
   isLast?: boolean;
 }) {
   return (
-    <div style={{ padding: "0.5rem 0", borderBottom: isLast ? "none" : "1px solid var(--st-border)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: DS.space.lg }}>
-        <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+    <div className={`py-2 ${isLast ? "" : "border-b border-border"}`}>
+      <div className="flex items-center gap-6">
+        <span className="text-sm font-medium text-muted-foreground">
           {label}
         </span>
         <div className="flex items-center gap-3">
-          <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.md, color: "var(--st-text-primary)" }}>
+          <span className="text-base font-semibold tracking-tight">
             {value}
           </span>
           <DeltaBadge delta={delta} deltaPercent={deltaPercent} isPositiveGood={isPositiveGood} isCurrency={isCurrency} compact />
         </div>
       </div>
       {sublabel && (
-        <p style={{fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px", fontStyle: "italic" }}>
+        <p className="text-xs text-muted-foreground mt-0.5 italic">
           {sublabel}
         </p>
       )}
@@ -1714,26 +1794,28 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   return (
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
       {tiles.map((tile, i) => (
-        <Card key={i}>
-          <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>
-            {tile.label}
-          </p>
-          <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em", lineHeight: 1.0 }}>
-            {tile.value}
-          </p>
+        <DashboardCard key={i}>
+          <CardHeader>
+            <CardDescription className="text-sm leading-none font-medium uppercase tracking-wide">
+              {tile.label}
+            </CardDescription>
+            <CardTitle className="text-4xl font-extrabold tracking-tight tabular-nums">
+              {tile.value}
+            </CardTitle>
+          </CardHeader>
           {(tile.sublabel || tile.delta != null) && (
-            <div className="flex items-center gap-2" style={{ marginTop: "8px" }}>
+            <CardContent className="flex items-center gap-2">
               {tile.delta != null && (
                 <DeltaBadge delta={tile.delta} deltaPercent={tile.deltaPercent ?? null} isPositiveGood={tile.isPositiveGood} isCurrency={tile.isCurrency} compact />
               )}
               {tile.sublabel && (
-                <span style={{fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)" }}>
+                <span className="text-muted-foreground text-sm">
                   {tile.sublabel}
                 </span>
               )}
-            </div>
+            </CardContent>
           )}
-        </Card>
+        </DashboardCard>
       ))}
     </div>
   );
@@ -1757,10 +1839,10 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
   const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const monthlyRevenue = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
 
-  // Area chart data (last 12 months)
-  const revenueAreaData = monthlyRevenue.slice(-12).map((m) => ({
-    label: formatShortMonth(m.month),
-    value: m.gross,
+  // Bar chart data (last 12 months)
+  const revenueBarData = monthlyRevenue.slice(-12).map((m) => ({
+    month: formatShortMonth(m.month),
+    gross: m.gross,
   }));
 
   // MoM delta from the last two months
@@ -1774,56 +1856,88 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
     ? Math.round((currentMonth.gross - prevMonth.gross) / prevMonth.gross * 1000) / 10
     : null;
 
+  const revenueChartConfig = {
+    gross: { label: "Gross Revenue", color: COLORS.member },
+  } satisfies ChartConfig;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <div className="flex flex-col gap-4">
       <SectionHeader>{LABELS.revenue}</SectionHeader>
 
-      {/* Full-width area chart */}
-      {revenueAreaData.length > 1 && (
-        <Card>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-            <p style={{...DS.label }}>Monthly Gross Revenue</p>
+      {/* Monthly Gross Revenue — bar chart */}
+      {revenueBarData.length > 1 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Monthly Gross Revenue</CardTitle>
             {currentMonth && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span style={{ fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                  {formatShortMonth(currentMonth.month)}: {formatCurrency(currentMonth.gross)}
-                </span>
-                {momDelta != null && (
-                  <DeltaBadge delta={momDelta} deltaPercent={momDeltaPct} isCurrency compact />
-                )}
-              </div>
+              <CardDescription>
+                {formatShortMonth(currentMonth.month)}: {formatCurrency(currentMonth.gross)}
+                {momDeltaPct != null && ` (${momDeltaPct > 0 ? "+" : ""}${momDeltaPct}%)`}
+              </CardDescription>
             )}
-          </div>
-          <AreaChart data={revenueAreaData} height={200} formatValue={formatCompactCurrency} color={COLORS.member} />
-        </Card>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={revenueChartConfig} className="h-[250px] w-full">
+              <BarChart accessibilityLayer data={revenueBarData} margin={{ top: 20 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
+                />
+                <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                    formatter={(v: number) => formatCompactCurrency(v)}
+                  />
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+          {momDelta != null && momDeltaPct != null && (
+            <CardFooter className="flex-col items-start gap-2 text-sm">
+              <div className="flex gap-2 leading-none font-medium">
+                {momDeltaPct > 0 ? "+" : ""}{momDeltaPct}% month over month
+              </div>
+              <div className="text-muted-foreground leading-none">
+                Last 12 months of gross revenue
+              </div>
+            </CardFooter>
+          )}
+        </DashboardCard>
       )}
 
-      {/* Breakdown — simple list */}
+      {/* Breakdown card */}
       {currentMonth && (
-        <Card>
-          <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>
-            {formatMonthLabel(currentMonth.month)} Breakdown
-          </p>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {[
-              { label: "Gross Revenue", value: formatCurrency(currentMonth.gross), bold: true },
-              { label: "Net Revenue", value: formatCurrency(currentMonth.net) },
-              { label: "Fees + Refunds", value: `-${formatCurrency(currentMonth.gross - currentMonth.net)}`, color: "var(--st-error)" },
-            ].map((row, i) => (
-              <div key={i} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "0.6rem 0",
-                borderBottom: i < 2 ? "1px solid var(--st-border)" : "none",
-                fontSize: DS.text.sm,
-              }}>
-                <span style={{ color: "var(--st-text-secondary)" }}>{row.label}</span>
-                <span style={{ fontWeight: row.bold ? DS.weight.bold : DS.weight.medium, color: row.color || "var(--st-text-primary)" }}>
-                  {row.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>{formatMonthLabel(currentMonth.month)} Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col">
+              {[
+                { label: "Gross Revenue", value: formatCurrency(currentMonth.gross), bold: true },
+                { label: "Net Revenue", value: formatCurrency(currentMonth.net), bold: false },
+                { label: "Fees + Refunds", value: `-${formatCurrency(currentMonth.gross - currentMonth.net)}`, bold: false, destructive: true },
+              ].map((row, i) => (
+                <div key={i} className={`flex justify-between items-center py-2.5 ${i < 2 ? "border-b border-border" : ""}`}>
+                  <span className="text-sm text-muted-foreground">{row.label}</span>
+                  <span className={`text-sm tabular-nums ${row.bold ? "font-semibold" : "font-medium"} ${row.destructive ? "text-destructive" : ""}`}>
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </DashboardCard>
       )}
     </div>
   );
@@ -1840,35 +1954,29 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
   ].filter(s => s.value > 0);
 
   return (
-    <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-        <p style={{...DS.label }}>
-          {LABELS.mrr}
-        </p>
-        <p style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+    <DashboardCard>
+      <CardHeader>
+        <CardTitle>{LABELS.mrr}</CardTitle>
+        <CardDescription className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
           {formatCurrency(data.mrr.total)}
-        </p>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {segments.map((seg, i) => (
-          <div key={i} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "0.6rem 0",
-            borderBottom: i < segments.length - 1 ? "1px solid var(--st-border)" : "none",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: seg.color, opacity: 0.85, flexShrink: 0 }} />
-              <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-                {seg.label}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col">
+          {segments.map((seg, i) => (
+            <div key={i} className={`flex justify-between items-center py-2.5 ${i < segments.length - 1 ? "border-b border-border" : ""}`}>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color, opacity: 0.85 }} />
+                <span className="text-sm text-muted-foreground">{seg.label}</span>
+              </div>
+              <span className="text-sm font-semibold tabular-nums">
+                {formatCurrency(seg.value)}
               </span>
             </div>
-            <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-              {formatCurrency(seg.value)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </Card>
+          ))}
+        </div>
+      </CardContent>
+    </DashboardCard>
   );
 }
 
@@ -1895,30 +2003,30 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
 
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span style={{...DS.label }}>{LABELS.firstVisits}</span>
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS.teal, opacity: 0.85 }} />
+          <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.firstVisits}</span>
         </div>
-        <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+        <span className="text-4xl font-semibold tracking-tight tabular-nums">
           {formatNumber(firstVisits.currentWeekTotal)}
-          <span style={{...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-1.5">this week</span>
         </span>
       </div>
-      <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+      <p className="text-xs text-muted-foreground mb-1">Last 5 weeks by source</p>
+      <div className="flex flex-col gap-1">
         {segments.map((seg) => {
           const count = agg[seg] || 0;
           if (count === 0 && aggTotal === 0) return null;
           return (
-            <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: SEGMENT_COLORS[seg] }} />
-                <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{SEGMENT_LABELS[seg]}</span>
+            <div key={seg} className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEGMENT_COLORS[seg] }} />
+                <span className="text-sm text-muted-foreground">{SEGMENT_LABELS[seg]}</span>
               </div>
-              <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+              <span className="text-sm font-semibold tabular-nums">
                 {formatNumber(count)}
-                {aggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round((count / aggTotal) * 100)}%</span>}
+                {aggTotal > 0 && <span className="font-normal text-xs text-muted-foreground ml-1">{Math.round((count / aggTotal) * 100)}%</span>}
               </span>
             </div>
           );
@@ -1954,27 +2062,27 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
 
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span style={{...DS.label }}>{LABELS.returningNonMembers}</span>
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS.copper, opacity: 0.85 }} />
+          <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.returningNonMembers}</span>
         </div>
-        <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.lg, color: "var(--st-text-primary)", letterSpacing: "-0.02em" }}>
+        <span className="text-4xl font-semibold tracking-tight tabular-nums">
           {formatNumber(returningNonMembers.currentWeekTotal)}
-          <span style={{...DS.label, marginLeft: "0.4rem", fontSize: DS.text.xs }}>this week</span>
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-1.5">this week</span>
         </span>
       </div>
-      <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginBottom: "0.4rem" }}>Last 5 weeks by source</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+      <p className="text-xs text-muted-foreground mb-1">Last 5 weeks by source</p>
+      <div className="flex flex-col gap-1">
         {rnmSegments.map((seg) => (
-          <div key={seg} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
-              <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>{RNM_SEGMENT_LABELS[seg]}</span>
+          <div key={seg} className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
+              <span className="text-sm text-muted-foreground">{RNM_SEGMENT_LABELS[seg]}</span>
             </div>
-            <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+            <span className="text-sm font-semibold tabular-nums">
               {formatNumber(aggDisplay[seg] || 0)}
-              {rnmAggTotal > 0 && <span style={{ fontWeight: DS.weight.normal, fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginLeft: "0.3rem" }}>{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
+              {rnmAggTotal > 0 && <span className="font-normal text-xs text-muted-foreground ml-1">{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
             </span>
           </div>
         ))}
@@ -1994,7 +2102,7 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   const [activeTab, setActiveTab] = useState<string>("complete");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
-  const [showChart, setShowChart] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -2009,14 +2117,6 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   const completeCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) >= 21);
   const incompleteCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) < 21);
   const displayComplete = completeCohorts.slice(-5);
-
-  // Chart data
-  const chartData = [...displayComplete, ...incompleteCohorts].map((c) => ({
-    cohortStart: c.cohortStart, cohortEnd: c.cohortEnd,
-    newCustomers: c.newCustomers, complete: daysElapsed(c.cohortStart) >= 21,
-  }));
-  const barMax = Math.max(...chartData.map((d) => d.newCustomers), 1);
-  const BAR_H = 80;
 
   // KPI values
   const avgRate = cohorts?.avgConversionRate ?? null;
@@ -2049,96 +2149,81 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
   ];
 
   return (
-    <Card>
-      <ModuleHeader color={COLORS.newCustomer} title={LABELS.newCustomerFunnel} />
+    <DashboardCard matchHeight>
+      <DModuleHeader
+        color={COLORS.newCustomer}
+        title={LABELS.newCustomerFunnel}
+        summaryPill={`${completeCohorts.length} cohort${completeCohorts.length !== 1 ? "s" : ""}`}
+        detailsOpen={detailsOpen}
+        onToggleDetails={() => setDetailsOpen(!detailsOpen)}
+      />
 
-      {/* KPI Row: strict 3-col grid with fixed-height KPI components */}
-      <KPIGrid3>
-        <KPI
-          value={formatNumber(currentCohortCount ?? 0)}
-          label="New customers (this week)"
+      <CardContent className="space-y-6">
+        <MetricRow
+          slots={[
+            { value: currentCohortCount != null ? formatNumber(currentCohortCount) : "\u2014", label: "New Customers" },
+            { value: avgRate != null ? avgRate.toFixed(1) : "\u2014", valueSuffix: avgRate != null ? "%" : undefined, label: "3-Week Conversion Rate", labelExtra: convTooltip ? <InfoTooltip tooltip={convTooltip} /> : undefined },
+            { value: expectedAutoRenews != null ? formatNumber(expectedAutoRenews) : "\u2014", label: "Expected Converts", labelExtra: projTooltip ? <InfoTooltip tooltip={projTooltip} /> : undefined },
+          ]}
         />
-        <KPI
-          value={avgRate !== null ? avgRate.toFixed(1) : "\u2014"}
-          valueSuffix={avgRate !== null ? "%" : undefined}
-          label="3-wk conversion"
-          topRight={<MInfoIcon tooltip={convTooltip} />}
-        />
-        <KPI
-          value={expectedAutoRenews !== null ? `\u2248${expectedAutoRenews}` : "\u2014"}
-          label="Expected converts"
-          topRight={expectedAutoRenews !== null ? (
-            <span style={{
-              fontSize: "11px", fontWeight: 500,
-              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.06)",
-              padding: "1px 5px", borderRadius: "3px", textTransform: "uppercase", letterSpacing: "0.03em",
-            }}>
-              Proj
-            </span>
-          ) : (projTooltip ? <MInfoIcon tooltip={projTooltip} /> : undefined)}
-        />
-      </KPIGrid3>
 
-      {/* Toggle row */}
-      {chartData.length > 0 && (
-        <>
-          <ToggleRow show={showChart} onToggle={() => setShowChart(!showChart)} />
-          {showChart && (
-            <div style={{ marginBottom: MOD.toggleToTabs }}>
-              <div style={{
-                display: "flex", alignItems: "flex-end", gap: 3,
-                height: BAR_H, borderBottom: "1px solid var(--st-border)", paddingBottom: 1,
-              }}>
-                {chartData.map((d) => {
-                  const fraction = barMax > 0 ? d.newCustomers / barMax : 0;
-                  const h = Math.max(Math.round(fraction * (BAR_H - 4)), 3);
-                  const isHovered = hoveredCohort === d.cohortStart;
-                  return (
-                    <div key={d.cohortStart} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}
-                      onMouseEnter={() => setHoveredCohort(d.cohortStart)}
-                      onMouseLeave={() => setHoveredCohort(null)}
-                      title={`${formatWeekRangeLabel(d.cohortStart, d.cohortEnd)}: ${d.newCustomers} new${d.complete ? "" : " (in progress)"}`}
-                    >
-                      <div style={{
-                        width: "70%", maxWidth: 28, height: h, borderRadius: "2px 2px 0 0",
-                        ...(d.complete
-                          ? { backgroundColor: COLORS.newCustomer, opacity: isHovered ? 0.85 : 0.65 }
-                          : { backgroundColor: "rgba(90, 107, 122, 0.06)", border: `1.5px dashed ${COLORS.newCustomer}`, opacity: isHovered ? 0.5 : 0.35 }),
-                        transition: "opacity 0.15s",
-                      }} />
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
-                {chartData.map((d) => (
-                  <div key={d.cohortStart} style={{
-                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "11px",
-                    color: hoveredCohort === d.cohortStart ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {formatCohortShort(d.cohortStart)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
+        <ChartContainer config={{ newCustomers: { label: "New Customers", color: COLORS.newCustomer } } satisfies ChartConfig} className="h-[200px] w-full">
+          <BarChart accessibilityLayer data={completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers }))} margin={{ top: 20 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickLine={false}
+              tickMargin={10}
+              axisLine={false}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
+            />
+            <Bar dataKey="newCustomers" fill="var(--color-newCustomers)" radius={8}>
+              <LabelList
+                position="top"
+                offset={12}
+                className="fill-foreground"
+                fontSize={12}
+              />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
 
-      <UnderlineTabs tabs={tabsConfig} active={activeTab} onChange={setActiveTab} />
+      <CardFooter className="flex-col items-start gap-2 text-sm">
+        <div className="flex gap-2 leading-none font-medium">
+          {avgRate != null ? `${avgRate.toFixed(1)}% avg conversion rate` : "Calculating..."}
+        </div>
+        <div className="text-muted-foreground leading-none">
+          Weekly new customer cohorts
+        </div>
+      </CardFooter>
 
+      <CardFooter className="flex-col items-stretch p-0">
+        <DCardDisclosure open={detailsOpen}>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList variant="line" className="w-full justify-start">
+            <TabsTrigger value="complete">Complete ({displayComplete.length})</TabsTrigger>
+            {incompleteCohorts.length > 0 && (
+              <TabsTrigger value="inProgress">In progress ({incompleteCohorts.length})</TabsTrigger>
+            )}
+          </TabsList>
+
+      <TabsContent value="complete">
       {/* Complete table */}
-      {cohorts && activeTab === "complete" && (
+      {cohorts && (
         <div>
-          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS }}>
+          <table className="mod-table-responsive w-full border-collapse tabular-nums" style={{ fontFamily: FONT_SANS }}>
             <thead>
               <tr>
-                <th style={{ ...modTh, textAlign: "left" }}>Cohort</th>
-                <th style={{ ...modTh, width: "3.5rem" }}>New</th>
-                <th style={{ ...modTh, width: "4rem" }}>Converts</th>
-                <th style={{ ...modTh, width: "3.5rem" }}>Rate</th>
-                <th style={{ ...modTh, textAlign: "center", width: "5rem" }}>Timing</th>
+                <th className={`${modThClass} !text-left`}>Cohort</th>
+                <th className={modThClass} style={{ width: "3.5rem" }}>New</th>
+                <th className={modThClass} style={{ width: "4rem" }}>Converts</th>
+                <th className={modThClass} style={{ width: "3.5rem" }}>Rate</th>
+                <th className={`${modThClass} !text-center`} style={{ width: "5rem" }}>Timing</th>
               </tr>
             </thead>
             <tbody>
@@ -2150,24 +2235,22 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                 return (
                   <Fragment key={c.cohortStart}>
                     <tr
+                      className="transition-colors cursor-pointer border-b border-border"
                       style={{
-                        borderBottom: isExpanded ? "none" : "1px solid rgba(65, 58, 58, 0.06)",
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
                         backgroundColor: isNewest && !isHovered ? "rgba(65, 58, 58, 0.015)" : "transparent",
-                        transition: "border-color 0.15s, background-color 0.15s",
-                        cursor: "pointer",
                       }}
                       onMouseEnter={() => setHoveredCohort(c.cohortStart)}
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
+                      <td className={`${modTdClass} !text-left font-medium`}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
-                      <td data-label="New" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
-                      <td data-label="Converts" style={{ ...modTd, fontWeight: 600 }}>{c.total3Week}</td>
-                      <td data-label="Rate" style={{ ...modTd, fontWeight: 500, color: "var(--st-text-primary)" }}>{rate}%</td>
-                      <td className="mod-bar-cell" style={{ ...modTd, textAlign: "center" }}>
+                      <td data-label="New" className={`${modTdClass} font-semibold`}>{formatNumber(c.newCustomers)}</td>
+                      <td data-label="Converts" className={`${modTdClass} font-semibold`}>{c.total3Week}</td>
+                      <td data-label="Rate" className={`${modTdClass} font-medium`}>{rate}%</td>
+                      <td className={`mod-bar-cell ${modTdClass} !text-center`}>
                         <SegmentedBar
                           segments={[
                             { value: c.week1, label: "Same week" },
@@ -2180,12 +2263,12 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                       </td>
                     </tr>
                     {isExpanded && (
-                      <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={5} style={{ padding: "4px 12px 6px 24px", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
-                          <div style={{ display: "flex", gap: "16px", fontSize: "12px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                            <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week1}</strong></span>
-                            <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week2}</strong></span>
-                            <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week3}</strong></span>
+                      <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
+                        <td colSpan={5} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
+                          <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
+                            <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
+                            <span>+1 week: <strong className="font-medium text-foreground">{c.week2}</strong></span>
+                            <span>+2 weeks: <strong className="font-medium text-foreground">{c.week3}</strong></span>
                           </div>
                         </td>
                       </tr>
@@ -2197,11 +2280,13 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
           </table>
         </div>
       )}
+      </TabsContent>
 
+      <TabsContent value="inProgress">
       {/* In-progress table */}
-      {cohorts && activeTab === "inProgress" && (
+      {cohorts && (
         <div>
-          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+          <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
             <colgroup>
               <col style={{ width: "42%" }} />
               <col style={{ width: "14%" }} />
@@ -2210,10 +2295,10 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...modTh, textAlign: "left" }}>Cohort</th>
-                <th style={modTh}>New</th>
-                <th style={modTh}>Converts</th>
-                <th style={modTh}>Days left</th>
+                <th className={`${modThClass} !text-left`}>Cohort</th>
+                <th className={modThClass}>New</th>
+                <th className={modThClass}>Converts</th>
+                <th className={modThClass}>Days left</th>
               </tr>
             </thead>
             <tbody>
@@ -2227,30 +2312,29 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
                 return (
                   <Fragment key={c.cohortStart}>
                     <tr
+                      className="transition-colors cursor-pointer border-b border-border"
                       style={{
-                        borderBottom: isExpanded ? "none" : "1px solid rgba(65, 58, 58, 0.06)",
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
-                        transition: "border-color 0.15s", cursor: "pointer",
                       }}
                       onMouseEnter={() => setHoveredCohort(c.cohortStart)}
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td style={{ ...modTd, textAlign: "left", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <td className={`${modTdClass} !text-left font-medium truncate`}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
-                      <td data-label="New" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(c.newCustomers)}</td>
-                      <td data-label="Converts" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{convertsSoFar}</td>
-                      <td data-label="Days left" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"}</td>
+                      <td data-label="New" className={`${modTdClass} font-semibold`}>{formatNumber(c.newCustomers)}</td>
+                      <td data-label="Converts" className={`${modTdClass} font-semibold`}>{convertsSoFar}</td>
+                      <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"}</td>
                     </tr>
                     {isExpanded && (
-                      <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={4} style={{ padding: "4px 12px 6px 24px", backgroundColor: "rgba(65, 58, 58, 0.015)" }}>
-                          <div style={{ display: "flex", gap: "16px", fontSize: "12px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                            <span>Same week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{c.week1}</strong></span>
-                            <span>+1 week: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{wk2Possible ? c.week2 : "\u2014"}</strong></span>
-                            <span>+2 weeks: <strong style={{ color: "var(--st-text-primary)", fontWeight: 500 }}>{"\u2014"}</strong></span>
-                            <span style={{ opacity: 0.7 }}>{daysRemaining}d until complete</span>
+                      <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
+                        <td colSpan={4} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
+                          <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
+                            <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
+                            <span>+1 week: <strong className="font-medium text-foreground">{wk2Possible ? c.week2 : "\u2014"}</strong></span>
+                            <span>+2 weeks: <strong className="font-medium text-foreground">{"\u2014"}</strong></span>
+                            <span className="opacity-70">{daysRemaining}d until complete</span>
                           </div>
                         </td>
                       </tr>
@@ -2262,15 +2346,49 @@ function NewCustomerFunnelModule({ volume, cohorts }: {
           </table>
         </div>
       )}
-    </Card>
+      </TabsContent>
+      </Tabs>
+
+      </DCardDisclosure>
+      </CardFooter>
+    </DashboardCard>
   );
 }
 
 // ─── Churn Section ──────────────────────────────────────────
 
-// ─── Non Members Section (First Visits + Returning Non-Members + Drop-Ins) ──
+// ─── Intro Week Placeholder ─────────────────────────────────
 
-function NonMembersSection({ dropIns, newCustomerVolume, newCustomerCohorts, conversionPool }: {
+function IntroWeekModule() {
+  return (
+    <DashboardCard matchHeight>
+      <DModuleHeader color={COLORS.copper} title="Intro Week" />
+
+      <CardContent className="space-y-6">
+        {/* KPI band — placeholder skeleton blocks */}
+        <div className="grid grid-cols-3 gap-6 items-start">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={`min-w-0${i > 0 ? " border-l border-border pl-6" : ""}`}>
+              <div className="h-10 w-16 rounded-md bg-muted animate-pulse" />
+              <div className="mt-1 h-3.5 w-20 rounded bg-muted animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        {/* Chart band — placeholder */}
+        <SparklineSlot className="flex flex-col justify-center" style={{ height: 132 }}>
+          <div className="border border-dashed border-border rounded-xl flex items-center justify-center" style={{ height: 96 }}>
+            <span className="text-sm font-medium text-muted-foreground">Coming soon</span>
+          </div>
+        </SparklineSlot>
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Non-auto-renew Section (Pass types + Conversion) ───────
+
+function NonAutoRenewSection({ dropIns, newCustomerVolume, newCustomerCohorts, conversionPool }: {
   dropIns: DropInModuleData | null;
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
@@ -2279,28 +2397,30 @@ function NonMembersSection({ dropIns, newCustomerVolume, newCustomerCohorts, con
   if (!dropIns && !newCustomerVolume && !newCustomerCohorts && !conversionPool) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <SectionHeader subtitle="Drop-ins, guests, and first-time visitors">{LABELS.nonMembers}</SectionHeader>
+    <div className="flex flex-col gap-4">
+      <SectionHeader subtitle="Drop-ins, Intro Week, and other non-subscribed activity">{LABELS.nonAutoRenew}</SectionHeader>
 
-      <DashboardGrid>
-        {/* Row A: Drop-ins (span 7) + New Customer Funnel (span 5) */}
-        {dropIns && (
-          <div style={{ gridColumn: "span 7", minWidth: 0 }} className="bento-cell-a1">
-            <DropInsModule dropIns={dropIns} />
-          </div>
-        )}
-        {(newCustomerVolume || newCustomerCohorts) && (
-          <div style={{ gridColumn: "span 5", minWidth: 0 }} className="bento-cell-a2">
+      {/* ── Subsection A: Pass types ── */}
+      <div className="flex flex-col gap-3">
+        <SubsectionHeader>Pass types</SubsectionHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+          {dropIns && <DropInsModule dropIns={dropIns} />}
+          <IntroWeekModule />
+        </div>
+      </div>
+
+      {/* ── Subsection B: Conversion ── */}
+      <div className="flex flex-col gap-3">
+        <SubsectionHeader>Conversion</SubsectionHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+          {(newCustomerVolume || newCustomerCohorts) && (
             <NewCustomerFunnelModule volume={newCustomerVolume} cohorts={newCustomerCohorts} />
-          </div>
-        )}
-        {/* Row B: Conversion Pool (span 12) */}
-        {conversionPool && (
-          <div style={{ gridColumn: "span 12", minWidth: 0 }} className="bento-cell-b">
+          )}
+          {conversionPool && (
             <ConversionPoolModule pool={conversionPool} />
-          </div>
-        )}
-      </DashboardGrid>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2309,20 +2429,11 @@ function NonMembersSection({ dropIns, newCustomerVolume, newCustomerCohorts, con
 
 function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
   const [activeTab, setActiveTab] = useState<string>("complete");
-  const [showChart, setShowChart] = useState(false);
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency } = dropIns;
   const displayWeeks = completeWeeks.slice(-8);
-
-  // Chart data
-  const chartWeeks = completeWeeks.slice(-16);
-  const chartData = [
-    ...chartWeeks.map((w) => ({ weekStart: w.weekStart, weekEnd: w.weekEnd, visits: w.visits, complete: true })),
-    ...(wtd ? [{ weekStart: wtd.weekStart, weekEnd: wtd.weekEnd, visits: wtd.visits, complete: false }] : []),
-  ];
-  const barMax = Math.max(...chartData.map((d) => d.visits), 1);
-  const BAR_H = 80;
 
   // Trend
   const wtdDeltaSign = wtdDelta > 0 ? "+" : "";
@@ -2345,93 +2456,71 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
   ];
 
   return (
-    <Card>
-      <ModuleHeader color={COLORS.dropIn} title={LABELS.dropIns} />
+    <DashboardCard matchHeight>
+      <DModuleHeader
+        color={COLORS.dropIn}
+        title={LABELS.dropIns}
+        summaryPill={`${displayWeeks.length} weeks`}
+        detailsOpen={detailsOpen}
+        onToggleDetails={() => setDetailsOpen(!detailsOpen)}
+      />
 
-      {/* KPI Row: strict 3-col grid with fixed-height KPI components */}
-      <KPIGrid3>
-        <KPI
-          value={formatNumber(wtd?.visits ?? 0)}
-          label="Drop-in visits (WTD)"
-          metaLeft={wtdDelta !== 0 ? (
-            <Chip variant={wtdDelta > 0 ? "positive" : "negative"}>
-              {wtdDeltaSign}{wtdDelta}
-            </Chip>
-          ) : null}
-          metaRight={`${wtdDayLabel} \u00b7 vs last wk WTD`}
+      <CardContent className="space-y-6">
+        <MetricRow
+          slots={[
+            { value: formatNumber(wtd?.visits ?? 0), label: "Visits (WTD)" },
+            { value: formatNumber(typicalWeekVisits), label: "Typical Week" },
+            { value: trendDeltaPercent !== 0 ? `${trendDeltaPercent > 0 ? "+" : ""}${trendDeltaPercent.toFixed(1)}` : "0", valueSuffix: "%", label: "Trend (4-wk vs prior)" },
+          ]}
         />
-        <KPI
-          value={formatNumber(typicalWeekVisits)}
-          label="Typical week (8-wk avg)"
-          topRight={<MInfoIcon tooltip="Average visits per week over the last 8 complete weeks." />}
-        />
-        <KPI
-          value={trendDeltaPercent !== 0 ? `${trendDeltaPercent > 0 ? "+" : ""}${trendDeltaPercent.toFixed(1)}` : "0"}
-          valueSuffix="%"
-          label="Trend"
-          metaLeft={trend !== "flat" ? (
-            <Chip variant={trend === "up" ? "positive" : "negative"}>
-              {trend === "up" ? "Up" : "Down"}
-            </Chip>
-          ) : null}
-          metaRight="vs prior 4 wks"
-          topRight={<MInfoIcon tooltip="Compares average of the last 4 complete weeks vs the prior 4. Up/Down if change exceeds 5%." />}
-        />
-      </KPIGrid3>
 
-      {/* Toggle row */}
-      {chartData.length > 0 && (
-        <>
-          <ToggleRow show={showChart} onToggle={() => setShowChart(!showChart)} />
-          {showChart && (
-            <div style={{ marginBottom: MOD.toggleToTabs }}>
-              <div style={{
-                display: "flex", alignItems: "flex-end", gap: 3,
-                height: BAR_H, borderBottom: "1px solid var(--st-border)", paddingBottom: 1,
-              }}>
-                {chartData.map((d) => {
-                  const fraction = barMax > 0 ? d.visits / barMax : 0;
-                  const h = Math.max(Math.round(fraction * (BAR_H - 4)), 3);
-                  const isHovered = hoveredWeek === d.weekStart;
-                  return (
-                    <div key={d.weekStart} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}
-                      onMouseEnter={() => setHoveredWeek(d.weekStart)}
-                      onMouseLeave={() => setHoveredWeek(null)}
-                      title={`${formatWeekRangeLabel(d.weekStart, d.weekEnd)}: ${d.visits} visits${d.complete ? "" : " (WTD)"}`}
-                    >
-                      <div style={{
-                        width: "70%", maxWidth: 28, height: h, borderRadius: "2px 2px 0 0",
-                        ...(d.complete
-                          ? { backgroundColor: COLORS.dropIn, opacity: isHovered ? 0.85 : 0.65 }
-                          : { backgroundColor: "rgba(155, 118, 83, 0.06)", border: `1.5px dashed ${COLORS.dropIn}`, opacity: isHovered ? 0.5 : 0.35 }),
-                        transition: "opacity 0.15s",
-                      }} />
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
-                {chartData.map((d) => (
-                  <div key={d.weekStart} style={{
-                    flex: 1, minWidth: 0, textAlign: "center", fontSize: "11px",
-                    color: hoveredWeek === d.weekStart ? "var(--st-text-primary)" : "var(--st-text-secondary)",
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {formatCohortShort(d.weekStart)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
+        <ChartContainer config={{ visits: { label: "Visits", color: COLORS.dropIn } } satisfies ChartConfig} className="h-[200px] w-full">
+          <BarChart accessibilityLayer data={displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), visits: w.visits }))} margin={{ top: 20 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickLine={false}
+              tickMargin={10}
+              axisLine={false}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
+            />
+            <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
+              <LabelList
+                position="top"
+                offset={12}
+                className="fill-foreground"
+                fontSize={12}
+              />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
 
-      <UnderlineTabs tabs={tabsConfig} active={activeTab} onChange={setActiveTab} />
+      <CardFooter className="flex-col items-start gap-2 text-sm">
+        <div className="flex gap-2 leading-none font-medium">
+          {trendDeltaPercent > 0 ? "+" : ""}{trendDeltaPercent.toFixed(1)}% vs prior 4 weeks
+        </div>
+        <div className="text-muted-foreground leading-none">
+          Weekly drop-in visits
+        </div>
+      </CardFooter>
 
-      {/* Complete weeks table: WEEK | VISITS | CUSTOMERS | FIRST % | MIX */}
-      {activeTab === "complete" && (
-        <div style={{ overflowX: "auto", minWidth: 0 }}>
-          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+      <CardFooter className="flex-col items-stretch p-0">
+        <DCardDisclosure open={detailsOpen}>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList variant="line" className="w-full justify-start">
+          <TabsTrigger value="complete">Complete weeks ({displayWeeks.length})</TabsTrigger>
+          {wtd && <TabsTrigger value="wtd">This week (WTD)</TabsTrigger>}
+        </TabsList>
+
+      <TabsContent value="complete">
+      {/* Complete weeks table */}
+        <div className="overflow-x-auto min-w-0">
+          <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
             <colgroup>
               <col style={{ width: "32%" }} />
               <col style={{ width: "16%" }} />
@@ -2441,11 +2530,11 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...modTh, textAlign: "left" }}>Week</th>
-                <th style={modTh}>Visits</th>
-                <th style={modTh}>Customers</th>
-                <th style={modTh}>First %</th>
-                <th style={{ ...modTh, textAlign: "center" }}>Mix</th>
+                <th className={`${modThClass} !text-left`}>Week</th>
+                <th className={modThClass}>Visits</th>
+                <th className={modThClass}>Customers</th>
+                <th className={modThClass}>First %</th>
+                <th className={`${modThClass} !text-center`}>Mix</th>
               </tr>
             </thead>
             <tbody>
@@ -2456,23 +2545,22 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                 return (
                   <tr
                     key={w.weekStart}
+                    className="transition-colors border-b border-border"
                     style={{
-                      borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
                       borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
                       backgroundColor: isHovered ? "rgba(65, 58, 58, 0.02)" : "transparent",
-                      transition: "border-color 0.15s, background-color 0.15s",
                     }}
                     onMouseEnter={() => setHoveredWeek(w.weekStart)}
                     onMouseLeave={() => setHoveredWeek(null)}
                   >
-                    <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
+                    <td className={`${modTdClass} !text-left font-medium`}>
                       {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
-                      {isLatest && <Chip variant="accent">Latest</Chip>}
+                      {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
                     </td>
-                    <td data-label="Visits" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(w.visits)}</td>
-                    <td data-label="Customers" style={{ ...modTd, fontWeight: 500 }}>{formatNumber(w.uniqueCustomers)}</td>
-                    <td data-label="First %" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{firstPct}%</td>
-                    <td className="mod-bar-cell" style={{ ...modTd, textAlign: "center" }}>
+                    <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
+                    <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
+                    <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
+                    <td className={`mod-bar-cell ${modTdClass} !text-center`}>
                       {w.uniqueCustomers > 0 ? (
                         <SegmentedBar
                           segments={[
@@ -2483,7 +2571,7 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                           tooltip={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
                         />
                       ) : (
-                        <span style={{ color: "var(--st-text-secondary)", opacity: 0.4 }}>{"\u2014"}</span>
+                        <span className="text-muted-foreground opacity-40">{"\u2014"}</span>
                       )}
                     </td>
                   </tr>
@@ -2492,12 +2580,13 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             </tbody>
           </table>
         </div>
-      )}
+      </TabsContent>
 
+      <TabsContent value="wtd">
       {/* WTD table */}
-      {activeTab === "wtd" && wtd && (
-        <div style={{ overflowX: "auto", minWidth: 0 }}>
-          <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
+      {wtd && (
+        <div className="overflow-x-auto min-w-0">
+          <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
             <colgroup>
               <col style={{ width: "30%" }} />
               <col style={{ width: "16%" }} />
@@ -2507,53 +2596,55 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...modTh, textAlign: "left" }}>Week</th>
-                <th style={modTh}>Visits</th>
-                <th style={modTh}>Customers</th>
-                <th style={modTh}>First %</th>
-                <th style={modTh}>Days left</th>
+                <th className={`${modThClass} !text-left`}>Week</th>
+                <th className={modThClass}>Visits</th>
+                <th className={modThClass}>Customers</th>
+                <th className={modThClass}>First %</th>
+                <th className={modThClass}>Days left</th>
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)" }}>
-                <td style={{ ...modTd, textAlign: "left", fontWeight: 500 }}>
+              <tr className="border-b border-border">
+                <td className={`${modTdClass} !text-left font-medium`}>
                   {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
-                  {" "}<Chip variant="accent">WTD</Chip>
+                  {" "}<DChip variant="accent">WTD</DChip>
                 </td>
-                <td data-label="Visits" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-primary)" }}>{formatNumber(wtd.visits)}</td>
-                <td data-label="Customers" style={{ ...modTd, fontWeight: 500 }}>{formatNumber(wtd.uniqueCustomers)}</td>
-                <td data-label="First %" style={{ ...modTd, color: "var(--st-text-secondary)" }}>
+                <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(wtd.visits)}</td>
+                <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(wtd.uniqueCustomers)}</td>
+                <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
                   {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
                 </td>
-                <td data-label="Days left" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
+                <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
               </tr>
               {lastCompleteWeek && (
-                <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.06)", opacity: 0.55 }}>
-                  <td style={{ ...modTd, textAlign: "left", fontWeight: 500, color: "var(--st-text-secondary)" }}>
+                <tr className="border-b border-border opacity-55">
+                  <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
                     {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
-                    <span style={{ fontSize: "11px", marginLeft: "6px", fontWeight: 400, fontStyle: "italic" }}>prev</span>
+                    <span className="text-[11px] ml-1.5 font-normal italic">prev</span>
                   </td>
-                  <td data-label="Visits" style={{ ...modTd, fontWeight: 600, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.visits)}</td>
-                  <td data-label="Customers" style={{ ...modTd, fontWeight: 500, color: "var(--st-text-secondary)" }}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
-                  <td data-label="First %" style={{ ...modTd, color: "var(--st-text-secondary)" }}>
+                  <td data-label="Visits" className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(lastCompleteWeek.visits)}</td>
+                  <td data-label="Customers" className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
+                  <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
                     {lastCompleteWeek.uniqueCustomers > 0 ? `${Math.round((lastCompleteWeek.firstTime / lastCompleteWeek.uniqueCustomers) * 100)}%` : "\u2014"}
                   </td>
-                  <td data-label="Days left" style={{ ...modTd, color: "var(--st-text-secondary)" }}>{"\u2014"}</td>
+                  <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{"\u2014"}</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       )}
+      </TabsContent>
+      </Tabs>
 
       {/* Footer: 90-Day Frequency Distribution */}
       {frequency && frequency.totalCustomers > 0 && (
-        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid rgba(65, 58, 58, 0.06)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 500, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <div className="mt-4 pt-3 border-t border-border">
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Drop-in frequency (last 90 days)
             </span>
-            <MInfoIcon tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
+            <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
           </div>
 
           {(() => {
@@ -2586,8 +2677,8 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
                       paddingLeft: i > 0 ? "4px" : 0,
                       minWidth: 0,
                     }} title={`${seg.count} customers`}>
-                      <span style={{ fontSize: "10px", color: "var(--st-text-secondary)", lineHeight: 1.3, display: "block" }}>{seg.label}</span>
-                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums", lineHeight: 1.2, display: "block" }}>
+                      <span className="block text-[10px] text-muted-foreground leading-tight">{seg.label}</span>
+                      <span className="block text-[11px] font-semibold tabular-nums leading-tight">
                         {Math.round((seg.count / frequency.totalCustomers) * 100)}%
                       </span>
                     </div>
@@ -2598,18 +2689,20 @@ function DropInsModule({ dropIns }: { dropIns: DropInModuleData }) {
           })()}
         </div>
       )}
-    </Card>
+
+      </DCardDisclosure>
+      </CardFooter>
+    </DashboardCard>
   );
 }
 
 // ─── Conversion Pool Module (non-auto → auto-renew) ─────────
 
 function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
-  const [showChart, setShowChart] = useState(false);
-  const [chartMetric, setChartMetric] = useState<"pool" | "converts">("pool");
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
   const [activeSlice, setActiveSlice] = useState<ConversionPoolSlice>("all");
   const [activeTab, setActiveTab] = useState<string>("complete");
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   // Resolve active slice data (fall back to "all")
   const data: ConversionPoolSliceData | null = pool.slices[activeSlice] ?? pool.slices.all ?? null;
@@ -2640,18 +2733,6 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const highIntentSlice = pool.slices["high-intent"];
   const hotPoolCount = highIntentSlice?.wtd?.activePool7d ?? highIntentSlice?.lastCompleteWeek?.activePool7d ?? null;
 
-  // Chart data: all complete weeks + WTD
-  const chartData = [
-    ...completeWeeks.map((w) => ({ weekStart: w.weekStart, weekEnd: w.weekEnd, pool: w.activePool7d, converts: w.converts, complete: true })),
-    ...(wtd ? [{ weekStart: wtd.weekStart, weekEnd: wtd.weekEnd, pool: wtd.activePool7d, converts: wtd.converts, complete: false }] : []),
-  ];
-  const barMax = Math.max(...chartData.map((d) => chartMetric === "pool" ? d.pool : d.converts), 1);
-  const BAR_H = 80;
-
-  // Y-axis gridlines (2 lines: ~33% and ~66% of max)
-  const gridLine1 = Math.round(barMax / 3);
-  const gridLine2 = Math.round((barMax * 2) / 3);
-
   // Slice options
   const sliceOptions: { key: ConversionPoolSlice; label: string }[] = [
     { key: "all", label: "All" },
@@ -2670,133 +2751,103 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   ];
 
   return (
-    <Card>
-      {/* ── Header with Slice dropdown + trend toggle ── */}
-      <ModuleHeader color={COLORS.conversionPool} title={LABELS.conversionPool}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {chartData.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowChart(!showChart)}
-              style={{
-                background: "none", border: "none", padding: "2px 0", cursor: "pointer",
-                fontSize: "12px", color: "var(--st-text-secondary)",
-                display: "flex", alignItems: "center", gap: "6px",
-              }}
-            >
-              <span style={{ fontSize: "8px", transition: "transform 0.15s", transform: showChart ? "rotate(90deg)" : "rotate(0)" }}>&#9654;</span>
-              {showChart ? "Hide trend" : "Show trend"}
-            </button>
-          )}
-          <select
-            value={activeSlice}
-            onChange={(e) => setActiveSlice(e.target.value as ConversionPoolSlice)}
-            title="Filter pool by visit type"
-            style={{
-              fontSize: "11px", fontWeight: 500,
-              color: "var(--st-text-secondary)", backgroundColor: "rgba(65, 58, 58, 0.04)",
-              border: "1px solid rgba(65, 58, 58, 0.1)", borderRadius: "3px",
-              padding: "2px 8px", cursor: "pointer", outline: "none",
-              fontFamily: FONT_SANS, letterSpacing: "0.02em",
-            }}
-          >
+    <DashboardCard matchHeight>
+      {/* ── Header: title + slice filter ── */}
+      <DModuleHeader
+        color={COLORS.conversionPool}
+        title={LABELS.conversionPool}
+        summaryPill={`${displayWeeks.length} weeks`}
+        detailsOpen={detailsOpen}
+        onToggleDetails={() => setDetailsOpen(!detailsOpen)}
+      >
+        <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
+          <SelectTrigger size="sm" className="h-7 text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
             {sliceOptions.map((o) => (
-              <option key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</option>
+              <SelectItem key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</SelectItem>
             ))}
-          </select>
-        </div>
-      </ModuleHeader>
+          </SelectContent>
+        </Select>
+      </DModuleHeader>
 
-      {/* ── KPI Strip: 5 blocks (Pool, Converts, Rate, Median time, Avg visits) ── */}
-      <div className="cp-kpi-strip" style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(5, 1fr)",
-        alignItems: "stretch",
-        padding: "8px 0",
-        marginBottom: MOD.kpiToToggle,
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        <KPIBlock
-          value={formatNumber(heroPool)}
-          label="Active pool (7d)"
-          tooltip="Unique non-subscriber studio visitors this week. Excludes anyone on an active auto-renew."
-          delta={poolDelta}
-        >
-          {wtd && wtd.activePool30d > 0 && (
-            <span style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}>
-              30d: {formatNumber(wtd.activePool30d)}
-            </span>
-          )}
-          {hotPoolCount != null && (
-            <span
-              title="High-intent: 2+ visits in 30d, no auto-renew"
-              style={{ fontSize: "11px", color: "var(--st-text-secondary)" }}
-            >
-              Hot: {formatNumber(hotPoolCount)}
-            </span>
-          )}
-        </KPIBlock>
-        <KPIBlock
-          value={formatNumber(heroConverts)}
-          label="Converts (week)"
-          tooltip="Pool members who started their first in-studio auto-renew (Member or Sky3) this week."
-          delta={convertsDelta}
+      <CardContent className="space-y-6">
+        <MetricRow
+          slots={[
+            { value: formatNumber(heroPool), label: "Total Customers" },
+            { value: heroRate.toFixed(1), valueSuffix: "%", label: "3-Week Conversion Rate", labelExtra: <InfoTooltip tooltip="Converts / Active pool (7d). 3-week window." /> },
+            { value: formatNumber(heroConverts), label: "Converts", labelExtra: <InfoTooltip tooltip="Pool members who started their first in-studio auto-renew this week." /> },
+          ]}
         />
-        <KPIBlock
-          value={`${heroRate.toFixed(1)}%`}
-          label="Rate"
-          tooltip="Converts / Active pool (7d)."
-          delta={rateDelta}
-          deltaSuffix="pp"
-          deltaSublabel="vs wk"
-          badge={showRateWarning ? (
-            <Chip
-              variant="negative"
-              title={`Rate is ${Math.abs(rateVsBaseline!).toFixed(1)}pp below 8-week avg (${avgRate.toFixed(1)}%). Click to expand trend.`}
-            >
-              Down vs baseline
-            </Chip>
-          ) : undefined}
-        >
-          {rateVsBaseline !== null && rateVsBaseline !== 0 && (
-            <Chip variant={rateVsBaseline > 0 ? "positive" : "negative"}>
-              {rateVsBaseline > 0 ? "+" : ""}{rateVsBaseline.toFixed(1)}pp vs avg
-            </Chip>
-          )}
-        </KPIBlock>
-        {lagStats ? (
-          <KPIBlock
-            value={lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
-            label="Median time"
-            tooltip="Median days between first non-auto studio visit and auto-renew start."
-            sublabel={lagStats.historicalMedianTimeToConvert != null ? `12wk: ${lagStats.historicalMedianTimeToConvert}d` : undefined}
-          />
-        ) : <div />}
-        {lagStats ? (
-          <KPIBlock
-            value={lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
-            label="Avg visits"
-            tooltip="Average distinct non-subscriber visits before conversion."
-            sublabel={lagStats.historicalAvgVisitsBeforeConvert != null ? `12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}` : undefined}
-          />
-        ) : <div />}
-      </div>
+
+        <ChartContainer config={{ converts: { label: "Converts", color: COLORS.conversionPool } } satisfies ChartConfig} className="h-[200px] w-full">
+          <BarChart accessibilityLayer data={displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), converts: w.converts }))} margin={{ top: 20 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickLine={false}
+              tickMargin={10}
+              axisLine={false}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
+            />
+            <Bar dataKey="converts" fill="var(--color-converts)" radius={8}>
+              <LabelList
+                position="top"
+                offset={12}
+                className="fill-foreground"
+                fontSize={12}
+              />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
+
+      <CardFooter className="flex-col items-start gap-2 text-sm">
+        <div className="flex gap-2 leading-none font-medium">
+          {heroRate.toFixed(1)}% conversion rate
+        </div>
+        <div className="text-muted-foreground leading-none">
+          Weekly pool conversions to auto-renew
+        </div>
+      </CardFooter>
+
+      <CardFooter className="flex-col items-stretch p-0">
+        <DCardDisclosure open={detailsOpen}>
+
+      {/* ── Secondary: Conversion quality (mini-KPI 2-up strip) ── */}
+      {lagStats && (
+        <div className="grid grid-cols-2 gap-6 items-start border-t border-neutral-900/6 py-3 mb-2 tabular-nums">
+          <div title="Median days between first non-auto studio visit and auto-renew start.">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-0.5">Median time</div>
+            <div className="text-[13px] font-medium text-neutral-800">
+              {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
+              {lagStats.historicalMedianTimeToConvert != null && (
+                <span className="text-[12px] text-neutral-500 ml-1.5">{`12wk: ${lagStats.historicalMedianTimeToConvert}d`}</span>
+              )}
+            </div>
+          </div>
+          <div title="Average distinct non-subscriber visits before conversion.">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-0.5">Avg visits</div>
+            <div className="text-[13px] font-medium text-neutral-800">
+              {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
+              {lagStats.historicalAvgVisitsBeforeConvert != null && (
+                <span className="text-[12px] text-neutral-500 ml-1.5">{`12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)}`}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Distribution bars (Time to convert / Visits before convert) ── */}
       {lagStats && (
-        <div className="cp-dist-bars" style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "16px",
-          padding: "8px 0 12px",
-          marginBottom: "12px",
-          borderTop: "1px solid rgba(65, 58, 58, 0.06)",
-        }}>
+        <div className="grid grid-cols-2 gap-8 w-full pt-2 pb-3 mb-3 border-t border-neutral-900/6">
           {/* Time distribution bar */}
           <div>
-            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
-              Time to convert
-            </div>
+            <div className="text-[12px] font-medium text-neutral-600 mb-1.5">Time to convert</div>
             <SegmentedBar
               segments={[
                 { value: lagStats.timeBucket0to30, label: "0-30d" },
@@ -2804,18 +2855,18 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 { value: lagStats.timeBucket91to180, label: "91-180d" },
                 { value: lagStats.timeBucket180plus, label: "180d+" },
               ]}
-              height={12}
+              height={16}
               colors={distColors}
             />
-            <div style={{ display: "flex", gap: "6px", marginTop: "3px", flexWrap: "wrap" }}>
+            <div className="flex gap-2 mt-2 flex-wrap">
               {[
                 { label: "0-30d", val: lagStats.timeBucket0to30 },
                 { label: "31-90d", val: lagStats.timeBucket31to90 },
                 { label: "91-180d", val: lagStats.timeBucket91to180 },
                 { label: "180d+", val: lagStats.timeBucket180plus },
               ].map((b, i) => b.val > 0 ? (
-                <div key={i} style={{ fontSize: "11px", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "3px" }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: distColors[i], display: "inline-block" }} />
+                <div key={i} className="text-[11px] text-neutral-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-sm inline-block" style={{ backgroundColor: distColors[i] }} />
                   {b.label}
                 </div>
               ) : null)}
@@ -2824,9 +2875,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 
           {/* Visit distribution bar */}
           <div>
-            <div style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
-              Visits before convert
-            </div>
+            <div className="text-[12px] font-medium text-neutral-600 mb-1.5">Visits before convert</div>
             <SegmentedBar
               segments={[
                 { value: lagStats.visitBucket1to2, label: "1-2" },
@@ -2834,18 +2883,18 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 { value: lagStats.visitBucket6to10, label: "6-10" },
                 { value: lagStats.visitBucket11plus, label: "11+" },
               ]}
-              height={12}
+              height={16}
               colors={distColors}
             />
-            <div style={{ display: "flex", gap: "6px", marginTop: "3px", flexWrap: "wrap" }}>
+            <div className="flex gap-2 mt-2 flex-wrap">
               {[
                 { label: "1-2", val: lagStats.visitBucket1to2 },
                 { label: "3-5", val: lagStats.visitBucket3to5 },
                 { label: "6-10", val: lagStats.visitBucket6to10 },
                 { label: "11+", val: lagStats.visitBucket11plus },
               ].map((b, i) => b.val > 0 ? (
-                <div key={i} style={{ fontSize: "11px", color: "var(--st-text-secondary)", display: "flex", alignItems: "center", gap: "3px" }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 1, backgroundColor: distColors[i], display: "inline-block" }} />
+                <div key={i} className="text-[11px] text-neutral-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-sm inline-block" style={{ backgroundColor: distColors[i] }} />
                   {b.label}
                 </div>
               ) : null)}
@@ -2854,205 +2903,107 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
         </div>
       )}
 
-      {/* ── Chart (visible when toggled from header) ── */}
-      {showChart && chartData.length > 0 && (
-        <>
-        {/* Chart metric pills */}
-        <div style={{ display: "flex", gap: "2px", marginBottom: "8px" }}>
-          {(["pool", "converts"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setChartMetric(m)}
-              style={{
-                background: chartMetric === m ? "rgba(107, 91, 123, 0.12)" : "none",
-                border: `1px solid ${chartMetric === m ? "rgba(107, 91, 123, 0.25)" : "transparent"}`,
-                borderRadius: "3px", padding: "1px 8px", cursor: "pointer",
-                fontSize: "11px", color: chartMetric === m ? COLORS.conversionPool : "var(--st-text-secondary)",
-                fontWeight: chartMetric === m ? 500 : 400,
-                letterSpacing: "0.02em", textTransform: "capitalize" as const,
-              }}
-            >
-              {m === "pool" ? "Pool" : "Converts"}
-            </button>
-          ))}
-        </div>
-        </>
-      )}
-
-      {showChart && chartData.length > 0 && (
-        <div style={{ display: "flex", marginTop: "4px", marginBottom: MOD.toggleToTabs }}>
-          {/* Y-axis labels */}
-          <div style={{ width: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-end", paddingRight: "4px", height: BAR_H }}>
-            <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(barMax)}</span>
-            <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{formatNumber(gridLine1)}</span>
-            <span style={{ fontSize: "9px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>0</span>
-          </div>
-          {/* Bars with gridlines */}
-          <div style={{ flex: 1, position: "relative", height: BAR_H, overflow: "visible" }}>
-            {/* Gridlines */}
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
-              <div style={{ position: "absolute", top: `${(1 - gridLine2 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
-              <div style={{ position: "absolute", top: `${(1 - gridLine1 / barMax) * 100}%`, left: 0, right: 0, borderTop: "1px dashed rgba(65, 58, 58, 0.08)" }} />
-            </div>
-            {/* Bars */}
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: BAR_H, position: "relative" }}>
-              {chartData.map((d, i) => {
-                const val = chartMetric === "pool" ? d.pool : d.converts;
-                const h = barMax > 0 ? (val / barMax) * BAR_H : 0;
-                const isHovered = hoveredWeek === d.weekStart;
-                return (
-                  <div
-                    key={i}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: BAR_H, position: "relative" }}
-                    onMouseEnter={() => setHoveredWeek(d.weekStart)}
-                    onMouseLeave={() => setHoveredWeek(null)}
-                  >
-                    {/* Tooltip: absolute, pointer-events none */}
-                    {isHovered && (
-                      <div style={{
-                        position: "absolute", bottom: Math.max(h, 2) + 4, left: "50%", transform: "translateX(-50%)",
-                        fontSize: "10px", fontWeight: 500, color: "var(--st-text-primary)",
-                        whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
-                        pointerEvents: "none", zIndex: 10,
-                        backgroundColor: "rgba(255,255,255,0.92)", padding: "1px 4px", borderRadius: "2px",
-                        boxShadow: "0 0 2px rgba(0,0,0,0.06)",
-                      }}>
-                        {formatNumber(val)}
-                      </div>
-                    )}
-                    <div style={{
-                      width: "70%", maxWidth: "28px", borderRadius: "2px 2px 0 0",
-                      height: Math.max(h, val > 0 ? 2 : 0),
-                      ...(d.complete
-                        ? { backgroundColor: COLORS.conversionPool, opacity: isHovered ? 0.85 : 0.65 }
-                        : { backgroundColor: "rgba(107, 91, 123, 0.06)", border: `1.5px dashed ${COLORS.conversionPool}`, opacity: isHovered ? 0.5 : 0.35 }),
-                      transition: "opacity 0.15s",
-                    }} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Tabs: Complete | WTD ── */}
-      <UnderlineTabs
-        tabs={[
-          { key: "complete", label: "Complete weeks" },
-          ...(wtd ? [{ key: "wtd", label: "Week to date" }] : []),
-        ]}
-        active={activeTab}
-        onChange={setActiveTab}
-      />
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+        <TabsList variant="line" className="w-full justify-start">
+          <TabsTrigger value="complete">Complete weeks</TabsTrigger>
+          {wtd && <TabsTrigger value="wtd">Week to date</TabsTrigger>}
+        </TabsList>
 
-      {/* ── Weekly Table (Complete weeks tab) ── */}
-      {activeTab === "complete" && displayWeeks.length > 0 && (
-        <div style={{ overflowX: "auto", minWidth: 0 }}>
-        <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: "38%" }} />
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "22%" }} />
-            <col style={{ width: "22%" }} />
-          </colgroup>
-          <thead>
-            <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.1)" }}>
-              <th style={{ ...modTh, textAlign: "left" }}>Week</th>
-              <th style={modTh}>Pool</th>
-              <th style={modTh}>Converts</th>
-              <th style={modTh}>Rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayWeeks.map((w, idx) => {
-              const isHovered = hoveredWeek === w.weekStart;
-              const isLatest = idx === displayWeeks.length - 1;
-              const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-              return (
-                <tr
-                  key={w.weekStart}
-                  onMouseEnter={() => setHoveredWeek(w.weekStart)}
-                  onMouseLeave={() => setHoveredWeek(null)}
-                  style={{
-                    borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
-                    borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
-                    transition: "background 0.1s",
-                    background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
-                    height: MOD.rowH,
-                  }}
-                >
-                  <td style={{ ...modTd, textAlign: "left", fontWeight: 500, color: "var(--st-text-secondary)" }}>
-                    {weekLabel}
-                    {isLatest && <> <Chip variant="accent">Latest</Chip></>}
-                  </td>
-                  <td data-label="Pool" style={{ ...modTd, fontWeight: 600 }}>
-                    {formatNumber(w.activePool7d)}
-                  </td>
-                  <td data-label="Converts" style={{ ...modTd, fontWeight: 600 }}>
-                    {formatNumber(w.converts)}
-                  </td>
-                  <td data-label="Rate" style={{ ...modTd, fontWeight: 600 }}>
-                    {w.conversionRate.toFixed(1)}%
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <TabsContent value="complete">
+      {/* ── Weekly Grid-Table (Complete weeks tab) ── */}
+      {displayWeeks.length > 0 && (
+        <div className="w-full min-w-0 mt-4">
+          {/* Header */}
+          <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
+            <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Week</div>
+            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
+            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
+            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
+          </div>
+          {/* Rows */}
+          {displayWeeks.map((w, idx) => {
+            const isHovered = hoveredWeek === w.weekStart;
+            const isLatest = idx === displayWeeks.length - 1;
+            const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            return (
+              <div
+                key={w.weekStart}
+                className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6 transition-colors duration-100"
+                onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                onMouseLeave={() => setHoveredWeek(null)}
+                style={{
+                  borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
+                  background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
+                }}
+              >
+                <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
+                  {weekLabel}
+                  {isLatest && <> <span className="text-[10px] bg-zinc-100 text-zinc-500 rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                </div>
+                <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                  {formatNumber(w.activePool7d)}
+                </div>
+                <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                  {formatNumber(w.converts)}
+                </div>
+                <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
+                  {w.conversionRate.toFixed(1)}%
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* ── WTD Tab ── */}
-      {activeTab === "wtd" && wtd && (
-        <div style={{ overflowX: "auto", minWidth: 0 }}>
-        <table className="mod-table-responsive" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontFamily: FONT_SANS, tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: "38%" }} />
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "22%" }} />
-            <col style={{ width: "22%" }} />
-          </colgroup>
-          <thead>
-            <tr style={{ borderBottom: "1px solid rgba(65, 58, 58, 0.1)" }}>
-              <th style={{ ...modTh, textAlign: "left" }}>Period</th>
-              <th style={modTh}>Pool</th>
-              <th style={modTh}>Converts</th>
-              <th style={modTh}>Rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style={{
-              borderBottom: "1px solid rgba(65, 58, 58, 0.06)",
+      </TabsContent>
+
+      <TabsContent value="wtd">
+      {/* ── WTD Tab (CSS grid) ── */}
+      {wtd && (
+        <div className="w-full min-w-0 mt-4">
+          {/* Header */}
+          <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
+            <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Period</div>
+            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
+            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
+            <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
+          </div>
+          {/* Row */}
+          <div
+            className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6"
+            style={{
               borderLeft: `2px solid ${COLORS.conversionPool}`,
               background: "rgba(107, 91, 123, 0.03)",
-              height: MOD.rowH,
-            }}>
-              <td style={{ ...modTd, textAlign: "left", fontWeight: 500, color: "var(--st-text-secondary)" }}>
-                <Chip variant="accent">WTD</Chip>{" "}
-                {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                {wtd.daysLeft > 0 && (
-                  <span style={{ fontSize: "11px", color: "var(--st-text-secondary)", marginLeft: "6px" }}>
-                    ({wtd.daysLeft}d left)
-                  </span>
-                )}
-              </td>
-              <td data-label="Pool" style={{ ...modTd, fontWeight: 600, fontStyle: "italic" }}>
-                {formatNumber(wtd.activePool7d)}
-              </td>
-              <td data-label="Converts" style={{ ...modTd, fontWeight: 600, fontStyle: "italic" }}>
-                {formatNumber(wtd.converts)}
-              </td>
-              <td data-label="Rate" style={{ ...modTd, fontWeight: 600, fontStyle: "italic" }}>
-                {wtd.conversionRate.toFixed(1)}%
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            }}
+          >
+            <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
+              <DChip variant="accent">WTD</DChip>{" "}
+              {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {wtd.daysLeft > 0 && (
+                <span className="text-[11px] text-muted-foreground ml-1.5">
+                  ({wtd.daysLeft}d left)
+                </span>
+              )}
+            </div>
+            <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
+              {formatNumber(wtd.activePool7d)}
+            </div>
+            <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
+              {formatNumber(wtd.converts)}
+            </div>
+            <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
+              {wtd.conversionRate.toFixed(1)}%
+            </div>
+          </div>
         </div>
       )}
-    </Card>
+      </TabsContent>
+      </Tabs>
+
+      </DCardDisclosure>
+      </CardFooter>
+    </DashboardCard>
   );
 }
 
@@ -3124,35 +3075,27 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
   return (
     <Card>
       {/* Header: title + big count */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: color, opacity: 0.85, flexShrink: 0 }} />
-          <span style={{fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+          <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
             {title}
           </span>
         </div>
-        <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.xl, color: "var(--st-text-primary)", letterSpacing: "-0.03em" }}>
+        <span className="text-3xl font-semibold tracking-tight tabular-nums">
           {formatNumber(count)}
         </span>
       </div>
 
       {/* Metric rows — compact density */}
-      <div style={{ display: "flex", flexDirection: "column" }}>
+      <div className="flex flex-col">
         {metrics.map((m, i) => (
-          <div key={i} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "0.35rem 0",
-            borderBottom: i < metrics.length - 1 ? "1px solid var(--st-border)" : "none",
-          }}>
-            <span style={{ fontSize: "12px", color: "var(--st-text-secondary)" }}>
+          <div key={i} className={`flex justify-between items-center py-1.5 ${i < metrics.length - 1 ? "border-b border-border" : ""}`}>
+            <span className="text-xs text-muted-foreground">
               {m.label}
             </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <span style={{
-                fontSize: DS.text.sm, fontWeight: DS.weight.bold,
-                color: m.color || "var(--st-text-primary)",
-                fontVariantNumeric: "tabular-nums",
-              }}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold tabular-nums" style={m.color ? { color: m.color } : undefined}>
                 {m.value}
               </span>
               {m.delta != null && (
@@ -3165,7 +3108,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
 
       {/* Pacing — single condensed muted line */}
       {isPacing && pacingNew && (
-        <p style={{ marginTop: "0.5rem", fontSize: "11px", color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+        <p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
           Pacing {pacing!.daysElapsed}/{pacing!.daysInMonth}d
           {" \u00b7 "}
           {pacingNew(pacing!).actual} new / {pacingNew(pacing!).paced} proj
@@ -3178,7 +3121,7 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
         const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
         if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
         return (
-          <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", fontStyle: "italic", marginTop: "0.5rem" }}>
+          <p className="text-xs text-muted-foreground italic mt-2">
             Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
           </p>
         );
@@ -3205,73 +3148,63 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
   const olderTotal = olderData.reduce((s, m) => s + m.net, 0);
   const priorTotal = priorData.reduce((s, m) => s + m.net, 0);
   const yoyDelta = olderTotal > 0 ? ((priorTotal - olderTotal) / olderTotal * 100) : 0;
-  const maxVal = Math.max(olderTotal, priorTotal, 1);
-  const BAR_HEIGHT = 100;
 
-  const bars = [
-    { year: twoYearsAgo, value: olderTotal, color: "var(--st-text-secondary)" },
-    { year: priorYear, value: priorTotal, color: COLORS.member },
-  ].filter((b) => b.value > 0);
+  const barData = [
+    ...(olderTotal > 0 ? [{ year: String(twoYearsAgo), net: olderTotal }] : []),
+    ...(priorTotal > 0 ? [{ year: String(priorYear), net: priorTotal }] : []),
+  ];
+
+  const annualChartConfig = {
+    net: { label: "Net Revenue", color: COLORS.member },
+  } satisfies ChartConfig;
 
   return (
-    <Card>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-        <p style={{...DS.label }}>Annual Net Revenue</p>
+    <DashboardCard>
+      <CardHeader>
+        <CardTitle>Annual Net Revenue</CardTitle>
         {olderTotal > 0 && priorTotal > 0 && (
-          <DeltaBadge delta={priorTotal - olderTotal} deltaPercent={Math.round(yoyDelta * 10) / 10} isCurrency compact />
+          <CardDescription>
+            {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% year over year
+          </CardDescription>
         )}
-      </div>
-
-      {/* Vertical bar chart */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "2rem", height: `${BAR_HEIGHT}px`, marginBottom: "0.5rem" }}>
-        {bars.map((b) => {
-          const fraction = b.value / maxVal;
-          const h = Math.max(Math.round(fraction * (BAR_HEIGHT - 20)), 8);
-          return (
-            <div key={b.year} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", flex: 1, maxWidth: "120px" }}>
-              <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)", marginBottom: "4px" }}>
-                {formatCompactCurrency(b.value)}
-              </span>
-              <div style={{
-                width: "100%",
-                height: `${h}px`,
-                borderRadius: "4px 4px 0 0",
-                backgroundColor: b.color,
-                opacity: 0.85,
-              }} />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Year labels */}
-      <div style={{ display: "flex", justifyContent: "center", gap: "2rem" }}>
-        {bars.map((b) => (
-          <div key={b.year} style={{ flex: 1, maxWidth: "120px", textAlign: "center" }}>
-            <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.medium, color: "var(--st-text-secondary)" }}>
-              {b.year}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* MRR note if available */}
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
+          <BarChart accessibilityLayer data={barData} margin={{ top: 20 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="year"
+              tickLine={false}
+              tickMargin={10}
+              axisLine={false}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
+            />
+            <Bar dataKey="net" fill="var(--color-net)" radius={8}>
+              <LabelList
+                position="top"
+                offset={12}
+                className="fill-foreground"
+                fontSize={12}
+                formatter={(v: number) => formatCompactCurrency(v)}
+              />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
       {projection && projection.currentMRR > 0 && Math.abs(projection.monthlyGrowthRate) < 50 && (
-        <div style={{ borderTop: "1px solid var(--st-border)", marginTop: "0.75rem", paddingTop: "0.75rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
-              {projection.year} Subscription MRR
-            </span>
-            <span style={{fontWeight: DS.weight.bold, fontSize: DS.text.sm, color: "var(--st-text-primary)" }}>
-              {formatCurrency(projection.currentMRR)}
-            </span>
+        <CardFooter className="flex-col items-start gap-2 text-sm">
+          <div className="flex gap-2 leading-none font-medium">
+            {projection.year} Subscription MRR: {formatCurrency(projection.currentMRR)}
           </div>
-          <p style={{fontSize: DS.text.xs, color: "var(--st-text-secondary)", marginTop: "2px" }}>
+          <div className="text-muted-foreground leading-none">
             {projection.monthlyGrowthRate > 0 ? "+" : ""}{projection.monthlyGrowthRate}% monthly growth
-          </p>
-        </div>
+          </div>
+        </CardFooter>
       )}
-    </Card>
+    </DashboardCard>
   );
 }
 
@@ -3312,7 +3245,7 @@ function DashboardView() {
           <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
             <SkyTingLogo />
           </div>
-          <h1 style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold, fontSize: "1.75rem", letterSpacing: "-0.01em", marginBottom: "1rem" }}>
+          <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4">
             Studio Dashboard
           </h1>
           <Skeleton width={200} height={24} style={{ margin: "0 auto", borderRadius: 12 }} />
@@ -3344,11 +3277,11 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
+          <h1 className="scroll-m-20 text-3xl font-semibold tracking-tight">
             Studio Dashboard
           </h1>
-          <div className="rounded-2xl p-6" style={{ backgroundColor: "var(--st-bg-card)", border: "1px solid var(--st-border)" }}>
-            <p style={{ color: "var(--st-text-secondary)" }}>
+          <div className="rounded-2xl p-6 bg-card border border-border">
+            <p className="text-muted-foreground">
               No analytics data yet. Run the pipeline to see stats here.
             </p>
           </div>
@@ -3362,14 +3295,14 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 style={{ color: "var(--st-text-primary)", fontWeight: DS.weight.bold, fontSize: DS.text.xl }}>
+          <h1 className="scroll-m-20 text-3xl font-semibold tracking-tight">
             Studio Dashboard
           </h1>
-          <div className="rounded-2xl p-5 text-center" style={{ backgroundColor: "#F5EFEF", border: "1px solid rgba(160, 64, 64, 0.2)" }}>
-            <p className="font-medium" style={{ color: "var(--st-error)" }}>
+          <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
+            <p className="font-medium text-destructive">
               Unable to load stats
             </p>
-            <p className="text-sm mt-1" style={{ color: "var(--st-error)", opacity: 0.85 }}>
+            <p className="text-sm mt-1 text-destructive opacity-85">
               {loadState.message}
             </p>
           </div>
@@ -3385,21 +3318,13 @@ function DashboardView() {
   const pacing = trends?.pacing || null;
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
+    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16 antialiased" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
       {/* ── Header ─────────────────────────────────── */}
       <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
           <SkyTingLogo />
         </div>
-        <h1
-          style={{
-            color: "var(--st-text-primary)",
-            fontWeight: DS.weight.bold,
-            fontSize: "1.75rem",
-            letterSpacing: "-0.01em",
-            marginBottom: "1rem",
-          }}
-        >
+        <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4">
           Studio Dashboard
         </h1>
         <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
@@ -3466,32 +3391,32 @@ function DashboardView() {
           <MRRBreakdown data={data} />
           {data.monthOverMonth ? (
             <Card>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: DS.cardHeaderMb }}>
-                <p style={{...DS.label }}>{LABELS.yoy}</p>
-                <span style={{ fontWeight: DS.weight.medium, fontSize: DS.text.sm, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
+                <span className="text-sm font-medium text-muted-foreground tabular-nums">
                   {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
                 </span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
-                  <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+              <div className="flex flex-col">
+                <div className="flex justify-between py-2.5 border-b border-border">
+                  <span className="text-sm text-muted-foreground">
                     {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
                   </span>
-                  <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                  <span className="text-sm font-semibold text-muted-foreground tabular-nums">
                     {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
                   </span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "0.6rem 0", borderBottom: "1px solid var(--st-border)" }}>
-                  <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>
+                <div className="flex justify-between py-2.5 border-b border-border">
+                  <span className="text-sm text-muted-foreground">
                     {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
                   </span>
-                  <span style={{fontSize: DS.text.sm, fontWeight: DS.weight.bold, color: "var(--st-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                  <span className="text-sm font-semibold tabular-nums">
                     {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
                   </span>
                 </div>
                 {data.monthOverMonth.yoyGrossPct !== null && (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.6rem 0" }}>
-                    <span style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)" }}>Change</span>
+                  <div className="flex justify-between items-center py-2.5">
+                    <span className="text-sm text-muted-foreground">Change</span>
                     <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
                   </div>
                 )}
@@ -3499,19 +3424,19 @@ function DashboardView() {
             </Card>
           ) : (
             <Card>
-              <p style={{...DS.label, marginBottom: DS.cardHeaderMb }}>Year over Year</p>
-              <p style={{fontSize: DS.text.sm, color: "var(--st-text-secondary)", opacity: 0.6 }}>No data available</p>
+              <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
+              <p className="text-sm text-muted-foreground opacity-60">No data available</p>
             </Card>
           )}
         </div>
 
         {/* ── Auto-Renews ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div className="flex flex-col gap-4">
           <SectionHeader>{LABELS.autoRenews}</SectionHeader>
 
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
-            <p style={{ fontSize: "11px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--st-text-secondary)", marginBottom: "0.5rem" }}>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
               Movement (in-studio)
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3548,7 +3473,7 @@ function DashboardView() {
 
           {/* Health block: Sky Ting TV (digital) */}
           <div>
-            <p style={{ fontSize: "11px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--st-text-secondary)", marginBottom: "0.5rem" }}>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
               Health (digital)
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3568,17 +3493,20 @@ function DashboardView() {
           </div>
         </div>
 
-        {/* ── Non Members ── */}
+        {/* ── Non-auto-renew ── */}
         {(trends?.dropIns || trends?.newCustomerVolume || trends?.newCustomerCohorts || trends?.conversionPool) ? (
-          <NonMembersSection dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
+          <NonAutoRenewSection dropIns={trends?.dropIns ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
         ) : (
-          <NoData label="Non-Members (Drop-Ins, Funnel)" />
+          <NoData label="Non-auto-renew (Drop-Ins, Funnel)" />
         )}
 
-        {/* ── Annual Revenue Comparison ── */}
+        {/* ── Revenue (top-level section) ── */}
         {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-            <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+          <div className="flex flex-col gap-3">
+            <SectionHeader>Revenue</SectionHeader>
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+            </div>
           </div>
         )}
 
@@ -3614,7 +3542,7 @@ export default function Home() {
   if (mode === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: "var(--st-text-secondary)", fontWeight: DS.weight.normal }}>
+        <p className="text-muted-foreground">
           Loading...
         </p>
       </div>
