@@ -2177,9 +2177,9 @@ function useNewCustomerData(volume: NewCustomerVolumeData | null, cohorts: NewCu
   return { completeCohorts, incompleteCohorts, displayComplete, avgRate, currentCohortCount, expectedAutoRenews, convTooltip, projTooltip, daysElapsed };
 }
 
-// ─── New Customer Overview Card ─────────────────────────────
+// ─── New Customer KPI Cards (3-across) ──────────────────────
 
-function NewCustomerOverviewCard({ volume, cohorts }: {
+function NewCustomerKPICards({ volume, cohorts }: {
   volume: NewCustomerVolumeData | null;
   cohorts: NewCustomerCohortData | null;
 }) {
@@ -2187,31 +2187,49 @@ function NewCustomerOverviewCard({ volume, cohorts }: {
   const { completeCohorts, avgRate, currentCohortCount, expectedAutoRenews, convTooltip, projTooltip } = useNewCustomerData(volume, cohorts);
 
   return (
-    <DashboardCard matchHeight>
-      <CardHeader>
-        <CardTitle>{LABELS.newCustomerFunnel}</CardTitle>
-        <CardDescription>{completeCohorts.length} complete cohort{completeCohorts.length !== 1 ? "s" : ""}</CardDescription>
-      </CardHeader>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <DashboardCard>
+        <CardHeader className="pb-2">
+          <CardDescription>New Customers</CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums">
+            {currentCohortCount != null ? formatNumber(currentCohortCount) : "\u2014"}
+          </CardTitle>
+        </CardHeader>
+        <CardFooter className="text-sm text-muted-foreground">
+          Current week cohort
+        </CardFooter>
+      </DashboardCard>
 
-      <CardContent>
-        <MetricRow
-          slots={[
-            { value: currentCohortCount != null ? formatNumber(currentCohortCount) : "\u2014", label: "New Customers" },
-            { value: avgRate != null ? avgRate.toFixed(1) : "\u2014", valueSuffix: avgRate != null ? "%" : undefined, label: "3-Week Conv. Rate", labelExtra: convTooltip ? <InfoTooltip tooltip={convTooltip} /> : undefined },
-            { value: expectedAutoRenews != null ? formatNumber(expectedAutoRenews) : "\u2014", label: "Expected Converts", labelExtra: projTooltip ? <InfoTooltip tooltip={projTooltip} /> : undefined },
-          ]}
-        />
-      </CardContent>
+      <DashboardCard>
+        <CardHeader className="pb-2">
+          <CardDescription className="flex items-center gap-1">
+            3-Week Conv. Rate
+            {convTooltip && <InfoTooltip tooltip={convTooltip} />}
+          </CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums">
+            {avgRate != null ? `${avgRate.toFixed(1)}%` : "\u2014"}
+          </CardTitle>
+        </CardHeader>
+        <CardFooter className="text-sm text-muted-foreground">
+          {completeCohorts.length} complete cohort{completeCohorts.length !== 1 ? "s" : ""}
+        </CardFooter>
+      </DashboardCard>
 
-      <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 leading-none font-medium">
-          {avgRate != null ? `${avgRate.toFixed(1)}% avg conversion rate` : "Calculating..."}
-        </div>
-        <div className="text-muted-foreground leading-none">
-          Weekly new customer cohorts
-        </div>
-      </CardFooter>
-    </DashboardCard>
+      <DashboardCard>
+        <CardHeader className="pb-2">
+          <CardDescription className="flex items-center gap-1">
+            Expected Converts
+            {projTooltip && <InfoTooltip tooltip={projTooltip} />}
+          </CardDescription>
+          <CardTitle className="text-2xl font-semibold tabular-nums">
+            {expectedAutoRenews != null ? formatNumber(expectedAutoRenews) : "\u2014"}
+          </CardTitle>
+        </CardHeader>
+        <CardFooter className="text-sm text-muted-foreground">
+          Based on avg conversion rate
+        </CardFooter>
+      </DashboardCard>
+    </div>
   );
 }
 
@@ -2245,16 +2263,16 @@ function NewCustomerChartCard({ volume, cohorts }: {
         <ChartContainer config={{
           newCustomers: { label: "New Customers", color: COLORS.newCustomer },
           converts: { label: "Converts", color: "hsl(150, 45%, 42%)" },
-        } satisfies ChartConfig} className="h-[200px] w-full">
+        } satisfies ChartConfig} className="h-[250px] w-full">
           <RAreaChart accessibilityLayer data={lineData} margin={{ top: 20, left: 12, right: 12 }}>
             <defs>
               <linearGradient id="fillNewCustomers" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-newCustomers)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-newCustomers)" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="var(--color-newCustomers)" stopOpacity={0.4} />
+                <stop offset="95%" stopColor="var(--color-newCustomers)" stopOpacity={0.05} />
               </linearGradient>
               <linearGradient id="fillConverts" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-converts)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="var(--color-converts)" stopOpacity={0.4} />
+                <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.05} />
               </linearGradient>
             </defs>
             <XAxis
@@ -2289,7 +2307,16 @@ function NewCustomerChartCard({ volume, cohorts }: {
               strokeWidth={2}
               dot={{ fill: "var(--color-converts)" }}
               activeDot={{ r: 6 }}
-            />
+            >
+              {!isMobile && (
+                <LabelList
+                  position="bottom"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                />
+              )}
+            </Area>
             <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
@@ -2520,14 +2547,12 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       {/* ── Subsection C: Conversion ── */}
       <div className="flex flex-col gap-3">
         <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-          {(newCustomerVolume || newCustomerCohorts) && (
-            <NewCustomerOverviewCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
-          )}
-          {(newCustomerVolume || newCustomerCohorts) && (
-            <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
-          )}
-        </div>
+        {(newCustomerVolume || newCustomerCohorts) && (
+          <NewCustomerKPICards volume={newCustomerVolume} cohorts={newCustomerCohorts} />
+        )}
+        {(newCustomerVolume || newCustomerCohorts) && (
+          <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
+        )}
         {conversionPool && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
             <ConversionPoolModule pool={conversionPool} />
