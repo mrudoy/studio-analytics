@@ -2245,22 +2245,31 @@ function NewCustomerChartCard({ volume, cohorts }: {
 
       <CardContent>
         <ChartContainer config={{ newCustomers: { label: "New Customers", color: COLORS.newCustomer } } satisfies ChartConfig} className="h-[200px] w-full">
-          <LineChart accessibilityLayer data={lineData} margin={{ top: 20 }}>
+          <RAreaChart accessibilityLayer data={lineData} margin={{ top: 20, left: 12, right: 12 }}>
+            <defs>
+              <linearGradient id="fillNewCustomers" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-newCustomers)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-newCustomers)" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
             <XAxis
               dataKey="date"
               tickLine={false}
-              tickMargin={10}
               axisLine={false}
+              tickMargin={8}
             />
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent hideLabel formatter={(v) => formatNumber(v as number)} />}
+              content={<ChartTooltipContent indicator="line" formatter={(v) => formatNumber(v as number)} />}
             />
-            <Line
+            <Area
               dataKey="newCustomers"
+              type="natural"
+              fill="url(#fillNewCustomers)"
+              fillOpacity={0.4}
               stroke="var(--color-newCustomers)"
               strokeWidth={2}
-              dot={{ fill: "var(--color-newCustomers)", r: 4 }}
+              dot={{ fill: "var(--color-newCustomers)" }}
               activeDot={{ r: 6 }}
             >
               {!isMobile && (
@@ -2271,8 +2280,8 @@ function NewCustomerChartCard({ volume, cohorts }: {
                   fontSize={12}
                 />
               )}
-            </Line>
-          </LineChart>
+            </Area>
+          </RAreaChart>
         </ChartContainer>
       </CardContent>
 
