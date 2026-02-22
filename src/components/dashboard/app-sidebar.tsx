@@ -6,6 +6,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -13,7 +14,6 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import {
@@ -27,11 +27,12 @@ import { NAV_ITEMS, type SectionKey } from "./sidebar-nav";
 interface AppSidebarProps {
   activeSection: SectionKey;
   onSectionChange: (key: SectionKey) => void;
+  variant?: "sidebar" | "inset";
 }
 
-export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) {
+export function AppSidebar({ activeSection, onSectionChange, variant = "inset" }: AppSidebarProps) {
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" variant={variant}>
       <SidebarHeader className="px-4 py-5">
         <div className="flex items-center gap-2.5">
           <SkyTingSwirl size={26} />
@@ -40,81 +41,78 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
       </SidebarHeader>
 
       <SidebarContent>
-        {NAV_ITEMS.map((item) => {
-          if (!item.children) {
-            const isActive = activeSection === item.key;
-            return (
-              <SidebarGroup key={item.key}>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => onSectionChange(item.key)}
-                      tooltip={item.label}
-                      size="lg"
-                    >
-                      {item.icon && (
-                        <item.icon
-                          className="size-5"
-                          style={{ color: item.color }}
-                        />
-                      )}
-                      <span className="text-[0.94rem]">{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroup>
-            );
-          }
-
-          const groupActive = item.children.some(
-            (child) => activeSection === child.key
-          );
-
-          return (
-            <Collapsible key={item.key} defaultOpen={groupActive} className="group/collapsible">
-              <SidebarGroup>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip={item.label} size="lg">
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {NAV_ITEMS.map((item) => {
+                if (!item.children) {
+                  const isActive = activeSection === item.key;
+                  return (
+                    <SidebarMenuItem key={item.key}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => onSectionChange(item.key)}
+                        tooltip={item.label}
+                      >
                         {item.icon && (
                           <item.icon
                             className="size-5"
                             style={{ color: item.color }}
                           />
                         )}
-                        <span className="flex-1 text-left text-[0.94rem]">{item.label}</span>
-                        <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        <span className="text-[0.94rem]">{item.label}</span>
                       </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
-                        {item.children.map((child) => (
-                          <SidebarMenuSubItem key={child.key}>
-                            <SidebarMenuSubButton
-                              isActive={activeSection === child.key}
-                              onClick={() => onSectionChange(child.key)}
-                              className="cursor-pointer"
-                            >
-                              {child.icon && (
-                                <child.icon
-                                  className="size-[1.1rem]"
-                                  style={{ color: item.color }}
-                                />
-                              )}
-                              <span className="text-[0.85rem]">{child.label}</span>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        ))}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroup>
-            </Collapsible>
-          );
-        })}
+                    </SidebarMenuItem>
+                  );
+                }
+
+                const groupActive = item.children.some(
+                  (child) => activeSection === child.key
+                );
+
+                return (
+                  <Collapsible key={item.key} defaultOpen={groupActive} asChild className="group/collapsible">
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton tooltip={item.label}>
+                          {item.icon && (
+                            <item.icon
+                              className="size-5"
+                              style={{ color: item.color }}
+                            />
+                          )}
+                          <span className="flex-1 text-left text-[0.94rem]">{item.label}</span>
+                          <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {item.children.map((child) => (
+                            <SidebarMenuSubItem key={child.key}>
+                              <SidebarMenuSubButton
+                                isActive={activeSection === child.key}
+                                onClick={() => onSectionChange(child.key)}
+                                className="cursor-pointer"
+                              >
+                                {child.icon && (
+                                  <child.icon
+                                    className="size-[1.1rem]"
+                                    style={{ color: item.color }}
+                                  />
+                                )}
+                                <span>{child.label}</span>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          ))}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>
@@ -138,8 +136,6 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-
-      <SidebarRail />
     </Sidebar>
   );
 }
