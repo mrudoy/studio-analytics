@@ -27,6 +27,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] Churn section shows "No data available" on prod — auto_renews table is empty because pipeline hasn't run against prod DB. Need to run pipeline locally with Railway DATABASE_URL.
 - [x] ~~Auto-renew upload endpoint~~ — `/api/upload` now accepts `type=auto_renews` to upload auto-renew CSVs directly
 - [ ] Gmail-only pipeline (`gmail-pipeline.ts`) — reads CSVs from Gmail without browser trigger. For future use when emails are pre-triggered.
+- [ ] **NEW: Union.fit daily zip pipeline** — Union.fit will send a daily zip to robot@skyting.com with all data. Pipeline needs: login to email → find zip attachment → unzip → parse CSVs → upload to DB → update dashboard. First zip not yet received. This replaces the Playwright scraping approach.
 - [ ] User note: NO SCRAPING — pipeline triggers CSV downloads via Playwright locally, emails arrive, data gets processed. Browser part must run locally (not Railway).
 - [ ] User note: Mike works on TWO machines — another machine may be running dev server or making changes simultaneously. Watch for port conflicts, stale processes, and git divergence.
 
