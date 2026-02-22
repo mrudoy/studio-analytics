@@ -18,6 +18,16 @@ import {
   Database,
 } from "@/components/dashboard/icons";
 import {
+  Card as ShadCard,
+  CardHeader as ShadCardHeader,
+  CardTitle as ShadCardTitle,
+  CardDescription as ShadCardDesc,
+  CardContent as ShadCardContent,
+  CardFooter as ShadCardFooter,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
   AreaChart as RAreaChart,
   Area,
   Bar,
@@ -691,7 +701,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
   );
 }
 
-// ─── Freshness Badge ─────────────────────────────────────────
+// ─── Data Section ────────────────────────────────────────────
 
 function useNextRunCountdown() {
   const [nextRun, setNextRun] = useState<number | null>(null);
@@ -720,7 +730,7 @@ function useNextRunCountdown() {
   return countdown;
 }
 
-function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
+function DataSection({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
   const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [pipelineStep, setPipelineStep] = useState("");
   const [pipelinePercent, setPipelinePercent] = useState(0);
@@ -729,14 +739,12 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
   const eventSourceRef = useRef<EventSource | null>(null);
   const countdown = useNextRunCountdown();
 
-  // ETA ticker — update every second while running
   useEffect(() => {
     if (refreshState !== "running") return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [refreshState]);
 
-  // Cleanup EventSource on unmount
   useEffect(() => {
     return () => { eventSourceRef.current?.close(); };
   }, []);
@@ -748,189 +756,169 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
     setPipelineStartedAt(0);
     try {
       const res = await fetch("/api/pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      if (res.status === 409) {
-        setRefreshState("running"); // already running
-        return;
-      }
+      if (res.status === 409) { setRefreshState("running"); return; }
       if (!res.ok) throw new Error("Failed");
       const { jobId } = await res.json();
-
-      // Connect to SSE for live progress
       eventSourceRef.current?.close();
       const es = new EventSource(`/api/status?jobId=${jobId}`);
       eventSourceRef.current = es;
-
       es.addEventListener("progress", (e) => {
-        const data = JSON.parse(e.data);
-        setPipelineStep(data.step || "Processing...");
-        setPipelinePercent(data.percent || 0);
-        if (data.startedAt) setPipelineStartedAt(data.startedAt);
+        const d = JSON.parse(e.data);
+        setPipelineStep(d.step || "Processing...");
+        setPipelinePercent(d.percent || 0);
+        if (d.startedAt) setPipelineStartedAt(d.startedAt);
       });
-
-      es.addEventListener("complete", () => {
-        es.close();
-        setRefreshState("done");
-        setPipelineStep("");
-        setPipelinePercent(100);
-        // Reload dashboard data after short delay
-        setTimeout(() => window.location.reload(), 2000);
-      });
-
-      es.addEventListener("error", (e) => {
-        try {
-          const data = JSON.parse((e as MessageEvent).data);
-          setPipelineStep(data.message || "Error");
-        } catch { /* SSE error */ }
-        es.close();
-        setRefreshState("error");
-        setTimeout(() => setRefreshState("idle"), 8_000);
-      });
-    } catch {
-      setRefreshState("error");
-      setTimeout(() => setRefreshState("idle"), 5_000);
-    }
+      es.addEventListener("complete", () => { es.close(); setRefreshState("done"); setPipelinePercent(100); setTimeout(() => window.location.reload(), 2000); });
+      es.addEventListener("error", (e) => { try { setPipelineStep(JSON.parse((e as MessageEvent).data).message || "Error"); } catch {} es.close(); setRefreshState("error"); setTimeout(() => setRefreshState("idle"), 8000); });
+    } catch { setRefreshState("error"); setTimeout(() => setRefreshState("idle"), 5000); }
   }
 
   const elapsed = pipelineStartedAt ? now - pipelineStartedAt : 0;
-  const etaMs = pipelinePercent > 5 && elapsed > 0
-    ? (elapsed / pipelinePercent) * (100 - pipelinePercent)
-    : 0;
+  const etaMs = pipelinePercent > 5 && elapsed > 0 ? (elapsed / pipelinePercent) * (100 - pipelinePercent) : 0;
 
-  if (!lastUpdated) return null;
-
-  const date = new Date(lastUpdated);
-  const isStale = Date.now() - date.getTime() > 24 * 60 * 60 * 1000;
+  const isStale = lastUpdated ? Date.now() - new Date(lastUpdated).getTime() > 24 * 60 * 60 * 1000 : true;
 
   return (
-    <div className="flex flex-col items-center gap-2.5" style={{ fontSize: "0.85rem" }}>
-      {/* Freshness pills row */}
-      <div className="inline-flex items-center gap-2">
-        {/* Updated pill */}
-        <div
-          className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5"
-          style={{
-            backgroundColor: isStale ? "rgba(160, 64, 64, 0.08)" : "rgba(74, 124, 89, 0.08)",
-            border: `1px solid ${isStale ? "rgba(160, 64, 64, 0.2)" : "rgba(74, 124, 89, 0.2)"}`,
-                       fontWeight: 600,
-          }}
-        >
-          <span
-            className="inline-block rounded-full"
-            style={{ width: "7px", height: "7px", backgroundColor: isStale ? "var(--st-error)" : "var(--st-success)" }}
-          />
-          <span style={{ color: isStale ? "var(--st-error)" : "var(--st-success)" }}>
-            Updated {formatRelativeTime(lastUpdated)}
-          </span>
-          <span className="text-muted-foreground font-normal">
-            {formatDateTime(lastUpdated)}
-          </span>
-        </div>
-        {/* Next run pill */}
-        {countdown && refreshState !== "running" && (
-          <div
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5"
-            style={{
-              backgroundColor: "rgba(128, 128, 128, 0.06)",
-              border: "1px solid var(--st-border)",
-                           fontWeight: 500,
-              color: "var(--st-text-secondary)",
-            }}
-          >
-            Next in {countdown}
-          </div>
-        )}
-      </div>
-
-      <div className="inline-flex items-center gap-3">
-        {spreadsheetUrl && (
-          <a
-            href={spreadsheetUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors"
-            style={{
-              color: "var(--st-text-secondary)",
-              border: "1px solid var(--st-border)",
-                           fontWeight: 500,
-              fontSize: "0.8rem",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = "var(--st-border-hover)";
-              e.currentTarget.style.color = "var(--st-text-primary)";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "var(--st-border)";
-              e.currentTarget.style.color = "var(--st-text-secondary)";
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <polyline points="10 9 9 9 8 9" />
-            </svg>
-            Google Sheet
-          </a>
-        )}
-
-        <button
-          onClick={triggerRefresh}
-          disabled={refreshState === "running"}
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors"
-          style={{
-            color: refreshState === "running" ? "var(--st-text-secondary)" : refreshState === "done" ? "var(--st-success)" : refreshState === "error" ? "var(--st-error)" : "var(--st-text-secondary)",
-            border: `1px solid ${refreshState === "done" ? "rgba(74, 124, 89, 0.3)" : "var(--st-border)"}`,
-                       fontWeight: 500,
-            fontSize: "0.8rem",
-            cursor: refreshState === "running" ? "wait" : "pointer",
-            opacity: refreshState === "running" ? 0.6 : 1,
-            background: "transparent",
-          }}
-          onMouseOver={(e) => {
-            if (refreshState === "idle") {
-              e.currentTarget.style.borderColor = "var(--st-border-hover)";
-              e.currentTarget.style.color = "var(--st-text-primary)";
-            }
-          }}
-          onMouseOut={(e) => {
-            if (refreshState === "idle") {
-              e.currentTarget.style.borderColor = "var(--st-border)";
-              e.currentTarget.style.color = "var(--st-text-secondary)";
-            }
-          }}
-        >
-          <svg
-            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ animation: refreshState === "running" ? "spin 1s linear infinite" : "none" }}
-          >
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-          {refreshState === "running" ? "Refreshing..." : refreshState === "done" ? "Queued" : refreshState === "error" ? "Failed" : "Refresh Data"}
-        </button>
-      </div>
-
-      {refreshState === "running" && (
-        <div style={{ marginTop: "0.5rem", maxWidth: "340px", width: "100%" }}>
-          <div className="flex justify-between items-baseline text-[0.72rem] mb-1">
-            <span className="text-muted-foreground">{pipelineStep}</span>
-            <span className="font-bold">{pipelinePercent}%</span>
-          </div>
-          <div className="rounded-full overflow-hidden" style={{ height: "6px", backgroundColor: "var(--st-border)" }}>
-            <div
-              className="rounded-full transition-all duration-500"
-              style={{ height: "100%", width: `${pipelinePercent}%`, backgroundColor: "var(--st-accent)" }}
-            />
-          </div>
-          {etaMs > 3000 && (
-            <p className="text-[0.68rem] text-muted-foreground opacity-70 mt-0.5 text-center">
-              {formatEta(etaMs)}
-            </p>
+    <div className="grid gap-4 md:grid-cols-2">
+      {/* ── Last Update ── */}
+      <ShadCard>
+        <ShadCardHeader>
+          <ShadCardTitle className="flex items-center gap-2">
+            Last Update
+            {lastUpdated && (
+              <Badge variant={isStale ? "destructive" : "secondary"} className={!isStale ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}>
+                {isStale ? "Stale" : "Fresh"}
+              </Badge>
+            )}
+          </ShadCardTitle>
+          <ShadCardDesc>Most recent data refresh</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          {lastUpdated ? (
+            <div className="space-y-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-semibold tabular-nums">{formatRelativeTime(lastUpdated)}</span>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {formatDateTime(lastUpdated)}
+              </div>
+              {dataSource && (
+                <div className="text-xs text-muted-foreground">
+                  Source: {dataSource === "database" ? "PostgreSQL" : dataSource === "sheets" ? "Google Sheets" : "Database + Sheets"}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No data loaded yet</p>
           )}
-        </div>
-      )}
+        </ShadCardContent>
+        {spreadsheetUrl && (
+          <ShadCardFooter>
+            <Button variant="outline" size="sm" asChild>
+              <a href={spreadsheetUrl} target="_blank" rel="noopener noreferrer">
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                View in Google Sheets
+              </a>
+            </Button>
+          </ShadCardFooter>
+        )}
+      </ShadCard>
+
+      {/* ── Next Update ── */}
+      <ShadCard>
+        <ShadCardHeader>
+          <ShadCardTitle className="flex items-center gap-2">
+            Next Update
+            {refreshState === "running" && (
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">Running</Badge>
+            )}
+          </ShadCardTitle>
+          <ShadCardDesc>Scheduled pipeline run</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          <div className="space-y-3">
+            {countdown && refreshState !== "running" ? (
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-semibold tabular-nums">{countdown}</span>
+              </div>
+            ) : refreshState === "running" ? (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{pipelineStep}</span>
+                  <span className="font-medium tabular-nums">{pipelinePercent}%</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pipelinePercent}%` }} />
+                </div>
+                {etaMs > 3000 && (
+                  <p className="text-xs text-muted-foreground">{formatEta(etaMs)} remaining</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No schedule configured</p>
+            )}
+          </div>
+        </ShadCardContent>
+        <ShadCardFooter>
+          <Button
+            variant={refreshState === "error" ? "destructive" : "outline"}
+            size="sm"
+            disabled={refreshState === "running"}
+            onClick={triggerRefresh}
+          >
+            <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: refreshState === "running" ? "spin 1s linear infinite" : "none" }}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {refreshState === "running" ? "Refreshing..." : refreshState === "done" ? "Done" : refreshState === "error" ? "Retry" : "Refresh Now"}
+          </Button>
+        </ShadCardFooter>
+      </ShadCard>
+
+      {/* ── Pipeline Info ── */}
+      <ShadCard className="md:col-span-2">
+        <ShadCardHeader>
+          <ShadCardTitle>Data Pipeline</ShadCardTitle>
+          <ShadCardDesc>How dashboard data gets updated</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">1</div>
+              <div>
+                <p className="text-sm font-medium">Union.fit sends daily zip</p>
+                <p className="text-xs text-muted-foreground">Automated export to robot@skyting.com with all report CSVs</p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0">Pending</Badge>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-semibold">2</div>
+              <div>
+                <p className="text-sm font-medium">Pipeline processes email</p>
+                <p className="text-xs text-muted-foreground">Login to inbox, find zip, extract CSVs, parse and validate</p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0">Not started</Badge>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-semibold">3</div>
+              <div>
+                <p className="text-sm font-medium">Upload to database</p>
+                <p className="text-xs text-muted-foreground">Upsert records into PostgreSQL, update dashboard metrics</p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0">Not started</Badge>
+            </div>
+          </div>
+        </ShadCardContent>
+        <ShadCardFooter className="border-t pt-4">
+          <p className="text-xs text-muted-foreground">
+            Waiting for first zip from Union.fit. Current data loaded via manual CSV uploads and legacy pipeline.
+          </p>
+        </ShadCardFooter>
+      </ShadCard>
     </div>
   );
 }
@@ -3920,7 +3908,7 @@ function DashboardContent({ activeSection, data }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Pipeline status, data freshness, and refresh controls</p>
           </div>
-          <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
+          <DataSection lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
         </div>
       )}
     </div>
