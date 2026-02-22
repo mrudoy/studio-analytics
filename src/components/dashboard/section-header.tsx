@@ -9,12 +9,12 @@ interface SectionHeaderProps {
 
 function SectionHeader({ children, subtitle }: SectionHeaderProps) {
   return (
-    <div>
-      <h2 className="text-base font-semibold tracking-tight">
+    <div className="space-y-1">
+      <h2 className="text-2xl font-semibold tracking-tight">
         {children}
       </h2>
       {subtitle && (
-        <p className="text-sm mt-0.5 text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {subtitle}
         </p>
       )}
