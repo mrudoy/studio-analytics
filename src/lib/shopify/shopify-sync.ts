@@ -18,7 +18,8 @@ import {
 
 export interface ShopifySyncOptions {
   storeName: string;
-  accessToken: string;
+  clientId: string;
+  clientSecret: string;
   onProgress?: (step: string, percent: number) => void;
 }
 
@@ -31,10 +32,10 @@ export interface ShopifySyncResult {
 }
 
 export async function runShopifySync(opts: ShopifySyncOptions): Promise<ShopifySyncResult> {
-  const { storeName, accessToken, onProgress } = opts;
+  const { storeName, clientId, clientSecret, onProgress } = opts;
   const progress = onProgress || (() => {});
 
-  const client = new ShopifyClient({ storeName, accessToken });
+  const client = new ShopifyClient({ storeName, clientId, clientSecret });
 
   // Step 1: Test connection
   progress("Connecting to Shopify", 0);

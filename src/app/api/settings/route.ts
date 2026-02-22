@@ -18,7 +18,7 @@ export async function GET() {
       hasAnalyticsSheet: !!settings?.analyticsSpreadsheetId,
       hasRawDataSheet: !!settings?.rawDataSpreadsheetId,
       hasRobotEmail: !!settings?.robotEmail?.address,
-      hasShopify: !!(settings?.shopify?.storeName && settings?.shopify?.accessToken),
+      hasShopify: !!(settings?.shopify?.storeName && settings?.shopify?.clientId && settings?.shopify?.clientSecret),
       // Never return actual credentials — only existence flags
       email: settings?.credentials?.email ? maskEmail(settings.credentials.email) : null,
       robotEmail: settings?.robotEmail?.address ? maskEmail(settings.robotEmail.address) : null,
@@ -65,10 +65,11 @@ export async function PUT(request: Request) {
       };
     }
 
-    if (body.shopifyStoreName && body.shopifyAccessToken) {
+    if (body.shopifyStoreName && body.shopifyClientId && body.shopifyClientSecret) {
       updated.shopify = {
         storeName: body.shopifyStoreName,
-        accessToken: body.shopifyAccessToken,
+        clientId: body.shopifyClientId,
+        clientSecret: body.shopifyClientSecret,
       };
     }
 

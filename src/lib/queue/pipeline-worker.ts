@@ -82,12 +82,13 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   });
 
   // ── Shopify sync (non-fatal — dashboard still works without it) ──
-  if (settings.shopify?.storeName && settings.shopify?.accessToken) {
+  if (settings.shopify?.storeName && settings.shopify?.clientId && settings.shopify?.clientSecret) {
     try {
       updateProgress(job, "Syncing Shopify data", 85);
       const shopifyResult = await runShopifySync({
         storeName: settings.shopify.storeName,
-        accessToken: settings.shopify.accessToken,
+        clientId: settings.shopify.clientId,
+        clientSecret: settings.shopify.clientSecret,
         onProgress: (step, pct) => updateProgress(job, `Shopify: ${step}`, 85 + pct * 10),
       });
       console.log(

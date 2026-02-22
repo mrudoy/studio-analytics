@@ -2,7 +2,8 @@
  * Shopify Admin REST API client.
  *
  * Uses built-in fetch (no extra deps). Handles:
- * - Authentication via X-Shopify-Access-Token header
+ * - OAuth client credentials grant (exchanges clientId/clientSecret for 24h token)
+ * - Token caching + auto-refresh on expiry
  * - Cursor-based pagination via Link header
  * - Rate limiting via X-Shopify-Shop-Api-Call-Limit header
  */
@@ -14,9 +15,13 @@ const MAX_PER_PAGE = 250;
 const THROTTLE_THRESHOLD = 0.8;
 const THROTTLE_DELAY_MS = 1_000;
 
+/** Refresh the token 5 minutes before it actually expires. */
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1_000;
+
 export interface ShopifyClientConfig {
   storeName: string;
-  accessToken: string;
+  clientId: string;
+  clientSecret: string;
 }
 
 export interface ShopifyShop {
@@ -103,20 +108,69 @@ export interface ShopifyLocation {
 
 export class ShopifyClient {
   private baseUrl: string;
-  private headers: Record<string, string>;
+  private storeUrl: string;
+  private cachedToken: string | null = null;
+  private tokenExpiresAt = 0;
 
   constructor(private config: ShopifyClientConfig) {
-    this.baseUrl = `https://${config.storeName}.myshopify.com/admin/api/${API_VERSION}`;
-    this.headers = {
-      "X-Shopify-Access-Token": config.accessToken,
-      "Content-Type": "application/json",
+    this.storeUrl = `https://${config.storeName}.myshopify.com`;
+    this.baseUrl = `${this.storeUrl}/admin/api/${API_VERSION}`;
+  }
+
+  // ── OAuth client credentials grant ───────────────────────────
+
+  /**
+   * Exchange clientId + clientSecret for a short-lived (24h) access token.
+   * Caches the token and auto-refreshes when expired.
+   */
+  private async getAccessToken(): Promise<string> {
+    if (this.cachedToken && Date.now() < this.tokenExpiresAt) {
+      return this.cachedToken;
+    }
+
+    console.log("[shopify] Requesting new access token via client credentials grant");
+
+    const res = await fetch(`${this.storeUrl}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+      }).toString(),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Shopify token exchange failed (${res.status}): ${res.statusText} — ${body.slice(0, 300)}`
+      );
+    }
+
+    const data = (await res.json()) as {
+      access_token: string;
+      scope: string;
+      expires_in: number;
     };
+
+    this.cachedToken = data.access_token;
+    // expires_in is in seconds (typically 86399 = ~24h). Buffer by 5 min.
+    this.tokenExpiresAt = Date.now() + data.expires_in * 1000 - TOKEN_REFRESH_BUFFER_MS;
+
+    console.log(`[shopify] Got access token (scope: ${data.scope}, expires_in: ${data.expires_in}s)`);
+    return this.cachedToken;
   }
 
   // ── Core fetch with rate limiting ───────────────────────────
 
   private async request<T>(url: string): Promise<{ data: T; nextUrl: string | null }> {
-    const res = await fetch(url, { headers: this.headers });
+    const token = await this.getAccessToken();
+    const res = await fetch(url, {
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+    });
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");

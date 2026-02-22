@@ -38,8 +38,10 @@ export interface RobotEmailConfig {
 export interface ShopifyConfig {
   /** Shopify store name (e.g. "skyting" for skyting.myshopify.com) */
   storeName: string;
-  /** Admin API access token from a Shopify custom app */
-  accessToken: string;
+  /** OAuth Client ID from Shopify Dev Dashboard */
+  clientId: string;
+  /** OAuth Client Secret from Shopify Dev Dashboard */
+  clientSecret: string;
 }
 
 export interface AppSettings {
@@ -111,10 +113,11 @@ function loadSettingsFromEnv(): AppSettings | null {
           timezone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
         }
       : undefined,
-    shopify: process.env.SHOPIFY_STORE_NAME && process.env.SHOPIFY_ACCESS_TOKEN
+    shopify: process.env.SHOPIFY_STORE_NAME && process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET
       ? {
           storeName: process.env.SHOPIFY_STORE_NAME,
-          accessToken: process.env.SHOPIFY_ACCESS_TOKEN,
+          clientId: process.env.SHOPIFY_CLIENT_ID,
+          clientSecret: process.env.SHOPIFY_CLIENT_SECRET,
         }
       : undefined,
   };

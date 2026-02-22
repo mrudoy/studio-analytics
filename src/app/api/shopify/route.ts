@@ -11,16 +11,17 @@ export async function GET() {
   try {
     const settings = loadSettings();
 
-    if (!settings?.shopify?.storeName || !settings?.shopify?.accessToken) {
+    if (!settings?.shopify?.storeName || !settings?.shopify?.clientId || !settings?.shopify?.clientSecret) {
       return NextResponse.json({
         connected: false,
-        error: "Shopify not configured. Set SHOPIFY_STORE_NAME and SHOPIFY_ACCESS_TOKEN.",
+        error: "Shopify not configured. Set SHOPIFY_STORE_NAME, SHOPIFY_CLIENT_ID, and SHOPIFY_CLIENT_SECRET.",
       });
     }
 
     const client = new ShopifyClient({
       storeName: settings.shopify.storeName,
-      accessToken: settings.shopify.accessToken,
+      clientId: settings.shopify.clientId,
+      clientSecret: settings.shopify.clientSecret,
     });
 
     // Test connection
@@ -58,9 +59,9 @@ export async function POST() {
   try {
     const settings = loadSettings();
 
-    if (!settings?.shopify?.storeName || !settings?.shopify?.accessToken) {
+    if (!settings?.shopify?.storeName || !settings?.shopify?.clientId || !settings?.shopify?.clientSecret) {
       return NextResponse.json(
-        { error: "Shopify not configured. Set SHOPIFY_STORE_NAME and SHOPIFY_ACCESS_TOKEN." },
+        { error: "Shopify not configured. Set SHOPIFY_STORE_NAME, SHOPIFY_CLIENT_ID, and SHOPIFY_CLIENT_SECRET." },
         { status: 400 }
       );
     }
@@ -69,7 +70,8 @@ export async function POST() {
 
     const result = await runShopifySync({
       storeName: settings.shopify.storeName,
-      accessToken: settings.shopify.accessToken,
+      clientId: settings.shopify.clientId,
+      clientSecret: settings.shopify.clientSecret,
     });
 
     console.log(
