@@ -64,7 +64,7 @@ export const NAV_ITEMS: NavItem[] = [
     color: SECTION_COLORS["conversion-new"],
     children: [
       { key: "conversion-new", label: "New Customers", icon: UserPlus },
-      { key: "conversion-pool", label: "All Non Auto-Renew Customers", icon: UsersGroup },
+      { key: "conversion-pool", label: "Non Auto-Renew Customers", icon: UsersGroup },
     ],
   },
   { key: "churn", label: "Churn", icon: HourglassLow, color: SECTION_COLORS.churn },
@@ -77,7 +77,7 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "growth-auto": ["Growth", "Auto-Renews"],
   "growth-non-auto": ["Growth", "Non-Auto-Renews"],
   "conversion-new": ["Conversion", "New Customers"],
-  "conversion-pool": ["Conversion", "All Non Auto-Renew Customers"],
+  "conversion-pool": ["Conversion", "Non Auto-Renew Customers"],
   churn: ["Churn"],
   data: ["Data"],
 };
