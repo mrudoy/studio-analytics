@@ -67,6 +67,73 @@ export function HourglassLow(props: IconProps) {
   );
 }
 
+/** Recycle arrows — Auto-Renews */
+export function Recycle(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="m12 17l-2 2l2 2" />
+      <path d="M10 19h9a2 2 0 0 0 1.75-2.75l-.55-1" />
+      <path d="M8.536 11l-.732-2.732L5.072 9" />
+      <path d="m7.804 8.268l-4.5 7.794a2 2 0 0 0 1.506 2.89l1.141.024" />
+      <path d="M15.464 11l2.732.732L18.928 9" />
+      <path d="m18.196 11.732l-4.5-7.794a2 2 0 0 0-3.256-.14l-.591.976" />
+    </svg>
+  );
+}
+
+/** Recycle with slash — Non-Auto-Renews */
+export function RecycleOff(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="m12 17l-2 2l2 2" />
+      <path d="M10 19h9" />
+      <path d="M21.896 16.929a2 2 0 0 0-.146-.679l-.55-1" />
+      <path d="M8.536 11l-.732-2.732L5.072 9" />
+      <path d="m7.804 8.268l-4.5 7.794a2 2 0 0 0 1.506 2.89l1.141.024" />
+      <path d="M15.464 11l2.732.732L18.928 9" />
+      <path d="m18.196 11.732l-4.5-7.794a2 2 0 0 0-3.256-.14l-.591.976" />
+      <path d="M3 3l18 18" />
+    </svg>
+  );
+}
+
+/** User with plus — New Customers */
+export function UserPlus(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0" />
+      <path d="M16 19h6" />
+      <path d="M19 16v6" />
+      <path d="M6 21v-2a4 4 0 0 1 4-4h4" />
+    </svg>
+  );
+}
+
+/** Users group — All Non-Auto-Renew Customers */
+export function UsersGroup(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M10 13a2 2 0 1 0 4 0a2 2 0 0 0-4 0" />
+      <path d="M8 21v-1a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1" />
+      <path d="M15 5a2 2 0 1 0 4 0a2 2 0 0 0-4 0" />
+      <path d="M17 10h2a2 2 0 0 1 2 2v1" />
+      <path d="M5 5a2 2 0 1 0 4 0a2 2 0 0 0-4 0" />
+      <path d="M3 13v-1a2 2 0 0 1 2-2h2" />
+    </svg>
+  );
+}
+
+/** Database cylinder — Data section */
+export function Database(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M4 6a8 3 0 1 0 16 0A8 3 0 1 0 4 6" />
+      <path d="M4 6v6a8 3 0 0 0 16 0V6" />
+      <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+    </svg>
+  );
+}
+
 /** Eyeglasses — Overview section */
 export function Eyeglass(props: IconProps) {
   return (
