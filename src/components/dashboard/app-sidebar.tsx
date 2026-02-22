@@ -6,11 +6,13 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
@@ -86,30 +88,29 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
                         <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {item.children.map((child) => (
+                          <SidebarMenuSubItem key={child.key}>
+                            <SidebarMenuSubButton
+                              isActive={activeSection === child.key}
+                              onClick={() => onSectionChange(child.key)}
+                              className="cursor-pointer"
+                            >
+                              {child.icon && (
+                                <child.icon
+                                  className="size-[1.1rem]"
+                                  style={{ color: item.color }}
+                                />
+                              )}
+                              <span className="text-[0.85rem]">{child.label}</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
                   </SidebarMenuItem>
                 </SidebarMenu>
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {item.children.map((child) => (
-                        <SidebarMenuItem key={child.key}>
-                          <SidebarMenuButton
-                            isActive={activeSection === child.key}
-                            onClick={() => onSectionChange(child.key)}
-                          >
-                            {child.icon && (
-                              <child.icon
-                                className="size-[1.1rem]"
-                                style={{ color: item.color }}
-                              />
-                            )}
-                            <span className="text-[0.85rem]">{child.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </CollapsibleContent>
               </SidebarGroup>
             </Collapsible>
           );
