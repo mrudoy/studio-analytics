@@ -1,11 +1,11 @@
+import type { ComponentType, SVGProps } from "react";
 import {
-  LayoutDashboard,
-  DollarSign,
-  TrendingUp,
-  ArrowRightLeft,
-  AlertTriangle,
-  type LucideIcon,
-} from "lucide-react";
+  Eyeglass,
+  ReportMoney,
+  ChartBarPopular,
+  ArrowFork,
+  HourglassLow,
+} from "./icons";
 
 export type SectionKey =
   | "overview"
@@ -16,20 +16,22 @@ export type SectionKey =
   | "conversion-pool"
   | "churn";
 
+type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
+
 export interface NavItem {
   key: SectionKey;
   label: string;
-  icon?: LucideIcon;
+  icon?: IconComponent;
   children?: NavItem[];
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "revenue", label: "Revenue", icon: DollarSign },
+  { key: "overview", label: "Overview", icon: Eyeglass },
+  { key: "revenue", label: "Revenue", icon: ReportMoney },
   {
     key: "growth-auto",
     label: "Growth",
-    icon: TrendingUp,
+    icon: ChartBarPopular,
     children: [
       { key: "growth-auto", label: "Auto-Renews" },
       { key: "growth-non-auto", label: "Non-Auto-Renews" },
@@ -38,13 +40,13 @@ export const NAV_ITEMS: NavItem[] = [
   {
     key: "conversion-new",
     label: "Conversion",
-    icon: ArrowRightLeft,
+    icon: ArrowFork,
     children: [
       { key: "conversion-new", label: "New Customers" },
       { key: "conversion-pool", label: "All Non Auto-Renew Customers" },
     ],
   },
-  { key: "churn", label: "Churn", icon: AlertTriangle },
+  { key: "churn", label: "Churn", icon: HourglassLow },
 ];
 
 export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {

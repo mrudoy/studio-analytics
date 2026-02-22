@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Settings, FileText } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -12,10 +12,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarRail,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import {
   Collapsible,
@@ -33,9 +31,9 @@ interface AppSidebarProps {
 export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <SkyTingSwirl size={24} />
+      <SidebarHeader className="px-4 py-5">
+        <div className="flex items-center gap-2.5">
+          <SkyTingSwirl size={26} />
           <SkyTingWordmark className="group-data-[collapsible=icon]:hidden" />
         </div>
       </SidebarHeader>
@@ -43,7 +41,6 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
       <SidebarContent>
         {NAV_ITEMS.map((item) => {
           if (!item.children) {
-            // Simple top-level item (Overview, Revenue, Churn)
             return (
               <SidebarGroup key={item.key}>
                 <SidebarMenu>
@@ -53,7 +50,7 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
                       onClick={() => onSectionChange(item.key)}
                       tooltip={item.label}
                     >
-                      {item.icon && <item.icon />}
+                      {item.icon && <item.icon className="size-4" />}
                       <span>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -62,7 +59,6 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
             );
           }
 
-          // Collapsible group (Growth, Conversion)
           const groupActive = item.children.some(
             (child) => activeSection === child.key
           );
@@ -99,21 +95,26 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
         })}
       </SidebarContent>
 
-      <SidebarFooter className="p-4">
-        <div className="flex flex-col gap-2 text-sm">
-          <a
-            href="/settings"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Settings
-          </a>
-          <a
-            href="/results"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Results
-          </a>
-        </div>
+      <SidebarFooter>
+        <SidebarSeparator />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Settings">
+              <a href="/settings">
+                <Settings className="size-4" />
+                <span>Settings</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Results">
+              <a href="/results">
+                <FileText className="size-4" />
+                <span>Results</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
 
       <SidebarRail />

@@ -428,7 +428,7 @@ function PipelineView() {
           <div className="flex justify-center">
             <SkyTingLogo />
           </div>
-          <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Studio Analytics
           </h1>
           <p className="text-muted-foreground leading-7">
@@ -624,12 +624,12 @@ function PipelineView() {
 
 function SectionHeader({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
   return (
-    <div>
-      <h2 className="scroll-m-20 text-xl font-semibold tracking-tight">
+    <div className="space-y-1">
+      <h2 className="text-2xl font-semibold tracking-tight">
         {children}
       </h2>
       {subtitle && (
-        <p className="text-muted-foreground text-sm mt-0.5">
+        <p className="text-sm text-muted-foreground">
           {subtitle}
         </p>
       )}
@@ -1190,9 +1190,9 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
     <div className="flex items-center justify-between shrink-0 pb-1">
       <div className="flex items-center gap-3">
         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-[16px] leading-[20px] font-semibold tracking-[-0.01em] text-zinc-900">{title}</span>
+        <span className="text-base leading-5 font-semibold tracking-tight text-foreground">{title}</span>
         {summaryPill && (
-          <span className="text-[12px] leading-[16px] font-medium text-zinc-500 bg-zinc-100 rounded-full px-2 py-0.5">{summaryPill}</span>
+          <span className="text-xs leading-4 font-medium text-muted-foreground bg-muted rounded-full px-2 py-0.5">{summaryPill}</span>
         )}
       </div>
       <div className="flex items-center gap-3">
@@ -1201,7 +1201,7 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
           <button
             type="button"
             onClick={onToggleDetails}
-            className="text-[12px] leading-[16px] text-zinc-500 hover:text-zinc-900 font-medium inline-flex items-center gap-1 transition-colors"
+            className="text-xs leading-4 text-muted-foreground hover:text-foreground font-medium inline-flex items-center gap-1 transition-colors"
           >
             {detailsOpen ? "Hide" : "Details"}
             <span
@@ -1215,14 +1215,14 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
   );
 }
 
-/** Subsection header — Apple Health style: icon + colored label */
+/** Subsection header — icon + label */
 function SubsectionHeader({ children, icon: Icon, color }: { children: React.ReactNode; icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color?: string }) {
   return (
-    <div className="flex items-center gap-2.5 pt-3">
-      {Icon && <Icon className="size-[22px]" style={color ? { color } : undefined} />}
-      <p className="text-[17px] leading-none font-bold capitalize" style={color ? { color } : undefined}>
+    <div className="flex items-center gap-2.5 pt-2 pb-1">
+      {Icon && <Icon className="size-5" style={color ? { color } : undefined} />}
+      <h3 className="text-lg font-semibold tracking-tight" style={color ? { color } : undefined}>
         {children}
-      </p>
+      </h3>
     </div>
   );
 }
@@ -1244,7 +1244,7 @@ function MInfoIcon({ tooltip }: { tooltip: string }) {
     <span
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
-      className="inline-flex items-center justify-center h-3.5 w-3.5 shrink-0 cursor-help text-[11px] text-neutral-400 relative"
+      className="inline-flex items-center justify-center h-3.5 w-3.5 shrink-0 cursor-help text-[11px] text-muted-foreground/70 relative"
     >
       &#9432;
       {show && (
@@ -1298,11 +1298,11 @@ function KPI({
       {/* Row A: Value (LOCK HEIGHT + BASELINE ALIGN) */}
       <div className={`${s ? "h-[48px]" : "h-[56px]"} flex items-end justify-between gap-2`}>
         <div className="flex items-baseline gap-2 min-w-0">
-          <div className={`${s ? (sec ? "text-[34px] leading-[34px] text-neutral-700" : "text-[40px] leading-[40px] text-neutral-900") : "text-[52px] leading-[52px] text-neutral-900"} font-semibold tracking-[-0.02em] tabular-nums`}>
+          <div className={`${s ? (sec ? "text-[34px] leading-[34px] text-foreground/80" : "text-[40px] leading-[40px] text-foreground") : "text-[52px] leading-[52px] text-foreground"} font-semibold tracking-[-0.02em] tabular-nums`}>
             {value}
           </div>
           {valueSuffix ? (
-            <div className={`${s ? (sec ? "text-[14px] leading-[14px] text-neutral-400" : "text-[16px] leading-[16px] text-neutral-500") : "text-[18px] leading-[18px] text-neutral-600"} font-semibold tabular-nums`}>
+            <div className={`${s ? (sec ? "text-[14px] leading-[14px] text-muted-foreground/70" : "text-[16px] leading-[16px] text-muted-foreground") : "text-[18px] leading-[18px] text-muted-foreground"} font-semibold tabular-nums`}>
               {valueSuffix}
             </div>
           ) : null}
@@ -1314,14 +1314,14 @@ function KPI({
         /* Section variant: collapsed label + meta support block (no fixed heights) */
         <div className="mt-1">
           <div className="inline-flex items-center gap-1 max-w-full">
-            <span className="text-[14px] leading-[18px] text-neutral-600 whitespace-nowrap truncate">{label}</span>
+            <span className="text-[14px] leading-[18px] text-muted-foreground whitespace-nowrap truncate">{label}</span>
             {tooltip ? <MInfoIcon tooltip={tooltip} /> : null}
           </div>
           {(metaLeft || metaRight) ? (
             <div className="mt-1 flex items-center gap-2 min-w-0 leading-none">
               {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
               {metaRight ? (
-                <div className="truncate text-[12px] text-neutral-500 leading-none">{metaRight}</div>
+                <div className="truncate text-[12px] text-muted-foreground leading-none">{metaRight}</div>
               ) : null}
             </div>
           ) : null}
@@ -1329,7 +1329,7 @@ function KPI({
       ) : (
         /* Hero variant: fixed-height rows for cross-component alignment */
         <>
-          <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-neutral-600">
+          <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <span>{label}</span>
               {tooltip ? <MInfoIcon tooltip={tooltip} /> : null}
@@ -1338,7 +1338,7 @@ function KPI({
           <div className="h-[28px] mt-2 flex items-center gap-2 min-w-0 leading-none">
             {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
             {metaRight ? (
-              <div className="truncate leading-none text-[14px] text-neutral-500">{metaRight}</div>
+              <div className="truncate leading-none text-[14px] text-muted-foreground">{metaRight}</div>
             ) : null}
           </div>
         </>
@@ -1353,7 +1353,7 @@ function KPIGrid3({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-3 gap-4 items-start" style={{ padding: "8px 0" }}>
       {items.map((child, i) => (
-        <div key={i} className={`flex flex-col items-start${i > 0 ? " border-l border-zinc-200 pl-4" : ""}`}>
+        <div key={i} className={`flex flex-col items-start${i > 0 ? " border-l border-border pl-4" : ""}`}>
           {child}
         </div>
       ))}
@@ -1375,33 +1375,33 @@ function FunnelSummaryRow({ total, totalLabel, rate, rateTooltip, expected, expe
     <div className="min-h-[76px] shrink-0 grid grid-cols-3 gap-6 items-start pt-1">
       {/* Left: Total */}
       <div className="min-w-0">
-        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-foreground tabular-nums">
           {total != null ? formatNumber(total) : "\u2014"}
         </span>
-        <div className="mt-1 text-[13px] leading-[16px] font-medium text-zinc-500">{totalLabel}</div>
+        <div className="mt-1 text-[13px] leading-[16px] font-medium text-muted-foreground">{totalLabel}</div>
       </div>
       {/* Middle: 3-Week Conversion Rate */}
-      <div className="min-w-0 border-l border-zinc-200/50 pl-6">
+      <div className="min-w-0 border-l border-border/50 pl-6">
         <div className="flex items-baseline">
-          <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+          <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-foreground tabular-nums">
             {rate != null ? rate.toFixed(1) : "\u2014"}
           </span>
           {rate != null && (
-            <span className="text-[18px] leading-[22px] font-semibold tracking-[-0.01em] text-zinc-500 ml-0.5 tabular-nums">%</span>
+            <span className="text-[18px] leading-[22px] font-semibold tracking-[-0.01em] text-muted-foreground ml-0.5 tabular-nums">%</span>
           )}
         </div>
         <div className="mt-1 inline-flex items-center gap-1">
-          <span className="text-[13px] leading-[16px] font-medium text-zinc-500">3-Week Conversion Rate</span>
+          <span className="text-[13px] leading-[16px] font-medium text-muted-foreground">3-Week Conversion Rate</span>
           {rateTooltip && <MInfoIcon tooltip={rateTooltip} />}
         </div>
       </div>
       {/* Right: Expected Converts */}
-      <div className="min-w-0 border-l border-zinc-200/50 pl-6">
-        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+      <div className="min-w-0 border-l border-border/50 pl-6">
+        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-foreground tabular-nums">
           {expected != null ? formatNumber(expected) : "\u2014"}
         </span>
         <div className="mt-1 inline-flex items-center gap-1">
-          <span className="text-[13px] leading-[16px] font-medium text-zinc-500">{expectedLabel ?? "Expected Converts"}</span>
+          <span className="text-[13px] leading-[16px] font-medium text-muted-foreground">{expectedLabel ?? "Expected Converts"}</span>
           {expectedTooltip && <MInfoIcon tooltip={expectedTooltip} />}
         </div>
       </div>
@@ -1667,7 +1667,7 @@ function CardDisclosure({
         opacity: open ? 1 : 0,
       }}
     >
-      <div className="mt-4 pt-4 border-t border-zinc-200 space-y-4">
+      <div className="mt-4 pt-4 border-t border-border space-y-4">
         {children}
       </div>
     </div>
@@ -1687,7 +1687,7 @@ function MiniBars({ values }: { values: number[] }) {
         return (
           <div
             key={i}
-            className={`w-6 rounded-[3px] ${isLast ? "bg-zinc-500/80" : "bg-zinc-200/70"}`}
+            className={`w-6 rounded-[3px] ${isLast ? "bg-muted-foreground/60" : "bg-border"}`}
             style={{ height: h }}
           />
         );
@@ -1813,10 +1813,10 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
       {tiles.map((tile, i) => (
         <DashboardCard key={i}>
           <CardHeader>
-            <CardDescription className="text-sm leading-none font-medium uppercase tracking-wide">
+            <CardDescription className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
               {tile.label}
             </CardDescription>
-            <CardTitle className="text-4xl font-extrabold tracking-tight tabular-nums">
+            <CardTitle className="text-3xl font-semibold tracking-tight tabular-nums">
               {tile.value}
             </CardTitle>
           </CardHeader>
@@ -3178,7 +3178,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                     >
                       <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
                         {weekLabel}
-                        {isLatest && <> <span className="text-[10px] bg-zinc-100 text-zinc-500 rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                        {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
                       </div>
                       <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
                         {formatNumber(w.activePool7d)}
@@ -3623,6 +3623,10 @@ function DashboardContent({ activeSection, data }: {
       {/* ── OVERVIEW ── */}
       {activeSection === "overview" && (
         <>
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
+            <p className="text-muted-foreground">Key performance metrics at a glance</p>
+          </div>
           <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
           <KPIHeroStrip tiles={(() => {
             const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
@@ -3678,6 +3682,10 @@ function DashboardContent({ activeSection, data }: {
       {/* ── REVENUE ── */}
       {activeSection === "revenue" && (
         <>
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Revenue</h1>
+            <p className="text-muted-foreground">Gross revenue, recurring revenue, and year-over-year trends</p>
+          </div>
           <RevenueSection data={data} trends={trends} />
 
           {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
@@ -3734,11 +3742,15 @@ function DashboardContent({ activeSection, data }: {
       {/* ── GROWTH: AUTO-RENEWS ── */}
       {activeSection === "growth-auto" && (
         <div className="flex flex-col gap-4">
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Auto-Renews</h1>
+            <p className="text-muted-foreground">Subscriber movement, pacing, and net growth by plan type</p>
+          </div>
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Movement (in-studio)
-            </p>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              In-Studio Plans
+            </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.members}
@@ -3769,11 +3781,11 @@ function DashboardContent({ activeSection, data }: {
             </div>
           </div>
 
-          {/* Health block: Sky Ting TV (digital) */}
+          {/* Digital block: Sky Ting TV */}
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Health (digital)
-            </p>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Digital
+            </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.tv}
@@ -3794,6 +3806,10 @@ function DashboardContent({ activeSection, data }: {
       {/* ── GROWTH: NON-AUTO-RENEWS ── */}
       {activeSection === "growth-non-auto" && (
         <div className="flex flex-col gap-4">
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
+            <p className="text-muted-foreground">Drop-in visits, intro week activity, and one-time purchases</p>
+          </div>
           {trends?.dropIns && (
             <div className="flex flex-col gap-3">
               <SubsectionHeader icon={Ticket} color={COLORS.dropIn}>Drop-ins</SubsectionHeader>
@@ -3812,6 +3828,10 @@ function DashboardContent({ activeSection, data }: {
       {/* ── CONVERSION: NEW CUSTOMERS ── */}
       {activeSection === "conversion-new" && (
         <div className="flex flex-col gap-3">
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">New Customers</h1>
+            <p className="text-muted-foreground">Weekly new customer volume, cohort analysis, and acquisition trends</p>
+          </div>
           {(trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
             <>
               <NewCustomerKPICards volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
@@ -3826,6 +3846,10 @@ function DashboardContent({ activeSection, data }: {
       {/* ── CONVERSION: ALL NON AUTO-RENEW CUSTOMERS ── */}
       {activeSection === "conversion-pool" && (
         <div className="flex flex-col gap-3">
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
+            <p className="text-muted-foreground">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
+          </div>
           {trends?.conversionPool ? (
             <>
               <ConversionPoolKPICards pool={trends.conversionPool} />
@@ -3843,7 +3867,13 @@ function DashboardContent({ activeSection, data }: {
 
       {/* ── CHURN ── */}
       {activeSection === "churn" && (
-        <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+        <>
+          <div className="space-y-1 mb-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Churn</h1>
+            <p className="text-muted-foreground">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
+          </div>
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+        </>
       )}
     </div>
   );
@@ -3886,7 +3916,7 @@ function DashboardView() {
           <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
             <SkyTingLogo />
           </div>
-          <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4">
+          <h1 className="text-2xl font-semibold tracking-tight mb-4">
             Studio Dashboard
           </h1>
           <Skeleton width={200} height={24} style={{ margin: "0 auto", borderRadius: 12 }} />
@@ -3918,7 +3948,7 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 className="scroll-m-20 text-3xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Studio Dashboard
           </h1>
           <div className="rounded-2xl p-6 bg-card border border-border">
@@ -3936,7 +3966,7 @@ function DashboardView() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="max-w-md text-center space-y-4">
           <SkyTingLogo />
-          <h1 className="scroll-m-20 text-3xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Studio Dashboard
           </h1>
           <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
