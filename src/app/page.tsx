@@ -9,8 +9,13 @@ import {
   Eyeglass,
   ReportMoney,
   ChartBarPopular,
+  Recycle,
+  RecycleOff,
   ArrowFork,
   HourglassLow,
+  UserPlus,
+  UsersGroup,
+  Database,
 } from "@/components/dashboard/icons";
 import {
   AreaChart as RAreaChart,
@@ -3635,7 +3640,6 @@ function DashboardContent({ activeSection, data }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Key performance metrics at a glance</p>
           </div>
-          <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
           <KPIHeroStrip tiles={(() => {
             const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
             const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
@@ -3755,16 +3759,18 @@ function DashboardContent({ activeSection, data }: {
         <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <ChartBarPopular className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
+              <Recycle className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
               <h1 className="text-3xl font-semibold tracking-tight">Auto-Renews</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth by plan type</p>
           </div>
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              In-Studio Plans
-            </h3>
+            <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.member }}>
+              <Recycle className="size-[18px]" style={{ color: COLORS.member }} />
+              <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.member }}>In-Studio Plans</h3>
+              <span className="text-xs text-muted-foreground">Members + Sky3</span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.members}
@@ -3797,9 +3803,11 @@ function DashboardContent({ activeSection, data }: {
 
           {/* Digital block: Sky Ting TV */}
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Digital
-            </h3>
+            <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.tv }}>
+              <RecycleOff className="size-[18px]" style={{ color: COLORS.tv }} />
+              <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.tv }}>Digital</h3>
+              <span className="text-xs text-muted-foreground">Sky Ting TV</span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.tv}
@@ -3822,7 +3830,7 @@ function DashboardContent({ activeSection, data }: {
         <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <ChartBarPopular className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+              <RecycleOff className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
               <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, intro week activity, and one-time purchases</p>
@@ -3847,7 +3855,7 @@ function DashboardContent({ activeSection, data }: {
         <div className="flex flex-col gap-3">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <ArrowFork className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-new"] }} />
+              <UserPlus className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-new"] }} />
               <h1 className="text-3xl font-semibold tracking-tight">New Customers</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Weekly new customer volume, cohort analysis, and acquisition trends</p>
@@ -3868,7 +3876,7 @@ function DashboardContent({ activeSection, data }: {
         <div className="flex flex-col gap-3">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <ArrowFork className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
+              <UsersGroup className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
               <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
@@ -3900,6 +3908,20 @@ function DashboardContent({ activeSection, data }: {
           </div>
           <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
         </>
+      )}
+
+      {/* ── DATA ── */}
+      {activeSection === "data" && (
+        <div className="flex flex-col gap-6">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <Database className="size-7 shrink-0" style={{ color: SECTION_COLORS.data }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Data</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Pipeline status, data freshness, and refresh controls</p>
+          </div>
+          <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
+        </div>
       )}
     </div>
   );

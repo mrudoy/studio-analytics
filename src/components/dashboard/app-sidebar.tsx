@@ -50,14 +50,15 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
                       isActive={isActive}
                       onClick={() => onSectionChange(item.key)}
                       tooltip={item.label}
+                      size="lg"
                     >
                       {item.icon && (
                         <item.icon
-                          className="size-4"
+                          className="size-5"
                           style={{ color: item.color }}
                         />
                       )}
-                      <span>{item.label}</span>
+                      <span className="text-[0.94rem]">{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
@@ -72,15 +73,15 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
           return (
             <Collapsible key={item.key} defaultOpen={groupActive} className="group/collapsible">
               <SidebarGroup>
-                <SidebarGroupLabel asChild>
+                <SidebarGroupLabel asChild className="h-10 text-sm">
                   <CollapsibleTrigger className="flex w-full items-center gap-2">
                     {item.icon && (
                       <item.icon
-                        className="size-4"
+                        className="size-5"
                         style={{ color: item.color }}
                       />
                     )}
-                    <span className="flex-1 text-left">{item.label}</span>
+                    <span className="flex-1 text-left text-[0.94rem]">{item.label}</span>
                     <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
                   </CollapsibleTrigger>
                 </SidebarGroupLabel>
@@ -93,7 +94,13 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
                             isActive={activeSection === child.key}
                             onClick={() => onSectionChange(child.key)}
                           >
-                            <span>{child.label}</span>
+                            {child.icon && (
+                              <child.icon
+                                className="size-[1.1rem]"
+                                style={{ color: item.color }}
+                              />
+                            )}
+                            <span className="text-[0.85rem]">{child.label}</span>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ))}
