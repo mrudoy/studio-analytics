@@ -1816,7 +1816,13 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
             <CardDescription className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
               {tile.label}
             </CardDescription>
-            <CardTitle className="text-3xl font-semibold tracking-tight tabular-nums">
+            <CardTitle className={`text-3xl font-semibold tracking-tight tabular-nums ${
+              tile.delta != null && tile.delta !== 0
+                ? (tile.delta > 0) === (tile.isPositiveGood !== false)
+                  ? "text-emerald-600"
+                  : "text-red-600"
+                : ""
+            }`}>
               {tile.value}
             </CardTitle>
           </CardHeader>
