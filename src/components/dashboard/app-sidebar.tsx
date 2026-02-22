@@ -41,16 +41,22 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
       <SidebarContent>
         {NAV_ITEMS.map((item) => {
           if (!item.children) {
+            const isActive = activeSection === item.key;
             return (
               <SidebarGroup key={item.key}>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      isActive={activeSection === item.key}
+                      isActive={isActive}
                       onClick={() => onSectionChange(item.key)}
                       tooltip={item.label}
                     >
-                      {item.icon && <item.icon className="size-4" />}
+                      {item.icon && (
+                        <item.icon
+                          className="size-4"
+                          style={{ color: item.color }}
+                        />
+                      )}
                       <span>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -68,7 +74,12 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
               <SidebarGroup>
                 <SidebarGroupLabel asChild>
                   <CollapsibleTrigger className="flex w-full items-center gap-2">
-                    {item.icon && <item.icon className="size-4" />}
+                    {item.icon && (
+                      <item.icon
+                        className="size-4"
+                        style={{ color: item.color }}
+                      />
+                    )}
                     <span className="flex-1 text-left">{item.label}</span>
                     <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
                   </CollapsibleTrigger>

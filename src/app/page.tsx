@@ -4,7 +4,14 @@ import React, { useState, useEffect, useRef, Fragment, Children } from "react";
 import { Ticket, Tag, ArrowRightLeft, AlertTriangle } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
-import type { SectionKey } from "@/components/dashboard/sidebar-nav";
+import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
+import {
+  Eyeglass,
+  ReportMoney,
+  ChartBarPopular,
+  ArrowFork,
+  HourglassLow,
+} from "@/components/dashboard/icons";
 import {
   AreaChart as RAreaChart,
   Area,
@@ -1880,8 +1887,6 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader>{LABELS.revenue}</SectionHeader>
-
       {/* Monthly Gross Revenue — bar chart */}
       {revenueBarData.length > 1 && (
         <DashboardCard>
@@ -3623,9 +3628,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── OVERVIEW ── */}
       {activeSection === "overview" && (
         <>
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
-            <p className="text-muted-foreground">Key performance metrics at a glance</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <Eyeglass className="size-7 shrink-0" style={{ color: SECTION_COLORS.overview }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Key performance metrics at a glance</p>
           </div>
           <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
           <KPIHeroStrip tiles={(() => {
@@ -3682,9 +3690,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── REVENUE ── */}
       {activeSection === "revenue" && (
         <>
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Revenue</h1>
-            <p className="text-muted-foreground">Gross revenue, recurring revenue, and year-over-year trends</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ReportMoney className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Revenue</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Gross and recurring revenue, MRR breakdown, and year-over-year trends</p>
           </div>
           <RevenueSection data={data} trends={trends} />
 
@@ -3742,9 +3753,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── GROWTH: AUTO-RENEWS ── */}
       {activeSection === "growth-auto" && (
         <div className="flex flex-col gap-4">
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Auto-Renews</h1>
-            <p className="text-muted-foreground">Subscriber movement, pacing, and net growth by plan type</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ChartBarPopular className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Auto-Renews</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth by plan type</p>
           </div>
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
@@ -3806,9 +3820,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── GROWTH: NON-AUTO-RENEWS ── */}
       {activeSection === "growth-non-auto" && (
         <div className="flex flex-col gap-4">
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
-            <p className="text-muted-foreground">Drop-in visits, intro week activity, and one-time purchases</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ChartBarPopular className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, intro week activity, and one-time purchases</p>
           </div>
           {trends?.dropIns && (
             <div className="flex flex-col gap-3">
@@ -3828,9 +3845,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── CONVERSION: NEW CUSTOMERS ── */}
       {activeSection === "conversion-new" && (
         <div className="flex flex-col gap-3">
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">New Customers</h1>
-            <p className="text-muted-foreground">Weekly new customer volume, cohort analysis, and acquisition trends</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ArrowFork className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-new"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">New Customers</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Weekly new customer volume, cohort analysis, and acquisition trends</p>
           </div>
           {(trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
             <>
@@ -3846,9 +3866,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── CONVERSION: ALL NON AUTO-RENEW CUSTOMERS ── */}
       {activeSection === "conversion-pool" && (
         <div className="flex flex-col gap-3">
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
-            <p className="text-muted-foreground">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ArrowFork className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
           </div>
           {trends?.conversionPool ? (
             <>
@@ -3868,9 +3891,12 @@ function DashboardContent({ activeSection, data }: {
       {/* ── CHURN ── */}
       {activeSection === "churn" && (
         <>
-          <div className="space-y-1 mb-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Churn</h1>
-            <p className="text-muted-foreground">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <HourglassLow className="size-7 shrink-0" style={{ color: SECTION_COLORS.churn }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Churn</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
           </div>
           <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
         </>

@@ -22,16 +22,29 @@ export interface NavItem {
   key: SectionKey;
   label: string;
   icon?: IconComponent;
+  color?: string;
   children?: NavItem[];
 }
 
+/** Section colors — used for sidebar icons and section headers */
+export const SECTION_COLORS: Record<SectionKey, string> = {
+  overview:       "#413A3A",  // warm charcoal
+  revenue:        "#4A7C59",  // forest green
+  "growth-auto":  "#5B7FA5",  // steel blue
+  "growth-non-auto": "#5B7FA5",
+  "conversion-new":  "#B87333",  // copper
+  "conversion-pool": "#B87333",
+  churn:          "#A04040",  // muted red
+};
+
 export const NAV_ITEMS: NavItem[] = [
-  { key: "overview", label: "Overview", icon: Eyeglass },
-  { key: "revenue", label: "Revenue", icon: ReportMoney },
+  { key: "overview", label: "Overview", icon: Eyeglass, color: SECTION_COLORS.overview },
+  { key: "revenue", label: "Revenue", icon: ReportMoney, color: SECTION_COLORS.revenue },
   {
     key: "growth-auto",
     label: "Growth",
     icon: ChartBarPopular,
+    color: SECTION_COLORS["growth-auto"],
     children: [
       { key: "growth-auto", label: "Auto-Renews" },
       { key: "growth-non-auto", label: "Non-Auto-Renews" },
@@ -41,12 +54,13 @@ export const NAV_ITEMS: NavItem[] = [
     key: "conversion-new",
     label: "Conversion",
     icon: ArrowFork,
+    color: SECTION_COLORS["conversion-new"],
     children: [
       { key: "conversion-new", label: "New Customers" },
       { key: "conversion-pool", label: "All Non Auto-Renew Customers" },
     ],
   },
-  { key: "churn", label: "Churn", icon: HourglassLow },
+  { key: "churn", label: "Churn", icon: HourglassLow, color: SECTION_COLORS.churn },
 ];
 
 export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
