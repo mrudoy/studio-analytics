@@ -3957,86 +3957,69 @@ function DashboardView() {
       });
   }, []);
 
-  if (loadState.state === "loading") {
-    return (
-      <div className="min-h-screen p-4 sm:p-6 lg:p-8" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
-        <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
-            <SkyTingLogo />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight mb-4">
-            Studio Dashboard
-          </h1>
-          <Skeleton width={200} height={24} style={{ margin: "0 auto", borderRadius: 12 }} />
-        </div>
-        <div style={{ maxWidth: "1280px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
-          {/* KPI hero skeleton */}
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <Card key={i}>
-                <Skeleton width={80} height={12} style={{ marginBottom: 8 }} />
-                <Skeleton width={140} height={36} style={{ marginBottom: 8 }} />
-                <Skeleton width={100} height={14} />
-              </Card>
-            ))}
-          </div>
-          {/* Module skeletons */}
-          <DashboardGrid>
-            <div style={{ gridColumn: "span 7" }} className="bento-cell-a1"><ModuleSkeleton /></div>
-            <div style={{ gridColumn: "span 5" }} className="bento-cell-a2"><ModuleSkeleton /></div>
-            <div style={{ gridColumn: "span 12" }} className="bento-cell-b"><ModuleSkeleton /></div>
-          </DashboardGrid>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState.state === "not-configured") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <div className="max-w-md text-center space-y-4">
-          <SkyTingLogo />
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Studio Dashboard
-          </h1>
-          <div className="rounded-2xl p-6 bg-card border border-border">
-            <p className="text-muted-foreground">
-              No analytics data yet. Run the pipeline to see stats here.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState.state === "error") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <div className="max-w-md text-center space-y-4">
-          <SkyTingLogo />
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Studio Dashboard
-          </h1>
-          <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
-            <p className="font-medium text-destructive">
-              Unable to load stats
-            </p>
-            <p className="text-sm mt-1 text-destructive opacity-85">
-              {loadState.message}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const { data } = loadState;
-
   return (
     <DashboardLayout>
-      {(activeSection) => (
-        <DashboardContent activeSection={activeSection} data={data} />
-      )}
+      {(activeSection) => {
+        if (loadState.state === "loading") {
+          return (
+            <div className="flex flex-col gap-6" style={{ fontFamily: FONT_SANS }}>
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+                {[0, 1, 2].map((i) => (
+                  <Card key={i}>
+                    <Skeleton width={80} height={12} style={{ marginBottom: 8 }} />
+                    <Skeleton width={140} height={36} style={{ marginBottom: 8 }} />
+                    <Skeleton width={100} height={14} />
+                  </Card>
+                ))}
+              </div>
+              <DashboardGrid>
+                <div style={{ gridColumn: "span 7" }} className="bento-cell-a1"><ModuleSkeleton /></div>
+                <div style={{ gridColumn: "span 5" }} className="bento-cell-a2"><ModuleSkeleton /></div>
+                <div style={{ gridColumn: "span 12" }} className="bento-cell-b"><ModuleSkeleton /></div>
+              </DashboardGrid>
+            </div>
+          );
+        }
+
+        if (loadState.state === "not-configured") {
+          return (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="max-w-md text-center space-y-4">
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  Studio Dashboard
+                </h1>
+                <div className="rounded-2xl p-6 bg-card border border-border">
+                  <p className="text-muted-foreground">
+                    No analytics data yet. Run the pipeline to see stats here.
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        if (loadState.state === "error") {
+          return (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="max-w-md text-center space-y-4">
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  Studio Dashboard
+                </h1>
+                <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
+                  <p className="font-medium text-destructive">
+                    Unable to load stats
+                  </p>
+                  <p className="text-sm mt-1 text-destructive opacity-85">
+                    {loadState.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return <DashboardContent activeSection={activeSection} data={loadState.data} />;
+      }}
     </DashboardLayout>
   );
 }
