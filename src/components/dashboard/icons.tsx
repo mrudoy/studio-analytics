@@ -134,6 +134,17 @@ export function Database(props: IconProps) {
   );
 }
 
+/** Yoga pose — sidebar logo */
+export function Yoga(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M11 4a1 1 0 1 0 2 0a1 1 0 1 0-2 0" />
+      <path d="M4 20h4l1.5-3m7.5 3l-1-5h-5l1-7" />
+      <path d="m4 10l4-1l4-1l4 1.5l4 1.5" />
+    </svg>
+  );
+}
+
 /** Eyeglasses — Overview section */
 export function Eyeglass(props: IconProps) {
   return (

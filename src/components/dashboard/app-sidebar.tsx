@@ -7,7 +7,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -73,18 +72,22 @@ export function AppSidebar({ activeSection, onSectionChange }: AppSidebarProps) 
           return (
             <Collapsible key={item.key} defaultOpen={groupActive} className="group/collapsible">
               <SidebarGroup>
-                <SidebarGroupLabel asChild className="h-10 text-sm">
-                  <CollapsibleTrigger className="flex w-full items-center gap-2">
-                    {item.icon && (
-                      <item.icon
-                        className="size-5"
-                        style={{ color: item.color }}
-                      />
-                    )}
-                    <span className="flex-1 text-left text-[0.94rem]">{item.label}</span>
-                    <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                  </CollapsibleTrigger>
-                </SidebarGroupLabel>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip={item.label} size="lg">
+                        {item.icon && (
+                          <item.icon
+                            className="size-5"
+                            style={{ color: item.color }}
+                          />
+                        )}
+                        <span className="flex-1 text-left text-[0.94rem]">{item.label}</span>
+                        <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                  </SidebarMenuItem>
+                </SidebarMenu>
                 <CollapsibleContent>
                   <SidebarGroupContent>
                     <SidebarMenu>
