@@ -2538,7 +2538,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
           <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
         )}
         {conversionPool && (
-          <p className="text-[15px] font-semibold text-muted-foreground">All Non Auto-Renew Customers</p>
+          <p className="text-[15px] font-semibold text-muted-foreground">Non Auto-Renew Customers</p>
         )}
         {conversionPool && (
           <ConversionPoolKPICards pool={conversionPool} />
