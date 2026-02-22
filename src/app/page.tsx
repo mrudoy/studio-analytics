@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle } from "lucide-react";
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
+import type { SectionKey } from "@/components/dashboard/sidebar-nav";
 import {
   AreaChart as RAreaChart,
   Area,
@@ -315,23 +318,7 @@ function formatMonthLabel(period: string): string {
 }
 
 // ─── Shared Components ──────────────────────────────────────
-
-function SkyTingLogo() {
-  return (
-    <span
-      style={{
-        fontFamily: FONT_BRAND,
-        fontSize: "1.1rem",
-        fontWeight: 400,
-        letterSpacing: "0.35em",
-        textTransform: "uppercase" as const,
-        color: "var(--st-text-primary)",
-      }}
-    >
-      SKY TING
-    </span>
-  );
-}
+// SkyTingLogo + SkyTingSwirl imported from @/components/dashboard/sky-ting-logo
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -2306,7 +2293,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
             >
               {!isMobile && (
                 <LabelList
-                  position="bottom"
+                  position="top"
                   offset={12}
                   className="fill-foreground"
                   fontSize={12}
@@ -2544,7 +2531,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       <div className="flex flex-col gap-3">
         <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
         {(newCustomerVolume || newCustomerCohorts) && (
-          <p className="text-sm font-medium text-muted-foreground">New Customers</p>
+          <p className="text-[15px] font-semibold text-muted-foreground">New Customers</p>
         )}
         {(newCustomerVolume || newCustomerCohorts) && (
           <NewCustomerKPICards volume={newCustomerVolume} cohorts={newCustomerCohorts} />
@@ -2553,7 +2540,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
           <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
         )}
         {conversionPool && (
-          <p className="text-sm font-medium text-muted-foreground">All Non Auto-Renew Customers</p>
+          <p className="text-[15px] font-semibold text-muted-foreground">All Non Auto-Renew Customers</p>
         )}
         {conversionPool && (
           <ConversionPoolKPICards pool={conversionPool} />
@@ -2846,21 +2833,21 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                   <Pie
                     data={freqData}
                     dataKey="count"
-                    labelLine={false}
                     label={({ payload, ...props }) => (
-                      <text
-                        x={props.x}
-                        y={props.y}
-                        textAnchor={props.textAnchor}
-                        dominantBaseline={props.dominantBaseline}
-                        fill="hsla(var(--foreground))"
-                      >
+                      <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
                         <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                        <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
                       </text>
                     )}
                     nameKey="bucket"
-                  />
+                  >
+                    <LabelList
+                      dataKey="bucket"
+                      position="inside"
+                      fill="#fff"
+                      fontSize={11}
+                      fontWeight={600}
+                    />
+                  </Pie>
                 </PieChart>
               </ChartContainer>
             ) : (
@@ -2977,15 +2964,21 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
               <Pie
                 data={pieData}
                 dataKey="count"
-                labelLine={false}
                 label={({ payload, ...props }) => (
                   <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
                     <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                    <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
                   </text>
                 )}
                 nameKey="bucket"
-              />
+              >
+                <LabelList
+                  dataKey="bucket"
+                  position="inside"
+                  fill="#fff"
+                  fontSize={11}
+                  fontWeight={600}
+                />
+              </Pie>
             </PieChart>
           </ChartContainer>
         ) : (
@@ -3031,15 +3024,21 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
               <Pie
                 data={pieData}
                 dataKey="count"
-                labelLine={false}
                 label={({ payload, ...props }) => (
                   <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
                     <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                    <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
                   </text>
                 )}
                 nameKey="bucket"
-              />
+              >
+                <LabelList
+                  dataKey="bucket"
+                  position="inside"
+                  fill="#fff"
+                  fontSize={11}
+                  fontWeight={600}
+                />
+              </Pie>
             </PieChart>
           </ChartContainer>
         ) : (
@@ -3142,16 +3141,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               type="natural"
               fill="url(#fillPoolConverts)"
               stroke="var(--color-converts)"
-            >
-              {!isMobile && (
-                <LabelList
-                  position="bottom"
-                  offset={12}
-                  className="fill-foreground"
-                  fontSize={12}
-                />
-              )}
-            </Area>
+            />
             <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
@@ -3455,6 +3445,411 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CHURN SECTION (extracted from CategoryDetail cards)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function ChurnSection({ churnRates, weekly }: {
+  churnRates?: ChurnRateData | null;
+  weekly: TrendRowData[];
+}) {
+  if (!churnRates) {
+    return (
+      <div className="flex flex-col gap-4">
+        <NoData label="Churn data" />
+      </div>
+    );
+  }
+
+  const { byCategory } = churnRates;
+  const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+  const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
+
+  const categories = [
+    {
+      key: "member" as const,
+      label: LABELS.members,
+      color: COLORS.member,
+      data: byCategory.member,
+      weeklyChurn: latestW ? latestW.memberChurn : null,
+    },
+    {
+      key: "sky3" as const,
+      label: LABELS.sky3,
+      color: COLORS.sky3,
+      data: byCategory.sky3,
+      weeklyChurn: latestW ? latestW.sky3Churn : null,
+    },
+    {
+      key: "skyTingTv" as const,
+      label: LABELS.tv,
+      color: COLORS.tv,
+      data: byCategory.skyTingTv,
+      weeklyChurn: latestW ? latestW.skyTingTvChurn : null,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Summary cards — one per category */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {categories.map((cat) => (
+          <Card key={cat.key}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color, opacity: 0.85 }} />
+              <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
+                {cat.label}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center py-1.5 border-b border-border">
+                <span className="text-xs text-muted-foreground">User churn rate (avg/mo)</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgUserChurnRate) }}>
+                  {cat.data.avgUserChurnRate.toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-border">
+                <span className="text-xs text-muted-foreground">MRR churn rate (avg/mo)</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgMrrChurnRate) }}>
+                  {cat.data.avgMrrChurnRate.toFixed(1)}%
+                </span>
+              </div>
+              {cat.weeklyChurn != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Churned this week</span>
+                  <span className="text-sm font-semibold tabular-nums">{cat.weeklyChurn}</span>
+                </div>
+              )}
+              {cat.data.atRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{cat.data.atRiskCount}</span>
+                </div>
+              )}
+            </div>
+
+            {/* MEMBER annual/monthly breakdown */}
+            {cat.data.category === "MEMBER" && (() => {
+              const lastCompleted = cat.data.monthly.length >= 2 ? cat.data.monthly[cat.data.monthly.length - 2] : null;
+              if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
+              return (
+                <p className="text-xs text-muted-foreground italic mt-2">
+                  Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
+                </p>
+              );
+            })()}
+          </Card>
+        ))}
+      </div>
+
+      {/* At-Risk Total */}
+      {churnRates.totalAtRisk > 0 && (
+        <Card>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-amber-600" />
+              <span className="text-sm font-medium text-muted-foreground">Total At Risk</span>
+            </div>
+            <span className="text-2xl font-semibold tabular-nums" style={{ color: COLORS.warning }}>
+              {churnRates.totalAtRisk}
+            </span>
+          </div>
+        </Card>
+      )}
+
+      {/* Monthly churn rate trend chart */}
+      {byCategory.member.monthly.length > 1 && (
+        <DashboardCard className="@container/card">
+          <CardHeader>
+            <CardTitle>Monthly Churn Rate Trend</CardTitle>
+            <CardDescription>User churn rate by category over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer
+              config={{
+                member: { label: LABELS.members, color: COLORS.member },
+                sky3: { label: LABELS.sky3, color: COLORS.sky3 },
+                tv: { label: LABELS.tv, color: COLORS.tv },
+              } satisfies ChartConfig}
+              className="h-[250px] w-full"
+            >
+              <LineChart
+                accessibilityLayer
+                data={byCategory.member.monthly.map((m, i) => ({
+                  month: formatMonthLabel(m.month),
+                  member: m.userChurnRate,
+                  sky3: byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
+                  tv: byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
+                }))}
+                margin={{ top: 5, right: 10, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Line type="monotone" dataKey="member" stroke="var(--color-member)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="sky3" stroke="var(--color-sky3)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="tv" stroke="var(--color-tv)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+        </DashboardCard>
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DASHBOARD CONTENT — switches visible section based on sidebar
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function DashboardContent({ activeSection, data }: {
+  activeSection: SectionKey;
+  data: DashboardStats;
+}) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const trends = data.trends;
+  const weekly = trends?.weekly || [];
+  const monthly = trends?.monthly || [];
+  const pacing = trends?.pacing || null;
+
+  // Scroll to top on section change
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [activeSection]);
+
+  return (
+    <div ref={contentRef} className="flex flex-col gap-4" style={{ fontFamily: FONT_SANS }}>
+      {/* ── OVERVIEW ── */}
+      {activeSection === "overview" && (
+        <>
+          <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
+          <KPIHeroStrip tiles={(() => {
+            const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
+            const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
+            const inStudioNet = latestW
+              ? latestW.netMemberGrowth + latestW.netSky3Growth
+              : null;
+            const digitalNet = latestW
+              ? latestW.newSkyTingTv - latestW.skyTingTvChurn
+              : null;
+
+            const nowDate = new Date();
+            const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+            const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+            const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
+            const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
+            const heroLabel = latestMonthly
+              ? `${formatMonthLabel(latestMonthly.month)} Revenue`
+              : "Revenue MTD";
+            const heroValue = latestMonthly
+              ? latestMonthly.gross
+              : data.currentMonthRevenue;
+            const heroSublabel = prevMonthly
+              ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
+              : data.previousMonthRevenue > 0
+                ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
+                : undefined;
+
+            const tiles: HeroTile[] = [
+              {
+                label: heroLabel,
+                value: formatCurrency(heroValue),
+                sublabel: heroSublabel,
+              },
+              {
+                label: "In-Studio Subscribers",
+                value: formatNumber(inStudioCount),
+                delta: inStudioNet,
+                sublabel: inStudioNet != null ? "net this week" : undefined,
+              },
+              {
+                label: LABELS.tv,
+                value: formatNumber(data.activeSubscribers.skyTingTv),
+                delta: digitalNet,
+                sublabel: digitalNet != null ? "net this week" : undefined,
+              },
+            ];
+            return tiles;
+          })()} />
+        </>
+      )}
+
+      {/* ── REVENUE ── */}
+      {activeSection === "revenue" && (
+        <>
+          <RevenueSection data={data} trends={trends} />
+
+          {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <MRRBreakdown data={data} />
+            {data.monthOverMonth ? (
+              <Card>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
+                  <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex justify-between py-2.5 border-b border-border">
+                    <span className="text-sm text-muted-foreground">
+                      {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
+                    </span>
+                    <span className="text-sm font-semibold text-muted-foreground tabular-nums">
+                      {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2.5 border-b border-border">
+                    <span className="text-sm text-muted-foreground">
+                      {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                    </span>
+                  </div>
+                  {data.monthOverMonth.yoyGrossPct !== null && (
+                    <div className="flex justify-between items-center py-2.5">
+                      <span className="text-sm text-muted-foreground">Change</span>
+                      <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ) : (
+              <Card>
+                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
+                <p className="text-sm text-muted-foreground opacity-60">No data available</p>
+              </Card>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── GROWTH: AUTO-RENEWS ── */}
+      {activeSection === "growth-auto" && (
+        <div className="flex flex-col gap-4">
+          {/* Movement block: Members + Sky3 (in-studio plans) */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Movement (in-studio)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CategoryDetail
+                title={LABELS.members}
+                color={COLORS.member}
+                count={data.activeSubscribers.member}
+                weekly={weekly}
+                monthly={monthly}
+                pacing={pacing}
+                weeklyKeyNew={(r) => r.newMembers}
+                weeklyKeyChurn={(r) => r.memberChurn}
+                weeklyKeyNet={(r) => r.netMemberGrowth}
+                pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
+                pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+              />
+              <CategoryDetail
+                title={LABELS.sky3}
+                color={COLORS.sky3}
+                count={data.activeSubscribers.sky3}
+                weekly={weekly}
+                monthly={monthly}
+                pacing={pacing}
+                weeklyKeyNew={(r) => r.newSky3}
+                weeklyKeyChurn={(r) => r.sky3Churn}
+                weeklyKeyNet={(r) => r.netSky3Growth}
+                pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
+                pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+              />
+            </div>
+          </div>
+
+          {/* Health block: Sky Ting TV (digital) */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Health (digital)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CategoryDetail
+                title={LABELS.tv}
+                color={COLORS.tv}
+                count={data.activeSubscribers.skyTingTv}
+                weekly={weekly}
+                monthly={monthly}
+                pacing={pacing}
+                weeklyKeyNew={(r) => r.newSkyTingTv}
+                weeklyKeyChurn={(r) => r.skyTingTvChurn}
+                weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GROWTH: NON-AUTO-RENEWS ── */}
+      {activeSection === "growth-non-auto" && (
+        <div className="flex flex-col gap-4">
+          {trends?.dropIns && (
+            <div className="flex flex-col gap-3">
+              <SubsectionHeader icon={Ticket} color={COLORS.dropIn}>Drop-ins</SubsectionHeader>
+              <DropInsSubsection dropIns={trends.dropIns} />
+            </div>
+          )}
+          <div className="flex flex-col gap-3">
+            <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Intro Week</SubsectionHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+              <IntroWeekModule introWeek={trends?.introWeek ?? null} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONVERSION: NEW CUSTOMERS ── */}
+      {activeSection === "conversion-new" && (
+        <div className="flex flex-col gap-3">
+          {(trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
+            <>
+              <NewCustomerKPICards volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
+              <NewCustomerChartCard volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
+            </>
+          ) : (
+            <NoData label="New Customer data" />
+          )}
+        </div>
+      )}
+
+      {/* ── CONVERSION: ALL NON AUTO-RENEW CUSTOMERS ── */}
+      {activeSection === "conversion-pool" && (
+        <div className="flex flex-col gap-3">
+          {trends?.conversionPool ? (
+            <>
+              <ConversionPoolKPICards pool={trends.conversionPool} />
+              <ConversionPoolModule pool={trends.conversionPool} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ConversionTimeCard pool={trends.conversionPool} />
+                <ConversionVisitsCard pool={trends.conversionPool} />
+              </div>
+            </>
+          ) : (
+            <NoData label="Conversion Pool data" />
+          )}
+        </div>
+      )}
+
+      {/* ── CHURN ── */}
+      {activeSection === "churn" && (
+        <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  DASHBOARD VIEW
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -3558,212 +3953,13 @@ function DashboardView() {
   }
 
   const { data } = loadState;
-  const trends = data.trends;
-  const weekly = trends?.weekly || [];
-  const monthly = trends?.monthly || [];
-  const pacing = trends?.pacing || null;
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16 antialiased" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
-      {/* ── Header ─────────────────────────────────── */}
-      <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
-          <SkyTingLogo />
-        </div>
-        <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4">
-          Studio Dashboard
-        </h1>
-        <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
-      </div>
-
-      {/* ━━ Single column — centered, spacious ━━━━━━━━ */}
-      <div style={{ maxWidth: "1280px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem", boxSizing: "border-box" }}>
-
-        {/* ── KPI Hero Strip ── */}
-        <KPIHeroStrip tiles={(() => {
-          const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
-          const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
-          const inStudioNet = latestW
-            ? latestW.netMemberGrowth + latestW.netSky3Growth
-            : null;
-          const digitalNet = latestW
-            ? latestW.newSkyTingTv - latestW.skyTingTvChurn
-            : null;
-
-          const nowDate = new Date();
-          const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
-          const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
-          const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
-          const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
-          const heroLabel = latestMonthly
-            ? `${formatMonthLabel(latestMonthly.month)} Revenue`
-            : "Revenue MTD";
-          const heroValue = latestMonthly
-            ? latestMonthly.gross
-            : data.currentMonthRevenue;
-          const heroSublabel = prevMonthly
-            ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
-            : data.previousMonthRevenue > 0
-              ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
-              : undefined;
-
-          const tiles: HeroTile[] = [
-            {
-              label: heroLabel,
-              value: formatCurrency(heroValue),
-              sublabel: heroSublabel,
-            },
-            {
-              label: "In-Studio Subscribers",
-              value: formatNumber(inStudioCount),
-              delta: inStudioNet,
-              sublabel: inStudioNet != null ? "net this week" : undefined,
-            },
-            {
-              label: LABELS.tv,
-              value: formatNumber(data.activeSubscribers.skyTingTv),
-              delta: digitalNet,
-              sublabel: digitalNet != null ? "net this week" : undefined,
-            },
-          ];
-          return tiles;
-        })()} />
-
-        {/* ── Revenue ── */}
-        <RevenueSection data={data} trends={trends} />
-
-        {/* ── Annual Net Revenue ── */}
-        {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-            <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
-          </div>
-        )}
-
-        {/* ── MRR + Year-over-Year side by side ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <MRRBreakdown data={data} />
-          {data.monthOverMonth ? (
-            <Card>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
-                <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                  {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                </span>
-              </div>
-              <div className="flex flex-col">
-                <div className="flex justify-between py-2.5 border-b border-border">
-                  <span className="text-sm text-muted-foreground">
-                    {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
-                  </span>
-                  <span className="text-sm font-semibold text-muted-foreground tabular-nums">
-                    {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2.5 border-b border-border">
-                  <span className="text-sm text-muted-foreground">
-                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums">
-                    {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                  </span>
-                </div>
-                {data.monthOverMonth.yoyGrossPct !== null && (
-                  <div className="flex justify-between items-center py-2.5">
-                    <span className="text-sm text-muted-foreground">Change</span>
-                    <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
-                  </div>
-                )}
-              </div>
-            </Card>
-          ) : (
-            <Card>
-              <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
-              <p className="text-sm text-muted-foreground opacity-60">No data available</p>
-            </Card>
-          )}
-        </div>
-
-        {/* ── Auto-Renews ── */}
-        <div className="flex flex-col gap-4">
-          <SectionHeader>{LABELS.autoRenews}</SectionHeader>
-
-          {/* Movement block: Members + Sky3 (in-studio plans) */}
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Movement (in-studio)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.members}
-                color={COLORS.member}
-                count={data.activeSubscribers.member}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newMembers}
-                weeklyKeyChurn={(r) => r.memberChurn}
-                weeklyKeyNet={(r) => r.netMemberGrowth}
-                pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
-                pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
-                churnData={trends?.churnRates?.byCategory?.member}
-              />
-              <CategoryDetail
-                title={LABELS.sky3}
-                color={COLORS.sky3}
-                count={data.activeSubscribers.sky3}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSky3}
-                weeklyKeyChurn={(r) => r.sky3Churn}
-                weeklyKeyNet={(r) => r.netSky3Growth}
-                pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
-                pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
-                churnData={trends?.churnRates?.byCategory?.sky3}
-              />
-            </div>
-          </div>
-
-          {/* Health block: Sky Ting TV (digital) */}
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Health (digital)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.tv}
-                color={COLORS.tv}
-                count={data.activeSubscribers.skyTingTv}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSkyTingTv}
-                weeklyKeyChurn={(r) => r.skyTingTvChurn}
-                weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
-                churnData={trends?.churnRates?.byCategory?.skyTingTv}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Non-auto-renew ── */}
-        {(trends?.dropIns || trends?.introWeek || trends?.newCustomerVolume || trends?.newCustomerCohorts || trends?.conversionPool) ? (
-          <NonAutoRenewSection dropIns={trends?.dropIns ?? null} introWeek={trends?.introWeek ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
-        ) : (
-          <NoData label="Non-auto-renew (Drop-Ins, Funnel)" />
-        )}
-
-        {/* ── Revenue section removed — moved AnnualRevenueCard to top ── */}
-
-        {/* ── Footer ── */}
-        <div style={{ textAlign: "center", paddingTop: "2rem", paddingBottom: "1rem" }}>
-          <div style={{ display: "flex", justifyContent: "center", gap: "2rem" }}>
-            <NavLink href="/settings">Settings</NavLink>
-            <NavLink href="/results">Results</NavLink>
-          </div>
-        </div>
-      </div>
-    </div>
+    <DashboardLayout>
+      {(activeSection) => (
+        <DashboardContent activeSection={activeSection} data={data} />
+      )}
+    </DashboardLayout>
   );
 }
 
