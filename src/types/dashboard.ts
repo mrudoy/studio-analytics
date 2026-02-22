@@ -4,6 +4,14 @@
  * Both the API routes and the client (page.tsx) import from here.
  */
 
+export interface ShopifyStats {
+  totalOrders: number;
+  totalRevenue: number;
+  productCount: number;
+  customerCount: number;
+  lastSyncAt: string | null;
+}
+
 export interface DashboardStats {
   lastUpdated: string | null;
   dateRange: string | null;
@@ -35,6 +43,7 @@ export interface DashboardStats {
   revenueCategories?: RevenueCategoryData | null;
   monthOverMonth?: MonthOverMonthData | null;
   monthlyRevenue?: { month: string; gross: number; net: number }[];
+  shopify?: ShopifyStats | null;
 }
 
 export interface RevenueCategoryData {

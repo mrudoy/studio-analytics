@@ -3,8 +3,9 @@ import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue, getAllMonthlyR
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
+import { getShopifyStats } from "@/lib/db/shopify-store";
 import type { RevenueCategory } from "@/types/union-data";
-import type { DashboardStats } from "@/types/dashboard";
+import type { DashboardStats, ShopifyStats } from "@/types/dashboard";
 import type { TrendsData } from "@/types/dashboard";
 
 export async function GET() {
@@ -174,13 +175,25 @@ export async function GET() {
       console.warn("[api/stats] Failed to load monthly revenue timeline:", err);
     }
 
-    // ── 6. Return response ──────────────────────────────────
+    // ── 6. Shopify stats ──────────────────────────────────────
+    let shopify: ShopifyStats | null = null;
+    try {
+      shopify = await getShopifyStats();
+      if (shopify && shopify.totalOrders > 0) {
+        console.log(`[api/stats] Shopify: ${shopify.totalOrders} orders, $${shopify.totalRevenue} revenue`);
+      }
+    } catch {
+      // Shopify tables might not exist yet (migration hasn't run)
+    }
+
+    // ── 7. Return response ──────────────────────────────────
     return NextResponse.json({
       ...(stats || {}),
       trends,
       revenueCategories,
       monthOverMonth,
       monthlyRevenue,
+      shopify,
       dataSource: "database",
     });
   } catch (error) {

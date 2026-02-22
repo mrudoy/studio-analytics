@@ -92,6 +92,73 @@ const migrations: Migration[] = [
         );
     `,
   },
+  // Shopify integration — orders, products, customers, inventory
+  {
+    name: "005_shopify_tables",
+    up: `
+      -- Shopify orders with line items as JSONB
+      CREATE TABLE IF NOT EXISTS shopify_orders (
+        id BIGINT PRIMARY KEY,
+        order_number INTEGER,
+        email TEXT,
+        financial_status TEXT,
+        fulfillment_status TEXT,
+        total_price NUMERIC(12,2),
+        subtotal_price NUMERIC(12,2),
+        total_tax NUMERIC(12,2),
+        total_discounts NUMERIC(12,2),
+        currency TEXT DEFAULT 'USD',
+        line_items JSONB,
+        customer_id BIGINT,
+        created_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ,
+        canceled_at TIMESTAMPTZ,
+        synced_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_shopify_orders_created ON shopify_orders(created_at);
+      CREATE INDEX IF NOT EXISTS idx_shopify_orders_email ON shopify_orders(email);
+
+      -- Shopify products
+      CREATE TABLE IF NOT EXISTS shopify_products (
+        id BIGINT PRIMARY KEY,
+        title TEXT,
+        product_type TEXT,
+        vendor TEXT,
+        status TEXT,
+        tags TEXT,
+        variants JSONB,
+        created_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ,
+        synced_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Shopify customers
+      CREATE TABLE IF NOT EXISTS shopify_customers (
+        id BIGINT PRIMARY KEY,
+        email TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        orders_count INTEGER,
+        total_spent NUMERIC(12,2),
+        tags TEXT,
+        created_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ,
+        synced_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_shopify_customers_email
+        ON shopify_customers(email);
+
+      -- Shopify inventory levels (composite key)
+      CREATE TABLE IF NOT EXISTS shopify_inventory (
+        inventory_item_id BIGINT,
+        location_id BIGINT,
+        available INTEGER,
+        updated_at TIMESTAMPTZ,
+        synced_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (inventory_item_id, location_id)
+      );
+    `,
+  },
 ];
 
 /**

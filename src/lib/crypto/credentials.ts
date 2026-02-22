@@ -35,12 +35,20 @@ export interface RobotEmailConfig {
   appPassword?: string;
 }
 
+export interface ShopifyConfig {
+  /** Shopify store name (e.g. "skyting" for skyting.myshopify.com) */
+  storeName: string;
+  /** Admin API access token from a Shopify custom app */
+  accessToken: string;
+}
+
 export interface AppSettings {
   credentials?: UnionCredentials;
   robotEmail?: RobotEmailConfig;
   analyticsSpreadsheetId?: string;
   rawDataSpreadsheetId?: string;
   schedule?: ScheduleConfig;
+  shopify?: ShopifyConfig;
 }
 
 export function encryptSettings(settings: AppSettings): string {
@@ -101,6 +109,12 @@ function loadSettingsFromEnv(): AppSettings | null {
           enabled: true,
           cronPattern: process.env.SCHEDULE_CRON,
           timezone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
+        }
+      : undefined,
+    shopify: process.env.SHOPIFY_STORE_NAME && process.env.SHOPIFY_ACCESS_TOKEN
+      ? {
+          storeName: process.env.SHOPIFY_STORE_NAME,
+          accessToken: process.env.SHOPIFY_ACCESS_TOKEN,
         }
       : undefined,
   };

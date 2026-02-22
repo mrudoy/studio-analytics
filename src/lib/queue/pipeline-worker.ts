@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "./connection";
 import { loadSettings } from "../crypto/credentials";
 import { runEmailPipeline } from "./email-pipeline";
+import { runShopifySync } from "../shopify/shopify-sync";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
 import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
@@ -79,6 +80,24 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     dateRange,
     onProgress: (step, percent) => updateProgress(job, step, percent),
   });
+
+  // ── Shopify sync (non-fatal — dashboard still works without it) ──
+  if (settings.shopify?.storeName && settings.shopify?.accessToken) {
+    try {
+      updateProgress(job, "Syncing Shopify data", 85);
+      const shopifyResult = await runShopifySync({
+        storeName: settings.shopify.storeName,
+        accessToken: settings.shopify.accessToken,
+        onProgress: (step, pct) => updateProgress(job, `Shopify: ${step}`, 85 + pct * 10),
+      });
+      console.log(
+        `[pipeline] Shopify sync complete: ${shopifyResult.orderCount} orders, ` +
+        `${shopifyResult.productCount} products, ${shopifyResult.customerCount} customers`
+      );
+    } catch (err) {
+      console.warn("[pipeline] Shopify sync failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
+  }
 
   // Cleanup temp files
   cleanupDownloads();
