@@ -157,17 +157,22 @@ export async function runEmailPipeline(options: EmailPipelineOptions): Promise<P
     );
   }
 
-  // ── Phase 2: Wait for CSV emails (only if some reports are pending) ──
+  // ── Phase 2: Quick email check (don't block — save what we have) ──
+  // Instead of waiting 25 min for all emails, do a quick poll (3 min max).
+  // Whatever we have after that gets saved. Emails that arrive later will
+  // be picked up on the next pipeline run.
+  const EMAIL_QUICK_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+
   if (emailPendingCount > 0) {
-    progress(`Phase 2: Waiting for ${emailPendingCount} CSV emails from Union.fit (${directCount} already downloaded)`, 25);
+    progress(`Phase 2: Quick email check for ${emailPendingCount} pending reports (${directCount} already downloaded)`, 25);
 
     const triggerTime = new Date(Date.now() - 60_000); // Look back 1 minute to catch fast emails
     const gmail = new GmailClient({ robotEmail });
 
-    let emails: ReportEmail[];
+    let emails: ReportEmail[] = [];
     try {
       emails = await gmail.waitForReportEmails(triggerTime, emailPendingCount, {
-        timeoutMs: emailTimeoutMs,
+        timeoutMs: EMAIL_QUICK_TIMEOUT_MS,
         pollIntervalMs: 10_000,
         onPoll: (found) => {
           const pct = 25 + Math.min(20, (found / emailPendingCount) * 20);
@@ -175,85 +180,78 @@ export async function runEmailPipeline(options: EmailPipelineOptions): Promise<P
         },
       });
     } catch (err) {
-      throw new Error(
-        `Failed to read emails: ${err instanceof Error ? err.message : String(err)}`
-      );
+      console.warn(`[email-pipeline] Email check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    if (emails.length === 0 && directCount === 0) {
-      throw new Error(
-        "No CSV emails received from Union.fit within the timeout period and no direct downloads captured. " +
-        "Check that the robot email address is correct and that Union.fit sends to this address."
-      );
-    }
+    if (emails.length > 0) {
+      progress(`Received ${emails.length} emails, downloading attachments...`, 45);
+      console.log(`[email-pipeline] Found ${emails.length} report emails`);
 
-    progress(`Received ${emails.length} emails, downloading attachments...`, 45);
-    console.log(`[email-pipeline] Found ${emails.length} report emails`);
+      // ── Phase 3: Download email attachments & map to report types ──
+      progress("Phase 3: Downloading CSV attachments from email", 48);
 
-    // ── Phase 3: Download email attachments & map to report types ──
-    progress("Phase 3: Downloading CSV attachments from email", 48);
+      const downloaded = await gmail.downloadAllAttachments(emails);
 
-    const downloaded = await gmail.downloadAllAttachments(emails);
+      for (const email of emails) {
+        for (const att of email.attachments) {
+          const key = `${email.subject}::${att.filename}`;
+          const filePath = downloaded.get(key);
+          if (!filePath) continue;
 
-    for (const email of emails) {
-      for (const att of email.attachments) {
-        const key = `${email.subject}::${att.filename}`;
-        const filePath = downloaded.get(key);
-        if (!filePath) continue;
-
-        // If it's a .zip, extract CSVs and map each one individually
-        if (att.filename.toLowerCase().endsWith(".zip")) {
-          console.log(`[email-pipeline] Extracting zip: ${att.filename}`);
-          const extracted = extractCSVsFromZip(filePath);
-          for (const csv of extracted) {
-            // Try to map each extracted CSV by its filename
-            const reportType = filenameToReportType(csv.originalName) ?? subjectToReportType(email.subject);
-            if (reportType) {
-              if (!reportFiles[reportType]) {
-                reportFiles[reportType] = csv.filePath;
-                console.log(`[email-pipeline] Mapped zip entry ${csv.originalName} -> ${reportType}`);
+          // If it's a .zip, extract CSVs and map each one individually
+          if (att.filename.toLowerCase().endsWith(".zip")) {
+            console.log(`[email-pipeline] Extracting zip: ${att.filename}`);
+            const extracted = extractCSVsFromZip(filePath);
+            for (const csv of extracted) {
+              const reportType = filenameToReportType(csv.originalName) ?? subjectToReportType(email.subject);
+              if (reportType) {
+                if (!reportFiles[reportType]) {
+                  reportFiles[reportType] = csv.filePath;
+                  console.log(`[email-pipeline] Mapped zip entry ${csv.originalName} -> ${reportType}`);
+                }
+              } else {
+                console.warn(`[email-pipeline] Could not map zip entry: ${csv.originalName}`);
               }
-            } else {
-              console.warn(`[email-pipeline] Could not map zip entry: ${csv.originalName}`);
             }
+            continue;
           }
-          continue;
-        }
 
-        // Regular CSV — try subject first, then filename
-        const reportType = subjectToReportType(email.subject) ?? filenameToReportType(att.filename);
+          // Regular CSV — try subject first, then filename
+          const reportType = subjectToReportType(email.subject) ?? filenameToReportType(att.filename);
 
-        if (reportType) {
-          // Don't overwrite a direct download with an email download
-          if (!reportFiles[reportType]) {
-            reportFiles[reportType] = filePath;
-            console.log(`[email-pipeline] Mapped email "${email.subject}" / ${att.filename} -> ${reportType}`);
+          if (reportType) {
+            if (!reportFiles[reportType]) {
+              reportFiles[reportType] = filePath;
+              console.log(`[email-pipeline] Mapped email "${email.subject}" / ${att.filename} -> ${reportType}`);
+            } else {
+              console.log(`[email-pipeline] Skipping email for ${reportType} — already have direct download`);
+            }
           } else {
-            console.log(`[email-pipeline] Skipping email for ${reportType} — already have direct download`);
+            console.warn(
+              `[email-pipeline] Could not map email to report type: "${email.subject}" / ${att.filename}`
+            );
           }
-        } else {
-          console.warn(
-            `[email-pipeline] Could not map email to report type: "${email.subject}" / ${att.filename}`
-          );
         }
       }
-    }
 
-    // Mark emails as read
-    for (const email of emails) {
-      try {
-        await gmail.markAsRead(email.id);
-      } catch {
-        // Non-critical
+      // Mark emails as read
+      for (const email of emails) {
+        try {
+          await gmail.markAsRead(email.id);
+        } catch {
+          // Non-critical
+        }
       }
+    } else {
+      console.log(`[email-pipeline] No emails arrived in ${EMAIL_QUICK_TIMEOUT_MS / 1000}s — proceeding with direct downloads only`);
     }
   } else {
     progress("All reports downloaded directly — no emails to wait for!", 45);
     console.log(`[email-pipeline] All ${directCount} reports downloaded directly — skipping email phase`);
   }
 
-  // ── Phase 4: Validate we have enough reports ─────────────────
-  const requiredReports: ReportType[] = [
+  // ── Phase 4: Check what we have (warn on missing, but proceed with partial data) ──
+  const allReports: ReportType[] = [
     "newCustomers",
     "orders",
     "firstVisits",
@@ -265,31 +263,32 @@ export async function runEmailPipeline(options: EmailPipelineOptions): Promise<P
     "newAutoRenews",
   ];
 
-  const missing = requiredReports.filter((r) => !reportFiles[r]);
+  const collected = Object.keys(reportFiles);
+  const missing = allReports.filter((r) => !reportFiles[r]);
   if (missing.length > 0) {
-    console.warn(`[email-pipeline] Missing reports: ${missing.join(", ")}`);
-    throw new Error(
-      `Missing required CSV reports: ${missing.join(", ")}. ` +
-      `Have: ${Object.keys(reportFiles).join(", ")}. ` +
-      `Sources: ${directCount} direct downloads, ${emailPendingCount} email downloads.`
-    );
+    console.warn(`[email-pipeline] Missing reports (will proceed with partial data): ${missing.join(", ")}`);
+    console.log(`[email-pipeline] Have: ${collected.join(", ")}`);
   }
 
-  progress("All CSVs collected, running analytics pipeline...", 50);
+  if (collected.length === 0) {
+    throw new Error("No CSV reports collected at all — nothing to process.");
+  }
 
-  // ── Phase 5: Run the existing pipeline ───────────────────────
+  progress(`Running analytics pipeline with ${collected.length}/${allReports.length} reports...`, 50);
+
+  // ── Phase 5: Run the existing pipeline with whatever we have ──
   const files: DownloadedFiles = {
-    newCustomers: reportFiles.newCustomers!,
-    orders: reportFiles.orders!,
-    firstVisits: reportFiles.firstVisits!,
+    newCustomers: reportFiles.newCustomers,
+    orders: reportFiles.orders,
+    firstVisits: reportFiles.firstVisits,
     allRegistrations: reportFiles.allRegistrations,
-    canceledAutoRenews: reportFiles.canceledAutoRenews!,
-    activeAutoRenews: reportFiles.activeAutoRenews!,
-    pausedAutoRenews: reportFiles.pausedAutoRenews!,
-    trialingAutoRenews: reportFiles.trialingAutoRenews!,
-    newAutoRenews: reportFiles.newAutoRenews!,
+    canceledAutoRenews: reportFiles.canceledAutoRenews,
+    activeAutoRenews: reportFiles.activeAutoRenews,
+    pausedAutoRenews: reportFiles.pausedAutoRenews,
+    trialingAutoRenews: reportFiles.trialingAutoRenews,
+    newAutoRenews: reportFiles.newAutoRenews,
     revenueCategories: reportFiles.revenueCategories,
-    fullRegistrations: reportFiles.fullRegistrations!,
+    fullRegistrations: reportFiles.fullRegistrations,
   };
 
   const result = await runPipelineFromFiles(files, undefined, {

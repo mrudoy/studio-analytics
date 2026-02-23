@@ -80,8 +80,15 @@ export async function runPipelineFromFiles(
   // ── Parse CSVs ──────────────────────────────────────────────
   progress("Parsing CSV data", 50);
 
-  const newCustomersResult = parseCSV<NewCustomer>(files.newCustomers, NewCustomerSchema);
-  const ordersResult = parseCSV<Order>(files.orders, OrderSchema);
+  // Helper: parse a CSV file if it exists, otherwise return empty data
+  const emptyResult = <T>() => ({ data: [] as T[], warnings: [] as string[] });
+
+  const newCustomersResult = files.newCustomers
+    ? parseCSV<NewCustomer>(files.newCustomers, NewCustomerSchema)
+    : emptyResult<NewCustomer>();
+  const ordersResult = files.orders
+    ? parseCSV<Order>(files.orders, OrderSchema)
+    : emptyResult<Order>();
 
   if (ordersResult.data.length > 0) {
     console.log(`[pipeline-core] First order sample:`, JSON.stringify(ordersResult.data[0]));
@@ -92,18 +99,30 @@ export async function runPipelineFromFiles(
     console.log(`[pipeline-core] Order parse warnings (first 5):`, ordersResult.warnings.slice(0, 5));
   }
 
-  const firstVisitsResult = parseCSV<FirstVisit>(files.firstVisits, FirstVisitSchema);
+  const firstVisitsResult = files.firstVisits
+    ? parseCSV<FirstVisit>(files.firstVisits, FirstVisitSchema)
+    : emptyResult<FirstVisit>();
   const registrationsResult = files.allRegistrations
     ? parseCSV<Registration>(files.allRegistrations, RegistrationSchema)
-    : { data: [] as Registration[], warnings: [] as string[] };
-  const canceledResult = parseCSV<AutoRenew>(files.canceledAutoRenews, AutoRenewSchema);
-  const activeResult = parseCSV<AutoRenew>(files.activeAutoRenews, AutoRenewSchema);
-  const pausedResult = parseCSV<AutoRenew>(files.pausedAutoRenews, AutoRenewSchema);
-  const trialingResult = parseCSV<AutoRenew>(files.trialingAutoRenews, AutoRenewSchema);
-  const newAutoRenewsResult = parseCSV<AutoRenew>(files.newAutoRenews, AutoRenewSchema);
+    : emptyResult<Registration>();
+  const canceledResult = files.canceledAutoRenews
+    ? parseCSV<AutoRenew>(files.canceledAutoRenews, AutoRenewSchema)
+    : emptyResult<AutoRenew>();
+  const activeResult = files.activeAutoRenews
+    ? parseCSV<AutoRenew>(files.activeAutoRenews, AutoRenewSchema)
+    : emptyResult<AutoRenew>();
+  const pausedResult = files.pausedAutoRenews
+    ? parseCSV<AutoRenew>(files.pausedAutoRenews, AutoRenewSchema)
+    : emptyResult<AutoRenew>();
+  const trialingResult = files.trialingAutoRenews
+    ? parseCSV<AutoRenew>(files.trialingAutoRenews, AutoRenewSchema)
+    : emptyResult<AutoRenew>();
+  const newAutoRenewsResult = files.newAutoRenews
+    ? parseCSV<AutoRenew>(files.newAutoRenews, AutoRenewSchema)
+    : emptyResult<AutoRenew>();
   const revenueCatResult = files.revenueCategories
     ? parseCSV<RevenueCategory>(files.revenueCategories, RevenueCategorySchema)
-    : { data: [] as RevenueCategory[], warnings: [] as string[] };
+    : emptyResult<RevenueCategory>();
 
   const allCurrentSubs = [...activeResult.data, ...pausedResult.data, ...trialingResult.data];
   console.log(

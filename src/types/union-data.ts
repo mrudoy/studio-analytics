@@ -85,15 +85,15 @@ export interface FullRegistration {
 }
 
 export interface DownloadedFiles {
-  newCustomers: string;
-  orders: string;
-  firstVisits: string;
+  newCustomers?: string;
+  orders?: string;
+  firstVisits?: string;
   allRegistrations?: string;    // Optional — only used for raw "Class Roster" export
-  canceledAutoRenews: string;
-  activeAutoRenews: string;
-  pausedAutoRenews: string;
-  trialingAutoRenews: string;
-  newAutoRenews: string;
+  canceledAutoRenews?: string;
+  activeAutoRenews?: string;
+  pausedAutoRenews?: string;
+  trialingAutoRenews?: string;
+  newAutoRenews?: string;
   revenueCategories?: string;   // Optional — scraped in Phase 3, non-fatal if missing
-  fullRegistrations: string;    // Required — /registrations/all with 22 columns
+  fullRegistrations?: string;   // /registrations/all with 22 columns
 }
