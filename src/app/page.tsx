@@ -55,7 +55,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
@@ -152,13 +152,13 @@ const LABELS = {
   members: "Members",
   sky3: "Sky3",
   tv: "Sky Ting TV",
-  nonAutoRenew: "Non-Auto-Renew",
+  nonAutoRenew: "Non Auto-Renew",
   firstVisits: "First Visits",
   dropIns: "Drop-Ins",
   returningNonMembers: "Returning Non-Members",
   newCustomers: "New Customers",
   newCustomerFunnel: "New Customer Funnel",
-  conversionPool: "Non-Auto-Renew Funnel",
+  conversionPool: "Non Auto-Renew Funnel",
   revenue: "Revenue",
   merch: "Merch",
   mrr: "Monthly Recurring Revenue",
@@ -2348,15 +2348,43 @@ function NewCustomerChartCard({ volume, cohorts }: {
 
   const { completeCohorts, incompleteCohorts, displayComplete, daysElapsed } = useNewCustomerData(volume, cohorts);
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
-  const timingColors = ["rgba(65, 58, 58, 0.65)", "rgba(65, 58, 58, 0.38)", "rgba(65, 58, 58, 0.18)"];
 
   const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total3Week }));
 
   return (
-    <DashboardCard matchHeight>
+    <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <DashboardCard matchHeight className="@container/card">
       <CardHeader>
         <CardTitle>Weekly New Customers</CardTitle>
-        <CardDescription>Complete weeks and cohort breakdown</CardDescription>
+        <CardDescription>
+          <span className="hidden @[540px]/card:block">Complete weeks and cohort breakdown</span>
+          <span className="@[540px]/card:hidden">Weekly data</span>
+        </CardDescription>
+        <CardAction>
+          <ToggleGroup
+            variant="outline"
+            type="single"
+            value={activeTab}
+            onValueChange={(v) => { if (v) setActiveTab(v); }}
+            className="hidden @[540px]/card:flex"
+          >
+            <ToggleGroupItem value="complete">Complete ({displayComplete.length})</ToggleGroupItem>
+            {incompleteCohorts.length > 0 && (
+              <ToggleGroupItem value="inProgress">In progress ({incompleteCohorts.length})</ToggleGroupItem>
+            )}
+          </ToggleGroup>
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="complete" className="rounded-lg">Complete ({displayComplete.length})</SelectItem>
+              {incompleteCohorts.length > 0 && (
+                <SelectItem value="inProgress" className="rounded-lg">In progress ({incompleteCohorts.length})</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </CardAction>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -2416,14 +2444,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
           </RAreaChart>
         </ChartContainer>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList variant="line" className="w-full justify-start">
-            <TabsTrigger value="complete">Complete ({displayComplete.length})</TabsTrigger>
-            {incompleteCohorts.length > 0 && (
-              <TabsTrigger value="inProgress">In progress ({incompleteCohorts.length})</TabsTrigger>
-            )}
-          </TabsList>
-
       <TabsContent value="complete">
       {/* Complete table */}
       {cohorts && (
@@ -2431,11 +2451,10 @@ function NewCustomerChartCard({ volume, cohorts }: {
           <table className="mod-table-responsive w-full border-collapse tabular-nums" style={{ fontFamily: FONT_SANS }}>
             <thead>
               <tr>
-                <th className={`${modThClass} !text-left`}>Cohort</th>
+                <th className={`${modThClass} !text-left`}>Week</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>New</th>
                 <th className={modThClass} style={{ width: "4rem" }}>Converts</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>Rate</th>
-                <th className={`${modThClass} !text-center`} style={{ width: "5rem" }}>Timing</th>
               </tr>
             </thead>
             <tbody>
@@ -2462,21 +2481,10 @@ function NewCustomerChartCard({ volume, cohorts }: {
                       <td data-label="New" className={`${modTdClass} font-semibold`}>{formatNumber(c.newCustomers)}</td>
                       <td data-label="Converts" className={`${modTdClass} font-semibold`}>{c.total3Week}</td>
                       <td data-label="Rate" className={`${modTdClass} font-medium`}>{rate}%</td>
-                      <td className={`mod-bar-cell ${modTdClass} !text-center`}>
-                        <SegmentedBar
-                          segments={[
-                            { value: c.week1, label: "Same week" },
-                            { value: c.week2, label: "+1 week" },
-                            { value: c.week3, label: "+2 weeks" },
-                          ]}
-                          colors={timingColors}
-                          tooltip={`Week 0: ${c.week1} \u00b7 Week 1: ${c.week2} \u00b7 Week 2: ${c.week3}`}
-                        />
-                      </td>
                     </tr>
                     {isExpanded && (
                       <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={5} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
+                        <td colSpan={4} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
                             <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
                             <span>+1 week: <strong className="font-medium text-foreground">{c.week2}</strong></span>
@@ -2507,7 +2515,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
             </colgroup>
             <thead>
               <tr>
-                <th className={`${modThClass} !text-left`}>Cohort</th>
+                <th className={`${modThClass} !text-left`}>Week</th>
                 <th className={modThClass}>New</th>
                 <th className={modThClass}>Converts</th>
                 <th className={modThClass}>Days left</th>
@@ -2559,9 +2567,9 @@ function NewCustomerChartCard({ volume, cohorts }: {
         </div>
       )}
       </TabsContent>
-      </Tabs>
       </CardContent>
     </DashboardCard>
+    </Tabs>
   );
 }
 
@@ -3066,8 +3074,7 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
       <CardHeader className="pb-2">
         <CardTitle>Time to Convert</CardTitle>
         <CardDescription>
-          Median: {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
-          {lagStats.historicalMedianTimeToConvert != null && ` (12wk: ${lagStats.historicalMedianTimeToConvert}d)`}
+          Median: {lagStats.historicalMedianTimeToConvert != null ? `${lagStats.historicalMedianTimeToConvert}d` : "\u2014"} (last 12 weeks)
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
@@ -3126,8 +3133,7 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
       <CardHeader className="pb-2">
         <CardTitle>Visits Before Convert</CardTitle>
         <CardDescription>
-          Avg: {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
-          {lagStats.historicalAvgVisitsBeforeConvert != null && ` (12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)})`}
+          Avg: {lagStats.historicalAvgVisitsBeforeConvert != null ? lagStats.historicalAvgVisitsBeforeConvert.toFixed(1) : "\u2014"} (last 12 weeks)
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
@@ -3193,22 +3199,49 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   }));
 
   return (
-    <DashboardCard>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Weekly Conversion Pool</CardTitle>
-          <CardDescription>Complete weeks and pool breakdown</CardDescription>
+    <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <DashboardCard className="@container/card">
+      <CardHeader>
+        <div className="flex flex-row items-center justify-between w-full">
+          <div>
+            <CardTitle>Weekly Non Auto-Renew Customers</CardTitle>
+            <CardDescription>
+              <span className="hidden @[540px]/card:block">Complete weeks and customer breakdown</span>
+              <span className="@[540px]/card:hidden">Weekly data</span>
+            </CardDescription>
+          </div>
+          <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
+            <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {sliceOptions.map((o) => (
+                <SelectItem key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
-          <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {sliceOptions.map((o) => (
-              <SelectItem key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CardAction>
+          <ToggleGroup
+            variant="outline"
+            type="single"
+            value={activeTab}
+            onValueChange={(v) => { if (v) setActiveTab(v); }}
+            className="hidden @[540px]/card:flex"
+          >
+            <ToggleGroupItem value="complete">Complete weeks ({displayWeeks.length})</ToggleGroupItem>
+            {wtd && <ToggleGroupItem value="wtd">This week (WTD)</ToggleGroupItem>}
+          </ToggleGroup>
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="complete" className="rounded-lg">Complete weeks ({displayWeeks.length})</SelectItem>
+              {wtd && <SelectItem value="wtd" className="rounded-lg">This week (WTD)</SelectItem>}
+            </SelectContent>
+          </Select>
+        </CardAction>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -3268,13 +3301,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           </RAreaChart>
         </ChartContainer>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList variant="line" className="w-full justify-start">
-            <TabsTrigger value="complete">Complete weeks</TabsTrigger>
-            {wtd && <TabsTrigger value="wtd">Week to date</TabsTrigger>}
-          </TabsList>
-
-          <TabsContent value="complete">
+        <TabsContent value="complete">
             {displayWeeks.length > 0 && (
               <div className="w-full min-w-0 mt-4">
                 <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
@@ -3355,9 +3382,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               </div>
             )}
           </TabsContent>
-        </Tabs>
       </CardContent>
     </DashboardCard>
+    </Tabs>
   );
 }
 
@@ -3717,9 +3744,17 @@ function ChurnSection({ churnRates, weekly }: {
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `${v}%`}
-                  domain={[0, (dataMax: number) => {
-                    return Math.ceil(dataMax / 5) * 5;
-                  }]}
+                  domain={(() => {
+                    const allRates = byCategory.member.monthly.map((m, i) => [
+                      m.userChurnRate,
+                      byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
+                      byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
+                    ]).flat();
+                    const maxRate = Math.max(...allRates, 0);
+                    const step = maxRate <= 15 ? 5 : 10;
+                    const domainMax = Math.ceil(maxRate / step) * step;
+                    return [0, domainMax];
+                  })()}
                   ticks={(() => {
                     const allRates = byCategory.member.monthly.map((m, i) => [
                       m.userChurnRate,
@@ -3727,10 +3762,10 @@ function ChurnSection({ churnRates, weekly }: {
                       byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                     ]).flat();
                     const maxRate = Math.max(...allRates, 0);
-                    const ceilMax = Math.ceil(maxRate / 5) * 5;
-                    const step = ceilMax <= 15 ? 5 : 10;
+                    const step = maxRate <= 15 ? 5 : 10;
+                    const domainMax = Math.ceil(maxRate / step) * step;
                     const ticks: number[] = [];
-                    for (let i = 0; i <= ceilMax; i += step) ticks.push(i);
+                    for (let i = 0; i <= domainMax; i += step) ticks.push(i);
                     return ticks;
                   })()}
                 />
@@ -4042,13 +4077,13 @@ function DashboardContent({ activeSection, data }: {
         </>
       )}
 
-      {/* ── REVENUE: CLASS REVENUE ── */}
+      {/* ── REVENUE: REVENUE OVERVIEW ── */}
       {activeSection === "revenue" && (
         <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <ClassRevenue className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Class Revenue</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Revenue Overview</h1>
             </div>
           </div>
 
@@ -4163,7 +4198,7 @@ function DashboardContent({ activeSection, data }: {
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <RecycleOff className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Non Auto-Renews</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, intro week activity, and one-time purchases</p>
           </div>
@@ -4209,9 +4244,9 @@ function DashboardContent({ activeSection, data }: {
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <UsersGroup className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Non Auto-Renew Customers</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Non auto-renew conversion funnel, rates, and time-to-convert analysis</p>
           </div>
           {trends?.conversionPool ? (
             <>

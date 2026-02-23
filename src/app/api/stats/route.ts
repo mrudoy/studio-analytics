@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue, getAllMonthlyRevenue, getMonthlyMerchRevenue } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getMonthlyMerchRevenue } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -97,58 +97,10 @@ export async function GET() {
     }
 
     // ── 4. Month-over-month YoY comparison ──────────────────
+    // NOTE: Built after monthlyRevenue + deduplication (section 5/6) so both
+    // the month breakdown card and YoY use the same adjusted numbers.
+    // Placeholder — computed below after deduplication.
     let monthOverMonth = null;
-    try {
-      const now = new Date();
-      let lastMonth = now.getMonth(); // 0-indexed current month
-      let lastMonthYear = now.getFullYear();
-      if (lastMonth === 0) {
-        lastMonth = 12;
-        lastMonthYear -= 1;
-      }
-
-      const current = await getMonthlyRevenue(lastMonthYear, lastMonth);
-      const priorYear = await getMonthlyRevenue(lastMonthYear - 1, lastMonth);
-
-      if (current || priorYear) {
-        const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        monthOverMonth = {
-          month: lastMonth,
-          monthName: monthNames[lastMonth],
-          current: current ? {
-            year: lastMonthYear,
-            periodStart: current.periodStart,
-            periodEnd: current.periodEnd,
-            gross: Math.round(current.totalRevenue * 100) / 100,
-            net: Math.round(current.totalNetRevenue * 100) / 100,
-            categoryCount: current.categoryCount,
-          } : null,
-          priorYear: priorYear ? {
-            year: lastMonthYear - 1,
-            periodStart: priorYear.periodStart,
-            periodEnd: priorYear.periodEnd,
-            gross: Math.round(priorYear.totalRevenue * 100) / 100,
-            net: Math.round(priorYear.totalNetRevenue * 100) / 100,
-            categoryCount: priorYear.categoryCount,
-          } : null,
-          yoyGrossChange: current && priorYear
-            ? Math.round((current.totalRevenue - priorYear.totalRevenue) * 100) / 100
-            : null,
-          yoyNetChange: current && priorYear
-            ? Math.round((current.totalNetRevenue - priorYear.totalNetRevenue) * 100) / 100
-            : null,
-          yoyGrossPct: current && priorYear && priorYear.totalRevenue > 0
-            ? Math.round((current.totalRevenue - priorYear.totalRevenue) / priorYear.totalRevenue * 1000) / 10
-            : null,
-          yoyNetPct: current && priorYear && priorYear.totalNetRevenue > 0
-            ? Math.round((current.totalNetRevenue - priorYear.totalNetRevenue) / priorYear.totalNetRevenue * 1000) / 10
-            : null,
-        };
-        console.log(`[api/stats] MonthOverMonth: ${monthNames[lastMonth]} ${lastMonthYear} vs ${lastMonthYear - 1}`);
-      }
-    } catch (err) {
-      console.warn("[api/stats] Failed to compute month-over-month:", err);
-    }
 
     // ── 5. Monthly revenue timeline ──────────────────────────
     let monthlyRevenue: { month: string; gross: number; net: number }[] = [];
@@ -264,7 +216,47 @@ export async function GET() {
       // Shopify tables might not exist yet (migration hasn't run)
     }
 
-    // ── 7. Spa stats ────────────────────────────────────────
+    // ── 7. Month-over-month YoY (uses deduplicated monthlyRevenue) ──
+    try {
+      const now2 = new Date();
+      let lastMonth = now2.getMonth(); // 0-indexed current month
+      let lastMonthYear = now2.getFullYear();
+      if (lastMonth === 0) {
+        lastMonth = 12;
+        lastMonthYear -= 1;
+      }
+
+      const currentKey = `${lastMonthYear}-${String(lastMonth).padStart(2, "0")}`;
+      const priorKey = `${lastMonthYear - 1}-${String(lastMonth).padStart(2, "0")}`;
+      const currentEntry = monthlyRevenue.find((m) => m.month === currentKey);
+      const priorEntry = monthlyRevenue.find((m) => m.month === priorKey);
+
+      if (currentEntry || priorEntry) {
+        const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const cGross = currentEntry?.gross ?? 0;
+        const cNet = currentEntry?.net ?? 0;
+        const pGross = priorEntry?.gross ?? 0;
+        const pNet = priorEntry?.net ?? 0;
+
+        monthOverMonth = {
+          month: lastMonth,
+          monthName: monthNames[lastMonth],
+          current: currentEntry ? { year: lastMonthYear, gross: cGross, net: cNet } : null,
+          priorYear: priorEntry ? { year: lastMonthYear - 1, gross: pGross, net: pNet } : null,
+          yoyGrossChange: currentEntry && priorEntry ? Math.round((cGross - pGross) * 100) / 100 : null,
+          yoyNetChange: currentEntry && priorEntry ? Math.round((cNet - pNet) * 100) / 100 : null,
+          yoyGrossPct: currentEntry && priorEntry && pGross > 0
+            ? Math.round((cGross - pGross) / pGross * 1000) / 10 : null,
+          yoyNetPct: currentEntry && priorEntry && pNet > 0
+            ? Math.round((cNet - pNet) / pNet * 1000) / 10 : null,
+        };
+        console.log(`[api/stats] MonthOverMonth: ${monthNames[lastMonth]} ${lastMonthYear} vs ${lastMonthYear - 1} (using deduplicated data)`);
+      }
+    } catch (err) {
+      console.warn("[api/stats] Failed to compute month-over-month:", err);
+    }
+
+    // ── 8. Spa stats ────────────────────────────────────────
     let spa: SpaData | null = null;
     try {
       const spaStats = await getSpaStats();
