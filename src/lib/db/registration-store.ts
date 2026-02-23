@@ -1297,17 +1297,17 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Pr
        FROM current_week) as "medianTimeToConvert",
       (SELECT AVG(visit_count)
        FROM current_week) as "avgVisitsBeforeConvert",
-      -- Time-to-convert buckets (current week)
-      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 0 AND 30) FROM current_week) as "timeBucket0to30",
-      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 31 AND 90) FROM current_week) as "timeBucket31to90",
-      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 91 AND 180) FROM current_week) as "timeBucket91to180",
-      (SELECT COUNT(*) FILTER (WHERE days_to_convert > 180) FROM current_week) as "timeBucket180plus",
-      -- Visits-before-convert buckets (current week)
-      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 1 AND 2) FROM current_week) as "visitBucket1to2",
-      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 3 AND 5) FROM current_week) as "visitBucket3to5",
-      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 6 AND 10) FROM current_week) as "visitBucket6to10",
-      (SELECT COUNT(*) FILTER (WHERE visit_count > 10) FROM current_week) as "visitBucket11plus",
-      (SELECT COUNT(*) FROM current_week) as "totalConvertersInBuckets",
+      -- Time-to-convert buckets (12-week historical — more meaningful than current week alone)
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 0 AND 30) FROM historical) as "timeBucket0to30",
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 31 AND 90) FROM historical) as "timeBucket31to90",
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert BETWEEN 91 AND 180) FROM historical) as "timeBucket91to180",
+      (SELECT COUNT(*) FILTER (WHERE days_to_convert > 180) FROM historical) as "timeBucket180plus",
+      -- Visits-before-convert buckets (12-week historical)
+      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 1 AND 2) FROM historical) as "visitBucket1to2",
+      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 3 AND 5) FROM historical) as "visitBucket3to5",
+      (SELECT COUNT(*) FILTER (WHERE visit_count BETWEEN 6 AND 10) FROM historical) as "visitBucket6to10",
+      (SELECT COUNT(*) FILTER (WHERE visit_count > 10) FROM historical) as "visitBucket11plus",
+      (SELECT COUNT(*) FROM historical) as "totalConvertersInBuckets",
       -- Historical aggregates (12 complete weeks)
       (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_to_convert)
        FROM historical) as "historicalMedianTimeToConvert",

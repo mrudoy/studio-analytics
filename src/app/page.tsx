@@ -3053,8 +3053,7 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
       <CardHeader className="pb-2">
         <CardTitle>Time to Convert</CardTitle>
         <CardDescription>
-          Median: {lagStats.medianTimeToConvert != null ? `${lagStats.medianTimeToConvert}d` : "\u2014"}
-          {lagStats.historicalMedianTimeToConvert != null && ` (12wk: ${lagStats.historicalMedianTimeToConvert}d)`}
+          Median: {lagStats.historicalMedianTimeToConvert != null ? `${lagStats.historicalMedianTimeToConvert}d` : "\u2014"} (last 12 weeks)
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
@@ -3113,8 +3112,7 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
       <CardHeader className="pb-2">
         <CardTitle>Visits Before Convert</CardTitle>
         <CardDescription>
-          Avg: {lagStats.avgVisitsBeforeConvert != null ? lagStats.avgVisitsBeforeConvert.toFixed(1) : "\u2014"}
-          {lagStats.historicalAvgVisitsBeforeConvert != null && ` (12wk: ${lagStats.historicalAvgVisitsBeforeConvert.toFixed(1)})`}
+          Avg: {lagStats.historicalAvgVisitsBeforeConvert != null ? lagStats.historicalAvgVisitsBeforeConvert.toFixed(1) : "\u2014"} (last 12 weeks)
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
