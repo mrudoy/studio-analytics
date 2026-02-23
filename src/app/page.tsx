@@ -2121,10 +2121,6 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                   interval={isMobile ? 2 : 0}
                   fontSize={isMobile ? 11 : 12}
                 />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent indicator="line" formatter={(v) => formatCurrency(v as number)} />}
-                />
                 <Area
                   dataKey="gross"
                   type="natural"
@@ -4814,12 +4810,12 @@ function DashboardContent({ activeSection, data, refreshData }: {
               return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
             })();
             const prevEntry = (data.monthlyRevenue || []).find((m) => m.month === prevKey);
-            const curGross = curEntry?.gross ?? data.currentMonthRevenue ?? 0;
-            const curNet = curEntry?.net ?? data.currentMonthRevenue ?? 0;
+            const curGross = curEntry?.gross ?? 0;
+            const curNet = curEntry?.net ?? 0;
             const dayOfMonth = nowD.getDate();
             const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
             const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
-            const prevGross = prevEntry?.gross ?? data.previousMonthRevenue ?? 0;
+            const prevGross = prevEntry?.gross ?? 0;
             const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
             const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 

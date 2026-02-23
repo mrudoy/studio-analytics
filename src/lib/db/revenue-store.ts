@@ -134,8 +134,11 @@ export async function getRevenueForPeriod(periodStart: string, periodEnd: string
 
 export async function getLatestPeriod(): Promise<{ periodStart: string; periodEnd: string } | null> {
   const pool = getPool();
+  // Only consider same-month periods (exclude multi-year accumulation rows)
   const { rows } = await pool.query(
-    `SELECT period_start, period_end FROM revenue_categories ORDER BY period_end DESC LIMIT 1`
+    `SELECT period_start, period_end FROM revenue_categories
+     WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+     ORDER BY period_end DESC LIMIT 1`
   );
   if (rows.length === 0) return null;
   return { periodStart: rows[0].period_start, periodEnd: rows[0].period_end };
