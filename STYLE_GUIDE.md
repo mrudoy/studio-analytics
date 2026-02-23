@@ -119,23 +119,37 @@ Reference this file before creating or modifying any UI component.
 
 ## Tables
 
-### Header Cells (th)
+### Structure (shadcn pattern)
+```tsx
+<div className="overflow-hidden rounded-lg border">
+  <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
+    <thead className="bg-muted">
+      <tr className="border-b">
+        <th className="h-8 px-3 text-left align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Label</th>
+        <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr className="border-b">
+        <td className="p-3 align-middle whitespace-nowrap">Row label</td>
+        <td className="p-3 align-middle text-right tabular-nums font-semibold whitespace-nowrap">123</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 ```
-text-right px-3 pt-1 pb-1.5 text-xs font-medium uppercase tracking-wide
-text-muted-foreground whitespace-nowrap tabular-nums leading-none border-b border-border
-```
-- First column: `!text-left`
 
-### Data Cells (td)
-```
-text-right px-3 py-1.5 tabular-nums text-sm leading-5
-```
-- First column: `!text-left font-medium`
-- Primary values: `font-semibold`
-- Row separator: `border-b border-border` (except last row)
+### Key Rules
+- **Wrapper**: `overflow-hidden rounded-lg border` — rounded corners with border
+- **`<thead>`**: always `bg-muted` for gray header background
+- **`<th>`**: `h-8 px-3 align-middle text-xs font-medium text-muted-foreground whitespace-nowrap`
+- **`<td>`**: `p-3 align-middle whitespace-nowrap`
+- First column: `text-left`; value columns: `text-right`
+- Row separators: `border-b` on `<tr>` (except last row)
+- Primary values: `font-semibold tabular-nums`
 
 ### Font Stack
-- Always apply `style={{ fontFamily: FONT_SANS }}` on tables
+- Always apply `style={{ fontFamily: FONT_SANS }}` on `<table>`
 
 ---
 

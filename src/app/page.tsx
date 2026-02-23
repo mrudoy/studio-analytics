@@ -3700,48 +3700,50 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           </div>
         )}
 
-        {/* Metric rows — 4-column table: Label | # | Δ# | Δ% */}
-        <table className="w-full text-xs" style={{ fontFamily: FONT_SANS }}>
-          <thead>
-            <tr className="border-b border-border">
-              <th className="pb-1.5 pr-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none"></th>
-              <th className="pb-1.5 px-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Number</th>
-              <th className="pb-1.5 px-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Change</th>
-              <th className="pb-1.5 pl-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Change (%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.map((m, i) => {
-              const deltaColor = m.delta != null
-                ? m.delta === 0
-                  ? "text-muted-foreground"
-                  : (m.isPositiveGood ? m.delta > 0 : m.delta < 0)
-                    ? "text-emerald-600"
-                    : "text-red-500"
-                : "";
-              return (
-                <tr key={i} className={i < metrics.length - 1 ? "border-b border-border" : ""}>
-                  <td className="py-1.5 pr-2 text-muted-foreground whitespace-nowrap">{m.label}</td>
-                  <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-sm whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
-                    {m.value}
-                  </td>
-                  {!m.isNetChange ? (
-                    <>
-                      <td className={`py-1.5 px-2 text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
-                        {m.delta != null ? formatDelta(m.delta) : ""}
-                      </td>
-                      <td className={`py-1.5 pl-2 text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
-                        {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
-                      </td>
-                    </>
-                  ) : (
-                    <td colSpan={2} />
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {/* Metric rows — shadcn table style: bg-muted header, h-10 th cells */}
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
+            <thead className="bg-muted">
+              <tr className="border-b">
+                <th className="h-8 px-3 text-left align-middle text-xs font-medium text-muted-foreground whitespace-nowrap"></th>
+                <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Number</th>
+                <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Change</th>
+                <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Change (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.map((m, i) => {
+                const deltaColor = m.delta != null
+                  ? m.delta === 0
+                    ? "text-muted-foreground"
+                    : (m.isPositiveGood ? m.delta > 0 : m.delta < 0)
+                      ? "text-emerald-600"
+                      : "text-red-500"
+                  : "";
+                return (
+                  <tr key={i} className={i < metrics.length - 1 ? "border-b" : ""}>
+                    <td className="p-3 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
+                    <td className="p-3 align-middle text-right font-semibold tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
+                      {m.value}
+                    </td>
+                    {!m.isNetChange ? (
+                      <>
+                        <td className={`p-3 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
+                          {m.delta != null ? formatDelta(m.delta) : ""}
+                        </td>
+                        <td className={`p-3 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
+                          {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
+                        </td>
+                      </>
+                    ) : (
+                      <td colSpan={2} />
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
         {/* MEMBER annual/monthly breakdown */}
         {churnData?.category === "MEMBER" && (() => {
