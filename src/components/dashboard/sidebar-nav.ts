@@ -12,12 +12,14 @@ import {
   Database,
   ClassRevenue,
   ShoppingBag,
+  Droplet,
 } from "./icons";
 
 export type SectionKey =
   | "overview"
   | "revenue"
   | "revenue-merch"
+  | "revenue-spa"
   | "growth-auto"
   | "growth-non-auto"
   | "conversion-new"
@@ -40,6 +42,7 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   overview:       "#413A3A",  // warm charcoal
   revenue:        "#4A7C59",  // forest green
   "revenue-merch": "#4A7C59",
+  "revenue-spa":  "#4A7C59",
   "growth-auto":  "#5B7FA5",  // steel blue
   "growth-non-auto": "#5B7FA5",
   "conversion-new":  "#B87333",  // copper
@@ -58,6 +61,7 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { key: "revenue", label: "Class Revenue", icon: ClassRevenue },
       { key: "revenue-merch", label: "Merch", icon: ShoppingBag },
+      { key: "revenue-spa", label: "Spa & Wellness", icon: Droplet },
     ],
   },
   {
@@ -88,6 +92,7 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   overview: ["Overview"],
   revenue: ["Revenue", "Class Revenue"],
   "revenue-merch": ["Revenue", "Merch"],
+  "revenue-spa": ["Revenue", "Spa & Wellness"],
   "growth-auto": ["Growth", "Auto-Renews"],
   "growth-non-auto": ["Growth", "Non-Auto-Renews"],
   "conversion-new": ["Conversion", "New Customers"],

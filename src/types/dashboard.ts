@@ -68,6 +68,21 @@ export interface DashboardStats {
   monthlyRevenue?: { month: string; gross: number; net: number }[];
   shopify?: ShopifyStats | null;
   shopifyMerch?: ShopifyMerchData | null;
+  spa?: SpaData | null;
+}
+
+export interface SpaServiceRow {
+  category: string;
+  totalRevenue: number;
+  totalNetRevenue: number;
+}
+
+export interface SpaData {
+  mtdRevenue: number;
+  avgMonthlyRevenue: number;
+  totalRevenue: number;
+  monthlyRevenue: Array<{ month: string; gross: number; net: number }>;
+  serviceBreakdown: SpaServiceRow[];
 }
 
 export interface RevenueCategoryData {

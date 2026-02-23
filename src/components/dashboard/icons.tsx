@@ -204,3 +204,12 @@ export function Eyeglass(props: IconProps) {
     </svg>
   );
 }
+
+/** Tabler: droplet — spa/wellness */
+export function Droplet(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M7.975 16.138a6.012 6.012 0 0 1-1.975-4.463c0-2.21 1.326-4.862 2.67-6.98A24 24 0 0 1 12 1.49a24 24 0 0 1 3.325 3.206c1.344 2.118 2.67 4.769 2.67 6.979a6.012 6.012 0 0 1-1.975 4.463A6 6 0 0 1 12 18a6 6 0 0 1-4.025-1.862z" />
+    </svg>
+  );
+}

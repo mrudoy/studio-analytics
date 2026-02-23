@@ -11,8 +11,9 @@ import {
   getShopifyRepeatCustomerRate,
   getShopifyCustomerBreakdown,
 } from "@/lib/db/shopify-store";
+import { getSpaStats } from "@/lib/db/spa-store";
 import type { RevenueCategory } from "@/types/union-data";
-import type { DashboardStats, ShopifyStats, ShopifyMerchData } from "@/types/dashboard";
+import type { DashboardStats, ShopifyStats, ShopifyMerchData, SpaData } from "@/types/dashboard";
 import type { TrendsData } from "@/types/dashboard";
 
 export async function GET() {
@@ -263,7 +264,28 @@ export async function GET() {
       // Shopify tables might not exist yet (migration hasn't run)
     }
 
-    // ── 7. Return response ──────────────────────────────────
+    // ── 7. Spa stats ────────────────────────────────────────
+    let spa: SpaData | null = null;
+    try {
+      const spaStats = await getSpaStats();
+      if (spaStats.totalRevenue > 0) {
+        spa = {
+          mtdRevenue: spaStats.mtdRevenue,
+          avgMonthlyRevenue: spaStats.avgMonthlyRevenue,
+          totalRevenue: spaStats.totalRevenue,
+          monthlyRevenue: spaStats.monthlyRevenue.map((m) => ({ month: m.month, gross: m.gross, net: m.net })),
+          serviceBreakdown: spaStats.serviceBreakdown.map((s) => ({
+            category: s.category,
+            totalRevenue: s.totalRevenue,
+            totalNetRevenue: s.totalNetRevenue,
+          })),
+        };
+      }
+    } catch {
+      // Spa data may not exist yet
+    }
+
+    // ── 8. Return response ──────────────────────────────────
     return NextResponse.json({
       ...(stats || {}),
       trends,
@@ -272,6 +294,7 @@ export async function GET() {
       monthlyRevenue,
       shopify,
       shopifyMerch,
+      spa,
       dataSource: "database",
     });
   } catch (error) {
