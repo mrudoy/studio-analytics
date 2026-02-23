@@ -4095,10 +4095,6 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               <BarChart accessibilityLayer data={annualBarData} margin={{ top: 32 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="year" tickLine={false} tickMargin={10} axisLine={false} />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
-                />
                 <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
                   {!isMobile && (
                     <LabelList
