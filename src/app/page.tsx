@@ -198,6 +198,10 @@ function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function formatCurrency(n: number): string {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
@@ -3639,23 +3643,43 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
   }));
 
   const merchChartConfig = {
-    gross: { label: "Gross Revenue", color: COLORS.merch },
+    gross: { label: "Gross Revenue", color: SECTION_COLORS["revenue-merch"] },
   } satisfies ChartConfig;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI row */}
-      <DashboardCard>
-        <CardContent>
-          <MetricRow
-            slots={[
-              { value: formatCurrency(merch.mtdRevenue), label: "MTD Revenue" },
-              { value: formatCurrency(merch.avgMonthlyRevenue), label: "Avg Monthly" },
-              { value: `${merch.repeatCustomerRate}`, valueSuffix: "%", label: "Repeat Rate" },
-            ]}
-          />
-        </CardContent>
-      </DashboardCard>
+      {/* KPI row — 3 separate cards (matches Drop-ins pattern) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>MTD Revenue</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.mtdRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Month to date
+          </CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Avg Monthly</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.avgMonthlyRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Completed months average
+          </CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Repeat Rate</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{merch.repeatCustomerRate}%</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Returning customers
+          </CardFooter>
+        </DashboardCard>
+      </div>
 
       {/* Monthly Revenue bar chart */}
       {chartData.length > 0 && (
@@ -3672,6 +3696,7 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
             <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
               <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: isMobile ? 8 : 16, right: isMobile ? 8 : 16 }}>
                 <YAxis hide domain={[0, "auto"]} />
+                <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="month"
                   tickLine={false}
@@ -3679,11 +3704,7 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
                   tickMargin={8}
                   fontSize={isMobile ? 11 : 12}
                 />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent indicator="line" formatter={(v) => formatCurrency(v as number)} />}
-                />
-                <Bar dataKey="gross" fill={COLORS.merch} radius={[4, 4, 0, 0]}>
+                <Bar dataKey="gross" fill={SECTION_COLORS["revenue-merch"]} radius={[4, 4, 0, 0]}>
                   {!isMobile && (
                     <LabelList
                       position="top"
@@ -3715,7 +3736,7 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
               {merch.topProducts.map((product, i) => (
                 <div key={i} className={`flex justify-between items-center py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{product.title}</span>
+                    <span className="text-sm font-medium">{toTitleCase(product.title)}</span>
                     <span className="text-xs text-muted-foreground">{formatNumber(product.unitsSold)} units sold</span>
                   </div>
                   <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.revenue)}</span>
