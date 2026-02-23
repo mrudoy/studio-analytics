@@ -8,6 +8,8 @@ import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-
 import {
   Eyeglass,
   ReportMoney,
+  ClassRevenue,
+  ShoppingBag,
   ChartBarPopular,
   Recycle,
   RecycleOff,
@@ -3794,89 +3796,90 @@ function DashboardContent({ activeSection, data }: {
         </>
       )}
 
-      {/* ── REVENUE ── */}
+      {/* ── REVENUE: CLASS REVENUE ── */}
       {activeSection === "revenue" && (
-        <>
+        <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <ReportMoney className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Revenue</h1>
+              <ClassRevenue className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Class Revenue</h1>
             </div>
           </div>
-          <Tabs defaultValue="class-revenue">
-            <TabsList variant="line" className="w-full justify-start">
-              <TabsTrigger value="class-revenue">Class Revenue</TabsTrigger>
-              <TabsTrigger value="merch">{LABELS.merch}</TabsTrigger>
-            </TabsList>
 
-            <TabsContent value="class-revenue" className="flex flex-col gap-4">
-              <RevenueSection data={data} trends={trends} />
+          <RevenueSection data={data} trends={trends} />
 
-              {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-                  <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+          {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <MRRBreakdown data={data} />
+            {data.monthOverMonth ? (
+              <Card>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
+                  <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                  </span>
                 </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <MRRBreakdown data={data} />
-                {data.monthOverMonth ? (
-                  <Card>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
-                      <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                        {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                      </span>
+                <div className="flex flex-col">
+                  <div className="flex justify-between py-2.5 border-b border-border">
+                    <span className="text-sm text-muted-foreground">
+                      {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
+                    </span>
+                    <span className="text-sm font-semibold text-muted-foreground tabular-nums">
+                      {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2.5 border-b border-border">
+                    <span className="text-sm text-muted-foreground">
+                      {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                    </span>
+                  </div>
+                  {data.monthOverMonth.yoyGrossPct !== null && (
+                    <div className="flex justify-between items-center py-2.5">
+                      <span className="text-sm text-muted-foreground">Change</span>
+                      <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
                     </div>
-                    <div className="flex flex-col">
-                      <div className="flex justify-between py-2.5 border-b border-border">
-                        <span className="text-sm text-muted-foreground">
-                          {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
-                        </span>
-                        <span className="text-sm font-semibold text-muted-foreground tabular-nums">
-                          {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-2.5 border-b border-border">
-                        <span className="text-sm text-muted-foreground">
-                          {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
-                        </span>
-                        <span className="text-sm font-semibold tabular-nums">
-                          {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                        </span>
-                      </div>
-                      {data.monthOverMonth.yoyGrossPct !== null && (
-                        <div className="flex justify-between items-center py-2.5">
-                          <span className="text-sm text-muted-foreground">Change</span>
-                          <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                ) : (
-                  <Card>
-                    <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
-                    <p className="text-sm text-muted-foreground opacity-60">No data available</p>
-                  </Card>
-                )}
-              </div>
-            </TabsContent>
+                  )}
+                </div>
+              </Card>
+            ) : (
+              <Card>
+                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
+                <p className="text-sm text-muted-foreground opacity-60">No data available</p>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
 
-            <TabsContent value="merch">
-              {data.shopifyMerch ? (
-                <MerchRevenueTab merch={data.shopifyMerch} />
-              ) : (
-                <DashboardCard>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      No merch data available. Connect Shopify to see merch revenue.
-                    </p>
-                  </CardContent>
-                </DashboardCard>
-              )}
-            </TabsContent>
-          </Tabs>
-        </>
+      {/* ── REVENUE: MERCH ── */}
+      {activeSection === "revenue-merch" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ShoppingBag className="size-7 shrink-0" style={{ color: SECTION_COLORS["revenue-merch"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Merch</h1>
+            </div>
+          </div>
+          {data.shopifyMerch ? (
+            <MerchRevenueTab merch={data.shopifyMerch} />
+          ) : (
+            <DashboardCard>
+              <CardContent>
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No merch data available. Connect Shopify to see merch revenue.
+                </p>
+              </CardContent>
+            </DashboardCard>
+          )}
+        </div>
       )}
 
       {/* ── GROWTH: AUTO-RENEWS ── */}
