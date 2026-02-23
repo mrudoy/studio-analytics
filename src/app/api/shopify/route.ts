@@ -4,6 +4,8 @@ import { ShopifyClient } from "@/lib/shopify/shopify-client";
 import { runShopifySync } from "@/lib/shopify/shopify-sync";
 import { getShopifyStats } from "@/lib/db/shopify-store";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/shopify — Test connection + return shop info and sync stats.
  */
