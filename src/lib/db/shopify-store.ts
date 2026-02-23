@@ -368,3 +368,66 @@ export async function getShopifyStats(): Promise<{
     lastSyncAt: orders.rows[0].last_sync || null,
   };
 }
+
+/**
+ * Cross-reference Shopify merch orders with Union.fit auto-renew subscriptions.
+ * Matches on LOWER(email). A customer is "active subscriber" if they had ANY
+ * non-Canceled/non-Invalid auto-renew at the time of the Shopify order.
+ */
+export async function getShopifyCustomerBreakdown(): Promise<{
+  subscriber: { orders: number; revenue: number; customers: number };
+  nonSubscriber: { orders: number; revenue: number; customers: number };
+  total: { orders: number; revenue: number; customers: number };
+}> {
+  const pool = getPool();
+
+  const res = await pool.query(`
+    WITH order_sub_status AS (
+      SELECT
+        so.id AS order_id,
+        so.email,
+        so.total_price,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM auto_renews ar
+          WHERE LOWER(ar.customer_email) = LOWER(so.email)
+            AND ar.plan_state NOT IN ('Canceled', 'Invalid')
+        ) THEN true ELSE false END AS is_subscriber
+      FROM shopify_orders so
+      WHERE so.financial_status NOT IN ('voided', 'refunded')
+        AND so.canceled_at IS NULL
+        AND so.email IS NOT NULL
+        AND so.email <> ''
+    )
+    SELECT
+      is_subscriber,
+      COUNT(*) AS order_count,
+      SUM(total_price) AS revenue,
+      COUNT(DISTINCT LOWER(email)) AS customer_count
+    FROM order_sub_status
+    GROUP BY is_subscriber
+  `);
+
+  const sub = res.rows.find((r: { is_subscriber: boolean }) => r.is_subscriber === true);
+  const nonSub = res.rows.find((r: { is_subscriber: boolean }) => r.is_subscriber === false);
+
+  const subscriber = {
+    orders: parseInt(sub?.order_count) || 0,
+    revenue: parseFloat(sub?.revenue) || 0,
+    customers: parseInt(sub?.customer_count) || 0,
+  };
+  const nonSubscriber = {
+    orders: parseInt(nonSub?.order_count) || 0,
+    revenue: parseFloat(nonSub?.revenue) || 0,
+    customers: parseInt(nonSub?.customer_count) || 0,
+  };
+
+  return {
+    subscriber,
+    nonSubscriber,
+    total: {
+      orders: subscriber.orders + nonSubscriber.orders,
+      revenue: subscriber.revenue + nonSubscriber.revenue,
+      customers: subscriber.customers + nonSubscriber.customers,
+    },
+  };
+}

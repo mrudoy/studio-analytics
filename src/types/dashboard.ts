@@ -18,6 +18,12 @@ export interface ShopifyTopProduct {
   unitsSold: number;
 }
 
+export interface MerchCustomerBreakdown {
+  subscriber: { orders: number; revenue: number; customers: number };
+  nonSubscriber: { orders: number; revenue: number; customers: number };
+  total: { orders: number; revenue: number; customers: number };
+}
+
 export interface ShopifyMerchData {
   mtdRevenue: number;
   monthlyRevenue: Array<{ month: string; gross: number; net: number; orderCount: number }>;
@@ -26,6 +32,7 @@ export interface ShopifyMerchData {
   repeatCustomerRate: number;
   repeatCustomerCount: number;
   totalCustomersWithOrders: number;
+  customerBreakdown?: MerchCustomerBreakdown | null;
 }
 
 export interface DashboardStats {
