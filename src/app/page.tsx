@@ -3493,6 +3493,7 @@ function ChurnSection({ churnRates, weekly }: {
       key: "member" as const,
       label: LABELS.members,
       color: COLORS.member,
+      icon: ArrowBadgeDown,
       data: byCategory.member,
       weeklyChurn: latestW ? latestW.memberChurn : null,
     },
@@ -3500,6 +3501,7 @@ function ChurnSection({ churnRates, weekly }: {
       key: "sky3" as const,
       label: LABELS.sky3,
       color: COLORS.sky3,
+      icon: BrandSky,
       data: byCategory.sky3,
       weeklyChurn: latestW ? latestW.sky3Churn : null,
     },
@@ -3507,6 +3509,7 @@ function ChurnSection({ churnRates, weekly }: {
       key: "skyTingTv" as const,
       label: LABELS.tv,
       color: COLORS.tv,
+      icon: DeviceTv,
       data: byCategory.skyTingTv,
       weeklyChurn: latestW ? latestW.skyTingTvChurn : null,
     },
@@ -3519,7 +3522,7 @@ function ChurnSection({ churnRates, weekly }: {
         {categories.map((cat) => (
           <Card key={cat.key}>
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color, opacity: 0.85 }} />
+              <cat.icon className="size-4 shrink-0" style={{ color: cat.color }} />
               <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
                 {cat.label}
               </span>
