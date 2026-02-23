@@ -3672,11 +3672,11 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
             ) : (
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
             )}
-            <span className="text-sm leading-none font-semibold">
+            <span className="text-sm font-semibold leading-none">
               {title}
             </span>
           </div>
-          <span className="text-3xl font-semibold tracking-tight tabular-nums">
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">
             {formatNumber(count)}
           </span>
         </div>
@@ -3685,7 +3685,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
       <CardContent>
         {/* Weekly new adds bar chart with total count labels */}
         {barData.length > 0 && (
-          <div className="mb-2">
+          <div className="mb-4">
             <ChartContainer config={{ newAdds: { label: "New", color } }} className="h-[100px] w-full">
               <BarChart data={barData} margin={{ top: 24, right: 0, bottom: 0, left: 0 }}>
                 <CartesianGrid vertical={false} />
@@ -3700,18 +3700,18 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           </div>
         )}
 
-        {/* Metric rows — shadcn table style: bg-muted header, h-10 th cells */}
+        {/* Metric rows — shadcn table: rounded border, bg-muted header */}
         <div className="overflow-hidden rounded-lg border">
-          <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
-            <thead className="bg-muted">
-              <tr className="border-b">
-                <th className="h-8 px-3 text-left align-middle text-xs font-medium text-muted-foreground whitespace-nowrap"></th>
-                <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Number</th>
-                <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Change</th>
-                <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Change (%)</th>
+          <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+            <thead className="bg-muted [&_tr]:border-b">
+              <tr>
+                <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
+                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Number</th>
+                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change</th>
+                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change (%)</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&_tr:last-child]:border-0">
               {metrics.map((m, i) => {
                 const deltaColor = m.delta != null
                   ? m.delta === 0
@@ -3721,17 +3721,17 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
                       : "text-red-500"
                   : "";
                 return (
-                  <tr key={i} className={i < metrics.length - 1 ? "border-b" : ""}>
-                    <td className="p-3 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
-                    <td className="p-3 align-middle text-right font-semibold tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
+                  <tr key={i} className="border-b">
+                    <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
+                    <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
                       {m.value}
                     </td>
                     {!m.isNetChange ? (
                       <>
-                        <td className={`p-3 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
+                        <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
                           {m.delta != null ? formatDelta(m.delta) : ""}
                         </td>
-                        <td className={`p-3 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
+                        <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
                           {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
                         </td>
                       </>

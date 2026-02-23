@@ -119,37 +119,36 @@ Reference this file before creating or modifying any UI component.
 
 ## Tables
 
-### Structure (shadcn pattern)
+### Structure (exact shadcn v4 DataTable pattern)
 ```tsx
 <div className="overflow-hidden rounded-lg border">
-  <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
-    <thead className="bg-muted">
-      <tr className="border-b">
-        <th className="h-8 px-3 text-left align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Label</th>
-        <th className="h-8 px-3 text-right align-middle text-xs font-medium text-muted-foreground whitespace-nowrap">Value</th>
+  <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+    <thead className="bg-muted [&_tr]:border-b">
+      <tr>
+        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">Label</th>
+        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Value</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody className="[&_tr:last-child]:border-0">
       <tr className="border-b">
-        <td className="p-3 align-middle whitespace-nowrap">Row label</td>
-        <td className="p-3 align-middle text-right tabular-nums font-semibold whitespace-nowrap">123</td>
+        <td className="px-4 py-2 align-middle whitespace-nowrap">Row label</td>
+        <td className="px-4 py-2 align-middle text-right tabular-nums font-medium whitespace-nowrap">123</td>
       </tr>
     </tbody>
   </table>
 </div>
 ```
 
-### Key Rules
-- **Wrapper**: `overflow-hidden rounded-lg border` — rounded corners with border
-- **`<thead>`**: always `bg-muted` for gray header background
-- **`<th>`**: `h-8 px-3 align-middle text-xs font-medium text-muted-foreground whitespace-nowrap`
-- **`<td>`**: `p-3 align-middle whitespace-nowrap`
+### Key Rules (from shadcn v4 source)
+- **Wrapper**: `overflow-hidden rounded-lg border`
+- **`<table>`**: `w-full caption-bottom text-sm` + `style={{ fontFamily: FONT_SANS }}`
+- **`<thead>`**: `bg-muted [&_tr]:border-b`
+- **`<th>`**: `h-10 px-4 align-middle font-medium text-muted-foreground whitespace-nowrap`
+- **`<tbody>`**: `[&_tr:last-child]:border-0`
+- **`<tr>`**: `border-b` (last-child rule removes it from last row)
+- **`<td>`**: `px-4 py-2 align-middle whitespace-nowrap`
 - First column: `text-left`; value columns: `text-right`
-- Row separators: `border-b` on `<tr>` (except last row)
-- Primary values: `font-semibold tabular-nums`
-
-### Font Stack
-- Always apply `style={{ fontFamily: FONT_SANS }}` on `<table>`
+- Numeric values: `tabular-nums font-medium`
 
 ---
 
