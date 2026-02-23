@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -3783,6 +3783,56 @@ function ChurnSection({ churnRates, weekly }: {
   );
 }
 
+// ─── Shopify Sync Status ──────────────────────────────────────
+
+function ShopifySyncStatus({ lastSyncAt, onSyncComplete }: { lastSyncAt: string; onSyncComplete: () => void }) {
+  const [syncing, setSyncing] = useState(false);
+  const [nextRun, setNextRun] = useState<string | null>(null);
+
+  // Fetch next scheduled run
+  useEffect(() => {
+    fetch("/api/schedule")
+      .then((r) => r.json())
+      .then((s) => {
+        if (s.enabled && s.nextRun) {
+          setNextRun(formatRelativeTime(new Date(s.nextRun).toISOString()));
+        }
+      })
+      .catch(() => {});
+  }, [lastSyncAt]);
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/shopify", { method: "POST" });
+      if (!res.ok) throw new Error("Sync failed");
+      onSyncComplete();
+    } catch {
+      // Error is non-fatal, data just won't refresh
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 mt-1 ml-10">
+      <p className="text-sm text-muted-foreground">
+        Last synced {formatRelativeTime(lastSyncAt)}
+        {nextRun && <> · Next refresh {nextRun}</>}
+      </p>
+      <button
+        type="button"
+        onClick={handleSync}
+        disabled={syncing}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+      >
+        <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+        {syncing ? "Syncing..." : "Refresh"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Merch Revenue Tab (Shopify data) ─────────────────────────
 
 function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastSyncAt?: string | null }) {
@@ -3999,9 +4049,10 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
 //  DASHBOARD CONTENT — switches visible section based on sidebar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function DashboardContent({ activeSection, data }: {
+function DashboardContent({ activeSection, data, refreshData }: {
   activeSection: SectionKey;
   data: DashboardStats;
+  refreshData: () => void;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const trends = data.trends;
@@ -4109,7 +4160,7 @@ function DashboardContent({ activeSection, data }: {
               <h1 className="text-3xl font-semibold tracking-tight">Merch</h1>
             </div>
             {data.shopify?.lastSyncAt && (
-              <p className="text-sm text-muted-foreground mt-1 ml-10">Last synced {formatRelativeTime(data.shopify.lastSyncAt)}</p>
+              <ShopifySyncStatus lastSyncAt={data.shopify.lastSyncAt} onSyncComplete={refreshData} />
             )}
           </div>
           {data.shopifyMerch ? (
@@ -4301,7 +4352,7 @@ function DashboardContent({ activeSection, data }: {
 function DashboardView() {
   const [loadState, setLoadState] = useState<DashboardLoadState>({ state: "loading" });
 
-  useEffect(() => {
+  const fetchStats = React.useCallback(() => {
     fetch("/api/stats")
       .then(async (res) => {
         if (res.status === 503) {
@@ -4323,6 +4374,8 @@ function DashboardView() {
         setLoadState({ state: "error", message: "Network error" });
       });
   }, []);
+
+  useEffect(() => { fetchStats(); }, [fetchStats]);
 
   return (
     <DashboardLayout>
@@ -4385,7 +4438,7 @@ function DashboardView() {
           );
         }
 
-        return <DashboardContent activeSection={activeSection} data={loadState.data} />;
+        return <DashboardContent activeSection={activeSection} data={loadState.data} refreshData={fetchStats} />;
       }}
     </DashboardLayout>
   );
