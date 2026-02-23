@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getMonthlyMerchRevenue, getAnnualRevenueBreakdown } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -179,29 +179,36 @@ export async function GET() {
           categoryBreakdown,
         };
 
-        // ── Revenue deduplication ──────────────────────────────
-        // Union.fit has "Merch" + "Products" categories that overlap with Shopify.
-        // For months where Shopify data exists, replace Union.fit merch with Shopify totals.
-        // Formula: adjusted = unionTotal - unionMerch + shopifyGross
+        // ── Add Shopify merch to Union.fit revenue ─────────────
+        // Union.fit merch (gift cards, food & bev) and Shopify merch (online store)
+        // are separate revenue streams — no overlap, so add Shopify on top.
         if (monthlyRevenue.length > 0) {
           try {
-            const unionMerch = await getMonthlyMerchRevenue();
             const shopifyByMonth = new Map(revSummary.map((m) => [m.month, m]));
 
             for (let i = 0; i < monthlyRevenue.length; i++) {
               const m = monthlyRevenue[i];
               const shopMonth = shopifyByMonth.get(m.month);
               if (shopMonth) {
-                const deduction = unionMerch.get(m.month);
-                const deductGross = deduction?.gross ?? 0;
-                const deductNet = deduction?.net ?? 0;
                 monthlyRevenue[i] = {
                   month: m.month,
-                  gross: Math.round((m.gross - deductGross + shopMonth.gross) * 100) / 100,
-                  net: Math.round((m.net - deductNet + shopMonth.net) * 100) / 100,
+                  gross: Math.round((m.gross + shopMonth.gross) * 100) / 100,
+                  net: Math.round((m.net + shopMonth.net) * 100) / 100,
                 };
               }
             }
+
+            // Also add Shopify-only months that Union.fit doesn't have
+            for (const [month, shopMonth] of shopifyByMonth) {
+              if (!monthlyRevenue.find((m) => m.month === month)) {
+                monthlyRevenue.push({
+                  month,
+                  gross: Math.round(shopMonth.gross * 100) / 100,
+                  net: Math.round(shopMonth.net * 100) / 100,
+                });
+              }
+            }
+            monthlyRevenue.sort((a, b) => a.month.localeCompare(b.month));
 
             // Update current/previous month revenue on stats
             if (stats) {
@@ -213,9 +220,9 @@ export async function GET() {
               if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
             }
 
-            console.log(`[api/stats] Revenue deduplication applied for ${shopifyByMonth.size} Shopify months`);
+            console.log(`[api/stats] Shopify merch added for ${shopifyByMonth.size} months`);
           } catch (err) {
-            console.warn("[api/stats] Revenue deduplication failed:", err);
+            console.warn("[api/stats] Shopify merch merge failed:", err);
           }
         }
       }
@@ -289,23 +296,21 @@ export async function GET() {
     try {
       const raw = await getAnnualRevenueBreakdown();
 
-      // Replace Union.fit "Merch" with Shopify totals for deduplication
+      // Add Shopify merch on top of Union.fit merch (separate revenue streams)
       if (shopifyMerch?.annualRevenue) {
         const shopifyByYear = new Map(shopifyMerch.annualRevenue.map((a) => [a.year, a]));
         for (const yearData of raw) {
           const shopYear = shopifyByYear.get(yearData.year);
           if (shopYear) {
             const merchIdx = yearData.segments.findIndex((s) => s.segment === "Merch");
-            const unionMerchGross = merchIdx >= 0 ? yearData.segments[merchIdx].gross : 0;
-            const unionMerchNet = merchIdx >= 0 ? yearData.segments[merchIdx].net : 0;
             if (merchIdx >= 0) {
-              yearData.segments[merchIdx].gross = shopYear.gross;
-              yearData.segments[merchIdx].net = shopYear.net;
+              yearData.segments[merchIdx].gross += shopYear.gross;
+              yearData.segments[merchIdx].net += shopYear.net;
             } else {
               yearData.segments.push({ segment: "Merch", gross: shopYear.gross, net: shopYear.net });
             }
-            yearData.totalGross = yearData.totalGross - unionMerchGross + shopYear.gross;
-            yearData.totalNet = yearData.totalNet - unionMerchNet + shopYear.net;
+            yearData.totalGross += shopYear.gross;
+            yearData.totalNet += shopYear.net;
           }
         }
       }

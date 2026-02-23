@@ -2935,24 +2935,14 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
   const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency } = dropIns;
   const displayWeeks = completeWeeks.slice(-8);
 
-  // Mix bar colors: First (dark) vs Repeat (light)
-  const mixColors = ["rgba(155, 118, 83, 0.70)", "rgba(155, 118, 83, 0.28)"];
-
-  // Frequency pie chart data + config
-  const freqData = frequency ? [
-    { bucket: "1 visit", count: frequency.bucket1, fill: "var(--color-bucket1)" },
-    { bucket: "2\u20134", count: frequency.bucket2to4, fill: "var(--color-bucket2to4)" },
-    { bucket: "5\u201310", count: frequency.bucket5to10, fill: "var(--color-bucket5to10)" },
-    { bucket: "11+", count: frequency.bucket11plus, fill: "var(--color-bucket11plus)" },
+  // Frequency breakdown data
+  const freqBuckets = frequency ? [
+    { label: "1 visit", count: frequency.bucket1, color: "rgba(155, 118, 83, 0.30)" },
+    { label: "2\u20134 visits", count: frequency.bucket2to4, color: "rgba(155, 118, 83, 0.50)" },
+    { label: "5\u201310 visits", count: frequency.bucket5to10, color: "rgba(155, 118, 83, 0.70)" },
+    { label: "11+ visits", count: frequency.bucket11plus, color: "rgba(155, 118, 83, 0.92)" },
   ].filter(d => d.count > 0) : [];
-
-  const freqConfig = {
-    count: { label: "Visitors" },
-    bucket1: { label: "1 visit", color: "rgba(155, 118, 83, 0.30)" },
-    bucket2to4: { label: "2\u20134", color: "rgba(155, 118, 83, 0.50)" },
-    bucket5to10: { label: "5\u201310", color: "rgba(155, 118, 83, 0.70)" },
-    bucket11plus: { label: "11+", color: "rgba(155, 118, 83, 0.90)" },
-  } satisfies ChartConfig;
+  const freqMax = Math.max(...freqBuckets.map(b => b.count), 1);
 
   return (
     <div className="flex flex-col gap-3">
@@ -3060,11 +3050,10 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
               <div className="overflow-x-auto min-w-0">
                 <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
                   <colgroup>
-                    <col style={{ width: "32%" }} />
-                    <col style={{ width: "16%" }} />
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "40%" }} />
                     <col style={{ width: "20%" }} />
+                    <col style={{ width: "22%" }} />
+                    <col style={{ width: "18%" }} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -3072,7 +3061,6 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                       <th className={modThClass}>Visits</th>
                       <th className={modThClass}>Customers</th>
                       <th className={modThClass}>First %</th>
-                      <th className={`${modThClass} !text-center`}>Mix</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3098,20 +3086,6 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                           <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
                           <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
                           <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
-                          <td className={`mod-bar-cell ${modTdClass} !text-center`}>
-                            {w.uniqueCustomers > 0 ? (
-                              <SegmentedBar
-                                segments={[
-                                  { value: w.firstTime, label: `First: ${w.firstTime}` },
-                                  { value: w.repeatCustomers, label: `Repeat: ${w.repeatCustomers}` },
-                                ]}
-                                colors={mixColors}
-                                tooltip={`First: ${w.firstTime} (${firstPct}%) \u00b7 Repeat: ${w.repeatCustomers} (${100 - firstPct}%)`}
-                              />
-                            ) : (
-                              <span className="text-muted-foreground opacity-40">{"\u2014"}</span>
-                            )}
-                          </td>
                         </tr>
                       );
                     })}
@@ -3176,7 +3150,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
         </DashboardCard>
       </Tabs>
 
-      {/* ── Row 3: Drop-in Frequency (pie chart) ── */}
+      {/* ── Row 3: Drop-in Frequency (horizontal bars) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
         <DashboardCard matchHeight>
           <CardHeader>
@@ -3184,56 +3158,39 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
               <CardTitle>Drop-in Frequency</CardTitle>
               <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
             </div>
-            <CardDescription>Last 90 days</CardDescription>
+            <CardDescription>Last 90 days{frequency ? ` · ${formatNumber(frequency.totalCustomers)} unique visitors` : ""}</CardDescription>
           </CardHeader>
 
-          <CardContent className="flex-1 pb-0">
-            {frequency && frequency.totalCustomers > 0 && freqData.length > 0 ? (
-              <ChartContainer
-                config={freqConfig}
-                className="mx-auto h-[250px] w-full"
-              >
-                <PieChart>
-                  <ChartTooltip
-                    content={<ChartTooltipContent nameKey="count" hideLabel />}
-                  />
-                  <Pie
-                    data={freqData}
-                    dataKey="count"
-                    label={({ payload, ...props }) => (
-                      <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
-                        <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                      </text>
-                    )}
-                    nameKey="bucket"
-                  >
-                    <LabelList
-                      dataKey="bucket"
-                      position="inside"
-                      fill="#fff"
-                      fontSize={11}
-                      fontWeight={600}
-                    />
-                  </Pie>
-                </PieChart>
-              </ChartContainer>
+          <CardContent className="flex-1">
+            {frequency && frequency.totalCustomers > 0 && freqBuckets.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {freqBuckets.map((b) => {
+                  const pct = Math.round((b.count / frequency.totalCustomers) * 100);
+                  const barWidth = Math.max((b.count / freqMax) * 100, 2);
+                  return (
+                    <div key={b.label} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="font-medium">{b.label}</span>
+                        <span className="tabular-nums text-muted-foreground">
+                          {formatNumber(b.count)} <span className="text-xs">({pct}%)</span>
+                        </span>
+                      </div>
+                      <div className="h-5 w-full rounded bg-muted/40 overflow-hidden">
+                        <div
+                          className="h-full rounded transition-all"
+                          style={{ width: `${barWidth}%`, backgroundColor: b.color }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="flex items-center justify-center h-[200px]">
+              <div className="flex items-center justify-center h-[160px]">
                 <span className="text-sm text-muted-foreground">No data available</span>
               </div>
             )}
           </CardContent>
-
-          {frequency && frequency.totalCustomers > 0 && (
-            <CardFooter className="flex-col gap-2 text-sm">
-              <div className="leading-none font-medium">
-                {formatNumber(frequency.totalCustomers)} unique visitors
-              </div>
-              <div className="text-muted-foreground leading-none">
-                Drop-in customers in the last 90 days
-              </div>
-            </CardFooter>
-          )}
         </DashboardCard>
       </div>
     </div>
@@ -4185,43 +4142,58 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
         </DashboardCard>
       </div>
 
-      {/* Annual Merch Revenue card */}
-      {annualBarData.length >= 2 && (
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>Annual Merch Revenue</CardTitle>
-            {yoyDelta !== null && (
-              <CardDescription>
-                {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% year over year
-              </CardDescription>
+      {/* Annual Merch Revenue + Buyer Breakdown side by side */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {annualBarData.length >= 2 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Annual Merch Revenue</CardTitle>
+              {yoyDelta !== null && (
+                <CardDescription>
+                  {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% year over year
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
+                <BarChart accessibilityLayer data={annualBarData} margin={{ top: 32 }}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="year" tickLine={false} tickMargin={10} axisLine={false} />
+                  <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
+                    {!isMobile && (
+                      <LabelList
+                        position="top"
+                        offset={12}
+                        className="fill-foreground"
+                        fontSize={12}
+                        formatter={(v: number) => formatCompactCurrency(v)}
+                      />
+                    )}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+            {priorYearData && (
+              <CardFooter className="text-sm text-muted-foreground">
+                {priorYear} AOV: {formatCurrency(priorYearData.avgOrderValue)}
+              </CardFooter>
             )}
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
-              <BarChart accessibilityLayer data={annualBarData} margin={{ top: 32 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="year" tickLine={false} tickMargin={10} axisLine={false} />
-                <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
-                  {!isMobile && (
-                    <LabelList
-                      position="top"
-                      offset={12}
-                      className="fill-foreground"
-                      fontSize={12}
-                      formatter={(v: number) => formatCompactCurrency(v)}
-                    />
-                  )}
-                </Bar>
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-          {priorYearData && (
-            <CardFooter className="text-sm text-muted-foreground">
-              {priorYear} AOV: {formatCurrency(priorYearData.avgOrderValue)}
-            </CardFooter>
-          )}
-        </DashboardCard>
-      )}
+          </DashboardCard>
+        )}
+
+        {/* Customer Breakdown: Members vs Non-Members */}
+        {merch.customerBreakdown && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Buyer Breakdown</CardTitle>
+              <CardDescription>Merch orders by auto-renew status</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MerchBuyerBreakdown breakdown={merch.customerBreakdown} />
+            </CardContent>
+          </DashboardCard>
+        )}
+      </div>
 
       {/* Monthly Revenue chart + AOV trend side by side */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -4413,18 +4385,6 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
       )}
       </div>
 
-      {/* Customer Breakdown: Members vs Non-Members */}
-      {merch.customerBreakdown && (
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>Buyer Breakdown</CardTitle>
-            <CardDescription>Merch orders by auto-renew status</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MerchBuyerBreakdown breakdown={merch.customerBreakdown} />
-          </CardContent>
-        </DashboardCard>
-      )}
     </div>
   );
 }
