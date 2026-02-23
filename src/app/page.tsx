@@ -4873,11 +4873,12 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
           )}
 
-          {data.annualBreakdown && data.annualBreakdown.length > 0 && (
-            <AnnualSegmentBreakdownCard breakdown={data.annualBreakdown} />
-          )}
-
-          <MRRBreakdown data={data} />
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+            {data.annualBreakdown && data.annualBreakdown.length > 0 && (
+              <AnnualSegmentBreakdownCard breakdown={data.annualBreakdown} />
+            )}
+            <MRRBreakdown data={data} />
+          </div>
         </div>
       )}
 
