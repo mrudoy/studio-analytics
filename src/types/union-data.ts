@@ -54,7 +54,12 @@ export interface AutoRenew {
   customer: string;
   email?: string;      // "Customer Email" — available in direct CSV downloads
   canceledAt?: string; // "Canceled At" column on canceled report
+  canceledBy?: string; // "Canceled By" — "customer" or "admin"
   created?: string;    // "Created" column on active/new reports
+  orderId?: string;    // Union.fit order ID
+  salesChannel?: string; // "Subscription", "Register", "Web"
+  currentState?: string; // "active", "changed", "canceled"
+  currentPlan?: string;  // Current subscription if changed
 }
 
 export type AutoRenewCategory = "MEMBER" | "SKY3" | "SKY_TING_TV" | "UNKNOWN";

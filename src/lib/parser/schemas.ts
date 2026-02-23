@@ -164,7 +164,12 @@ export const AutoRenewSchema = z.object({
     .default(""),
   email: z.string().optional().default(""),
   canceledAt: z.string().optional().default(""),
+  canceledBy: z.string().optional().default(""),
   created: z.string().optional().default(""),
+  orderId: z.string().optional().default(""),
+  salesChannel: z.string().optional().default(""),
+  currentState: z.string().optional().default(""),
+  currentPlan: z.string().optional().default(""),
 });
 
 /**

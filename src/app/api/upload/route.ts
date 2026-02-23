@@ -84,7 +84,12 @@ export async function POST(request: Request) {
           customerName: ar.customer,
           customerEmail: ar.email || "",
           createdAt: ar.created || "",
+          orderId: ar.orderId || undefined,
+          salesChannel: ar.salesChannel || undefined,
           canceledAt: ar.canceledAt || undefined,
+          canceledBy: ar.canceledBy || undefined,
+          currentState: ar.currentState || undefined,
+          currentPlan: ar.currentPlan || undefined,
         }));
         await saveAutoRenews(snapshotId, arRows);
         parsedCount = arRows.length;
