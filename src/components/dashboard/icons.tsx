@@ -205,6 +205,15 @@ export function Eyeglass(props: IconProps) {
   );
 }
 
+/** Tabler: building — studio rentals */
+export function BuildingIcon(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M3 21h18M9 8h1m-1 4h1m-1 4h1m4-8h1m-1 4h1m-1 4h1M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
+    </svg>
+  );
+}
+
 /** Tabler: droplet — spa/wellness */
 export function Droplet(props: IconProps) {
   return (

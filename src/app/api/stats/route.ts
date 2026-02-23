@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown, getMonthlyRentalRevenue, getAnnualRentalRevenue } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -182,6 +182,8 @@ export async function GET() {
         // ── Add Shopify merch to Union.fit revenue ─────────────
         // Union.fit merch (gift cards, food & bev) and Shopify merch (online store)
         // are separate revenue streams — no overlap, so add Shopify on top.
+        // Only add to months that already have Union.fit base data — Shopify-only
+        // months would show misleadingly low totals (e.g. $2K vs actual $200K+).
         if (monthlyRevenue.length > 0) {
           try {
             const shopifyByMonth = new Map(revSummary.map((m) => [m.month, m]));
@@ -197,18 +199,6 @@ export async function GET() {
                 };
               }
             }
-
-            // Also add Shopify-only months that Union.fit doesn't have
-            for (const [month, shopMonth] of shopifyByMonth) {
-              if (!monthlyRevenue.find((m) => m.month === month)) {
-                monthlyRevenue.push({
-                  month,
-                  gross: Math.round(shopMonth.gross * 100) / 100,
-                  net: Math.round(shopMonth.net * 100) / 100,
-                });
-              }
-            }
-            monthlyRevenue.sort((a, b) => a.month.localeCompare(b.month));
 
             // Update current/previous month revenue on stats
             if (stats) {
@@ -291,6 +281,70 @@ export async function GET() {
       // Spa data may not exist yet
     }
 
+    // ── 7b. Studio Rentals (spreadsheet is source of truth) ───
+    let rentalRevenue: import("@/types/dashboard").RentalRevenueData | null = null;
+    try {
+      const [rentalMonthly, rentalAnnual] = await Promise.all([
+        getMonthlyRentalRevenue(),
+        getAnnualRentalRevenue(),
+      ]);
+      rentalRevenue = { monthly: rentalMonthly, annual: rentalAnnual };
+
+      // Dedup: Union.fit has SOME rental revenue — replace with spreadsheet totals.
+      // For monthly revenue: subtract Union.fit rental, add spreadsheet rental.
+      if (monthlyRevenue.length > 0) {
+        try {
+          const pool = getPool();
+          const unionRentalRes = await pool.query(`
+            SELECT LEFT(period_start, 7) AS month,
+                   SUM(revenue) AS gross, SUM(net_revenue) AS net
+            FROM revenue_categories
+            WHERE (category ~* 'rental|teacher\\s*rental|studio\\s*rental')
+              AND LEFT(period_start, 7) = LEFT(period_end, 7)
+            GROUP BY LEFT(period_start, 7)
+          `);
+          const unionRentalByMonth = new Map(
+            unionRentalRes.rows.map((r: Record<string, unknown>) => [r.month as string, { gross: Number(r.gross) || 0, net: Number(r.net) || 0 }])
+          );
+          const ssRentalByMonth = new Map(rentalMonthly.map((r) => [r.month, r.total]));
+
+          for (let i = 0; i < monthlyRevenue.length; i++) {
+            const m = monthlyRevenue[i];
+            const unionR = unionRentalByMonth.get(m.month);
+            const ssR = ssRentalByMonth.get(m.month);
+            if (unionR || ssR) {
+              // Subtract Union.fit rental, add spreadsheet rental (which is net revenue)
+              const deductGross = unionR?.gross ?? 0;
+              const deductNet = unionR?.net ?? 0;
+              const addAmount = ssR ?? 0;
+              monthlyRevenue[i] = {
+                month: m.month,
+                gross: Math.round((m.gross - deductGross + addAmount) * 100) / 100,
+                net: Math.round((m.net - deductNet + addAmount) * 100) / 100,
+              };
+            }
+          }
+          // Re-update current/previous month stats after rental dedup
+          if (stats) {
+            const now3 = new Date();
+            const curKey = `${now3.getFullYear()}-${String(now3.getMonth() + 1).padStart(2, "0")}`;
+            const prevD = new Date(now3.getFullYear(), now3.getMonth() - 1, 1);
+            const prevKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, "0")}`;
+            const curE = monthlyRevenue.find((m) => m.month === curKey);
+            const prevE = monthlyRevenue.find((m) => m.month === prevKey);
+            if (curE) stats.currentMonthRevenue = curE.net;
+            if (prevE) stats.previousMonthRevenue = prevE.net;
+          }
+
+          console.log(`[api/stats] Rental dedup applied: ${unionRentalByMonth.size} Union months replaced with ${ssRentalByMonth.size} spreadsheet months`);
+        } catch (err) {
+          console.warn("[api/stats] Rental dedup failed:", err);
+        }
+      }
+    } catch (err) {
+      console.warn("[api/stats] Rental revenue query failed:", err);
+    }
+
     // ── 8. Annual revenue breakdown by segment ─────────────
     let annualBreakdown: import("@/types/dashboard").AnnualRevenueBreakdown[] | null = null;
     try {
@@ -311,6 +365,27 @@ export async function GET() {
             }
             yearData.totalGross += shopYear.gross;
             yearData.totalNet += shopYear.net;
+          }
+        }
+      }
+
+      // Dedup rentals: replace Union.fit "Rentals" segment with spreadsheet totals
+      if (rentalRevenue?.annual) {
+        const ssRentalByYear = new Map(rentalRevenue.annual.map((a) => [a.year, a.total]));
+        for (const yearData of raw) {
+          const ssTotal = ssRentalByYear.get(yearData.year);
+          if (ssTotal !== undefined) {
+            const rentalIdx = yearData.segments.findIndex((s) => s.segment === "Rentals");
+            const unionRentalGross = rentalIdx >= 0 ? yearData.segments[rentalIdx].gross : 0;
+            const unionRentalNet = rentalIdx >= 0 ? yearData.segments[rentalIdx].net : 0;
+            if (rentalIdx >= 0) {
+              yearData.segments[rentalIdx].gross = ssTotal;
+              yearData.segments[rentalIdx].net = ssTotal;
+            } else {
+              yearData.segments.push({ segment: "Rentals", gross: ssTotal, net: ssTotal });
+            }
+            yearData.totalGross = yearData.totalGross - unionRentalGross + ssTotal;
+            yearData.totalNet = yearData.totalNet - unionRentalNet + ssTotal;
           }
         }
       }
@@ -359,6 +434,7 @@ export async function GET() {
     if (stats) {
       stats.dataFreshness = dataFreshness;
       stats.annualBreakdown = annualBreakdown;
+      stats.rentalRevenue = rentalRevenue;
     }
     return NextResponse.json({
       ...(stats || {}),

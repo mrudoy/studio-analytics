@@ -21,6 +21,7 @@ import {
   ArrowBadgeDown,
   BrandSky,
   DeviceTv,
+  BuildingIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -103,6 +104,7 @@ import type {
   ShopifyStats,
   MerchCustomerBreakdown,
   AnnualRevenueBreakdown,
+  RentalRevenueData,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -2232,15 +2234,17 @@ function MonthBreakdownCard({ monthlyRevenue, monthOverMonth }: {
 // ─── Annual Revenue Breakdown by Segment ────────────────────
 
 const ANNUAL_SEGMENT_COLORS: Record<string, string> = {
-  "In-Studio": "#5B7FA5",   // steel blue
-  "Digital": "#7B68AE",     // purple
-  "Retreats": "#B87333",    // copper
-  "Spa": "#4A7C59",         // forest green
-  "Merch": "#C4A35A",       // gold
-  "Other": "#999999",       // gray
+  "In-Studio": "#5B7FA5",          // steel blue
+  "Digital": "#7B68AE",            // purple
+  "Retreats": "#B87333",           // copper
+  "Teacher Training": "#D4764E",   // terracotta
+  "Spa": "#4A7C59",                // forest green
+  "Rentals": "#6B8E9B",            // teal
+  "Merch": "#C4A35A",              // gold
+  "Other": "#999999",              // gray
 };
 
-const SEGMENT_ORDER = ["In-Studio", "Digital", "Retreats", "Spa", "Merch", "Other"];
+const SEGMENT_ORDER = ["In-Studio", "Digital", "Retreats", "Teacher Training", "Spa", "Rentals", "Merch", "Other"];
 
 function AnnualSegmentBreakdownCard({ breakdown }: { breakdown: AnnualRevenueBreakdown[] }) {
   // Only show complete years (exclude current year since it's partial)
@@ -4465,6 +4469,237 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RENTAL REVENUE TAB — Studio & Teacher rentals from spreadsheet
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthKey = `${currentYear}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // Monthly data for chart (completed months only)
+  const completedMonthly = rental.monthly
+    .filter((m) => m.month < currentMonthKey)
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  const chartData = completedMonthly.slice(-12).map((m) => ({
+    month: formatShortMonth(m.month),
+    studioRental: m.studioRental,
+    teacherRentals: m.teacherRentals,
+    total: m.total,
+  }));
+
+  // Annual data
+  const annualData = rental.annual.sort((a, b) => a.year - b.year);
+
+  // KPI computations
+  const totalAllTime = rental.monthly.reduce((s, m) => s + m.total, 0);
+  const currentYearData = annualData.find((a) => a.year === currentYear);
+  const priorYearData = annualData.find((a) => a.year === currentYear - 1);
+  const ytdRevenue = currentYearData?.total ?? 0;
+  const priorYearRevenue = priorYearData?.total ?? 0;
+  const avgMonthly = completedMonthly.length > 0
+    ? completedMonthly.reduce((s, m) => s + m.total, 0) / completedMonthly.length
+    : 0;
+
+  // Split totals for all-time
+  const totalStudio = rental.monthly.reduce((s, m) => s + m.studioRental, 0);
+  const totalTeacher = rental.monthly.reduce((s, m) => s + m.teacherRentals, 0);
+  const studioPct = totalAllTime > 0 ? Math.round((totalStudio / totalAllTime) * 100) : 0;
+
+  const rentalChartConfig = {
+    studioRental: { label: "Studio Rental", color: "#6B8E9B" },
+    teacherRentals: { label: "Teacher Rentals", color: "#B8860B" },
+  } satisfies ChartConfig;
+
+  const annualChartConfig = {
+    total: { label: "Total", color: "#6B8E9B" },
+  } satisfies ChartConfig;
+
+  const annualBarData = annualData.map((a) => ({
+    year: String(a.year),
+    total: a.total,
+    studioRental: a.studioRental,
+    teacherRentals: a.teacherRentals,
+  }));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* KPI row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Total Rental Revenue</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(totalAllTime)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">All time</CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>{currentYear} YTD</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(ytdRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">Year to date</CardFooter>
+        </DashboardCard>
+
+        {priorYearData && (
+          <DashboardCard>
+            <CardHeader>
+              <CardDescription>{currentYear - 1} Total</CardDescription>
+              <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(priorYearRevenue)}</CardTitle>
+            </CardHeader>
+            <CardFooter className="text-sm text-muted-foreground">Full year</CardFooter>
+          </DashboardCard>
+        )}
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Avg Monthly</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(avgMonthly)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">{completedMonthly.length} months</CardFooter>
+        </DashboardCard>
+      </div>
+
+      {/* Monthly Revenue chart — stacked bar */}
+      {chartData.length > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Monthly Rental Revenue</CardTitle>
+            <CardDescription>Studio Rental vs Teacher Rentals (last 12 completed months)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={rentalChartConfig} className="h-[260px] w-full">
+              <BarChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
+                <YAxis tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v: number) => formatCompactCurrency(v)} />
+                <ChartTooltip content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Bar dataKey="studioRental" stackId="a" fill="#6B8E9B" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="teacherRentals" stackId="a" fill="#B8860B" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </DashboardCard>
+      )}
+
+      {/* Annual summary + Revenue split side by side */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Annual bar chart */}
+        {annualBarData.length > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Annual Rental Revenue</CardTitle>
+              <CardDescription>By year</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
+                <BarChart data={annualBarData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="year" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v: number) => formatCompactCurrency(v)} />
+                  <ChartTooltip content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                  <Bar dataKey="total" fill="#6B8E9B" radius={[4, 4, 0, 0]}>
+                    <LabelList dataKey="total" position="top" fontSize={11} formatter={(v: number) => formatCompactCurrency(v)} />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </DashboardCard>
+        )}
+
+        {/* Revenue split — Studio vs Teacher */}
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Revenue Split</CardTitle>
+            <CardDescription>Studio Rental vs Teacher Rentals (all time)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              {/* Split bar */}
+              <div className="flex h-3 rounded-full overflow-hidden">
+                {studioPct > 0 && (
+                  <div className="h-full transition-all" style={{ width: `${studioPct}%`, backgroundColor: "#6B8E9B" }} />
+                )}
+                {(100 - studioPct) > 0 && (
+                  <div className="h-full transition-all" style={{ width: `${100 - studioPct}%`, backgroundColor: "#B8860B" }} />
+                )}
+              </div>
+
+              {/* Detail rows */}
+              <div className="flex flex-col">
+                {[
+                  { label: "Studio Rental", color: "#6B8E9B", amount: totalStudio, pct: studioPct },
+                  { label: "Teacher Rentals", color: "#B8860B", amount: totalTeacher, pct: 100 - studioPct },
+                ].map((row, i) => (
+                  <div key={i} className={`flex items-center justify-between py-2.5 ${i === 0 ? "border-b border-border" : ""}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block size-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                      <span className="text-sm font-medium">{row.label}</span>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-sm font-semibold tabular-nums">{formatCurrency(row.amount)}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">{row.pct}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-border">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="text-sm font-semibold tabular-nums">{formatCurrency(totalAllTime)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </DashboardCard>
+      </div>
+
+      {/* Monthly detail table */}
+      <DashboardCard>
+        <CardHeader>
+          <CardTitle>Monthly Breakdown</CardTitle>
+          <CardDescription>All rental revenue by month</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="text-left py-2 pr-4 font-medium">Month</th>
+                  <th className="text-right py-2 px-4 font-medium">Studio Rental</th>
+                  <th className="text-right py-2 px-4 font-medium">Teacher Rentals</th>
+                  <th className="text-right py-2 pl-4 font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...rental.monthly].sort((a, b) => b.month.localeCompare(a.month)).map((m) => (
+                  <tr key={m.month} className="border-b border-border/50 last:border-0">
+                    <td className="py-2 pr-4 font-medium">{formatShortMonth(m.month)}</td>
+                    <td className="py-2 px-4 text-right tabular-nums">{m.studioRental > 0 ? formatCurrency(m.studioRental) : "—"}</td>
+                    <td className="py-2 px-4 text-right tabular-nums">{m.teacherRentals > 0 ? formatCurrency(m.teacherRentals) : "—"}</td>
+                    <td className="py-2 pl-4 text-right font-semibold tabular-nums">{formatCurrency(m.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold">
+                  <td className="py-2 pr-4">Total</td>
+                  <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(totalStudio)}</td>
+                  <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(totalTeacher)}</td>
+                  <td className="py-2 pl-4 text-right tabular-nums">{formatCurrency(totalAllTime)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardContent>
+      </DashboardCard>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  DASHBOARD CONTENT — switches visible section based on sidebar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -4669,6 +4904,30 @@ function DashboardContent({ activeSection, data, refreshData }: {
               <CardContent>
                 <p className="text-sm text-muted-foreground text-center py-8">
                   No merch data available. Connect Shopify to see merch revenue.
+                </p>
+              </CardContent>
+            </DashboardCard>
+          )}
+        </div>
+      )}
+
+      {/* ── REVENUE: STUDIO RENTALS ── */}
+      {activeSection === "revenue-rentals" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <BuildingIcon className="size-7 shrink-0" style={{ color: SECTION_COLORS["revenue-rentals"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Studio Rentals</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Studio and teacher rental revenue from spreadsheet data</p>
+          </div>
+          {data.rentalRevenue ? (
+            <RentalRevenueTab rental={data.rentalRevenue} />
+          ) : (
+            <DashboardCard>
+              <CardContent>
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No rental revenue data available.
                 </p>
               </CardContent>
             </DashboardCard>

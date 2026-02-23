@@ -97,6 +97,26 @@ export interface DashboardStats {
   shopifyMerch?: ShopifyMerchData | null;
   spa?: SpaData | null;
   annualBreakdown?: AnnualRevenueBreakdown[] | null;
+  rentalRevenue?: RentalRevenueData | null;
+}
+
+export interface RentalMonthRow {
+  month: string;
+  studioRental: number;
+  teacherRentals: number;
+  total: number;
+}
+
+export interface RentalAnnualRow {
+  year: number;
+  studioRental: number;
+  teacherRentals: number;
+  total: number;
+}
+
+export interface RentalRevenueData {
+  monthly: RentalMonthRow[];
+  annual: RentalAnnualRow[];
 }
 
 export interface AnnualRevenueBreakdown {

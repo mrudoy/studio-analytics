@@ -315,18 +315,24 @@ export async function getAnnualRevenueBreakdown(): Promise<
         WHEN category ~* 'merch|product|food.*bev|gift\\s*card'
           THEN 'Merch'
 
-        -- In-Studio (memberships, packs, drop-ins, intro, workshops, privates, donations, trainings, etc.)
+        -- Teacher Training (TT, 200hr programs, etc.)
+        WHEN category ~* 'teacher\\s*training|200hr|training'
+          THEN 'Teacher Training'
+
+        -- In-Studio (memberships, packs, drop-ins, intro, workshops, privates, donations, etc.)
         WHEN category ~* 'sky\\s*unlimited|all\\s*access|10member|sky\\s*ting\\s*(monthly\\s*)?membership|ting\\s*fam|sky\\s*virgin|founding\\s*member|new\\s*member|back\\s*to\\s*school|secret\\s*membership|monthly\\s*membership'
           OR category ~* 'sky\\s*3|sky\\s*5|skyhigh|5[\\s-]*pack'
           OR category ~* 'drop[\\s-]*in|droplet'
           OR category ~* 'intro\\s*week|unlimited\\s*week|sky\\s*virgin\\s*2\\s*week'
           OR category ~* 'workshop|masterclass|specialty\\s*class'
-          OR category ~* 'teacher\\s*training|200hr|training'
           OR category ~* 'private'
           OR category ~* 'donation'
-          OR category ~* 'rental|teacher\\s*rental|studio\\s*rental'
           OR category ~* 'community'
           THEN 'In-Studio'
+
+        -- Rentals (studio + teacher rentals from Union.fit)
+        WHEN category ~* 'rental|teacher\\s*rental|studio\\s*rental'
+          THEN 'Rentals'
 
         ELSE 'Other'
       END AS segment,
@@ -353,6 +359,57 @@ export async function getAnnualRevenueBreakdown(): Promise<
   return Array.from(yearMap.entries()).map(([year, data]) => ({
     year,
     ...data,
+  }));
+}
+
+// ── Studio Rentals ──────────────────────────────────────────
+
+/**
+ * Get monthly studio rental revenue from the studio_rentals table.
+ * Returns per-month totals (Studio Rental + Teacher Rentals combined).
+ */
+export async function getMonthlyRentalRevenue(): Promise<
+  Array<{ month: string; studioRental: number; teacherRentals: number; total: number }>
+> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT month,
+           SUM(CASE WHEN category = 'Studio Rental' THEN revenue ELSE 0 END) AS studio_rental,
+           SUM(CASE WHEN category = 'Teacher Rentals' THEN revenue ELSE 0 END) AS teacher_rentals,
+           SUM(revenue) AS total
+    FROM studio_rentals
+    GROUP BY month
+    ORDER BY month
+  `);
+  return rows.map((r: Record<string, unknown>) => ({
+    month: r.month as string,
+    studioRental: Number(r.studio_rental) || 0,
+    teacherRentals: Number(r.teacher_rentals) || 0,
+    total: Number(r.total) || 0,
+  }));
+}
+
+/**
+ * Get annual studio rental revenue totals.
+ */
+export async function getAnnualRentalRevenue(): Promise<
+  Array<{ year: number; studioRental: number; teacherRentals: number; total: number }>
+> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT LEFT(month, 4)::int AS year,
+           SUM(CASE WHEN category = 'Studio Rental' THEN revenue ELSE 0 END) AS studio_rental,
+           SUM(CASE WHEN category = 'Teacher Rentals' THEN revenue ELSE 0 END) AS teacher_rentals,
+           SUM(revenue) AS total
+    FROM studio_rentals
+    GROUP BY LEFT(month, 4)
+    ORDER BY year
+  `);
+  return rows.map((r: Record<string, unknown>) => ({
+    year: Number(r.year),
+    studioRental: Number(r.studio_rental) || 0,
+    teacherRentals: Number(r.teacher_rentals) || 0,
+    total: Number(r.total) || 0,
   }));
 }
 
