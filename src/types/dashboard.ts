@@ -269,11 +269,8 @@ export interface ChurnRateData {
 
 export interface MonthOverMonthPeriod {
   year: number;
-  periodStart: string;
-  periodEnd: string;
   gross: number;
   net: number;
-  categoryCount: number;
 }
 
 export interface MonthOverMonthData {
