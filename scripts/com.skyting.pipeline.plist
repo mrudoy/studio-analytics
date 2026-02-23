@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.skyting.pipeline</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/npx</string>
+        <string>tsx</string>
+        <string>scripts/local-cron-pipeline.ts</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mike.rudoy_old/Desktop/Claude App/studio-analytics</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/mike.rudoy_old</string>
+    </dict>
+
+    <!-- Run daily at 6:00 AM local time -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Log output -->
+    <key>StandardOutPath</key>
+    <string>/Users/mike.rudoy_old/Desktop/Claude App/studio-analytics/data/logs/pipeline-cron.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mike.rudoy_old/Desktop/Claude App/studio-analytics/data/logs/pipeline-cron-error.log</string>
+
+    <!-- Don't keep alive — run once per schedule -->
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
