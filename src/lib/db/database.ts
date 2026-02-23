@@ -211,6 +211,25 @@ export async function initDatabase(): Promise<void> {
     );
   `);
 
+  // Insights table for computed actionable patterns
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS insights (
+      id SERIAL PRIMARY KEY,
+      detector TEXT NOT NULL,
+      headline TEXT NOT NULL,
+      explanation TEXT,
+      category TEXT NOT NULL,
+      severity TEXT DEFAULT 'info',
+      metric_value REAL,
+      metric_context TEXT,
+      detected_at TIMESTAMPTZ DEFAULT NOW(),
+      pipeline_run_id INTEGER,
+      dismissed BOOLEAN DEFAULT FALSE
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_insights_detected ON insights(detected_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_insights_detector ON insights(detector)`);
+
   // Performance indexes
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_ar_state ON auto_renews(plan_state);

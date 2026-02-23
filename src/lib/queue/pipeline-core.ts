@@ -492,6 +492,21 @@ export async function runPipelineFromFiles(
     /* non-critical */
   }
 
+  // Compute insights from the updated data
+  progress("Computing insights", 92);
+  try {
+    const { computeInsights } = await import("../analytics/insights");
+    const { saveInsights } = await import("../db/insights-store");
+    const { getPool } = await import("../db/database");
+    const insights = await computeInsights(getPool());
+    if (insights.length > 0) {
+      await saveInsights(insights);
+      console.log(`[pipeline-core] Generated ${insights.length} insights`);
+    }
+  } catch (err) {
+    console.warn("[pipeline-core] Insights computation failed (non-fatal):", err);
+  }
+
   // Validate completeness
   const validation = validateCompleteness(recordCounts);
   if (!validation.passed) {

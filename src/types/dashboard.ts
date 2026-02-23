@@ -437,6 +437,24 @@ export interface ConversionPoolModuleData {
 
 // ── Trends aggregate ───────────────────────────────────────
 
+// ── Insights types ────────────────────────────────────────
+
+export interface InsightRow {
+  id: number;
+  detector: string;
+  headline: string;
+  explanation: string | null;
+  category: "conversion" | "churn" | "revenue" | "growth";
+  severity: "critical" | "warning" | "info" | "positive";
+  metricValue: number | null;
+  metricContext: Record<string, unknown> | null;
+  detectedAt: string;
+  pipelineRunId: number | null;
+  dismissed: boolean;
+}
+
+// ── Trends aggregate ───────────────────────────────────────
+
 export interface TrendsData {
   weekly: TrendRowData[];
   monthly: TrendRowData[];

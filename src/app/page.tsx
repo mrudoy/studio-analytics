@@ -22,6 +22,7 @@ import {
   BrandSky,
   DeviceTv,
   BuildingIcon,
+  BulbIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -105,6 +106,7 @@ import type {
   MerchCustomerBreakdown,
   AnnualRevenueBreakdown,
   RentalRevenueData,
+  InsightRow,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -3810,6 +3812,86 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  INSIGHTS SECTION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const SEVERITY_COLORS: Record<string, { border: string; bg: string; text: string }> = {
+  critical: { border: "border-l-red-500", bg: "bg-red-50 dark:bg-red-950/20", text: "text-red-700 dark:text-red-400" },
+  warning:  { border: "border-l-amber-500", bg: "bg-amber-50 dark:bg-amber-950/20", text: "text-amber-700 dark:text-amber-400" },
+  info:     { border: "border-l-blue-500", bg: "bg-blue-50 dark:bg-blue-950/20", text: "text-blue-700 dark:text-blue-400" },
+  positive: { border: "border-l-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-950/20", text: "text-emerald-700 dark:text-emerald-400" },
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  conversion: "Conversion",
+  churn: "Churn",
+  revenue: "Revenue",
+  growth: "Growth",
+};
+
+function formatRelativeTimeShort(isoDate: string): string {
+  const ms = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+function InsightCard({ insight }: { insight: InsightRow }) {
+  const colors = SEVERITY_COLORS[insight.severity] || SEVERITY_COLORS.info;
+  return (
+    <div className={`rounded-lg border border-l-4 ${colors.border} ${colors.bg} p-4`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors.text} bg-white/60 dark:bg-white/10`}>
+              {CATEGORY_LABELS[insight.category] || insight.category}
+            </span>
+          </div>
+          <p className="text-sm font-semibold text-foreground leading-snug">
+            {insight.headline}
+          </p>
+          {insight.explanation && (
+            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+              {insight.explanation}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="mt-3 text-xs text-muted-foreground">
+        Detected {formatRelativeTimeShort(insight.detectedAt)}
+      </div>
+    </div>
+  );
+}
+
+function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
+  if (!insights || insights.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <DashboardCard>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">No insights detected yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Run the pipeline to generate actionable insights from your data</p>
+          </CardContent>
+        </DashboardCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {insights.map((insight) => (
+        <InsightCard key={insight.id} insight={insight} />
+      ))}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  CHURN SECTION (extracted from CategoryDetail cards)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -5117,6 +5199,20 @@ function DashboardContent({ activeSection, data, refreshData }: {
             <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
           </div>
           <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+        </>
+      )}
+
+      {/* ── INSIGHTS ── */}
+      {activeSection === "insights" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <BulbIcon className="size-7 shrink-0" style={{ color: SECTION_COLORS.insights }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Insights</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Actionable patterns detected in your data</p>
+          </div>
+          <InsightsSection insights={(data as unknown as { insights?: InsightRow[] | null }).insights ?? null} />
         </>
       )}
 

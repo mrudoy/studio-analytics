@@ -430,6 +430,18 @@ export async function GET() {
       console.warn("[api/stats] Data freshness query failed:", err);
     }
 
+    // ── 9b. Insights ──────────────────────────────────────────
+    let insights = null;
+    try {
+      const { getRecentInsights } = await import("@/lib/db/insights-store");
+      insights = await getRecentInsights(20);
+      if (insights && insights.length > 0) {
+        console.log(`[api/stats] Loaded ${insights.length} insights`);
+      }
+    } catch {
+      // insights table may not exist yet
+    }
+
     // ── 10. Return response ──────────────────────────────────
     if (stats) {
       stats.dataFreshness = dataFreshness;
@@ -445,6 +457,7 @@ export async function GET() {
       shopify,
       shopifyMerch,
       spa,
+      insights,
       dataSource: "database",
     });
   } catch (error) {
