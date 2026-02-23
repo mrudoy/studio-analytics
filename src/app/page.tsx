@@ -3745,7 +3745,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
         )}
       </CardHeader>
       <CardContent>
-        <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
+        <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
           <BarChart accessibilityLayer data={barData} margin={{ top: 32 }}>
             <CartesianGrid vertical={false} />
             <XAxis
@@ -4003,7 +4003,7 @@ function ChurnSection({ churnRates, weekly }: {
                 sky3: { label: LABELS.sky3, color: COLORS.sky3 },
                 tv: { label: LABELS.tv, color: COLORS.tv },
               } satisfies ChartConfig}
-              className="h-[300px] w-full"
+              className="h-[200px] w-full"
             >
               <LineChart
                 accessibilityLayer
@@ -4231,7 +4231,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               )}
             </CardHeader>
             <CardContent>
-              <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
+              <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
                 <BarChart accessibilityLayer data={annualBarData} margin={{ top: 32 }}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="year" tickLine={false} tickMargin={10} axisLine={false} />
@@ -4284,7 +4284,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               )}
             </CardHeader>
             <CardContent>
-              <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
+              <ChartContainer config={merchChartConfig} className="h-[200px] w-full">
                 <BarChart
                   accessibilityLayer
                   data={chartData}
@@ -4634,7 +4634,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
             <CardDescription>Studio Rental vs Teacher Rentals (last 12 completed months)</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={rentalChartConfig} className="h-[260px] w-full">
+            <ChartContainer config={rentalChartConfig} className="h-[200px] w-full">
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
