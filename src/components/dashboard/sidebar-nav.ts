@@ -10,11 +10,14 @@ import {
   UserPlus,
   UsersGroup,
   Database,
+  ClassRevenue,
+  ShoppingBag,
 } from "./icons";
 
 export type SectionKey =
   | "overview"
   | "revenue"
+  | "revenue-merch"
   | "growth-auto"
   | "growth-non-auto"
   | "conversion-new"
@@ -36,6 +39,7 @@ export interface NavItem {
 export const SECTION_COLORS: Record<SectionKey, string> = {
   overview:       "#413A3A",  // warm charcoal
   revenue:        "#4A7C59",  // forest green
+  "revenue-merch": "#4A7C59",
   "growth-auto":  "#5B7FA5",  // steel blue
   "growth-non-auto": "#5B7FA5",
   "conversion-new":  "#B87333",  // copper
@@ -46,7 +50,16 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
 
 export const NAV_ITEMS: NavItem[] = [
   { key: "overview", label: "Overview", icon: Eyeglass, color: SECTION_COLORS.overview },
-  { key: "revenue", label: "Revenue", icon: ReportMoney, color: SECTION_COLORS.revenue },
+  {
+    key: "revenue",
+    label: "Revenue",
+    icon: ReportMoney,
+    color: SECTION_COLORS.revenue,
+    children: [
+      { key: "revenue", label: "Class Revenue", icon: ClassRevenue },
+      { key: "revenue-merch", label: "Merch", icon: ShoppingBag },
+    ],
+  },
   {
     key: "growth-auto",
     label: "Growth",
@@ -73,7 +86,8 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   overview: ["Overview"],
-  revenue: ["Revenue"],
+  revenue: ["Revenue", "Class Revenue"],
+  "revenue-merch": ["Revenue", "Merch"],
   "growth-auto": ["Growth", "Auto-Renews"],
   "growth-non-auto": ["Growth", "Non-Auto-Renews"],
   "conversion-new": ["Conversion", "New Customers"],

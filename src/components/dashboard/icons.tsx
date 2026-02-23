@@ -173,6 +173,25 @@ export function DeviceTv(props: IconProps) {
   );
 }
 
+/** Home with dollar sign — Class Revenue sub-item */
+export function ClassRevenue(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="m19 10l-7-7l-9 9h2v7a2 2 0 0 0 2 2h6" />
+      <path d="M9 21v-6a2 2 0 0 1 2-2h2c.387 0 .748.11 1.054.3M21 15h-2.5a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3H17m2 0v1m0-8v1" />
+    </svg>
+  );
+}
+
+/** T-shirt — Merch sub-item */
+export function ShoppingBag(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="m15 4l6 2v5h-3v8a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-8H3V6l6-2a3 3 0 0 0 6 0" />
+    </svg>
+  );
+}
+
 /** Eyeglasses — Overview section */
 export function Eyeglass(props: IconProps) {
   return (
