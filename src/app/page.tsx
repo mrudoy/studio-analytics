@@ -4879,46 +4879,22 @@ function DashboardContent({ activeSection, data, refreshData }: {
               );
             }
 
-            // No current month data — show last completed month summary
-            const completed = mr.filter((m) => m.month < curKey);
-            const latest = completed.length > 0 ? completed[completed.length - 1] : null;
-            const prior = completed.length > 1 ? completed[completed.length - 2] : null;
-            if (!latest) return null;
-
-            const vsLastPct = prior && prior.gross > 0
-              ? Math.round(((latest.gross - prior.gross) / prior.gross) * 1000) / 10
-              : null;
-
+            // No current month data — show missing data state
+            const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
             return (
               <DashboardCard>
                 <CardHeader>
-                  <CardDescription>{formatMonthLabel(latest.month)} — Final Revenue</CardDescription>
-                  <CardTitle className="text-3xl font-semibold tabular-nums">{formatCurrency(latest.gross)}</CardTitle>
+                  <CardDescription>{monthLabel} — Revenue to Date</CardDescription>
+                  <CardTitle className="text-2xl font-medium text-muted-foreground/60">No data yet</CardTitle>
                 </CardHeader>
                 <CardContent className="pb-2">
-                  <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Net: </span>
-                      <span className="font-medium tabular-nums">{formatCurrency(latest.net)}</span>
-                    </div>
-                    {vsLastPct !== null && prior && (
-                      <div>
-                        <span className="text-muted-foreground">vs {formatShortMonth(prior.month)}: </span>
-                        <span className={`font-medium tabular-nums ${vsLastPct >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                          {vsLastPct > 0 ? "+" : ""}{vsLastPct}%
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Revenue data for {monthLabel} hasn&apos;t been uploaded yet. Upload the revenue categories report from Union.fit to see this month&apos;s revenue.
+                  </p>
                 </CardContent>
                 <CardFooter>
                   <div className="w-full">
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{ width: "100%", backgroundColor: SECTION_COLORS.revenue }}
-                      />
-                    </div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden" />
                   </div>
                 </CardFooter>
               </DashboardCard>
