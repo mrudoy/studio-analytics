@@ -3632,6 +3632,29 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   const prevW = completedWeekly.length >= 2 ? completedWeekly[completedWeekly.length - 2] : null;
   const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
 
+  // ── Bar chart: new adds per week + total count label for last 4 completed weeks ──
+  const last4 = completedWeekly.slice(-4);
+  const currentWeekInProgress = weekly.length > 1 ? weekly[weekly.length - 1] : null;
+  const currentWeekNet = currentWeekInProgress ? weeklyKeyNet(currentWeekInProgress) : 0;
+  const endOfLastCompleted = count - currentWeekNet;
+  const barData: { week: string; newAdds: number; total: number }[] = [];
+  {
+    let runningTotal = endOfLastCompleted;
+    const reversed: { week: string; newAdds: number; total: number }[] = [];
+    for (let i = last4.length - 1; i >= 0; i--) {
+      reversed.push({
+        week: formatWeekShort(last4[i].period),
+        newAdds: weeklyKeyNew(last4[i]),
+        total: runningTotal,
+      });
+      if (i > 0) {
+        runningTotal -= weeklyKeyNet(last4[i]);
+      }
+    }
+    reversed.reverse();
+    barData.push(...reversed);
+  }
+
   // Build metric rows
   const metrics: { label: string; value: string; delta?: number | null; deltaPercent?: number | null; isPositiveGood?: boolean; color?: string }[] = [];
 
@@ -3694,6 +3717,21 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           {formatNumber(count)}
         </span>
       </div>
+
+      {/* Weekly new adds bar chart with total count labels */}
+      {barData.length > 0 && (
+        <div className="my-2">
+          <ChartContainer config={{ newAdds: { label: "New", color } }} className="h-[100px] w-full">
+            <BarChart data={barData} margin={{ top: 24, right: 0, bottom: 0, left: 0 }}>
+              <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+              <Bar dataKey="newAdds" fill={color} radius={[3, 3, 0, 0]} opacity={0.85}>
+                <LabelList dataKey="newAdds" position="inside" style={{ fontSize: 11, fontWeight: 700, fill: "#fff" }} formatter={(v: number) => `+${v}`} />
+                <LabelList dataKey="total" position="top" style={{ fontSize: 9, fontWeight: 500, fill: "var(--muted-foreground)" }} formatter={(v: number) => v.toLocaleString()} />
+              </Bar>
+            </BarChart>
+          </ChartContainer>
+        </div>
+      )}
 
       {/* Metric rows — compact density */}
       <div className="flex flex-col">
