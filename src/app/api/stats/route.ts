@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue, getAllMonthlyRevenue } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getMonthlyRevenue, getAllMonthlyRevenue, getMonthlyMerchRevenue } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
-import { getShopifyStats } from "@/lib/db/shopify-store";
+import {
+  getShopifyStats,
+  getShopifyMTDRevenue,
+  getShopifyRevenueSummary,
+  getShopifyTopProducts,
+  getShopifyRepeatCustomerRate,
+} from "@/lib/db/shopify-store";
 import type { RevenueCategory } from "@/types/union-data";
-import type { DashboardStats, ShopifyStats } from "@/types/dashboard";
+import type { DashboardStats, ShopifyStats, ShopifyMerchData } from "@/types/dashboard";
 import type { TrendsData } from "@/types/dashboard";
 
 export async function GET() {
@@ -175,12 +181,80 @@ export async function GET() {
       console.warn("[api/stats] Failed to load monthly revenue timeline:", err);
     }
 
-    // ── 6. Shopify stats ──────────────────────────────────────
+    // ── 6. Shopify stats + merch data ────────────────────────
     let shopify: ShopifyStats | null = null;
+    let shopifyMerch: ShopifyMerchData | null = null;
     try {
-      shopify = await getShopifyStats();
-      if (shopify && shopify.totalOrders > 0) {
-        console.log(`[api/stats] Shopify: ${shopify.totalOrders} orders, $${shopify.totalRevenue} revenue`);
+      const [shopifyStats, mtd, revSummary, topProducts, repeatData] = await Promise.all([
+        getShopifyStats(),
+        getShopifyMTDRevenue(),
+        getShopifyRevenueSummary(),
+        getShopifyTopProducts(3),
+        getShopifyRepeatCustomerRate(),
+      ]);
+
+      shopify = shopifyStats;
+
+      if (shopifyStats && shopifyStats.totalOrders > 0) {
+        console.log(`[api/stats] Shopify: ${shopifyStats.totalOrders} orders, $${shopifyStats.totalRevenue} revenue`);
+
+        // Compute average monthly revenue from completed months only
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const completedMonths = revSummary.filter((m) => m.month < currentMonthKey);
+        const avgMonthlyRevenue = completedMonths.length > 0
+          ? Math.round(completedMonths.reduce((sum, m) => sum + m.gross, 0) / completedMonths.length)
+          : 0;
+
+        shopifyMerch = {
+          mtdRevenue: mtd,
+          monthlyRevenue: revSummary,
+          avgMonthlyRevenue,
+          topProducts,
+          repeatCustomerRate: repeatData.repeatRate,
+          repeatCustomerCount: repeatData.repeatCount,
+          totalCustomersWithOrders: repeatData.totalWithOrders,
+        };
+
+        // ── Revenue deduplication ──────────────────────────────
+        // Union.fit has "Merch" + "Products" categories that overlap with Shopify.
+        // For months where Shopify data exists, replace Union.fit merch with Shopify totals.
+        // Formula: adjusted = unionTotal - unionMerch + shopifyGross
+        if (monthlyRevenue.length > 0) {
+          try {
+            const unionMerch = await getMonthlyMerchRevenue();
+            const shopifyByMonth = new Map(revSummary.map((m) => [m.month, m]));
+
+            for (let i = 0; i < monthlyRevenue.length; i++) {
+              const m = monthlyRevenue[i];
+              const shopMonth = shopifyByMonth.get(m.month);
+              if (shopMonth) {
+                const deduction = unionMerch.get(m.month);
+                const deductGross = deduction?.gross ?? 0;
+                const deductNet = deduction?.net ?? 0;
+                monthlyRevenue[i] = {
+                  month: m.month,
+                  gross: Math.round((m.gross - deductGross + shopMonth.gross) * 100) / 100,
+                  net: Math.round((m.net - deductNet + shopMonth.net) * 100) / 100,
+                };
+              }
+            }
+
+            // Update current/previous month revenue on stats
+            if (stats) {
+              const currentEntry = monthlyRevenue.find((m) => m.month === currentMonthKey);
+              const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+              const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+              const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
+              if (currentEntry) stats.currentMonthRevenue = currentEntry.net;
+              if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
+            }
+
+            console.log(`[api/stats] Revenue deduplication applied for ${shopifyByMonth.size} Shopify months`);
+          } catch (err) {
+            console.warn("[api/stats] Revenue deduplication failed:", err);
+          }
+        }
       }
     } catch {
       // Shopify tables might not exist yet (migration hasn't run)
@@ -194,6 +268,7 @@ export async function GET() {
       monthOverMonth,
       monthlyRevenue,
       shopify,
+      shopifyMerch,
       dataSource: "database",
     });
   } catch (error) {

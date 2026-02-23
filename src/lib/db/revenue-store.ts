@@ -244,6 +244,35 @@ export async function getAllMonthlyRevenue(): Promise<{
   }));
 }
 
+/**
+ * Get per-month sum of Union.fit "Merch" + "Products" revenue categories.
+ * Used for deduplication: when Shopify data exists for a month, we subtract
+ * Union.fit's merch revenue from the overall total to avoid double-counting.
+ */
+export async function getMonthlyMerchRevenue(): Promise<Map<string, { gross: number; net: number }>> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT
+      LEFT(period_start, 7) AS month,
+      SUM(revenue) AS gross,
+      SUM(net_revenue) AS net
+    FROM revenue_categories
+    WHERE category IN ('Merch', 'Products')
+      AND LEFT(period_start, 7) = LEFT(period_end, 7)
+    GROUP BY LEFT(period_start, 7)
+    ORDER BY month
+  `);
+
+  const map = new Map<string, { gross: number; net: number }>();
+  for (const r of rows) {
+    map.set(r.month as string, {
+      gross: Number(r.gross) || 0,
+      net: Number(r.net) || 0,
+    });
+  }
+  return map;
+}
+
 export async function savePipelineRun(
   dateRangeStart: string,
   dateRangeEnd: string,

@@ -36,6 +36,7 @@
   --ds-color-sky3: #5B7FA5;
   --ds-color-tv: #8B6FA5;
   --ds-color-teal: #3A8A8A;
+  --ds-color-merch: #B8860B;
 
   /* Bento grid tokens */
   --st-grid-gap: 16px;
@@ -226,6 +227,7 @@ body {
   --color-ds-sky3: var(--ds-color-sky3);
   --color-ds-tv: var(--ds-color-tv);
   --color-ds-teal: var(--ds-color-teal);
+  --color-ds-merch: var(--ds-color-merch);
 }
 
 .dark {

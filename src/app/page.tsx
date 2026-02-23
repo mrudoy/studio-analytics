@@ -94,6 +94,7 @@ import type {
   ConversionPoolSlice,
   ConversionPoolSliceData,
   IntroWeekData,
+  ShopifyMerchData,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -152,6 +153,7 @@ const LABELS = {
   newCustomerFunnel: "New Customer Funnel",
   conversionPool: "Non-Auto-Renew Funnel",
   revenue: "Revenue",
+  merch: "Merch",
   mrr: "Monthly Recurring Revenue",
   yoy: "Year over Year",
 } as const;
@@ -172,6 +174,7 @@ const COLORS = {
   newCustomer: "#5F6D7A", // slate for new customer funnel
   dropIn: "#8F7A5E",     // warm sienna for drop-ins (desaturated)
   conversionPool: "#6B5F78", // muted plum for conversion pool (desaturated)
+  merch: "#B8860B",          // dark goldenrod for merch/shopify
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -3603,6 +3606,112 @@ function ChurnSection({ churnRates, weekly }: {
   );
 }
 
+// ─── Merch Revenue Tab (Shopify data) ─────────────────────────
+
+function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
+  const isMobile = useIsMobile();
+
+  // Completed months only (exclude current)
+  const nowDate = new Date();
+  const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+  const completedMonths = merch.monthlyRevenue.filter((m) => m.month < currentMonthKey);
+  const chartData = completedMonths.slice(-6).map((m) => ({
+    month: formatShortMonth(m.month),
+    gross: m.gross,
+    orders: m.orderCount,
+  }));
+
+  const merchChartConfig = {
+    gross: { label: "Gross Revenue", color: COLORS.merch },
+  } satisfies ChartConfig;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* KPI row */}
+      <DashboardCard>
+        <CardContent>
+          <MetricRow
+            slots={[
+              { value: formatCurrency(merch.mtdRevenue), label: "MTD Revenue" },
+              { value: formatCurrency(merch.avgMonthlyRevenue), label: "Avg Monthly" },
+              { value: `${merch.repeatCustomerRate}`, valueSuffix: "%", label: "Repeat Rate" },
+            ]}
+          />
+        </CardContent>
+      </DashboardCard>
+
+      {/* Monthly Revenue bar chart */}
+      {chartData.length > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Monthly Merch Revenue</CardTitle>
+            {completedMonths.length > 0 && (
+              <CardDescription>
+                {formatShortMonth(completedMonths[completedMonths.length - 1].month)}: {formatCurrency(completedMonths[completedMonths.length - 1].gross)}
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
+              <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: isMobile ? 8 : 16, right: isMobile ? 8 : 16 }}>
+                <YAxis hide domain={[0, "auto"]} />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  fontSize={isMobile ? 11 : 12}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent indicator="line" formatter={(v) => formatCurrency(v as number)} />}
+                />
+                <Bar dataKey="gross" fill={COLORS.merch} radius={[4, 4, 0, 0]}>
+                  {!isMobile && (
+                    <LabelList
+                      position="top"
+                      offset={8}
+                      className="fill-foreground"
+                      fontSize={11}
+                      formatter={(v: number) => formatCompactCurrency(v)}
+                    />
+                  )}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+          <CardFooter className="text-sm text-muted-foreground">
+            Last {chartData.length} months of Shopify merch revenue
+          </CardFooter>
+        </DashboardCard>
+      )}
+
+      {/* Top Products */}
+      {merch.topProducts.length > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Top Products</CardTitle>
+            <CardDescription>By total revenue (all time)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col">
+              {merch.topProducts.map((product, i) => (
+                <div key={i} className={`flex justify-between items-center py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">{product.title}</span>
+                    <span className="text-xs text-muted-foreground">{formatNumber(product.unitsSold)} units sold</span>
+                  </div>
+                  <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.revenue)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </DashboardCard>
+      )}
+    </div>
+  );
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  DASHBOARD CONTENT — switches visible section based on sidebar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3693,58 +3802,80 @@ function DashboardContent({ activeSection, data }: {
               <ReportMoney className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
               <h1 className="text-3xl font-semibold tracking-tight">Revenue</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Gross and recurring revenue, MRR breakdown, and year-over-year trends</p>
           </div>
-          <RevenueSection data={data} trends={trends} />
+          <Tabs defaultValue="class-revenue">
+            <TabsList variant="line" className="w-full justify-start">
+              <TabsTrigger value="class-revenue">Class Revenue</TabsTrigger>
+              <TabsTrigger value="merch">{LABELS.merch}</TabsTrigger>
+            </TabsList>
 
-          {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-              <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
-            </div>
-          )}
+            <TabsContent value="class-revenue" className="flex flex-col gap-4">
+              <RevenueSection data={data} trends={trends} />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <MRRBreakdown data={data} />
-            {data.monthOverMonth ? (
-              <Card>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
-                  <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                  </span>
+              {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                  <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
                 </div>
-                <div className="flex flex-col">
-                  <div className="flex justify-between py-2.5 border-b border-border">
-                    <span className="text-sm text-muted-foreground">
-                      {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
-                    </span>
-                    <span className="text-sm font-semibold text-muted-foreground tabular-nums">
-                      {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-2.5 border-b border-border">
-                    <span className="text-sm text-muted-foreground">
-                      {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                    </span>
-                  </div>
-                  {data.monthOverMonth.yoyGrossPct !== null && (
-                    <div className="flex justify-between items-center py-2.5">
-                      <span className="text-sm text-muted-foreground">Change</span>
-                      <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <MRRBreakdown data={data} />
+                {data.monthOverMonth ? (
+                  <Card>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
+                      <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                        {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                      </span>
                     </div>
-                  )}
-                </div>
-              </Card>
-            ) : (
-              <Card>
-                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
-                <p className="text-sm text-muted-foreground opacity-60">No data available</p>
-              </Card>
-            )}
-          </div>
+                    <div className="flex flex-col">
+                      <div className="flex justify-between py-2.5 border-b border-border">
+                        <span className="text-sm text-muted-foreground">
+                          {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
+                        </span>
+                        <span className="text-sm font-semibold text-muted-foreground tabular-nums">
+                          {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-2.5 border-b border-border">
+                        <span className="text-sm text-muted-foreground">
+                          {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
+                        </span>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                        </span>
+                      </div>
+                      {data.monthOverMonth.yoyGrossPct !== null && (
+                        <div className="flex justify-between items-center py-2.5">
+                          <span className="text-sm text-muted-foreground">Change</span>
+                          <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ) : (
+                  <Card>
+                    <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
+                    <p className="text-sm text-muted-foreground opacity-60">No data available</p>
+                  </Card>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="merch">
+              {data.shopifyMerch ? (
+                <MerchRevenueTab merch={data.shopifyMerch} />
+              ) : (
+                <DashboardCard>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No merch data available. Connect Shopify to see merch revenue.
+                    </p>
+                  </CardContent>
+                </DashboardCard>
+              )}
+            </TabsContent>
+          </Tabs>
         </>
       )}
 

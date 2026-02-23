@@ -12,6 +12,22 @@ export interface ShopifyStats {
   lastSyncAt: string | null;
 }
 
+export interface ShopifyTopProduct {
+  title: string;
+  revenue: number;
+  unitsSold: number;
+}
+
+export interface ShopifyMerchData {
+  mtdRevenue: number;
+  monthlyRevenue: Array<{ month: string; gross: number; net: number; orderCount: number }>;
+  avgMonthlyRevenue: number;
+  topProducts: ShopifyTopProduct[];
+  repeatCustomerRate: number;
+  repeatCustomerCount: number;
+  totalCustomersWithOrders: number;
+}
+
 export interface DashboardStats {
   lastUpdated: string | null;
   dateRange: string | null;
@@ -44,6 +60,7 @@ export interface DashboardStats {
   monthOverMonth?: MonthOverMonthData | null;
   monthlyRevenue?: { month: string; gross: number; net: number }[];
   shopify?: ShopifyStats | null;
+  shopifyMerch?: ShopifyMerchData | null;
 }
 
 export interface RevenueCategoryData {

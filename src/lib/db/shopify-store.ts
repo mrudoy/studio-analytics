@@ -278,6 +278,69 @@ export async function getShopifyRevenueSummary(): Promise<
   }));
 }
 
+/** Month-to-date Shopify revenue (current calendar month). */
+export async function getShopifyMTDRevenue(): Promise<number> {
+  const pool = getPool();
+  const res = await pool.query(`
+    SELECT COALESCE(SUM(total_price), 0) AS mtd
+    FROM shopify_orders
+    WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)
+      AND financial_status NOT IN ('voided', 'refunded')
+      AND canceled_at IS NULL
+  `);
+  return parseFloat(res.rows[0].mtd) || 0;
+}
+
+/** Top products by total revenue from order line_items (JSONB). */
+export async function getShopifyTopProducts(
+  limit = 3
+): Promise<Array<{ title: string; revenue: number; unitsSold: number }>> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT
+       li->>'title' AS title,
+       SUM((li->>'price')::numeric * (li->>'quantity')::int) AS revenue,
+       SUM((li->>'quantity')::int) AS units_sold
+     FROM shopify_orders,
+          jsonb_array_elements(line_items) AS li
+     WHERE financial_status NOT IN ('voided', 'refunded')
+       AND canceled_at IS NULL
+     GROUP BY li->>'title'
+     ORDER BY revenue DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  return res.rows.map((r: { title: string; revenue: string; units_sold: string }) => ({
+    title: r.title,
+    revenue: parseFloat(r.revenue) || 0,
+    unitsSold: parseInt(r.units_sold) || 0,
+  }));
+}
+
+/** Repeat customer rate: % of purchasing customers with orders_count > 1. */
+export async function getShopifyRepeatCustomerRate(): Promise<{
+  repeatRate: number;
+  repeatCount: number;
+  totalWithOrders: number;
+}> {
+  const pool = getPool();
+  const res = await pool.query(`
+    SELECT
+      COUNT(*) FILTER (WHERE orders_count > 1) AS repeat_count,
+      COUNT(*) FILTER (WHERE orders_count > 0) AS total_with_orders
+    FROM shopify_customers
+  `);
+
+  const repeatCount = parseInt(res.rows[0].repeat_count) || 0;
+  const totalWithOrders = parseInt(res.rows[0].total_with_orders) || 0;
+  const repeatRate = totalWithOrders > 0
+    ? Math.round((repeatCount / totalWithOrders) * 1000) / 10
+    : 0;
+
+  return { repeatRate, repeatCount, totalWithOrders };
+}
+
 /** Summary stats for the dashboard. */
 export async function getShopifyStats(): Promise<{
   totalOrders: number;
