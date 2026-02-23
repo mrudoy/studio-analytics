@@ -4922,6 +4922,95 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
           </div>
 
+          {/* Current month revenue-to-date card (or last completed month if no current data) */}
+          {(() => {
+            const nowD = new Date();
+            const curKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
+            const mr = data.monthlyRevenue || [];
+            const curEntry = mr.find((m) => m.month === curKey);
+            const prevKey = (() => {
+              const d = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            })();
+            const prevEntry = mr.find((m) => m.month === prevKey);
+
+            // If we have current month data, show MTD with pacing
+            if (curEntry && curEntry.gross > 0) {
+              const curGross = curEntry.gross;
+              const curNet = curEntry.net;
+              const dayOfMonth = nowD.getDate();
+              const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
+              const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
+              const prevGross = prevEntry?.gross ?? 0;
+              const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
+              const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+              return (
+                <DashboardCard>
+                  <CardHeader>
+                    <CardDescription>{monthLabel} — Revenue to Date</CardDescription>
+                    <CardTitle className="text-3xl font-semibold tabular-nums">{formatCurrency(curGross)}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-2">
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Net: </span>
+                        <span className="font-medium tabular-nums">{formatCurrency(curNet)}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Day {dayOfMonth} of {daysInMonth} · </span>
+                        <span className="font-medium tabular-nums">Pacing: {formatCurrency(pacedGross)}</span>
+                      </div>
+                      {vsLastPct !== null && (
+                        <div>
+                          <span className="text-muted-foreground">vs {formatShortMonth(prevKey)}: </span>
+                          <span className={`font-medium tabular-nums ${vsLastPct >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                            {vsLastPct > 0 ? "+" : ""}{vsLastPct}%
+                          </span>
+                          <span className="text-muted-foreground"> (paced)</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <div className="w-full">
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, Math.round((dayOfMonth / daysInMonth) * 100))}%`,
+                            backgroundColor: SECTION_COLORS.revenue,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </CardFooter>
+                </DashboardCard>
+              );
+            }
+
+            // No current month data — show missing data state
+            const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+            return (
+              <DashboardCard>
+                <CardHeader>
+                  <CardDescription>{monthLabel} — Revenue to Date</CardDescription>
+                  <CardTitle className="text-2xl font-medium text-muted-foreground/60">No data yet</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-2">
+                  <p className="text-sm text-muted-foreground">
+                    Revenue data for {monthLabel} hasn&apos;t been uploaded yet. Upload the revenue categories report from Union.fit to see this month&apos;s revenue.
+                  </p>
+                </CardContent>
+                <CardFooter>
+                  <div className="w-full">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden" />
+                  </div>
+                </CardFooter>
+              </DashboardCard>
+            );
+          })()}
+
           <RevenueSection data={data} trends={trends} />
 
           {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
