@@ -1,7 +1,32 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle } from "lucide-react";
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
+import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
+import {
+  Eyeglass,
+  ReportMoney,
+  ChartBarPopular,
+  Recycle,
+  RecycleOff,
+  ArrowFork,
+  HourglassLow,
+  UserPlus,
+  UsersGroup,
+  Database,
+} from "@/components/dashboard/icons";
+import {
+  Card as ShadCard,
+  CardHeader as ShadCardHeader,
+  CardTitle as ShadCardTitle,
+  CardDescription as ShadCardDesc,
+  CardContent as ShadCardContent,
+  CardFooter as ShadCardFooter,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   AreaChart as RAreaChart,
   Area,
@@ -315,23 +340,7 @@ function formatMonthLabel(period: string): string {
 }
 
 // ─── Shared Components ──────────────────────────────────────
-
-function SkyTingLogo() {
-  return (
-    <span
-      style={{
-        fontFamily: FONT_BRAND,
-        fontSize: "1.1rem",
-        fontWeight: 400,
-        letterSpacing: "0.35em",
-        textTransform: "uppercase" as const,
-        color: "var(--st-text-primary)",
-      }}
-    >
-      SKY TING
-    </span>
-  );
-}
+// SkyTingLogo + SkyTingSwirl imported from @/components/dashboard/sky-ting-logo
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -441,7 +450,7 @@ function PipelineView() {
           <div className="flex justify-center">
             <SkyTingLogo />
           </div>
-          <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Studio Analytics
           </h1>
           <p className="text-muted-foreground leading-7">
@@ -637,12 +646,12 @@ function PipelineView() {
 
 function SectionHeader({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
   return (
-    <div>
-      <h2 className="scroll-m-20 text-xl font-semibold tracking-tight">
+    <div className="space-y-1">
+      <h2 className="text-2xl font-semibold tracking-tight">
         {children}
       </h2>
       {subtitle && (
-        <p className="text-muted-foreground text-sm mt-0.5">
+        <p className="text-sm text-muted-foreground">
           {subtitle}
         </p>
       )}
@@ -692,7 +701,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
   );
 }
 
-// ─── Freshness Badge ─────────────────────────────────────────
+// ─── Data Section ────────────────────────────────────────────
 
 function useNextRunCountdown() {
   const [nextRun, setNextRun] = useState<number | null>(null);
@@ -721,7 +730,7 @@ function useNextRunCountdown() {
   return countdown;
 }
 
-function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
+function DataSection({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
   const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [pipelineStep, setPipelineStep] = useState("");
   const [pipelinePercent, setPipelinePercent] = useState(0);
@@ -730,14 +739,12 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
   const eventSourceRef = useRef<EventSource | null>(null);
   const countdown = useNextRunCountdown();
 
-  // ETA ticker — update every second while running
   useEffect(() => {
     if (refreshState !== "running") return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [refreshState]);
 
-  // Cleanup EventSource on unmount
   useEffect(() => {
     return () => { eventSourceRef.current?.close(); };
   }, []);
@@ -749,189 +756,169 @@ function FreshnessBadge({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdat
     setPipelineStartedAt(0);
     try {
       const res = await fetch("/api/pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      if (res.status === 409) {
-        setRefreshState("running"); // already running
-        return;
-      }
+      if (res.status === 409) { setRefreshState("running"); return; }
       if (!res.ok) throw new Error("Failed");
       const { jobId } = await res.json();
-
-      // Connect to SSE for live progress
       eventSourceRef.current?.close();
       const es = new EventSource(`/api/status?jobId=${jobId}`);
       eventSourceRef.current = es;
-
       es.addEventListener("progress", (e) => {
-        const data = JSON.parse(e.data);
-        setPipelineStep(data.step || "Processing...");
-        setPipelinePercent(data.percent || 0);
-        if (data.startedAt) setPipelineStartedAt(data.startedAt);
+        const d = JSON.parse(e.data);
+        setPipelineStep(d.step || "Processing...");
+        setPipelinePercent(d.percent || 0);
+        if (d.startedAt) setPipelineStartedAt(d.startedAt);
       });
-
-      es.addEventListener("complete", () => {
-        es.close();
-        setRefreshState("done");
-        setPipelineStep("");
-        setPipelinePercent(100);
-        // Reload dashboard data after short delay
-        setTimeout(() => window.location.reload(), 2000);
-      });
-
-      es.addEventListener("error", (e) => {
-        try {
-          const data = JSON.parse((e as MessageEvent).data);
-          setPipelineStep(data.message || "Error");
-        } catch { /* SSE error */ }
-        es.close();
-        setRefreshState("error");
-        setTimeout(() => setRefreshState("idle"), 8_000);
-      });
-    } catch {
-      setRefreshState("error");
-      setTimeout(() => setRefreshState("idle"), 5_000);
-    }
+      es.addEventListener("complete", () => { es.close(); setRefreshState("done"); setPipelinePercent(100); setTimeout(() => window.location.reload(), 2000); });
+      es.addEventListener("error", (e) => { try { setPipelineStep(JSON.parse((e as MessageEvent).data).message || "Error"); } catch {} es.close(); setRefreshState("error"); setTimeout(() => setRefreshState("idle"), 8000); });
+    } catch { setRefreshState("error"); setTimeout(() => setRefreshState("idle"), 5000); }
   }
 
   const elapsed = pipelineStartedAt ? now - pipelineStartedAt : 0;
-  const etaMs = pipelinePercent > 5 && elapsed > 0
-    ? (elapsed / pipelinePercent) * (100 - pipelinePercent)
-    : 0;
+  const etaMs = pipelinePercent > 5 && elapsed > 0 ? (elapsed / pipelinePercent) * (100 - pipelinePercent) : 0;
 
-  if (!lastUpdated) return null;
-
-  const date = new Date(lastUpdated);
-  const isStale = Date.now() - date.getTime() > 24 * 60 * 60 * 1000;
+  const isStale = lastUpdated ? Date.now() - new Date(lastUpdated).getTime() > 24 * 60 * 60 * 1000 : true;
 
   return (
-    <div className="flex flex-col items-center gap-2.5" style={{ fontSize: "0.85rem" }}>
-      {/* Freshness pills row */}
-      <div className="inline-flex items-center gap-2">
-        {/* Updated pill */}
-        <div
-          className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5"
-          style={{
-            backgroundColor: isStale ? "rgba(160, 64, 64, 0.08)" : "rgba(74, 124, 89, 0.08)",
-            border: `1px solid ${isStale ? "rgba(160, 64, 64, 0.2)" : "rgba(74, 124, 89, 0.2)"}`,
-                       fontWeight: 600,
-          }}
-        >
-          <span
-            className="inline-block rounded-full"
-            style={{ width: "7px", height: "7px", backgroundColor: isStale ? "var(--st-error)" : "var(--st-success)" }}
-          />
-          <span style={{ color: isStale ? "var(--st-error)" : "var(--st-success)" }}>
-            Updated {formatRelativeTime(lastUpdated)}
-          </span>
-          <span className="text-muted-foreground font-normal">
-            {formatDateTime(lastUpdated)}
-          </span>
-        </div>
-        {/* Next run pill */}
-        {countdown && refreshState !== "running" && (
-          <div
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5"
-            style={{
-              backgroundColor: "rgba(128, 128, 128, 0.06)",
-              border: "1px solid var(--st-border)",
-                           fontWeight: 500,
-              color: "var(--st-text-secondary)",
-            }}
-          >
-            Next in {countdown}
-          </div>
-        )}
-      </div>
-
-      <div className="inline-flex items-center gap-3">
-        {spreadsheetUrl && (
-          <a
-            href={spreadsheetUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors"
-            style={{
-              color: "var(--st-text-secondary)",
-              border: "1px solid var(--st-border)",
-                           fontWeight: 500,
-              fontSize: "0.8rem",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = "var(--st-border-hover)";
-              e.currentTarget.style.color = "var(--st-text-primary)";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "var(--st-border)";
-              e.currentTarget.style.color = "var(--st-text-secondary)";
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <polyline points="10 9 9 9 8 9" />
-            </svg>
-            Google Sheet
-          </a>
-        )}
-
-        <button
-          onClick={triggerRefresh}
-          disabled={refreshState === "running"}
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors"
-          style={{
-            color: refreshState === "running" ? "var(--st-text-secondary)" : refreshState === "done" ? "var(--st-success)" : refreshState === "error" ? "var(--st-error)" : "var(--st-text-secondary)",
-            border: `1px solid ${refreshState === "done" ? "rgba(74, 124, 89, 0.3)" : "var(--st-border)"}`,
-                       fontWeight: 500,
-            fontSize: "0.8rem",
-            cursor: refreshState === "running" ? "wait" : "pointer",
-            opacity: refreshState === "running" ? 0.6 : 1,
-            background: "transparent",
-          }}
-          onMouseOver={(e) => {
-            if (refreshState === "idle") {
-              e.currentTarget.style.borderColor = "var(--st-border-hover)";
-              e.currentTarget.style.color = "var(--st-text-primary)";
-            }
-          }}
-          onMouseOut={(e) => {
-            if (refreshState === "idle") {
-              e.currentTarget.style.borderColor = "var(--st-border)";
-              e.currentTarget.style.color = "var(--st-text-secondary)";
-            }
-          }}
-        >
-          <svg
-            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ animation: refreshState === "running" ? "spin 1s linear infinite" : "none" }}
-          >
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-          {refreshState === "running" ? "Refreshing..." : refreshState === "done" ? "Queued" : refreshState === "error" ? "Failed" : "Refresh Data"}
-        </button>
-      </div>
-
-      {refreshState === "running" && (
-        <div style={{ marginTop: "0.5rem", maxWidth: "340px", width: "100%" }}>
-          <div className="flex justify-between items-baseline text-[0.72rem] mb-1">
-            <span className="text-muted-foreground">{pipelineStep}</span>
-            <span className="font-bold">{pipelinePercent}%</span>
-          </div>
-          <div className="rounded-full overflow-hidden" style={{ height: "6px", backgroundColor: "var(--st-border)" }}>
-            <div
-              className="rounded-full transition-all duration-500"
-              style={{ height: "100%", width: `${pipelinePercent}%`, backgroundColor: "var(--st-accent)" }}
-            />
-          </div>
-          {etaMs > 3000 && (
-            <p className="text-[0.68rem] text-muted-foreground opacity-70 mt-0.5 text-center">
-              {formatEta(etaMs)}
-            </p>
+    <div className="grid gap-4 md:grid-cols-2">
+      {/* ── Last Update ── */}
+      <ShadCard>
+        <ShadCardHeader>
+          <ShadCardTitle className="flex items-center gap-2">
+            Last Update
+            {lastUpdated && (
+              <Badge variant={isStale ? "destructive" : "secondary"} className={!isStale ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}>
+                {isStale ? "Stale" : "Fresh"}
+              </Badge>
+            )}
+          </ShadCardTitle>
+          <ShadCardDesc>Most recent data refresh</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          {lastUpdated ? (
+            <div className="space-y-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-semibold tabular-nums">{formatRelativeTime(lastUpdated)}</span>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {formatDateTime(lastUpdated)}
+              </div>
+              {dataSource && (
+                <div className="text-xs text-muted-foreground">
+                  Source: {dataSource === "database" ? "PostgreSQL" : dataSource === "sheets" ? "Google Sheets" : "Database + Sheets"}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No data loaded yet</p>
           )}
-        </div>
-      )}
+        </ShadCardContent>
+        {spreadsheetUrl && (
+          <ShadCardFooter>
+            <Button variant="outline" size="sm" asChild>
+              <a href={spreadsheetUrl} target="_blank" rel="noopener noreferrer">
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                View in Google Sheets
+              </a>
+            </Button>
+          </ShadCardFooter>
+        )}
+      </ShadCard>
+
+      {/* ── Next Update ── */}
+      <ShadCard>
+        <ShadCardHeader>
+          <ShadCardTitle className="flex items-center gap-2">
+            Next Update
+            {refreshState === "running" && (
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">Running</Badge>
+            )}
+          </ShadCardTitle>
+          <ShadCardDesc>Scheduled pipeline run</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          <div className="space-y-3">
+            {countdown && refreshState !== "running" ? (
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-semibold tabular-nums">{countdown}</span>
+              </div>
+            ) : refreshState === "running" ? (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{pipelineStep}</span>
+                  <span className="font-medium tabular-nums">{pipelinePercent}%</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pipelinePercent}%` }} />
+                </div>
+                {etaMs > 3000 && (
+                  <p className="text-xs text-muted-foreground">{formatEta(etaMs)} remaining</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No schedule configured</p>
+            )}
+          </div>
+        </ShadCardContent>
+        <ShadCardFooter>
+          <Button
+            variant={refreshState === "error" ? "destructive" : "outline"}
+            size="sm"
+            disabled={refreshState === "running"}
+            onClick={triggerRefresh}
+          >
+            <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: refreshState === "running" ? "spin 1s linear infinite" : "none" }}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {refreshState === "running" ? "Refreshing..." : refreshState === "done" ? "Done" : refreshState === "error" ? "Retry" : "Refresh Now"}
+          </Button>
+        </ShadCardFooter>
+      </ShadCard>
+
+      {/* ── Pipeline Info ── */}
+      <ShadCard className="md:col-span-2">
+        <ShadCardHeader>
+          <ShadCardTitle>Data Pipeline</ShadCardTitle>
+          <ShadCardDesc>How dashboard data gets updated</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">1</div>
+              <div>
+                <p className="text-sm font-medium">Union.fit sends daily zip</p>
+                <p className="text-xs text-muted-foreground">Automated export to robot@skyting.com with all report CSVs</p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0">Pending</Badge>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-semibold">2</div>
+              <div>
+                <p className="text-sm font-medium">Pipeline processes email</p>
+                <p className="text-xs text-muted-foreground">Login to inbox, find zip, extract CSVs, parse and validate</p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0">Not started</Badge>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-semibold">3</div>
+              <div>
+                <p className="text-sm font-medium">Upload to database</p>
+                <p className="text-xs text-muted-foreground">Upsert records into PostgreSQL, update dashboard metrics</p>
+              </div>
+              <Badge variant="outline" className="ml-auto shrink-0">Not started</Badge>
+            </div>
+          </div>
+        </ShadCardContent>
+        <ShadCardFooter className="border-t pt-4">
+          <p className="text-xs text-muted-foreground">
+            Waiting for first zip from Union.fit. Current data loaded via manual CSV uploads and legacy pipeline.
+          </p>
+        </ShadCardFooter>
+      </ShadCard>
     </div>
   );
 }
@@ -1203,9 +1190,9 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
     <div className="flex items-center justify-between shrink-0 pb-1">
       <div className="flex items-center gap-3">
         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-[16px] leading-[20px] font-semibold tracking-[-0.01em] text-zinc-900">{title}</span>
+        <span className="text-base leading-5 font-semibold tracking-tight text-foreground">{title}</span>
         {summaryPill && (
-          <span className="text-[12px] leading-[16px] font-medium text-zinc-500 bg-zinc-100 rounded-full px-2 py-0.5">{summaryPill}</span>
+          <span className="text-xs leading-4 font-medium text-muted-foreground bg-muted rounded-full px-2 py-0.5">{summaryPill}</span>
         )}
       </div>
       <div className="flex items-center gap-3">
@@ -1214,7 +1201,7 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
           <button
             type="button"
             onClick={onToggleDetails}
-            className="text-[12px] leading-[16px] text-zinc-500 hover:text-zinc-900 font-medium inline-flex items-center gap-1 transition-colors"
+            className="text-xs leading-4 text-muted-foreground hover:text-foreground font-medium inline-flex items-center gap-1 transition-colors"
           >
             {detailsOpen ? "Hide" : "Details"}
             <span
@@ -1228,14 +1215,14 @@ function ModuleHeader({ color, title, summaryPill, detailsOpen, onToggleDetails,
   );
 }
 
-/** Subsection header — Apple Health style: icon + colored label */
+/** Subsection header — icon + label */
 function SubsectionHeader({ children, icon: Icon, color }: { children: React.ReactNode; icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color?: string }) {
   return (
-    <div className="flex items-center gap-2.5 pt-3">
-      {Icon && <Icon className="size-[22px]" style={color ? { color } : undefined} />}
-      <p className="text-[17px] leading-none font-bold capitalize" style={color ? { color } : undefined}>
+    <div className="flex items-center gap-2.5 pt-2 pb-1">
+      {Icon && <Icon className="size-5" style={color ? { color } : undefined} />}
+      <h3 className="text-lg font-semibold tracking-tight" style={color ? { color } : undefined}>
         {children}
-      </p>
+      </h3>
     </div>
   );
 }
@@ -1257,7 +1244,7 @@ function MInfoIcon({ tooltip }: { tooltip: string }) {
     <span
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
-      className="inline-flex items-center justify-center h-3.5 w-3.5 shrink-0 cursor-help text-[11px] text-neutral-400 relative"
+      className="inline-flex items-center justify-center h-3.5 w-3.5 shrink-0 cursor-help text-[11px] text-muted-foreground/70 relative"
     >
       &#9432;
       {show && (
@@ -1311,11 +1298,11 @@ function KPI({
       {/* Row A: Value (LOCK HEIGHT + BASELINE ALIGN) */}
       <div className={`${s ? "h-[48px]" : "h-[56px]"} flex items-end justify-between gap-2`}>
         <div className="flex items-baseline gap-2 min-w-0">
-          <div className={`${s ? (sec ? "text-[34px] leading-[34px] text-neutral-700" : "text-[40px] leading-[40px] text-neutral-900") : "text-[52px] leading-[52px] text-neutral-900"} font-semibold tracking-[-0.02em] tabular-nums`}>
+          <div className={`${s ? (sec ? "text-[34px] leading-[34px] text-foreground/80" : "text-[40px] leading-[40px] text-foreground") : "text-[52px] leading-[52px] text-foreground"} font-semibold tracking-[-0.02em] tabular-nums`}>
             {value}
           </div>
           {valueSuffix ? (
-            <div className={`${s ? (sec ? "text-[14px] leading-[14px] text-neutral-400" : "text-[16px] leading-[16px] text-neutral-500") : "text-[18px] leading-[18px] text-neutral-600"} font-semibold tabular-nums`}>
+            <div className={`${s ? (sec ? "text-[14px] leading-[14px] text-muted-foreground/70" : "text-[16px] leading-[16px] text-muted-foreground") : "text-[18px] leading-[18px] text-muted-foreground"} font-semibold tabular-nums`}>
               {valueSuffix}
             </div>
           ) : null}
@@ -1327,14 +1314,14 @@ function KPI({
         /* Section variant: collapsed label + meta support block (no fixed heights) */
         <div className="mt-1">
           <div className="inline-flex items-center gap-1 max-w-full">
-            <span className="text-[14px] leading-[18px] text-neutral-600 whitespace-nowrap truncate">{label}</span>
+            <span className="text-[14px] leading-[18px] text-muted-foreground whitespace-nowrap truncate">{label}</span>
             {tooltip ? <MInfoIcon tooltip={tooltip} /> : null}
           </div>
           {(metaLeft || metaRight) ? (
             <div className="mt-1 flex items-center gap-2 min-w-0 leading-none">
               {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
               {metaRight ? (
-                <div className="truncate text-[12px] text-neutral-500 leading-none">{metaRight}</div>
+                <div className="truncate text-[12px] text-muted-foreground leading-none">{metaRight}</div>
               ) : null}
             </div>
           ) : null}
@@ -1342,7 +1329,7 @@ function KPI({
       ) : (
         /* Hero variant: fixed-height rows for cross-component alignment */
         <>
-          <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-neutral-600">
+          <div className="h-[40px] mt-1 text-[16px] leading-[20px] text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <span>{label}</span>
               {tooltip ? <MInfoIcon tooltip={tooltip} /> : null}
@@ -1351,7 +1338,7 @@ function KPI({
           <div className="h-[28px] mt-2 flex items-center gap-2 min-w-0 leading-none">
             {metaLeft ? <div className="shrink-0">{metaLeft}</div> : null}
             {metaRight ? (
-              <div className="truncate leading-none text-[14px] text-neutral-500">{metaRight}</div>
+              <div className="truncate leading-none text-[14px] text-muted-foreground">{metaRight}</div>
             ) : null}
           </div>
         </>
@@ -1366,7 +1353,7 @@ function KPIGrid3({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-3 gap-4 items-start" style={{ padding: "8px 0" }}>
       {items.map((child, i) => (
-        <div key={i} className={`flex flex-col items-start${i > 0 ? " border-l border-zinc-200 pl-4" : ""}`}>
+        <div key={i} className={`flex flex-col items-start${i > 0 ? " border-l border-border pl-4" : ""}`}>
           {child}
         </div>
       ))}
@@ -1388,33 +1375,33 @@ function FunnelSummaryRow({ total, totalLabel, rate, rateTooltip, expected, expe
     <div className="min-h-[76px] shrink-0 grid grid-cols-3 gap-6 items-start pt-1">
       {/* Left: Total */}
       <div className="min-w-0">
-        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-foreground tabular-nums">
           {total != null ? formatNumber(total) : "\u2014"}
         </span>
-        <div className="mt-1 text-[13px] leading-[16px] font-medium text-zinc-500">{totalLabel}</div>
+        <div className="mt-1 text-[13px] leading-[16px] font-medium text-muted-foreground">{totalLabel}</div>
       </div>
       {/* Middle: 3-Week Conversion Rate */}
-      <div className="min-w-0 border-l border-zinc-200/50 pl-6">
+      <div className="min-w-0 border-l border-border/50 pl-6">
         <div className="flex items-baseline">
-          <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+          <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-foreground tabular-nums">
             {rate != null ? rate.toFixed(1) : "\u2014"}
           </span>
           {rate != null && (
-            <span className="text-[18px] leading-[22px] font-semibold tracking-[-0.01em] text-zinc-500 ml-0.5 tabular-nums">%</span>
+            <span className="text-[18px] leading-[22px] font-semibold tracking-[-0.01em] text-muted-foreground ml-0.5 tabular-nums">%</span>
           )}
         </div>
         <div className="mt-1 inline-flex items-center gap-1">
-          <span className="text-[13px] leading-[16px] font-medium text-zinc-500">3-Week Conversion Rate</span>
+          <span className="text-[13px] leading-[16px] font-medium text-muted-foreground">3-Week Conversion Rate</span>
           {rateTooltip && <MInfoIcon tooltip={rateTooltip} />}
         </div>
       </div>
       {/* Right: Expected Converts */}
-      <div className="min-w-0 border-l border-zinc-200/50 pl-6">
-        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-zinc-900 tabular-nums">
+      <div className="min-w-0 border-l border-border/50 pl-6">
+        <span className="text-[40px] leading-[44px] font-semibold tracking-[-0.02em] text-foreground tabular-nums">
           {expected != null ? formatNumber(expected) : "\u2014"}
         </span>
         <div className="mt-1 inline-flex items-center gap-1">
-          <span className="text-[13px] leading-[16px] font-medium text-zinc-500">{expectedLabel ?? "Expected Converts"}</span>
+          <span className="text-[13px] leading-[16px] font-medium text-muted-foreground">{expectedLabel ?? "Expected Converts"}</span>
           {expectedTooltip && <MInfoIcon tooltip={expectedTooltip} />}
         </div>
       </div>
@@ -1680,7 +1667,7 @@ function CardDisclosure({
         opacity: open ? 1 : 0,
       }}
     >
-      <div className="mt-4 pt-4 border-t border-zinc-200 space-y-4">
+      <div className="mt-4 pt-4 border-t border-border space-y-4">
         {children}
       </div>
     </div>
@@ -1700,7 +1687,7 @@ function MiniBars({ values }: { values: number[] }) {
         return (
           <div
             key={i}
-            className={`w-6 rounded-[3px] ${isLast ? "bg-zinc-500/80" : "bg-zinc-200/70"}`}
+            className={`w-6 rounded-[3px] ${isLast ? "bg-muted-foreground/60" : "bg-border"}`}
             style={{ height: h }}
           />
         );
@@ -1826,10 +1813,16 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
       {tiles.map((tile, i) => (
         <DashboardCard key={i}>
           <CardHeader>
-            <CardDescription className="text-sm leading-none font-medium uppercase tracking-wide">
+            <CardDescription className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
               {tile.label}
             </CardDescription>
-            <CardTitle className="text-4xl font-extrabold tracking-tight tabular-nums">
+            <CardTitle className={`text-3xl font-semibold tracking-tight tabular-nums ${
+              tile.delta != null && tile.delta !== 0
+                ? (tile.delta > 0) === (tile.isPositiveGood !== false)
+                  ? "text-emerald-600"
+                  : "text-red-600"
+                : ""
+            }`}>
               {tile.value}
             </CardTitle>
           </CardHeader>
@@ -1893,8 +1886,6 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader>{LABELS.revenue}</SectionHeader>
-
       {/* Monthly Gross Revenue — bar chart */}
       {revenueBarData.length > 1 && (
         <DashboardCard>
@@ -2306,7 +2297,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
             >
               {!isMobile && (
                 <LabelList
-                  position="bottom"
+                  position="top"
                   offset={12}
                   className="fill-foreground"
                   fontSize={12}
@@ -2544,7 +2535,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       <div className="flex flex-col gap-3">
         <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
         {(newCustomerVolume || newCustomerCohorts) && (
-          <p className="text-sm font-medium text-muted-foreground">New Customers</p>
+          <p className="text-[15px] font-semibold text-muted-foreground">New Customers</p>
         )}
         {(newCustomerVolume || newCustomerCohorts) && (
           <NewCustomerKPICards volume={newCustomerVolume} cohorts={newCustomerCohorts} />
@@ -2553,7 +2544,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
           <NewCustomerChartCard volume={newCustomerVolume} cohorts={newCustomerCohorts} />
         )}
         {conversionPool && (
-          <p className="text-sm font-medium text-muted-foreground">All Non Auto-Renew Customers</p>
+          <p className="text-[15px] font-semibold text-muted-foreground">Non Auto-Renew Customers</p>
         )}
         {conversionPool && (
           <ConversionPoolKPICards pool={conversionPool} />
@@ -2846,21 +2837,21 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                   <Pie
                     data={freqData}
                     dataKey="count"
-                    labelLine={false}
                     label={({ payload, ...props }) => (
-                      <text
-                        x={props.x}
-                        y={props.y}
-                        textAnchor={props.textAnchor}
-                        dominantBaseline={props.dominantBaseline}
-                        fill="hsla(var(--foreground))"
-                      >
+                      <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
                         <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                        <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
                       </text>
                     )}
                     nameKey="bucket"
-                  />
+                  >
+                    <LabelList
+                      dataKey="bucket"
+                      position="inside"
+                      fill="#fff"
+                      fontSize={11}
+                      fontWeight={600}
+                    />
+                  </Pie>
                 </PieChart>
               </ChartContainer>
             ) : (
@@ -2977,15 +2968,21 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
               <Pie
                 data={pieData}
                 dataKey="count"
-                labelLine={false}
                 label={({ payload, ...props }) => (
                   <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
                     <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                    <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
                   </text>
                 )}
                 nameKey="bucket"
-              />
+              >
+                <LabelList
+                  dataKey="bucket"
+                  position="inside"
+                  fill="#fff"
+                  fontSize={11}
+                  fontWeight={600}
+                />
+              </Pie>
             </PieChart>
           </ChartContainer>
         ) : (
@@ -3031,15 +3028,21 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
               <Pie
                 data={pieData}
                 dataKey="count"
-                labelLine={false}
                 label={({ payload, ...props }) => (
                   <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
                     <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                    <tspan fontSize={11} opacity={0.6}>{` ${payload.bucket}`}</tspan>
                   </text>
                 )}
                 nameKey="bucket"
-              />
+              >
+                <LabelList
+                  dataKey="bucket"
+                  position="inside"
+                  fill="#fff"
+                  fontSize={11}
+                  fontWeight={600}
+                />
+              </Pie>
             </PieChart>
           </ChartContainer>
         ) : (
@@ -3142,16 +3145,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               type="natural"
               fill="url(#fillPoolConverts)"
               stroke="var(--color-converts)"
-            >
-              {!isMobile && (
-                <LabelList
-                  position="bottom"
-                  offset={12}
-                  className="fill-foreground"
-                  fontSize={12}
-                />
-              )}
-            </Area>
+            />
             <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
@@ -3188,7 +3182,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                     >
                       <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
                         {weekLabel}
-                        {isLatest && <> <span className="text-[10px] bg-zinc-100 text-zinc-500 rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                        {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
                       </div>
                       <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
                         {formatNumber(w.activePool7d)}
@@ -3455,6 +3449,479 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CHURN SECTION (extracted from CategoryDetail cards)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function ChurnSection({ churnRates, weekly }: {
+  churnRates?: ChurnRateData | null;
+  weekly: TrendRowData[];
+}) {
+  if (!churnRates) {
+    return (
+      <div className="flex flex-col gap-4">
+        <NoData label="Churn data" />
+      </div>
+    );
+  }
+
+  const { byCategory } = churnRates;
+  const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+  const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
+
+  const categories = [
+    {
+      key: "member" as const,
+      label: LABELS.members,
+      color: COLORS.member,
+      data: byCategory.member,
+      weeklyChurn: latestW ? latestW.memberChurn : null,
+    },
+    {
+      key: "sky3" as const,
+      label: LABELS.sky3,
+      color: COLORS.sky3,
+      data: byCategory.sky3,
+      weeklyChurn: latestW ? latestW.sky3Churn : null,
+    },
+    {
+      key: "skyTingTv" as const,
+      label: LABELS.tv,
+      color: COLORS.tv,
+      data: byCategory.skyTingTv,
+      weeklyChurn: latestW ? latestW.skyTingTvChurn : null,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Summary cards — one per category */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {categories.map((cat) => (
+          <Card key={cat.key}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color, opacity: 0.85 }} />
+              <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
+                {cat.label}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center py-1.5 border-b border-border">
+                <span className="text-xs text-muted-foreground">User churn rate (avg/mo)</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgUserChurnRate) }}>
+                  {cat.data.avgUserChurnRate.toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-border">
+                <span className="text-xs text-muted-foreground">MRR churn rate (avg/mo)</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgMrrChurnRate) }}>
+                  {cat.data.avgMrrChurnRate.toFixed(1)}%
+                </span>
+              </div>
+              {cat.weeklyChurn != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Churned this week</span>
+                  <span className="text-sm font-semibold tabular-nums">{cat.weeklyChurn}</span>
+                </div>
+              )}
+              {cat.data.atRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{cat.data.atRiskCount}</span>
+                </div>
+              )}
+            </div>
+
+            {/* MEMBER annual/monthly breakdown */}
+            {cat.data.category === "MEMBER" && (() => {
+              const lastCompleted = cat.data.monthly.length >= 2 ? cat.data.monthly[cat.data.monthly.length - 2] : null;
+              if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
+              return (
+                <p className="text-xs text-muted-foreground italic mt-2">
+                  Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
+                </p>
+              );
+            })()}
+          </Card>
+        ))}
+      </div>
+
+      {/* At-Risk Total */}
+      {churnRates.totalAtRisk > 0 && (
+        <Card>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-amber-600" />
+              <span className="text-sm font-medium text-muted-foreground">Total At Risk</span>
+            </div>
+            <span className="text-2xl font-semibold tabular-nums" style={{ color: COLORS.warning }}>
+              {churnRates.totalAtRisk}
+            </span>
+          </div>
+        </Card>
+      )}
+
+      {/* Monthly churn rate trend chart */}
+      {byCategory.member.monthly.length > 1 && (
+        <DashboardCard className="@container/card">
+          <CardHeader>
+            <CardTitle>Monthly Churn Rate Trend</CardTitle>
+            <CardDescription>User churn rate by category over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer
+              config={{
+                member: { label: LABELS.members, color: COLORS.member },
+                sky3: { label: LABELS.sky3, color: COLORS.sky3 },
+                tv: { label: LABELS.tv, color: COLORS.tv },
+              } satisfies ChartConfig}
+              className="h-[250px] w-full"
+            >
+              <LineChart
+                accessibilityLayer
+                data={byCategory.member.monthly.map((m, i) => ({
+                  month: formatMonthLabel(m.month),
+                  member: m.userChurnRate,
+                  sky3: byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
+                  tv: byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
+                }))}
+                margin={{ top: 5, right: 10, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Line type="monotone" dataKey="member" stroke="var(--color-member)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="sky3" stroke="var(--color-sky3)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="tv" stroke="var(--color-tv)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+        </DashboardCard>
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DASHBOARD CONTENT — switches visible section based on sidebar
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function DashboardContent({ activeSection, data }: {
+  activeSection: SectionKey;
+  data: DashboardStats;
+}) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const trends = data.trends;
+  const weekly = trends?.weekly || [];
+  const monthly = trends?.monthly || [];
+  const pacing = trends?.pacing || null;
+
+  // Scroll to top on section change
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [activeSection]);
+
+  return (
+    <div ref={contentRef} className="flex flex-col gap-4" style={{ fontFamily: FONT_SANS }}>
+      {/* ── OVERVIEW ── */}
+      {activeSection === "overview" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <Eyeglass className="size-7 shrink-0" style={{ color: SECTION_COLORS.overview }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Key performance metrics at a glance</p>
+          </div>
+          <KPIHeroStrip tiles={(() => {
+            const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
+            const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
+            const inStudioNet = latestW
+              ? latestW.netMemberGrowth + latestW.netSky3Growth
+              : null;
+            const digitalNet = latestW
+              ? latestW.newSkyTingTv - latestW.skyTingTvChurn
+              : null;
+
+            const nowDate = new Date();
+            const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+            const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+            const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
+            const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
+            const heroLabel = latestMonthly
+              ? `${formatMonthLabel(latestMonthly.month)} Revenue`
+              : "Revenue MTD";
+            const heroValue = latestMonthly
+              ? latestMonthly.gross
+              : data.currentMonthRevenue;
+            const heroSublabel = prevMonthly
+              ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
+              : data.previousMonthRevenue > 0
+                ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
+                : undefined;
+
+            const tiles: HeroTile[] = [
+              {
+                label: heroLabel,
+                value: formatCurrency(heroValue),
+                sublabel: heroSublabel,
+              },
+              {
+                label: "In-Studio Subscribers",
+                value: formatNumber(inStudioCount),
+                delta: inStudioNet,
+                sublabel: inStudioNet != null ? "net this week" : undefined,
+              },
+              {
+                label: LABELS.tv,
+                value: formatNumber(data.activeSubscribers.skyTingTv),
+                delta: digitalNet,
+                sublabel: digitalNet != null ? "net this week" : undefined,
+              },
+            ];
+            return tiles;
+          })()} />
+        </>
+      )}
+
+      {/* ── REVENUE ── */}
+      {activeSection === "revenue" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ReportMoney className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Revenue</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Gross and recurring revenue, MRR breakdown, and year-over-year trends</p>
+          </div>
+          <RevenueSection data={data} trends={trends} />
+
+          {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <MRRBreakdown data={data} />
+            {data.monthOverMonth ? (
+              <Card>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
+                  <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex justify-between py-2.5 border-b border-border">
+                    <span className="text-sm text-muted-foreground">
+                      {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
+                    </span>
+                    <span className="text-sm font-semibold text-muted-foreground tabular-nums">
+                      {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2.5 border-b border-border">
+                    <span className="text-sm text-muted-foreground">
+                      {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
+                    </span>
+                  </div>
+                  {data.monthOverMonth.yoyGrossPct !== null && (
+                    <div className="flex justify-between items-center py-2.5">
+                      <span className="text-sm text-muted-foreground">Change</span>
+                      <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ) : (
+              <Card>
+                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
+                <p className="text-sm text-muted-foreground opacity-60">No data available</p>
+              </Card>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── GROWTH: AUTO-RENEWS ── */}
+      {activeSection === "growth-auto" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <Recycle className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Auto-Renews</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth by plan type</p>
+          </div>
+          {/* Movement block: Members + Sky3 (in-studio plans) */}
+          <div>
+            <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.member }}>
+              <Recycle className="size-[18px]" style={{ color: COLORS.member }} />
+              <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.member }}>In-Studio Plans</h3>
+              <span className="text-xs text-muted-foreground">Members + Sky3</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CategoryDetail
+                title={LABELS.members}
+                color={COLORS.member}
+                count={data.activeSubscribers.member}
+                weekly={weekly}
+                monthly={monthly}
+                pacing={pacing}
+                weeklyKeyNew={(r) => r.newMembers}
+                weeklyKeyChurn={(r) => r.memberChurn}
+                weeklyKeyNet={(r) => r.netMemberGrowth}
+                pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
+                pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+              />
+              <CategoryDetail
+                title={LABELS.sky3}
+                color={COLORS.sky3}
+                count={data.activeSubscribers.sky3}
+                weekly={weekly}
+                monthly={monthly}
+                pacing={pacing}
+                weeklyKeyNew={(r) => r.newSky3}
+                weeklyKeyChurn={(r) => r.sky3Churn}
+                weeklyKeyNet={(r) => r.netSky3Growth}
+                pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
+                pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+              />
+            </div>
+          </div>
+
+          {/* Digital block: Sky Ting TV */}
+          <div>
+            <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.tv }}>
+              <RecycleOff className="size-[18px]" style={{ color: COLORS.tv }} />
+              <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.tv }}>Digital</h3>
+              <span className="text-xs text-muted-foreground">Sky Ting TV</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CategoryDetail
+                title={LABELS.tv}
+                color={COLORS.tv}
+                count={data.activeSubscribers.skyTingTv}
+                weekly={weekly}
+                monthly={monthly}
+                pacing={pacing}
+                weeklyKeyNew={(r) => r.newSkyTingTv}
+                weeklyKeyChurn={(r) => r.skyTingTvChurn}
+                weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GROWTH: NON-AUTO-RENEWS ── */}
+      {activeSection === "growth-non-auto" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <RecycleOff className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, intro week activity, and one-time purchases</p>
+          </div>
+          {trends?.dropIns && (
+            <div className="flex flex-col gap-3">
+              <SubsectionHeader icon={Ticket} color={COLORS.dropIn}>Drop-ins</SubsectionHeader>
+              <DropInsSubsection dropIns={trends.dropIns} />
+            </div>
+          )}
+          <div className="flex flex-col gap-3">
+            <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Intro Week</SubsectionHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+              <IntroWeekModule introWeek={trends?.introWeek ?? null} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONVERSION: NEW CUSTOMERS ── */}
+      {activeSection === "conversion-new" && (
+        <div className="flex flex-col gap-3">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <UserPlus className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-new"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">New Customers</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Weekly new customer volume, cohort analysis, and acquisition trends</p>
+          </div>
+          {(trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
+            <>
+              <NewCustomerKPICards volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
+              <NewCustomerChartCard volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
+            </>
+          ) : (
+            <NoData label="New Customer data" />
+          )}
+        </div>
+      )}
+
+      {/* ── CONVERSION: ALL NON AUTO-RENEW CUSTOMERS ── */}
+      {activeSection === "conversion-pool" && (
+        <div className="flex flex-col gap-3">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <UsersGroup className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
+          </div>
+          {trends?.conversionPool ? (
+            <>
+              <ConversionPoolKPICards pool={trends.conversionPool} />
+              <ConversionPoolModule pool={trends.conversionPool} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ConversionTimeCard pool={trends.conversionPool} />
+                <ConversionVisitsCard pool={trends.conversionPool} />
+              </div>
+            </>
+          ) : (
+            <NoData label="Conversion Pool data" />
+          )}
+        </div>
+      )}
+
+      {/* ── CHURN ── */}
+      {activeSection === "churn" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <HourglassLow className="size-7 shrink-0" style={{ color: SECTION_COLORS.churn }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Churn</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
+          </div>
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+        </>
+      )}
+
+      {/* ── DATA ── */}
+      {activeSection === "data" && (
+        <div className="flex flex-col gap-6">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <Database className="size-7 shrink-0" style={{ color: SECTION_COLORS.data }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Data</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Pipeline status, data freshness, and refresh controls</p>
+          </div>
+          <DataSection lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  DASHBOARD VIEW
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -3484,286 +3951,70 @@ function DashboardView() {
       });
   }, []);
 
-  if (loadState.state === "loading") {
-    return (
-      <div className="min-h-screen p-4 sm:p-6 lg:p-8" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
-        <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
-            <SkyTingLogo />
-          </div>
-          <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4">
-            Studio Dashboard
-          </h1>
-          <Skeleton width={200} height={24} style={{ margin: "0 auto", borderRadius: 12 }} />
-        </div>
-        <div style={{ maxWidth: "1280px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
-          {/* KPI hero skeleton */}
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <Card key={i}>
-                <Skeleton width={80} height={12} style={{ marginBottom: 8 }} />
-                <Skeleton width={140} height={36} style={{ marginBottom: 8 }} />
-                <Skeleton width={100} height={14} />
-              </Card>
-            ))}
-          </div>
-          {/* Module skeletons */}
-          <DashboardGrid>
-            <div style={{ gridColumn: "span 7" }} className="bento-cell-a1"><ModuleSkeleton /></div>
-            <div style={{ gridColumn: "span 5" }} className="bento-cell-a2"><ModuleSkeleton /></div>
-            <div style={{ gridColumn: "span 12" }} className="bento-cell-b"><ModuleSkeleton /></div>
-          </DashboardGrid>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState.state === "not-configured") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <div className="max-w-md text-center space-y-4">
-          <SkyTingLogo />
-          <h1 className="scroll-m-20 text-3xl font-semibold tracking-tight">
-            Studio Dashboard
-          </h1>
-          <div className="rounded-2xl p-6 bg-card border border-border">
-            <p className="text-muted-foreground">
-              No analytics data yet. Run the pipeline to see stats here.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState.state === "error") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <div className="max-w-md text-center space-y-4">
-          <SkyTingLogo />
-          <h1 className="scroll-m-20 text-3xl font-semibold tracking-tight">
-            Studio Dashboard
-          </h1>
-          <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
-            <p className="font-medium text-destructive">
-              Unable to load stats
-            </p>
-            <p className="text-sm mt-1 text-destructive opacity-85">
-              {loadState.message}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const { data } = loadState;
-  const trends = data.trends;
-  const weekly = trends?.weekly || [];
-  const monthly = trends?.monthly || [];
-  const pacing = trends?.pacing || null;
-
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8 pb-16 antialiased" style={{ backgroundColor: "var(--st-bg-section)", fontFamily: FONT_SANS }}>
-      {/* ── Header ─────────────────────────────────── */}
-      <div style={{ textAlign: "center", paddingTop: "1rem", marginBottom: "2rem" }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>
-          <SkyTingLogo />
-        </div>
-        <h1 className="scroll-m-20 text-2xl font-semibold tracking-tight mb-4">
-          Studio Dashboard
-        </h1>
-        <FreshnessBadge lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
-      </div>
-
-      {/* ━━ Single column — centered, spacious ━━━━━━━━ */}
-      <div style={{ maxWidth: "1280px", width: "100%", margin: "0 auto", padding: "0 1rem", display: "flex", flexDirection: "column", gap: "2rem", boxSizing: "border-box" }}>
-
-        {/* ── KPI Hero Strip ── */}
-        <KPIHeroStrip tiles={(() => {
-          const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
-          const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
-          const inStudioNet = latestW
-            ? latestW.netMemberGrowth + latestW.netSky3Growth
-            : null;
-          const digitalNet = latestW
-            ? latestW.newSkyTingTv - latestW.skyTingTvChurn
-            : null;
-
-          const nowDate = new Date();
-          const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
-          const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
-          const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
-          const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
-          const heroLabel = latestMonthly
-            ? `${formatMonthLabel(latestMonthly.month)} Revenue`
-            : "Revenue MTD";
-          const heroValue = latestMonthly
-            ? latestMonthly.gross
-            : data.currentMonthRevenue;
-          const heroSublabel = prevMonthly
-            ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
-            : data.previousMonthRevenue > 0
-              ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
-              : undefined;
-
-          const tiles: HeroTile[] = [
-            {
-              label: heroLabel,
-              value: formatCurrency(heroValue),
-              sublabel: heroSublabel,
-            },
-            {
-              label: "In-Studio Subscribers",
-              value: formatNumber(inStudioCount),
-              delta: inStudioNet,
-              sublabel: inStudioNet != null ? "net this week" : undefined,
-            },
-            {
-              label: LABELS.tv,
-              value: formatNumber(data.activeSubscribers.skyTingTv),
-              delta: digitalNet,
-              sublabel: digitalNet != null ? "net this week" : undefined,
-            },
-          ];
-          return tiles;
-        })()} />
-
-        {/* ── Revenue ── */}
-        <RevenueSection data={data} trends={trends} />
-
-        {/* ── Annual Net Revenue ── */}
-        {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-            <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
-          </div>
-        )}
-
-        {/* ── MRR + Year-over-Year side by side ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <MRRBreakdown data={data} />
-          {data.monthOverMonth ? (
-            <Card>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
-                <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                  {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                </span>
+    <DashboardLayout>
+      {(activeSection) => {
+        if (loadState.state === "loading") {
+          return (
+            <div className="flex flex-col gap-6" style={{ fontFamily: FONT_SANS }}>
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+                {[0, 1, 2].map((i) => (
+                  <Card key={i}>
+                    <Skeleton width={80} height={12} style={{ marginBottom: 8 }} />
+                    <Skeleton width={140} height={36} style={{ marginBottom: 8 }} />
+                    <Skeleton width={100} height={14} />
+                  </Card>
+                ))}
               </div>
-              <div className="flex flex-col">
-                <div className="flex justify-between py-2.5 border-b border-border">
-                  <span className="text-sm text-muted-foreground">
-                    {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
-                  </span>
-                  <span className="text-sm font-semibold text-muted-foreground tabular-nums">
-                    {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
-                  </span>
+              <DashboardGrid>
+                <div style={{ gridColumn: "span 7" }} className="bento-cell-a1"><ModuleSkeleton /></div>
+                <div style={{ gridColumn: "span 5" }} className="bento-cell-a2"><ModuleSkeleton /></div>
+                <div style={{ gridColumn: "span 12" }} className="bento-cell-b"><ModuleSkeleton /></div>
+              </DashboardGrid>
+            </div>
+          );
+        }
+
+        if (loadState.state === "not-configured") {
+          return (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="max-w-md text-center space-y-4">
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  Studio Dashboard
+                </h1>
+                <div className="rounded-2xl p-6 bg-card border border-border">
+                  <p className="text-muted-foreground">
+                    No analytics data yet. Run the pipeline to see stats here.
+                  </p>
                 </div>
-                <div className="flex justify-between py-2.5 border-b border-border">
-                  <span className="text-sm text-muted-foreground">
-                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums">
-                    {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                  </span>
-                </div>
-                {data.monthOverMonth.yoyGrossPct !== null && (
-                  <div className="flex justify-between items-center py-2.5">
-                    <span className="text-sm text-muted-foreground">Change</span>
-                    <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
-                  </div>
-                )}
               </div>
-            </Card>
-          ) : (
-            <Card>
-              <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
-              <p className="text-sm text-muted-foreground opacity-60">No data available</p>
-            </Card>
-          )}
-        </div>
-
-        {/* ── Auto-Renews ── */}
-        <div className="flex flex-col gap-4">
-          <SectionHeader>{LABELS.autoRenews}</SectionHeader>
-
-          {/* Movement block: Members + Sky3 (in-studio plans) */}
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Movement (in-studio)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.members}
-                color={COLORS.member}
-                count={data.activeSubscribers.member}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newMembers}
-                weeklyKeyChurn={(r) => r.memberChurn}
-                weeklyKeyNet={(r) => r.netMemberGrowth}
-                pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
-                pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
-                churnData={trends?.churnRates?.byCategory?.member}
-              />
-              <CategoryDetail
-                title={LABELS.sky3}
-                color={COLORS.sky3}
-                count={data.activeSubscribers.sky3}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSky3}
-                weeklyKeyChurn={(r) => r.sky3Churn}
-                weeklyKeyNet={(r) => r.netSky3Growth}
-                pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
-                pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
-                churnData={trends?.churnRates?.byCategory?.sky3}
-              />
             </div>
-          </div>
+          );
+        }
 
-          {/* Health block: Sky Ting TV (digital) */}
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Health (digital)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.tv}
-                color={COLORS.tv}
-                count={data.activeSubscribers.skyTingTv}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSkyTingTv}
-                weeklyKeyChurn={(r) => r.skyTingTvChurn}
-                weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
-                churnData={trends?.churnRates?.byCategory?.skyTingTv}
-              />
+        if (loadState.state === "error") {
+          return (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="max-w-md text-center space-y-4">
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  Studio Dashboard
+                </h1>
+                <div className="rounded-2xl p-5 text-center bg-red-50 border border-red-200">
+                  <p className="font-medium text-destructive">
+                    Unable to load stats
+                  </p>
+                  <p className="text-sm mt-1 text-destructive opacity-85">
+                    {loadState.message}
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        }
 
-        {/* ── Non-auto-renew ── */}
-        {(trends?.dropIns || trends?.introWeek || trends?.newCustomerVolume || trends?.newCustomerCohorts || trends?.conversionPool) ? (
-          <NonAutoRenewSection dropIns={trends?.dropIns ?? null} introWeek={trends?.introWeek ?? null} newCustomerVolume={trends?.newCustomerVolume ?? null} newCustomerCohorts={trends?.newCustomerCohorts ?? null} conversionPool={trends?.conversionPool ?? null} />
-        ) : (
-          <NoData label="Non-auto-renew (Drop-Ins, Funnel)" />
-        )}
-
-        {/* ── Revenue section removed — moved AnnualRevenueCard to top ── */}
-
-        {/* ── Footer ── */}
-        <div style={{ textAlign: "center", paddingTop: "2rem", paddingBottom: "1rem" }}>
-          <div style={{ display: "flex", justifyContent: "center", gap: "2rem" }}>
-            <NavLink href="/settings">Settings</NavLink>
-            <NavLink href="/results">Results</NavLink>
-          </div>
-        </div>
-      </div>
-    </div>
+        return <DashboardContent activeSection={activeSection} data={loadState.data} />;
+      }}
+    </DashboardLayout>
   );
 }
 
