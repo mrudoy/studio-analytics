@@ -3601,7 +3601,7 @@ function ChurnSection({ churnRates, weekly }: {
                 sky3: { label: LABELS.sky3, color: COLORS.sky3 },
                 tv: { label: LABELS.tv, color: COLORS.tv },
               } satisfies ChartConfig}
-              className="h-[250px] w-full"
+              className="h-[300px] w-full"
             >
               <LineChart
                 accessibilityLayer
@@ -3620,7 +3620,7 @@ function ChurnSection({ churnRates, weekly }: {
                   axisLine={false}
                   tickFormatter={(v) => `${v}%`}
                   domain={[0, (dataMax: number) => {
-                    const padded = dataMax * 1.3;
+                    const padded = dataMax * 1.1;
                     return Math.ceil(padded / 5) * 5;
                   }]}
                   ticks={(() => {
@@ -3630,8 +3630,8 @@ function ChurnSection({ churnRates, weekly }: {
                       byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                     ]).flat();
                     const maxRate = Math.max(...allRates, 0);
-                    const ceilMax = Math.ceil(maxRate * 1.3 / 5) * 5;
-                    const step = ceilMax <= 20 ? 5 : 10;
+                    const ceilMax = Math.ceil(maxRate * 1.1 / 5) * 5;
+                    const step = ceilMax <= 15 ? 5 : 10;
                     const ticks: number[] = [];
                     for (let i = 0; i <= ceilMax; i += step) ticks.push(i);
                     return ticks;
@@ -3955,9 +3955,7 @@ function DashboardContent({ activeSection, data }: {
           </div>
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
-            <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.member }}>
-              <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.member }}>In-Studio Plans</h3>
-            </div>
+            <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">In-Studio Plans</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.members}
@@ -3992,9 +3990,7 @@ function DashboardContent({ activeSection, data }: {
 
           {/* Digital block: Sky Ting TV */}
           <div>
-            <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.tv }}>
-              <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.tv }}>Digital</h3>
-            </div>
+            <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Digital</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.tv}
