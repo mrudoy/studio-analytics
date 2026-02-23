@@ -188,10 +188,13 @@ async function triggerDownloadCSV(
   await page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
-  // Wait for the View button to appear — this confirms the report toolbar has loaded
-  await page.locator('button.form-control:has-text("View")').first()
-    .waitFor({ state: "visible", timeout: 10000 })
-    .catch(() => {}); // Non-fatal — proceed to try clicking anyway
+  // Wait for the report toolbar to load — try multiple indicators
+  await Promise.race([
+    page.locator('button.form-control:has-text("View")').first().waitFor({ state: "visible", timeout: 15000 }),
+    page.locator('.dropdown-toggle').first().waitFor({ state: "visible", timeout: 15000 }),
+    page.locator('button[value="csv"]').first().waitFor({ state: "visible", timeout: 15000 }),
+    new Promise((resolve) => setTimeout(resolve, 15000)), // fallback max wait
+  ]).catch(() => {}); // Non-fatal — proceed to try clicking anyway
 
   // Check for Cloudflare
   const content = await page.content();
@@ -299,50 +302,36 @@ async function captureDownload(
  * so we must target the btn-group in the toolbar, not table row buttons.
  */
 async function tryViewDropdownCSV(page: Page): Promise<boolean> {
-  // Strategy 1: Find the "Download CSV" dropdown-item directly.
-  // It's inside a dropdown-menu that's a sibling of the View button.
-  // First, try to open the dropdown by clicking the toggle button.
+  // Strategy 1: btn-group with "View" button + dropdown toggle (most common)
   try {
-    // The btn-group containing "View" + dropdown toggle.
-    // Target the dropdown-toggle-split inside a btn-group that also contains
-    // a button with text "View" and class form-control (the toolbar View button).
     const btnGroup = page.locator('.btn-group:has(button.form-control:has-text("View"))').first();
 
     if (await btnGroup.isVisible({ timeout: 3000 }).catch(() => false)) {
-      // Click the dropdown toggle (the caret button next to "View")
       const toggle = btnGroup.locator('.dropdown-toggle-split, .dropdown-toggle').first();
       if (await toggle.isVisible({ timeout: 2000 }).catch(() => false)) {
         await toggle.click();
         await page.waitForTimeout(500);
 
-        // Now "Download CSV" should be visible in the dropdown menu
         const downloadBtn = btnGroup.locator('button:has-text("Download CSV"), a:has-text("Download CSV")').first();
         if (await downloadBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
           await downloadBtn.click();
-          // Give the download a moment to start (or confirmation banner to appear)
           await page.waitForTimeout(2000);
 
-          // Check for confirmation text on the page (email export indicator)
           const pageContent = await page.content();
           if (pageContent.includes("emailed") || pageContent.includes("export")) {
             console.log(`[csv-trigger] Confirmation banner detected after click`);
           }
           return true;
         }
-
-        // Close dropdown
         await page.keyboard.press("Escape");
       }
     }
   } catch {
-    // Fall through to strategy 2
+    // Fall through
   }
 
-  // Strategy 2: Some pages have a slightly different layout.
-  // Try clicking any visible "Download CSV" button/link directly.
+  // Strategy 2: input-group layout variant
   try {
-    const downloadBtn = page.locator('button.dropdown-item:has-text("Download CSV")').first();
-    // First open any dropdown that might contain it
     const inputGroup = page.locator('.input-group:has(button:has-text("View"))').first();
     if (await inputGroup.isVisible({ timeout: 2000 }).catch(() => false)) {
       const toggle = inputGroup.locator('.dropdown-toggle-split, .dropdown-toggle').first();
@@ -352,6 +341,7 @@ async function tryViewDropdownCSV(page: Page): Promise<boolean> {
       }
     }
 
+    const downloadBtn = page.locator('button.dropdown-item:has-text("Download CSV")').first();
     if (await downloadBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await downloadBtn.click();
       await page.waitForTimeout(2000);
@@ -360,6 +350,58 @@ async function tryViewDropdownCSV(page: Page): Promise<boolean> {
       if (pageContent.includes("emailed") || pageContent.includes("export")) {
         console.log(`[csv-trigger] Confirmation banner detected after click (strategy 2)`);
       }
+      return true;
+    }
+  } catch {
+    // Fall through
+  }
+
+  // Strategy 3: Find ANY dropdown toggle on the page and check each for CSV option.
+  // Catches pages where the toolbar structure differs from the expected patterns.
+  try {
+    const allToggles = page.locator('.dropdown-toggle, .dropdown-toggle-split');
+    const count = await allToggles.count();
+
+    for (let i = 0; i < Math.min(count, 5); i++) {
+      const toggle = allToggles.nth(i);
+      if (!(await toggle.isVisible().catch(() => false))) continue;
+
+      await toggle.click();
+      await page.waitForTimeout(500);
+
+      // Look for any visible CSV option in any open dropdown
+      const csvOption = page.locator('.dropdown-item:visible').filter({ hasText: /CSV/i }).first();
+      if (await csvOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+        console.log(`[csv-trigger] Found CSV option via dropdown toggle #${i + 1}`);
+        await csvOption.click();
+        await page.waitForTimeout(2000);
+
+        const pageContent = await page.content();
+        if (pageContent.includes("emailed") || pageContent.includes("export")) {
+          console.log(`[csv-trigger] Confirmation banner detected after click (strategy 3)`);
+        }
+        return true;
+      }
+
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+    }
+  } catch {
+    // Fall through
+  }
+
+  // Strategy 4: Look for any direct CSV/Export link or button on the page
+  try {
+    const exportLink = page.locator(
+      'a:has-text("Download CSV"), a:has-text("Export CSV"), ' +
+      'button:has-text("Download CSV"), button:has-text("Export CSV"), ' +
+      'a[href*="csv"], a[href*="export"]'
+    ).first();
+
+    if (await exportLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+      console.log(`[csv-trigger] Found direct CSV/export link (strategy 4)`);
+      await exportLink.click();
+      await page.waitForTimeout(2000);
       return true;
     }
   } catch {
