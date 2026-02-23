@@ -1968,7 +1968,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                     <stop offset="95%" stopColor="var(--color-gross)" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid vertical={false} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <YAxis hide domain={["dataMin - 20000", "dataMax + 10000"]} />
                 <XAxis
                   dataKey="month"
@@ -2348,7 +2348,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
 
   const { completeCohorts, incompleteCohorts, displayComplete, daysElapsed } = useNewCustomerData(volume, cohorts);
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
-  const timingColors = ["rgba(65, 58, 58, 0.65)", "rgba(65, 58, 58, 0.38)", "rgba(65, 58, 58, 0.18)"];
 
   const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total3Week }));
 
@@ -2375,7 +2374,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -2435,7 +2434,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 <th className={modThClass} style={{ width: "3.5rem" }}>New</th>
                 <th className={modThClass} style={{ width: "4rem" }}>Converts</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>Rate</th>
-                <th className={`${modThClass} !text-center`} style={{ width: "5rem" }}>Timing</th>
               </tr>
             </thead>
             <tbody>
@@ -2462,21 +2460,10 @@ function NewCustomerChartCard({ volume, cohorts }: {
                       <td data-label="New" className={`${modTdClass} font-semibold`}>{formatNumber(c.newCustomers)}</td>
                       <td data-label="Converts" className={`${modTdClass} font-semibold`}>{c.total3Week}</td>
                       <td data-label="Rate" className={`${modTdClass} font-medium`}>{rate}%</td>
-                      <td className={`mod-bar-cell ${modTdClass} !text-center`}>
-                        <SegmentedBar
-                          segments={[
-                            { value: c.week1, label: "Same week" },
-                            { value: c.week2, label: "+1 week" },
-                            { value: c.week3, label: "+2 weeks" },
-                          ]}
-                          colors={timingColors}
-                          tooltip={`Week 0: ${c.week1} \u00b7 Week 1: ${c.week2} \u00b7 Week 2: ${c.week3}`}
-                        />
-                      </td>
                     </tr>
                     {isExpanded && (
                       <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={5} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
+                        <td colSpan={4} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
                             <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
                             <span>+1 week: <strong className="font-medium text-foreground">{c.week2}</strong></span>
@@ -2786,7 +2773,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                 }
                 margin={{ top: 20 }}
               >
-                <CartesianGrid vertical={false} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
                 <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
                   {!isMobile && (
@@ -3196,8 +3183,8 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     <DashboardCard>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Weekly Conversion Pool</CardTitle>
-          <CardDescription>Complete weeks and pool breakdown</CardDescription>
+          <CardTitle>Weekly Non Auto-Renew Customers</CardTitle>
+          <CardDescription>Complete weeks and customer breakdown</CardDescription>
         </div>
         <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
           <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
@@ -3227,7 +3214,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -3531,7 +3518,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
       <CardContent>
         <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
           <BarChart accessibilityLayer data={barData} margin={{ top: 32 }}>
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="year"
               tickLine={false}
@@ -3711,7 +3698,7 @@ function ChurnSection({ churnRates, weekly }: {
                 }))}
                 margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
               >
-                <CartesianGrid vertical={false} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
                 <YAxis
                   tickLine={false}
@@ -3821,7 +3808,7 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
                   data={chartData}
                   margin={{ top: 20 }}
                 >
-                  <CartesianGrid vertical={false} />
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="month"
                     tickLine={false}
@@ -4206,9 +4193,9 @@ function DashboardContent({ activeSection, data }: {
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <UsersGroup className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Conversion Pool</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Non Auto-Renew Customers</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Non-subscriber conversion funnel, rates, and time-to-convert analysis</p>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Non auto-renew conversion funnel, rates, and time-to-convert analysis</p>
           </div>
           {trends?.conversionPool ? (
             <>
