@@ -52,11 +52,21 @@ export interface ShopifyMerchData {
   categoryBreakdown: ShopifyCategoryBreakdown[];
 }
 
+export interface DataFreshness {
+  unionAutoRenews: string | null;   // MAX(imported_at) from auto_renews
+  unionRegistrations: string | null; // MAX(imported_at) from registrations
+  shopifySync: string | null;        // MAX(synced_at) from shopify_orders
+  lastPipelineRun: string | null;    // MAX(ran_at) from pipeline_runs
+  overall: string | null;            // most recent of all sources
+  isPartial: boolean;                // true if sources have different timestamps (partial update)
+}
+
 export interface DashboardStats {
   lastUpdated: string | null;
   dateRange: string | null;
   spreadsheetUrl?: string;
   dataSource?: "database" | "sheets" | "hybrid";
+  dataFreshness?: DataFreshness | null;
   mrr: {
     member: number;
     sky3: number;

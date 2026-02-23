@@ -14,8 +14,9 @@ import {
   getShopifyCategoryBreakdown,
 } from "@/lib/db/shopify-store";
 import { getSpaStats } from "@/lib/db/spa-store";
+import { getPool } from "@/lib/db/database";
 import type { RevenueCategory } from "@/types/union-data";
-import type { DashboardStats, ShopifyStats, ShopifyMerchData, SpaData } from "@/types/dashboard";
+import type { DashboardStats, DataFreshness, ShopifyStats, ShopifyMerchData, SpaData } from "@/types/dashboard";
 import type { TrendsData } from "@/types/dashboard";
 
 export async function GET() {
@@ -283,7 +284,42 @@ export async function GET() {
       // Spa data may not exist yet
     }
 
-    // ── 8. Return response ──────────────────────────────────
+    // ── 8. Data freshness ──────────────────────────────────
+    let dataFreshness: DataFreshness | null = null;
+    try {
+      const pool = getPool();
+      const [arRes, regRes, shopRes, pipeRes] = await Promise.all([
+        pool.query("SELECT MAX(imported_at) AS ts FROM auto_renews").catch(() => ({ rows: [{ ts: null }] })),
+        pool.query("SELECT MAX(imported_at) AS ts FROM registrations").catch(() => ({ rows: [{ ts: null }] })),
+        pool.query("SELECT MAX(synced_at) AS ts FROM shopify_orders").catch(() => ({ rows: [{ ts: null }] })),
+        pool.query("SELECT MAX(ran_at) AS ts FROM pipeline_runs").catch(() => ({ rows: [{ ts: null }] })),
+      ]);
+
+      const timestamps = [arRes.rows[0].ts, regRes.rows[0].ts, shopRes.rows[0].ts, pipeRes.rows[0].ts]
+        .filter(Boolean)
+        .map((t: string) => new Date(t).getTime());
+      const overall = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
+
+      // Partial = union and shopify updated at different times (>1h apart)
+      const unionTs = [arRes.rows[0].ts, regRes.rows[0].ts].filter(Boolean).map((t: string) => new Date(t).getTime());
+      const shopifyTs = shopRes.rows[0].ts ? new Date(shopRes.rows[0].ts).getTime() : null;
+      const latestUnion = unionTs.length > 0 ? Math.max(...unionTs) : null;
+      const isPartial = !!(latestUnion && shopifyTs && Math.abs(latestUnion - shopifyTs) > 60 * 60 * 1000);
+
+      dataFreshness = {
+        unionAutoRenews: arRes.rows[0].ts ? new Date(arRes.rows[0].ts).toISOString() : null,
+        unionRegistrations: regRes.rows[0].ts ? new Date(regRes.rows[0].ts).toISOString() : null,
+        shopifySync: shopRes.rows[0].ts ? new Date(shopRes.rows[0].ts).toISOString() : null,
+        lastPipelineRun: pipeRes.rows[0].ts ? new Date(pipeRes.rows[0].ts).toISOString() : null,
+        overall,
+        isPartial,
+      };
+    } catch (err) {
+      console.warn("[api/stats] Data freshness query failed:", err);
+    }
+
+    // ── 9. Return response ──────────────────────────────────
+    if (stats) stats.dataFreshness = dataFreshness;
     return NextResponse.json({
       ...(stats || {}),
       trends,
