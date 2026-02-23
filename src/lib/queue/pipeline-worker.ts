@@ -7,6 +7,7 @@ import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
 import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
+import { uploadBackupToGitHub } from "../db/backup-cloud";
 
 /** Maximum total time the pipeline is allowed to run before being killed. */
 const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
@@ -178,7 +179,7 @@ export function startPipelineWorker(): Worker {
 
   w.on("completed", async (job) => {
     console.log(`[worker] Pipeline job ${job.id} completed`);
-    // Auto-backup after successful pipeline run
+    // Auto-backup after successful pipeline run (local + cloud)
     try {
       const backup = await createBackup();
       const { filePath, metadata } = await saveBackupToDisk(backup);
@@ -186,6 +187,14 @@ export function startPipelineWorker(): Worker {
       await pruneBackups(7);
       const totalRows = Object.values(metadata.tables).reduce((a, b) => a + b, 0);
       console.log(`[worker] Post-pipeline backup: ${totalRows} rows saved to ${filePath}`);
+
+      // Upload to GitHub Releases (non-fatal)
+      try {
+        const cloud = await uploadBackupToGitHub(backup);
+        console.log(`[worker] Cloud backup uploaded: ${cloud.tag} (${cloud.compressedBytes} bytes)`);
+      } catch (cloudErr) {
+        console.warn(`[worker] Cloud backup failed (non-fatal):`, cloudErr instanceof Error ? cloudErr.message : cloudErr);
+      }
     } catch (err) {
       console.warn(`[worker] Post-pipeline backup failed:`, err instanceof Error ? err.message : err);
     }

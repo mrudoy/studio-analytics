@@ -13,6 +13,10 @@ const BACKUP_TABLES = [
   "customers",
   "pipeline_runs",
   "fetch_watermarks",
+  "shopify_orders",
+  "shopify_products",
+  "shopify_customers",
+  "shopify_inventory",
 ] as const;
 
 // Tables we skip on backup (raw upload archive is huge and reconstructable)

@@ -3,6 +3,7 @@ import { loadSettings } from "@/lib/crypto/credentials";
 import { ShopifyClient } from "@/lib/shopify/shopify-client";
 import { runShopifySync } from "@/lib/shopify/shopify-sync";
 import { getShopifyStats } from "@/lib/db/shopify-store";
+import { uploadBackupToGitHub } from "@/lib/db/backup-cloud";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,14 @@ export async function POST() {
       `${result.productCount} products, ${result.customerCount} customers, ` +
       `${result.inventoryCount} inventory levels`
     );
+
+    // Cloud backup after sync (non-fatal)
+    try {
+      const cloud = await uploadBackupToGitHub();
+      console.log(`[api/shopify] Cloud backup: ${cloud.tag}`);
+    } catch (backupErr) {
+      console.warn("[api/shopify] Cloud backup failed (non-fatal):", backupErr instanceof Error ? backupErr.message : backupErr);
+    }
 
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

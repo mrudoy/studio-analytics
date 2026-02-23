@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -744,6 +744,143 @@ function useNextRunCountdown() {
   return countdown;
 }
 
+// ─── Cloud Backup Status Card ───────────────────────────────
+
+interface CloudBackupEntry {
+  tag: string;
+  title: string;
+  createdAt: string;
+  url: string;
+  sizeBytes: number;
+}
+
+function BackupStatusCard() {
+  const [backups, setBackups] = useState<CloudBackupEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchBackups = React.useCallback(() => {
+    setLoading(true);
+    fetch("/api/backup?action=cloud-list")
+      .then((r) => r.json())
+      .then((d) => {
+        setBackups(d.backups || []);
+        setError(null);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { fetchBackups(); }, [fetchBackups]);
+
+  async function handleBackupNow() {
+    setUploading(true);
+    try {
+      const res = await fetch("/api/backup?action=cloud-upload");
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || "Backup failed");
+      }
+      fetchBackups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Backup failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const latest = backups[0];
+
+  return (
+    <ShadCard className="md:col-span-2">
+      <ShadCardHeader>
+        <ShadCardTitle className="flex items-center gap-2">
+          <CloudUpload className="size-5 text-blue-600" />
+          Cloud Backups
+          {latest ? (
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-emerald-200">
+              {backups.length} backup{backups.length !== 1 ? "s" : ""}
+            </Badge>
+          ) : (
+            <Badge variant="outline">No backups</Badge>
+          )}
+        </ShadCardTitle>
+        <ShadCardDesc>Database backups stored on GitHub Releases</ShadCardDesc>
+      </ShadCardHeader>
+      <ShadCardContent>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : error && !latest ? (
+          <p className="text-sm text-muted-foreground">{error}</p>
+        ) : !latest ? (
+          <p className="text-sm text-muted-foreground">No cloud backups yet. Backups are created automatically after each pipeline run and Shopify sync.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{backups.length}</p>
+                <p className="text-sm text-muted-foreground">Total Backups</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">{formatRelativeTime(latest.createdAt)}</p>
+                <p className="text-sm text-muted-foreground">Last Backup</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">{(latest.sizeBytes / 1024).toFixed(0)} KB</p>
+                <p className="text-sm text-muted-foreground">Latest Size</p>
+              </div>
+            </div>
+            {backups.length > 0 && (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left px-3 py-2 font-medium">Backup</th>
+                      <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Date</th>
+                      <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Size</th>
+                      <th className="text-right px-3 py-2 font-medium">Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backups.slice(0, 5).map((b) => (
+                      <tr key={b.tag} className="border-b last:border-0">
+                        <td className="px-3 py-2 font-mono text-xs">{b.tag.replace("backup-", "")}</td>
+                        <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{formatRelativeTime(b.createdAt)}</td>
+                        <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{(b.sizeBytes / 1024).toFixed(0)} KB</td>
+                        <td className="px-3 py-2 text-right">
+                          <a href={b.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
+                            <Download className="size-3" />
+                            View
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </ShadCardContent>
+      <ShadCardFooter className="border-t pt-4 flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Auto-backup after pipeline runs. Stored as GitHub Releases (max 14).
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={uploading}
+          onClick={handleBackupNow}
+        >
+          <CloudUpload className={`size-4 mr-1.5 ${uploading ? "animate-pulse" : ""}`} />
+          {uploading ? "Backing up..." : "Backup Now"}
+        </Button>
+      </ShadCardFooter>
+    </ShadCard>
+  );
+}
+
 function DataSection({ lastUpdated, spreadsheetUrl, dataSource, shopify }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid"; shopify?: ShopifyStats | null }) {
   const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [pipelineStep, setPipelineStep] = useState("");
@@ -933,6 +1070,9 @@ function DataSection({ lastUpdated, spreadsheetUrl, dataSource, shopify }: { las
           </p>
         </ShadCardFooter>
       </ShadCard>
+
+      {/* ── Cloud Backups ── */}
+      <BackupStatusCard />
 
       {/* ── Shopify ── */}
       <ShadCard className="md:col-span-2">

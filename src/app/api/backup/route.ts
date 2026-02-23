@@ -1,4 +1,18 @@
-/** Operational endpoint: database backup/restore. Not called by the frontend. */
+/**
+ * Backup/restore endpoint.
+ *
+ * GET actions:
+ *   ?action=list         — List local disk backups
+ *   ?action=create       — Create backup, save to disk (default)
+ *   ?action=download     — Create backup, return full JSON as download
+ *   ?action=cloud-list   — List cloud (GitHub Releases) backups
+ *   ?action=cloud-upload — Create backup + upload to GitHub Releases
+ *
+ * POST body:
+ *   { "filePath": "..." }    — Restore from local file
+ *   { "backup": { ... } }    — Restore from inline JSON
+ *   { "tag": "backup-..." }  — Restore from GitHub Releases
+ */
 import { NextRequest, NextResponse } from "next/server";
 import {
   createBackup,
@@ -9,25 +23,53 @@ import {
   loadBackupFromDisk,
   pruneBackups,
 } from "@/lib/db/backup";
+import {
+  uploadBackupToGitHub,
+  listGitHubBackups,
+  downloadGitHubBackup,
+} from "@/lib/db/backup-cloud";
 
-/**
- * GET /api/backup — Create a new backup and return it.
- *
- * Query params:
- *   ?action=list    — List available backups (no new backup created)
- *   ?action=create  — Create backup, save to disk, return metadata (default)
- *   ?action=download — Create backup and return full JSON as download
- */
 export async function GET(request: NextRequest) {
   const action = request.nextUrl.searchParams.get("action") || "create";
 
   try {
+    // ── Cloud: list GitHub Releases backups ──
+    if (action === "cloud-list") {
+      const backups = await listGitHubBackups();
+      return NextResponse.json({ backups });
+    }
+
+    // ── Cloud: create + upload to GitHub ──
+    if (action === "cloud-upload") {
+      console.log("[backup] Creating backup for cloud upload...");
+      const start = Date.now();
+      const backup = await createBackup();
+      const cloud = await uploadBackupToGitHub(backup);
+
+      // Also save locally
+      const { filePath, metadata } = await saveBackupToDisk(backup);
+      await saveBackupMetadata(metadata, filePath);
+      await pruneBackups(7);
+
+      const elapsed = Date.now() - start;
+      console.log(`[backup] Cloud upload complete: ${cloud.tag} in ${elapsed}ms`);
+
+      return NextResponse.json({
+        status: "ok",
+        cloud,
+        metadata,
+        filePath,
+        elapsedMs: elapsed,
+      });
+    }
+
+    // ── Local: list disk backups ──
     if (action === "list") {
       const backups = await listBackups();
       return NextResponse.json({ backups });
     }
 
-    // Create backup
+    // ── Local: create backup ──
     console.log("[backup] Creating backup...");
     const start = Date.now();
     const backup = await createBackup();
@@ -86,7 +128,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     let backup;
-    if (body.filePath) {
+    if (body.tag) {
+      // ── Restore from GitHub Releases ──
+      console.log(`[backup] Downloading cloud backup: ${body.tag}`);
+      backup = await downloadGitHubBackup(body.tag);
+      console.log(`[backup] Cloud backup downloaded, restoring...`);
+    } else if (body.filePath) {
       console.log(`[backup] Restoring from file: ${body.filePath}`);
       backup = await loadBackupFromDisk(body.filePath);
     } else if (body.backup) {
@@ -94,7 +141,7 @@ export async function POST(request: NextRequest) {
       backup = body.backup;
     } else {
       return NextResponse.json(
-        { error: "Provide either 'filePath' or 'backup' in request body" },
+        { error: "Provide 'tag' (cloud), 'filePath' (local), or 'backup' (inline) in request body" },
         { status: 400 }
       );
     }
@@ -118,6 +165,7 @@ export async function POST(request: NextRequest) {
       ...result,
       elapsedMs: elapsed,
       restoredFrom: backup.metadata.createdAt,
+      source: body.tag ? `cloud:${body.tag}` : body.filePath ? `disk:${body.filePath}` : "inline",
     });
   } catch (err) {
     console.error("[backup] Restore error:", err);
