@@ -16,6 +16,9 @@ import {
   UserPlus,
   UsersGroup,
   Database,
+  ArrowBadgeDown,
+  BrandSky,
+  DeviceTv,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -1959,31 +1962,39 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
         </DashboardCard>
       )}
 
-      {/* Breakdown card */}
-      {currentMonth && (
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>{formatMonthLabel(currentMonth.month)} Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col">
-              {[
-                { label: "Gross Revenue", value: formatCurrency(currentMonth.gross), bold: true },
-                { label: "Net Revenue", value: formatCurrency(currentMonth.net), bold: false },
-                { label: "Fees + Refunds", value: `-${formatCurrency(currentMonth.gross - currentMonth.net)}`, bold: false, destructive: true },
-              ].map((row, i) => (
-                <div key={i} className={`flex justify-between items-center py-2.5 ${i < 2 ? "border-b border-border" : ""}`}>
-                  <span className="text-sm text-muted-foreground">{row.label}</span>
-                  <span className={`text-sm tabular-nums ${row.bold ? "font-semibold" : "font-medium"} ${row.destructive ? "text-destructive" : ""}`}>
-                    {row.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </DashboardCard>
-      )}
     </div>
+  );
+}
+
+function MonthBreakdownCard({ monthlyRevenue }: { monthlyRevenue: { month: string; gross: number; net: number }[] }) {
+  const nowDate = new Date();
+  const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+  const completed = (monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+  const currentMonth = completed.length >= 1 ? completed[completed.length - 1] : null;
+  if (!currentMonth) return null;
+
+  return (
+    <DashboardCard>
+      <CardHeader>
+        <CardTitle>{formatMonthLabel(currentMonth.month)} Breakdown</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col">
+          {[
+            { label: "Gross Revenue", value: formatCurrency(currentMonth.gross), bold: true },
+            { label: "Net Revenue", value: formatCurrency(currentMonth.net), bold: false },
+            { label: "Fees + Refunds", value: `-${formatCurrency(currentMonth.gross - currentMonth.net)}`, bold: false, destructive: true },
+          ].map((row, i) => (
+            <div key={i} className={`flex justify-between items-center py-2.5 ${i < 2 ? "border-b border-border" : ""}`}>
+              <span className="text-sm text-muted-foreground">{row.label}</span>
+              <span className={`text-sm tabular-nums ${row.bold ? "font-semibold" : "font-medium"} ${row.destructive ? "text-destructive" : ""}`}>
+                {row.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </DashboardCard>
   );
 }
 
@@ -3171,7 +3182,6 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 {displayWeeks.map((w, idx) => {
                   const isHovered = hoveredWeek === w.weekStart;
                   const isLatest = idx === displayWeeks.length - 1;
-                  const weekLabel = new Date(w.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
                   return (
                     <div
                       key={w.weekStart}
@@ -3184,7 +3194,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                       }}
                     >
                       <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
-                        {weekLabel}
+                        {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
                         {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
                       </div>
                       <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
@@ -3221,7 +3231,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 >
                   <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
                     <DChip variant="accent">WTD</DChip>{" "}
-                    {new Date(wtd.weekStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
                     {wtd.daysLeft > 0 && (
                       <span className="text-[11px] text-muted-foreground ml-1.5">
                         ({wtd.daysLeft}d left)
@@ -3250,9 +3260,10 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 // ─── Category Detail Card (Members / SKY3 / TV) ─────────────
 // Clean card: big count, simple metric rows, no chart clutter
 
-function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData }: {
+function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData }: {
   title: string;
   color: string;
+  icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   count: number;
   weekly: TrendRowData[];
   monthly: TrendRowData[];
@@ -3317,7 +3328,11 @@ function CategoryDetail({ title, color, count, weekly, monthly, pacing, weeklyKe
       {/* Header: title + big count */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+          {Icon ? (
+            <Icon className="size-4 shrink-0" style={{ color }} />
+          ) : (
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+          )}
           <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
             {title}
           </span>
@@ -3410,8 +3425,8 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
         )}
       </CardHeader>
       <CardContent>
-        <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
-          <BarChart accessibilityLayer data={barData} margin={{ top: 20 }}>
+        <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
+          <BarChart accessibilityLayer data={barData} margin={{ top: 32 }}>
 
             <XAxis
               dataKey="year"
@@ -3814,6 +3829,7 @@ function DashboardContent({ activeSection, data }: {
 
               {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
                 <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                  <MonthBreakdownCard monthlyRevenue={data.monthlyRevenue} />
                   <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
                 </div>
               )}
@@ -3900,6 +3916,7 @@ function DashboardContent({ activeSection, data }: {
               <CategoryDetail
                 title={LABELS.members}
                 color={COLORS.member}
+                icon={ArrowBadgeDown}
                 count={data.activeSubscribers.member}
                 weekly={weekly}
                 monthly={monthly}
@@ -3913,6 +3930,7 @@ function DashboardContent({ activeSection, data }: {
               <CategoryDetail
                 title={LABELS.sky3}
                 color={COLORS.sky3}
+                icon={BrandSky}
                 count={data.activeSubscribers.sky3}
                 weekly={weekly}
                 monthly={monthly}
@@ -3937,6 +3955,7 @@ function DashboardContent({ activeSection, data }: {
               <CategoryDetail
                 title={LABELS.tv}
                 color={COLORS.tv}
+                icon={DeviceTv}
                 count={data.activeSubscribers.skyTingTv}
                 weekly={weekly}
                 monthly={monthly}
