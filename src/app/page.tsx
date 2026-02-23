@@ -349,6 +349,24 @@ function formatWeekRangeLabel(start: string, end: string): string {
   return `${sMonth} ${s.getDate()}-${eMonth} ${e.getDate()}`;
 }
 
+/** Smart "this week" / "last week" / "Week of Feb 17" label based on period date */
+function weekLabel(period: string): string {
+  const d = new Date(period + "T00:00:00");
+  if (isNaN(d.getTime())) return "this week";
+  const now = new Date();
+  // Get current week's Monday
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(lastMonday.getDate() - 7);
+
+  if (d.getTime() === thisMonday.getTime()) return "this week";
+  if (d.getTime() === lastMonday.getTime()) return "last week";
+  const month = d.toLocaleDateString("en-US", { month: "short" });
+  return `week of ${month} ${d.getDate()}`;
+}
+
 function formatMonthLabel(period: string): string {
   const [year, month] = period.split("-");
   const d = new Date(parseInt(year), parseInt(month) - 1);
@@ -3623,11 +3641,12 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
     const newDeltaPct = prevW && weeklyKeyNew(prevW) > 0
       ? Math.round((newDelta! / weeklyKeyNew(prevW)) * 100)
       : null;
-    metrics.push({ label: "New this week", value: String(newVal), delta: newDelta, deltaPercent: newDeltaPct, isPositiveGood: true });
+    const wkLabel = weekLabel(latestW.period);
+    metrics.push({ label: `New ${wkLabel}`, value: String(newVal), delta: newDelta, deltaPercent: newDeltaPct, isPositiveGood: true });
 
     const churnVal = weeklyKeyChurn(latestW);
     const churnDelta = prevW ? -(churnVal - weeklyKeyChurn(prevW)) : null;
-    metrics.push({ label: "Churned this week", value: String(churnVal), delta: churnDelta, isPositiveGood: true });
+    metrics.push({ label: `Churned ${wkLabel}`, value: String(churnVal), delta: churnDelta, isPositiveGood: true });
 
     const netVal = weeklyKeyNet(latestW);
     metrics.push({
@@ -3874,7 +3893,7 @@ function ChurnSection({ churnRates, weekly }: {
               </div>
               {cat.weeklyChurn != null && (
                 <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Churned this week</span>
+                  <span className="text-xs text-muted-foreground">Churned {latestW ? weekLabel(latestW.period) : "this week"}</span>
                   <span className="text-sm font-semibold tabular-nums">{cat.weeklyChurn}</span>
                 </div>
               )}
@@ -4740,7 +4759,9 @@ function DashboardContent({ activeSection, data, refreshData }: {
             )}
           </div>
           <KPIHeroStrip tiles={(() => {
-            const latestW = weekly.length >= 1 ? weekly[weekly.length - 1] : null;
+            // Use last completed week if current week has no movement, else current
+            const completedW = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+            const latestW = completedW.length >= 1 ? completedW[completedW.length - 1] : null;
             const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
             const inStudioNet = latestW
               ? latestW.netMemberGrowth + latestW.netSky3Growth
@@ -4748,6 +4769,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
             const digitalNet = latestW
               ? latestW.newSkyTingTv - latestW.skyTingTvChurn
               : null;
+            const heroWeekLabel = latestW ? `net ${weekLabel(latestW.period)}` : undefined;
 
             const nowDate = new Date();
             const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
@@ -4776,13 +4798,13 @@ function DashboardContent({ activeSection, data, refreshData }: {
                 label: "In-Studio Subscribers",
                 value: formatNumber(inStudioCount),
                 delta: inStudioNet,
-                sublabel: inStudioNet != null ? "net this week" : undefined,
+                sublabel: inStudioNet != null ? heroWeekLabel : undefined,
               },
               {
                 label: LABELS.tv,
                 value: formatNumber(data.activeSubscribers.skyTingTv),
                 delta: digitalNet,
-                sublabel: digitalNet != null ? "net this week" : undefined,
+                sublabel: digitalNet != null ? heroWeekLabel : undefined,
               },
             ];
             return tiles;
