@@ -1968,7 +1968,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                     <stop offset="95%" stopColor="var(--color-gross)" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <CartesianGrid vertical={false} />
                 <YAxis hide domain={["dataMin - 20000", "dataMax + 10000"]} />
                 <XAxis
                   dataKey="month"
@@ -2374,7 +2374,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -2430,7 +2430,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
           <table className="mod-table-responsive w-full border-collapse tabular-nums" style={{ fontFamily: FONT_SANS }}>
             <thead>
               <tr>
-                <th className={`${modThClass} !text-left`}>Cohort</th>
+                <th className={`${modThClass} !text-left`}>Week</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>New</th>
                 <th className={modThClass} style={{ width: "4rem" }}>Converts</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>Rate</th>
@@ -2494,7 +2494,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
             </colgroup>
             <thead>
               <tr>
-                <th className={`${modThClass} !text-left`}>Cohort</th>
+                <th className={`${modThClass} !text-left`}>Week</th>
                 <th className={modThClass}>New</th>
                 <th className={modThClass}>Converts</th>
                 <th className={modThClass}>Days left</th>
@@ -2773,7 +2773,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                 }
                 margin={{ top: 20 }}
               >
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <CartesianGrid vertical={false} />
                 <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
                 <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
                   {!isMobile && (
@@ -3214,7 +3214,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                 <stop offset="95%" stopColor="var(--color-converts)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="date"
               tickLine={false}
@@ -3518,7 +3518,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
       <CardContent>
         <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
           <BarChart accessibilityLayer data={barData} margin={{ top: 32 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="year"
               tickLine={false}
@@ -3698,15 +3698,23 @@ function ChurnSection({ churnRates, weekly }: {
                 }))}
                 margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
               >
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
                 <YAxis
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `${v}%`}
-                  domain={[0, (dataMax: number) => {
-                    return Math.ceil(dataMax / 5) * 5;
-                  }]}
+                  domain={(() => {
+                    const allRates = byCategory.member.monthly.map((m, i) => [
+                      m.userChurnRate,
+                      byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
+                      byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
+                    ]).flat();
+                    const maxRate = Math.max(...allRates, 0);
+                    const step = maxRate <= 15 ? 5 : 10;
+                    const domainMax = Math.ceil(maxRate / step) * step;
+                    return [0, domainMax];
+                  })()}
                   ticks={(() => {
                     const allRates = byCategory.member.monthly.map((m, i) => [
                       m.userChurnRate,
@@ -3714,10 +3722,10 @@ function ChurnSection({ churnRates, weekly }: {
                       byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                     ]).flat();
                     const maxRate = Math.max(...allRates, 0);
-                    const ceilMax = Math.ceil(maxRate / 5) * 5;
-                    const step = ceilMax <= 15 ? 5 : 10;
+                    const step = maxRate <= 15 ? 5 : 10;
+                    const domainMax = Math.ceil(maxRate / step) * step;
                     const ticks: number[] = [];
-                    for (let i = 0; i <= ceilMax; i += step) ticks.push(i);
+                    for (let i = 0; i <= domainMax; i += step) ticks.push(i);
                     return ticks;
                   })()}
                 />
@@ -3808,7 +3816,7 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
                   data={chartData}
                   margin={{ top: 20 }}
                 >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <CartesianGrid vertical={false} />
                   <XAxis
                     dataKey="month"
                     tickLine={false}

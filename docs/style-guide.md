@@ -174,7 +174,7 @@ This is the reference implementation. All bar charts should follow this structur
     data={chartData}
     margin={{ top: 20 }}
   >
-    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+    <CartesianGrid vertical={false} />
     <XAxis
       dataKey="month"
       tickLine={false}
@@ -208,7 +208,7 @@ This is the reference implementation. All bar charts should follow this structur
         <stop offset="95%" stopColor="var(--color-series)" stopOpacity={0.1} />
       </linearGradient>
     </defs>
-    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+    <CartesianGrid vertical={false} />
     <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
     <Area dataKey="series" type="natural" fill="url(#fillSeries)" stroke="var(--color-series)">
       <LabelList position="top" offset={12} className="fill-foreground" fontSize={12} />
@@ -223,7 +223,7 @@ This is the reference implementation. All bar charts should follow this structur
 ```tsx
 <ChartContainer config={chartConfig}>
   <LineChart accessibilityLayer data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
-    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+    <CartesianGrid vertical={false} />
     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
     <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
     <ChartTooltip content={<ChartTooltipContent />} />
@@ -239,7 +239,7 @@ Every chart MUST include:
 
 | Element | Rule |
 |---------|------|
-| `CartesianGrid` | Always present. Always `vertical={false} strokeDasharray="3 3"` (dashed horizontal lines only) |
+| `CartesianGrid` | Always present. Always `vertical={false}` (solid horizontal lines only, no strokeDasharray) |
 | `XAxis` | Always `tickLine={false}` `axisLine={false}` `tickMargin={8-10}` |
 | `LabelList` | On every data series (Bar or Area). Hidden on mobile: `{!isMobile && <LabelList ... />}` |
 | `ChartTooltip` | Always present. Use `cursor={false}` for bar charts |
@@ -318,7 +318,7 @@ All bars use `radius={8}` for rounded corners.
 
 ## Anti-Patterns (Do Not Use)
 
-- Charts without `<CartesianGrid vertical={false} strokeDasharray="3 3" />` — every chart needs dashed horizontal grid lines
+- Charts without `<CartesianGrid vertical={false} />` — every chart needs solid horizontal grid lines (no strokeDasharray)
 - Charts without `<LabelList>` on data series — every bar/area needs data labels
 - Colored border-left lines on sub-group headers
 - Pie charts for churn or time-series data
