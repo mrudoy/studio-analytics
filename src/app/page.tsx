@@ -3663,9 +3663,8 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   }
 
   return (
-    <DashboardCard className="py-0 gap-0">
-      <CardHeader className="pb-0">
-        {/* Header: title + big count */}
+    <DashboardCard>
+      <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {Icon ? (
