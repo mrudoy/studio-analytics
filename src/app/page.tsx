@@ -2606,7 +2606,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
   const isMobile = useIsMobile();
   if (!volume && !cohorts) return null;
 
-  const [activeTab, setActiveTab] = useState<string>("complete");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [hoveredCohort, setHoveredCohort] = useState<string | null>(null);
 
@@ -2616,39 +2615,10 @@ function NewCustomerChartCard({ volume, cohorts }: {
   const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total3Week }));
 
   return (
-    <Tabs value={activeTab} onValueChange={setActiveTab}>
     <DashboardCard matchHeight className="@container/card">
       <CardHeader>
         <CardTitle>Weekly New Customers</CardTitle>
-        <CardDescription>
-          <span className="hidden @[540px]/card:block">Complete weeks and cohort breakdown</span>
-          <span className="@[540px]/card:hidden">Weekly data</span>
-        </CardDescription>
-        <CardAction>
-          <ToggleGroup
-            variant="outline"
-            type="single"
-            value={activeTab}
-            onValueChange={(v) => { if (v) setActiveTab(v); }}
-            className="hidden @[540px]/card:flex"
-          >
-            <ToggleGroupItem value="complete">Complete ({displayComplete.length})</ToggleGroupItem>
-            {incompleteCohorts.length > 0 && (
-              <ToggleGroupItem value="inProgress">In progress ({incompleteCohorts.length})</ToggleGroupItem>
-            )}
-          </ToggleGroup>
-          <Select value={activeTab} onValueChange={setActiveTab}>
-            <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="complete" className="rounded-lg">Complete ({displayComplete.length})</SelectItem>
-              {incompleteCohorts.length > 0 && (
-                <SelectItem value="inProgress" className="rounded-lg">In progress ({incompleteCohorts.length})</SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-        </CardAction>
+        <CardDescription>Complete weeks and cohort breakdown</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -2708,8 +2678,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
           </RAreaChart>
         </ChartContainer>
 
-      <TabsContent value="complete">
-      {/* Complete table */}
+      {/* Unified table: complete cohorts, then in-progress (gray) */}
       {cohorts && (
         <div>
           <table className="mod-table-responsive w-full border-collapse tabular-nums" style={{ fontFamily: FONT_SANS }}>
@@ -2717,11 +2686,12 @@ function NewCustomerChartCard({ volume, cohorts }: {
               <tr>
                 <th className={`${modThClass} !text-left`}>Week</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>New</th>
-                <th className={modThClass} style={{ width: "4rem" }}>Converts</th>
+                <th className={modThClass} style={{ width: "4.5rem" }}>Converts</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>Rate</th>
               </tr>
             </thead>
             <tbody>
+              {/* Complete cohorts */}
               {displayComplete.map((c) => {
                 const rate = c.newCustomers > 0 ? (c.total3Week / c.newCustomers * 100).toFixed(1) : "0.0";
                 const isHovered = hoveredCohort === c.cohortStart;
@@ -2760,32 +2730,15 @@ function NewCustomerChartCard({ volume, cohorts }: {
                   </Fragment>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      </TabsContent>
 
-      <TabsContent value="inProgress">
-      {/* In-progress table */}
-      {cohorts && (
-        <div>
-          <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
-            <colgroup>
-              <col style={{ width: "42%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "22%" }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th className={`${modThClass} !text-left`}>Week</th>
-                <th className={modThClass}>New</th>
-                <th className={modThClass}>Converts</th>
-                <th className={modThClass}>Days left</th>
-              </tr>
-            </thead>
-            <tbody>
+              {/* In-progress cohorts — muted gray styling */}
+              {incompleteCohorts.length > 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 pt-3 pb-1">
+                    <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground/60">In progress</span>
+                  </td>
+                </tr>
+              )}
               {incompleteCohorts.map((c) => {
                 const days = daysElapsed(c.cohortStart);
                 const wk2Possible = days >= 7;
@@ -2793,10 +2746,11 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 const isExpanded = expandedRow === c.cohortStart;
                 const daysRemaining = Math.max(21 - days, 0);
                 const convertsSoFar = c.week1 + (wk2Possible ? c.week2 : 0);
+                const partialRate = c.newCustomers > 0 ? (convertsSoFar / c.newCustomers * 100).toFixed(1) : "0.0";
                 return (
                   <Fragment key={c.cohortStart}>
                     <tr
-                      className="transition-colors cursor-pointer border-b border-border"
+                      className="transition-colors cursor-pointer border-b border-border text-muted-foreground"
                       style={{
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
                       }}
@@ -2804,21 +2758,21 @@ function NewCustomerChartCard({ volume, cohorts }: {
                       onMouseLeave={() => setHoveredCohort(null)}
                       onClick={() => setExpandedRow(isExpanded ? null : c.cohortStart)}
                     >
-                      <td className={`${modTdClass} !text-left font-medium truncate`}>
+                      <td className={`${modTdClass} !text-left font-medium`}>
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
+                        <span className="ml-1.5 text-[10px] text-muted-foreground/50">{daysRemaining}d left</span>
                       </td>
                       <td data-label="New" className={`${modTdClass} font-semibold`}>{formatNumber(c.newCustomers)}</td>
                       <td data-label="Converts" className={`${modTdClass} font-semibold`}>{convertsSoFar}</td>
-                      <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{daysRemaining} {daysRemaining === 1 ? "day" : "days"}</td>
+                      <td data-label="Rate" className={`${modTdClass} font-medium`}>{partialRate}%</td>
                     </tr>
                     {isExpanded && (
                       <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
                         <td colSpan={4} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
-                            <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
-                            <span>+1 week: <strong className="font-medium text-foreground">{wk2Possible ? c.week2 : "\u2014"}</strong></span>
-                            <span>+2 weeks: <strong className="font-medium text-foreground">{"\u2014"}</strong></span>
-                            <span className="opacity-70">{daysRemaining}d until complete</span>
+                            <span>Same week: <strong className="font-medium">{c.week1}</strong></span>
+                            <span>+1 week: <strong className="font-medium">{wk2Possible ? c.week2 : "\u2014"}</strong></span>
+                            <span>+2 weeks: <strong className="font-medium">{"\u2014"}</strong></span>
                           </div>
                         </td>
                       </tr>
@@ -2830,10 +2784,8 @@ function NewCustomerChartCard({ volume, cohorts }: {
           </table>
         </div>
       )}
-      </TabsContent>
       </CardContent>
     </DashboardCard>
-    </Tabs>
   );
 }
 
