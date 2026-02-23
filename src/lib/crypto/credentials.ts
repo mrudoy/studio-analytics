@@ -97,7 +97,21 @@ export function saveSettings(settings: AppSettings): void {
 function loadSettingsFromEnv(): AppSettings | null {
   const email = process.env.UNION_EMAIL;
   const password = process.env.UNION_PASSWORD;
-  if (!email || !password) return null;
+
+  const shopify = process.env.SHOPIFY_STORE_NAME && process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET
+    ? {
+        storeName: process.env.SHOPIFY_STORE_NAME,
+        clientId: process.env.SHOPIFY_CLIENT_ID,
+        clientSecret: process.env.SHOPIFY_CLIENT_SECRET,
+      }
+    : undefined;
+
+  // Return settings if we have at least Union credentials or Shopify config
+  if (!email || !password) {
+    // No Union creds — still return partial settings if Shopify is configured
+    if (!shopify) return null;
+    return { shopify };
+  }
 
   return {
     credentials: { email, password },
@@ -113,13 +127,7 @@ function loadSettingsFromEnv(): AppSettings | null {
           timezone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
         }
       : undefined,
-    shopify: process.env.SHOPIFY_STORE_NAME && process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET
-      ? {
-          storeName: process.env.SHOPIFY_STORE_NAME,
-          clientId: process.env.SHOPIFY_CLIENT_ID,
-          clientSecret: process.env.SHOPIFY_CLIENT_SECRET,
-        }
-      : undefined,
+    shopify,
   };
 }
 
