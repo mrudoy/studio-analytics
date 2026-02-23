@@ -1801,8 +1801,9 @@ function UnderlineTabs({ tabs, active, onChange }: {
 }
 
 /** Shared table class strings for module tables */
-const modThClass = "text-right px-3 pt-1 pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap tabular-nums leading-none border-b border-border";
-const modTdClass = "text-right px-3 py-1.5 tabular-nums text-sm leading-5";
+// shadcn v4 DataTable classes (see STYLE_GUIDE.md → Tables)
+const modThClass = "h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap";
+const modTdClass = "px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap";
 
 /** Mini segmented bar (timing, mix, distribution). High-contrast segment spec. */
 function SegmentedBar({ segments, height = 8, colors, tooltip }: {
@@ -2682,9 +2683,9 @@ function NewCustomerChartCard({ volume, cohorts }: {
 
       {/* Unified table: complete cohorts, then in-progress (gray) */}
       {cohorts && (
-        <div>
-          <table className="mod-table-responsive w-full border-collapse tabular-nums" style={{ fontFamily: FONT_SANS }}>
-            <thead>
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+            <thead className="bg-muted [&_tr]:border-b">
               <tr>
                 <th className={`${modThClass} !text-left`}>Week</th>
                 <th className={modThClass} style={{ width: "3.5rem" }}>New</th>
@@ -2692,7 +2693,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 <th className={modThClass} style={{ width: "3.5rem" }}>Rate</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&_tr:last-child]:border-0">
               {/* Complete cohorts */}
               {displayComplete.map((c) => {
                 const rate = c.newCustomers > 0 ? (c.total3Week / c.newCustomers * 100).toFixed(1) : "0.0";
@@ -2702,10 +2703,9 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 return (
                   <Fragment key={c.cohortStart}>
                     <tr
-                      className="transition-colors cursor-pointer border-b border-border"
+                      className="border-b transition-colors cursor-pointer hover:bg-muted/50"
                       style={{
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
-                        backgroundColor: isNewest && !isHovered ? "rgba(65, 58, 58, 0.015)" : "transparent",
                       }}
                       onMouseEnter={() => setHoveredCohort(c.cohortStart)}
                       onMouseLeave={() => setHoveredCohort(null)}
@@ -2719,8 +2719,8 @@ function NewCustomerChartCard({ volume, cohorts }: {
                       <td data-label="Rate" className={`${modTdClass} font-medium`}>{rate}%</td>
                     </tr>
                     {isExpanded && (
-                      <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={4} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
+                      <tr className="border-b" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
+                        <td colSpan={4} className="px-4 py-2 pl-8 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
                             <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
                             <span>+1 week: <strong className="font-medium text-foreground">{c.week2}</strong></span>
@@ -2736,7 +2736,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
               {/* In-progress cohorts — muted gray styling */}
               {incompleteCohorts.length > 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 pt-3 pb-1">
+                  <td colSpan={4} className="px-4 pt-3 pb-1">
                     <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground/60">In progress</span>
                   </td>
                 </tr>
@@ -2752,7 +2752,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
                 return (
                   <Fragment key={c.cohortStart}>
                     <tr
-                      className="transition-colors cursor-pointer border-b border-border text-muted-foreground"
+                      className="border-b transition-colors cursor-pointer text-muted-foreground hover:bg-muted/50"
                       style={{
                         borderLeft: isHovered ? `2px solid ${COLORS.newCustomer}` : "2px solid transparent",
                       }}
@@ -2769,8 +2769,8 @@ function NewCustomerChartCard({ volume, cohorts }: {
                       <td data-label="Rate" className={`${modTdClass} font-medium`}>{partialRate}%</td>
                     </tr>
                     {isExpanded && (
-                      <tr className="border-b border-border" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
-                        <td colSpan={4} className="px-3 pt-1 pb-1.5 pl-6 bg-muted/30">
+                      <tr className="border-b" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
+                        <td colSpan={4} className="px-4 py-2 pl-8 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
                             <span>Same week: <strong className="font-medium">{c.week1}</strong></span>
                             <span>+1 week: <strong className="font-medium">{wk2Possible ? c.week2 : "\u2014"}</strong></span>
@@ -2901,7 +2901,6 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
 
 function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<string>("complete");
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
 
   const { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency } = dropIns;
@@ -2953,174 +2952,92 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
         </DashboardCard>
       </div>
 
-      {/* ── Row 2: Weekly Drop-ins — chart + tabbed table ── */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <DashboardCard className="@container/card">
-          <CardHeader>
-            <CardTitle>Weekly Drop-ins</CardTitle>
-            <CardDescription>
-              <span className="hidden @[540px]/card:block">Complete weeks and week-to-date breakdown</span>
-              <span className="@[540px]/card:hidden">Weekly data</span>
-            </CardDescription>
-            <CardAction>
-              <ToggleGroup
-                variant="outline"
-                type="single"
-                value={activeTab}
-                onValueChange={(v) => { if (v) setActiveTab(v); }}
-                className="hidden @[540px]/card:flex"
-              >
-                <ToggleGroupItem value="complete">Complete weeks ({displayWeeks.length})</ToggleGroupItem>
-                {wtd && <ToggleGroupItem value="wtd">This week (WTD)</ToggleGroupItem>}
-              </ToggleGroup>
-              <Select value={activeTab} onValueChange={setActiveTab}>
-                <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="complete" className="rounded-lg">Complete weeks ({displayWeeks.length})</SelectItem>
-                  {wtd && <SelectItem value="wtd" className="rounded-lg">This week (WTD)</SelectItem>}
-                </SelectContent>
-              </Select>
-            </CardAction>
-          </CardHeader>
+      {/* ── Row 2: Weekly Drop-ins — chart + table (WTD inline as gray row) ── */}
+      <DashboardCard>
+        <CardHeader>
+          <CardTitle>Weekly Drop-ins</CardTitle>
+          <CardDescription>Complete weeks{wtd ? " and week-to-date" : ""}</CardDescription>
+        </CardHeader>
 
-          <CardContent className="space-y-6">
-            {/* Bar chart — responds to active toggle */}
-            <ChartContainer config={{ visits: { label: "Visits", color: COLORS.dropIn } } satisfies ChartConfig} className="h-[200px] w-full">
-              <BarChart
-                accessibilityLayer
-                data={
-                  activeTab === "wtd" && wtd
-                    ? [
-                        ...(lastCompleteWeek
-                          ? [{ date: formatWeekShort(lastCompleteWeek.weekStart), visits: lastCompleteWeek.visits }]
-                          : []),
-                        { date: `${formatWeekShort(wtd.weekStart)} (WTD)`, visits: wtd.visits },
-                      ]
-                    : displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), visits: w.visits }))
-                }
-                margin={{ top: 20 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
-                <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
-                  {!isMobile && (
-                    <LabelList
-                      position="top"
-                      offset={12}
-                      className="fill-foreground"
-                      fontSize={12}
-                    />
-                  )}
-                </Bar>
-              </BarChart>
-            </ChartContainer>
+        <CardContent className="space-y-6">
+          {/* Bar chart */}
+          <ChartContainer config={{ visits: { label: "Visits", color: COLORS.dropIn } } satisfies ChartConfig} className="h-[200px] w-full">
+            <BarChart
+              accessibilityLayer
+              data={displayWeeks.map((w) => ({ date: formatWeekShort(w.weekStart), visits: w.visits }))}
+              margin={{ top: 20 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
+              <YAxis hide />
+              <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
+                {!isMobile && (
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                  />
+                )}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
 
-            {/* Tabbed tables — below the chart */}
-            <TabsContent value="complete" className="mt-0">
-              <div className="overflow-x-auto min-w-0">
-                <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
-                  <colgroup>
-                    <col style={{ width: "40%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "18%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className={`${modThClass} !text-left`}>Week</th>
-                      <th className={modThClass}>Visits</th>
-                      <th className={modThClass}>Customers</th>
-                      <th className={modThClass}>First %</th>
+          {/* Table — shadcn v4 DataTable pattern */}
+          <div className="overflow-hidden rounded-lg border">
+            <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+              <thead className="bg-muted [&_tr]:border-b">
+                <tr>
+                  <th className={`${modThClass} !text-left`}>Week</th>
+                  <th className={modThClass}>Visits</th>
+                  <th className={modThClass}>Customers</th>
+                  <th className={modThClass}>First %</th>
+                </tr>
+              </thead>
+              <tbody className="[&_tr:last-child]:border-0">
+                {displayWeeks.map((w) => {
+                  const isHovered = hoveredWeek === w.weekStart;
+                  const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
+                  const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
+                  return (
+                    <tr
+                      key={w.weekStart}
+                      className="border-b transition-colors hover:bg-muted/50"
+                      style={{
+                        borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
+                      }}
+                      onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                      onMouseLeave={() => setHoveredWeek(null)}
+                    >
+                      <td className={`${modTdClass} !text-left font-medium`}>
+                        {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
+                        {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                      </td>
+                      <td className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
+                      <td className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
+                      <td className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {displayWeeks.map((w) => {
-                      const isHovered = hoveredWeek === w.weekStart;
-                      const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
-                      const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
-                      return (
-                        <tr
-                          key={w.weekStart}
-                          className="transition-colors border-b border-border"
-                          style={{
-                            borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
-                            backgroundColor: isHovered ? "rgba(65, 58, 58, 0.02)" : "transparent",
-                          }}
-                          onMouseEnter={() => setHoveredWeek(w.weekStart)}
-                          onMouseLeave={() => setHoveredWeek(null)}
-                        >
-                          <td className={`${modTdClass} !text-left font-medium`}>
-                            {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
-                            {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
-                          </td>
-                          <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
-                          <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
-                          <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="wtd" className="mt-0">
-              {wtd && (
-                <div className="overflow-x-auto min-w-0">
-                  <table className="mod-table-responsive w-full border-collapse tabular-nums table-fixed" style={{ fontFamily: FONT_SANS }}>
-                    <colgroup>
-                      <col style={{ width: "30%" }} />
-                      <col style={{ width: "16%" }} />
-                      <col style={{ width: "18%" }} />
-                      <col style={{ width: "14%" }} />
-                      <col style={{ width: "22%" }} />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th className={`${modThClass} !text-left`}>Week</th>
-                        <th className={modThClass}>Visits</th>
-                        <th className={modThClass}>Customers</th>
-                        <th className={modThClass}>First %</th>
-                        <th className={modThClass}>Days left</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b border-border">
-                        <td className={`${modTdClass} !text-left font-medium`}>
-                          {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
-                          {" "}<DChip variant="accent">WTD</DChip>
-                        </td>
-                        <td data-label="Visits" className={`${modTdClass} font-semibold`}>{formatNumber(wtd.visits)}</td>
-                        <td data-label="Customers" className={`${modTdClass} font-medium`}>{formatNumber(wtd.uniqueCustomers)}</td>
-                        <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
-                          {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
-                        </td>
-                        <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{wtd.daysLeft} {wtd.daysLeft === 1 ? "day" : "days"}</td>
-                      </tr>
-                      {lastCompleteWeek && (
-                        <tr className="border-b border-border opacity-55">
-                          <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
-                            {formatWeekRangeLabel(lastCompleteWeek.weekStart, lastCompleteWeek.weekEnd)}
-                            <span className="text-[11px] ml-1.5 font-normal italic">prev</span>
-                          </td>
-                          <td data-label="Visits" className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(lastCompleteWeek.visits)}</td>
-                          <td data-label="Customers" className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(lastCompleteWeek.uniqueCustomers)}</td>
-                          <td data-label="First %" className={`${modTdClass} text-muted-foreground`}>
-                            {lastCompleteWeek.uniqueCustomers > 0 ? `${Math.round((lastCompleteWeek.firstTime / lastCompleteWeek.uniqueCustomers) * 100)}%` : "\u2014"}
-                          </td>
-                          <td data-label="Days left" className={`${modTdClass} text-muted-foreground`}>{"\u2014"}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </TabsContent>
-          </CardContent>
-        </DashboardCard>
-      </Tabs>
+                  );
+                })}
+                {/* WTD row — inline as a muted/gray row */}
+                {wtd && (
+                  <tr className="border-b bg-muted/50">
+                    <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
+                      {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                      {" "}<span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">WTD</span>
+                    </td>
+                    <td className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(wtd.visits)}</td>
+                    <td className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(wtd.uniqueCustomers)}</td>
+                    <td className={`${modTdClass} text-muted-foreground`}>
+                      {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </DashboardCard>
 
       {/* ── Row 3: Drop-in Frequency (horizontal bars) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
