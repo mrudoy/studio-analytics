@@ -4800,68 +4800,117 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
           </div>
 
-          {/* Current month revenue-to-date card */}
+          {/* Current month revenue-to-date card (or last completed month if no current data) */}
           {(() => {
             const nowD = new Date();
             const curKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
-            const curEntry = (data.monthlyRevenue || []).find((m) => m.month === curKey);
+            const mr = data.monthlyRevenue || [];
+            const curEntry = mr.find((m) => m.month === curKey);
             const prevKey = (() => {
               const d = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1);
               return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
             })();
-            const prevEntry = (data.monthlyRevenue || []).find((m) => m.month === prevKey);
-            const curGross = curEntry?.gross ?? 0;
-            const curNet = curEntry?.net ?? 0;
-            const dayOfMonth = nowD.getDate();
-            const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
-            const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
-            const prevGross = prevEntry?.gross ?? 0;
-            const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
-            const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+            const prevEntry = mr.find((m) => m.month === prevKey);
 
-            return curGross > 0 ? (
+            // If we have current month data, show MTD with pacing
+            if (curEntry && curEntry.gross > 0) {
+              const curGross = curEntry.gross;
+              const curNet = curEntry.net;
+              const dayOfMonth = nowD.getDate();
+              const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
+              const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
+              const prevGross = prevEntry?.gross ?? 0;
+              const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
+              const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+              return (
+                <DashboardCard>
+                  <CardHeader>
+                    <CardDescription>{monthLabel} — Revenue to Date</CardDescription>
+                    <CardTitle className="text-3xl font-semibold tabular-nums">{formatCurrency(curGross)}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-2">
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Net: </span>
+                        <span className="font-medium tabular-nums">{formatCurrency(curNet)}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Day {dayOfMonth} of {daysInMonth} · </span>
+                        <span className="font-medium tabular-nums">Pacing: {formatCurrency(pacedGross)}</span>
+                      </div>
+                      {vsLastPct !== null && (
+                        <div>
+                          <span className="text-muted-foreground">vs {formatShortMonth(prevKey)}: </span>
+                          <span className={`font-medium tabular-nums ${vsLastPct >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                            {vsLastPct > 0 ? "+" : ""}{vsLastPct}%
+                          </span>
+                          <span className="text-muted-foreground"> (paced)</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <div className="w-full">
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, Math.round((dayOfMonth / daysInMonth) * 100))}%`,
+                            backgroundColor: SECTION_COLORS.revenue,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </CardFooter>
+                </DashboardCard>
+              );
+            }
+
+            // No current month data — show last completed month summary
+            const completed = mr.filter((m) => m.month < curKey);
+            const latest = completed.length > 0 ? completed[completed.length - 1] : null;
+            const prior = completed.length > 1 ? completed[completed.length - 2] : null;
+            if (!latest) return null;
+
+            const vsLastPct = prior && prior.gross > 0
+              ? Math.round(((latest.gross - prior.gross) / prior.gross) * 1000) / 10
+              : null;
+
+            return (
               <DashboardCard>
                 <CardHeader>
-                  <CardDescription>{monthLabel} — Revenue to Date</CardDescription>
-                  <CardTitle className="text-3xl font-semibold tabular-nums">{formatCurrency(curGross)}</CardTitle>
+                  <CardDescription>{formatMonthLabel(latest.month)} — Final Revenue</CardDescription>
+                  <CardTitle className="text-3xl font-semibold tabular-nums">{formatCurrency(latest.gross)}</CardTitle>
                 </CardHeader>
                 <CardContent className="pb-2">
                   <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
                     <div>
                       <span className="text-muted-foreground">Net: </span>
-                      <span className="font-medium tabular-nums">{formatCurrency(curNet)}</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(latest.net)}</span>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Day {dayOfMonth} of {daysInMonth} · </span>
-                      <span className="font-medium tabular-nums">Pacing: {formatCurrency(pacedGross)}</span>
-                    </div>
-                    {vsLastPct !== null && (
+                    {vsLastPct !== null && prior && (
                       <div>
-                        <span className="text-muted-foreground">vs {formatShortMonth(prevKey)}: </span>
+                        <span className="text-muted-foreground">vs {formatShortMonth(prior.month)}: </span>
                         <span className={`font-medium tabular-nums ${vsLastPct >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                           {vsLastPct > 0 ? "+" : ""}{vsLastPct}%
                         </span>
-                        <span className="text-muted-foreground"> (paced)</span>
                       </div>
                     )}
                   </div>
                 </CardContent>
-                {/* Progress bar */}
                 <CardFooter>
                   <div className="w-full">
                     <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${Math.min(100, Math.round((dayOfMonth / daysInMonth) * 100))}%`,
-                          backgroundColor: SECTION_COLORS.revenue,
-                        }}
+                        style={{ width: "100%", backgroundColor: SECTION_COLORS.revenue }}
                       />
                     </div>
                   </div>
                 </CardFooter>
               </DashboardCard>
-            ) : null;
+            );
           })()}
 
           <RevenueSection data={data} trends={trends} />
