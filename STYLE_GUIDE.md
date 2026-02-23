@@ -53,8 +53,24 @@ Reference this file before creating or modifying any UI component.
 </DashboardCard>
 ```
 
+### Compact Card (no inner padding gaps)
+When a card needs tight header-to-content spacing (e.g. category detail cards):
+```tsx
+<DashboardCard className="py-0 gap-0">
+  <CardHeader className="pb-0">
+    {/* header content — uses CardHeader's built-in px-6 pt via card py */}
+  </CardHeader>
+  <CardContent>
+    {/* chart + metrics — uses CardContent's built-in px-6 */}
+  </CardContent>
+</DashboardCard>
+```
+- Override `py-0 gap-0` on `DashboardCard` to remove default `py-6 gap-6`
+- Use `<CardHeader className="pb-0">` so header sits flush with content
+- Title style: `text-sm leading-none font-semibold` (title case, not uppercase)
+
 ### Spacing
-- Card padding: `px-6 py-6` (built into Card component)
+- Card padding: `px-6 py-6` (built into Card component, override with `py-0 gap-0` for compact)
 - Between cards in grid: `gap-3`
 - Between sections: `gap-4` or `gap-6`
 
