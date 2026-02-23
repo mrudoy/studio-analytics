@@ -3859,12 +3859,12 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
         )}
       </div>
 
-      {/* Customer Breakdown: Subscriber vs Non-Subscriber */}
+      {/* Customer Breakdown: Members vs Non-Members */}
       {merch.customerBreakdown && (
         <DashboardCard>
           <CardHeader>
             <CardTitle>Buyer Breakdown</CardTitle>
-            <CardDescription>Merch orders by subscription status</CardDescription>
+            <CardDescription>Merch orders by auto-renew status</CardDescription>
           </CardHeader>
           <CardContent>
             <MerchBuyerBreakdown breakdown={merch.customerBreakdown} />
@@ -3883,7 +3883,7 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
 
   const rows = [
     {
-      label: "Subscribers",
+      label: "Auto-Renew",
       icon: Recycle,
       color: SECTION_COLORS["growth-auto"],
       orders: breakdown.subscriber.orders,
@@ -3892,7 +3892,7 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
       pct: subPct,
     },
     {
-      label: "Non-Subscribers",
+      label: "Non Auto-Renew",
       icon: RecycleOff,
       color: SECTION_COLORS["growth-non-auto"],
       orders: breakdown.nonSubscriber.orders,
