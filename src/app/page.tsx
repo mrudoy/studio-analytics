@@ -4141,6 +4141,10 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
     ? ((priorYearData.gross - olderYearData.gross) / olderYearData.gross * 100)
     : null;
 
+  // YTD revenue: completed months of current year + MTD
+  const ytdCompletedMonths = merch.monthlyRevenue.filter((m) => m.month.startsWith(String(currentYear)) && m.month < currentMonthKey);
+  const ytdRevenue = ytdCompletedMonths.reduce((s, m) => s + m.gross, 0) + merch.mtdRevenue;
+
   // Category breakdown
   const categories = merch.categoryBreakdown || [];
   const totalCategoryRevenue = categories.reduce((s, c) => s + c.revenue, 0);
@@ -4179,17 +4183,15 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           </CardFooter>
         </DashboardCard>
 
-        {priorYearData && (
-          <DashboardCard>
-            <CardHeader>
-              <CardDescription>{priorYear} Revenue</CardDescription>
-              <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(priorYearData.gross)}</CardTitle>
-            </CardHeader>
-            <CardFooter className="text-sm text-muted-foreground">
-              {formatNumber(priorYearData.orderCount)} orders
-            </CardFooter>
-          </DashboardCard>
-        )}
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>{currentYear} YTD Revenue</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(ytdRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Year to date
+          </CardFooter>
+        </DashboardCard>
 
         {yoyDelta !== null && (
           <DashboardCard>
