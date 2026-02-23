@@ -3596,72 +3596,69 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   })() : null;
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* ── Card 1: Chart card (shadcn BarChart pattern) ── */}
-      <DashboardCard>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            {Icon ? (
-              <Icon className="size-4 shrink-0" style={{ color }} />
-            ) : (
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
-            )}
-            <CardTitle>{title}</CardTitle>
-          </div>
-          <CardDescription>
-            <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">{formatNumber(count)}</span>
-            {" "}<span>active subscribers</span>
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          {barData.length > 0 && (
-            <ChartContainer config={{ newAdds: { label: "New adds", color } }} className="h-[200px] w-full">
-              <BarChart
-                accessibilityLayer
-                data={barData}
-                margin={{ top: 20 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="week"
-                  tickLine={false}
-                  tickMargin={10}
-                  axisLine={false}
-                />
-                <YAxis hide />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent hideLabel />}
-                />
-                <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
-                  <LabelList
-                    position="top"
-                    offset={12}
-                    className="fill-foreground"
-                    fontSize={12}
-                    formatter={(v: number) => `+${v}`}
-                  />
-                </Bar>
-              </BarChart>
-            </ChartContainer>
+    <DashboardCard>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          {Icon ? (
+            <Icon className="size-4 shrink-0" style={{ color }} />
+          ) : (
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
           )}
-        </CardContent>
+          <CardTitle>{title}</CardTitle>
+        </div>
+        <CardDescription>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">{formatNumber(count)}</span>
+          {" "}<span>active subscribers</span>
+        </CardDescription>
+      </CardHeader>
 
-        <CardFooter className="flex-col items-start gap-2 text-sm">
-          <div className={`flex gap-2 leading-none font-medium ${netColor}`}>
-            Net {netLabel} {wkLabel}
+      <CardContent>
+        {barData.length > 0 && (
+          <ChartContainer config={{ newAdds: { label: "New adds", color } }} className="h-[200px] w-full">
+            <BarChart
+              accessibilityLayer
+              data={barData}
+              margin={{ top: 20 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="week"
+                tickLine={false}
+                tickMargin={10}
+                axisLine={false}
+              />
+              <YAxis hide />
+              <ChartTooltip
+                cursor={false}
+                content={<ChartTooltipContent hideLabel />}
+              />
+              <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
+                <LabelList
+                  position="top"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                  formatter={(v: number) => `+${v}`}
+                />
+              </Bar>
+            </BarChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+
+      <CardFooter className="flex-col items-start gap-2 text-sm">
+        <div className={`flex gap-2 leading-none font-medium ${netColor}`}>
+          Net {netLabel} {wkLabel}
+        </div>
+        {churnNote && (
+          <div className="text-muted-foreground leading-none">
+            {churnNote}
           </div>
-          {churnNote && (
-            <div className="text-muted-foreground leading-none">
-              {churnNote}
-            </div>
-          )}
-        </CardFooter>
-      </DashboardCard>
+        )}
+      </CardFooter>
 
-      {/* ── Table: metrics (standalone, no card wrapper) ── */}
-      <div className="overflow-hidden rounded-lg border">
+      {/* ── Metrics table — inside the card, separated by border-t ── */}
+      <div className="border-t">
         <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
           <thead className="bg-muted [&_tr]:border-b">
             <tr>
@@ -3704,7 +3701,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           </tbody>
         </table>
       </div>
-    </div>
+    </DashboardCard>
   );
 }
 
