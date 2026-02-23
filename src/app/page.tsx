@@ -1968,6 +1968,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                     <stop offset="95%" stopColor="var(--color-gross)" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
+                <CartesianGrid vertical={false} />
                 <YAxis hide domain={["dataMin - 20000", "dataMax + 10000"]} />
                 <XAxis
                   dataKey="month"
@@ -2785,6 +2786,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                 }
                 margin={{ top: 20 }}
               >
+                <CartesianGrid vertical={false} />
                 <XAxis dataKey="date" tickLine={false} tickMargin={10} axisLine={false} />
                 <Bar dataKey="visits" fill="var(--color-visits)" radius={8}>
                   {!isMobile && (
@@ -3252,7 +3254,16 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               type="natural"
               fill="url(#fillPoolConverts)"
               stroke="var(--color-converts)"
-            />
+            >
+              {!isMobile && (
+                <LabelList
+                  position="top"
+                  offset={12}
+                  className="fill-foreground"
+                  fontSize={12}
+                />
+              )}
+            </Area>
             <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
@@ -3520,7 +3531,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
       <CardContent>
         <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
           <BarChart accessibilityLayer data={barData} margin={{ top: 32 }}>
-
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey="year"
               tickLine={false}
@@ -3707,8 +3718,7 @@ function ChurnSection({ churnRates, weekly }: {
                   axisLine={false}
                   tickFormatter={(v) => `${v}%`}
                   domain={[0, (dataMax: number) => {
-                    const padded = dataMax * 1.1;
-                    return Math.ceil(padded / 5) * 5;
+                    return Math.ceil(dataMax / 5) * 5;
                   }]}
                   ticks={(() => {
                     const allRates = byCategory.member.monthly.map((m, i) => [
@@ -3717,7 +3727,7 @@ function ChurnSection({ churnRates, weekly }: {
                       byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                     ]).flat();
                     const maxRate = Math.max(...allRates, 0);
-                    const ceilMax = Math.ceil(maxRate * 1.1 / 5) * 5;
+                    const ceilMax = Math.ceil(maxRate / 5) * 5;
                     const step = ceilMax <= 15 ? 5 : 10;
                     const ticks: number[] = [];
                     for (let i = 0; i <= ceilMax; i += step) ticks.push(i);
