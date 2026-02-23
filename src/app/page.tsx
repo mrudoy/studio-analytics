@@ -3606,10 +3606,10 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           )}
           <CardTitle>{title}</CardTitle>
         </div>
-        <CardDescription>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">{formatNumber(count)}</span>
-          {" "}<span>active subscribers</span>
-        </CardDescription>
+        <CardDescription>New adds per week</CardDescription>
+        <CardAction>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{formatNumber(count)}</span>
+        </CardAction>
       </CardHeader>
 
       <CardContent>
