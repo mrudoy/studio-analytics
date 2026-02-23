@@ -18,6 +18,7 @@
 
 import { triggerCSVDownloads, type TriggerResult } from "../scraper/csv-trigger";
 import { GmailClient, type ReportEmail } from "../email/gmail-client";
+import { extractCSVsFromZip } from "../email/zip-extract";
 import { runPipelineFromFiles } from "./pipeline-core";
 import type { PipelineResult } from "@/types/pipeline";
 import type { DownloadedFiles } from "@/types/union-data";
@@ -200,7 +201,26 @@ export async function runEmailPipeline(options: EmailPipelineOptions): Promise<P
         const filePath = downloaded.get(key);
         if (!filePath) continue;
 
-        // Try subject first, then filename
+        // If it's a .zip, extract CSVs and map each one individually
+        if (att.filename.toLowerCase().endsWith(".zip")) {
+          console.log(`[email-pipeline] Extracting zip: ${att.filename}`);
+          const extracted = extractCSVsFromZip(filePath);
+          for (const csv of extracted) {
+            // Try to map each extracted CSV by its filename
+            const reportType = filenameToReportType(csv.originalName) ?? subjectToReportType(email.subject);
+            if (reportType) {
+              if (!reportFiles[reportType]) {
+                reportFiles[reportType] = csv.filePath;
+                console.log(`[email-pipeline] Mapped zip entry ${csv.originalName} -> ${reportType}`);
+              }
+            } else {
+              console.warn(`[email-pipeline] Could not map zip entry: ${csv.originalName}`);
+            }
+          }
+          continue;
+        }
+
+        // Regular CSV — try subject first, then filename
         const reportType = subjectToReportType(email.subject) ?? filenameToReportType(att.filename);
 
         if (reportType) {

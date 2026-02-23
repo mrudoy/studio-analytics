@@ -30,7 +30,7 @@ import { runShopifySync } from "../src/lib/shopify/shopify-sync";
 import { uploadBackupToGitHub } from "../src/lib/db/backup-cloud";
 import { getWatermark, buildDateRangeForReport } from "../src/lib/db/watermark-store";
 
-const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+const PIPELINE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function log(msg: string) {
   const ts = new Date().toISOString().slice(11, 19);
@@ -114,7 +114,7 @@ async function main() {
     unionPassword: settings.credentials.password,
     robotEmail: settings.robotEmail.address,
     dateRange,
-    emailTimeoutMs: 900_000, // 15 min
+    emailTimeoutMs: 1_500_000, // 25 min — Union.fit emails can be very slow
     onProgress: (step, percent) => {
       log(`  ${percent}% — ${step}`);
     },

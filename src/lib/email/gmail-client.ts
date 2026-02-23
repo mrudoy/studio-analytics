@@ -131,22 +131,27 @@ export class GmailClient {
     const attachments: EmailAttachment[] = [];
     this.extractAttachments(msg.data.payload, attachments);
 
-    // Only include emails that have CSV attachments
-    const csvAttachments = attachments.filter(
-      (a) =>
-        a.filename.toLowerCase().endsWith(".csv") ||
+    // Include emails that have CSV or ZIP attachments
+    const dataAttachments = attachments.filter((a) => {
+      const name = a.filename.toLowerCase();
+      return (
+        name.endsWith(".csv") ||
+        name.endsWith(".zip") ||
         a.mimeType === "text/csv" ||
-        a.mimeType === "application/csv"
-    );
+        a.mimeType === "application/csv" ||
+        a.mimeType === "application/zip" ||
+        a.mimeType === "application/x-zip-compressed"
+      );
+    });
 
-    if (csvAttachments.length === 0) return null;
+    if (dataAttachments.length === 0) return null;
 
     return {
       id: messageId,
       subject,
       from,
       date: dateStr ? new Date(dateStr) : new Date(),
-      attachments: csvAttachments,
+      attachments: dataAttachments,
     };
   }
 

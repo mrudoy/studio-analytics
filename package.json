@@ -8,10 +8,11 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "pipeline:local": "tsx scripts/local-cron-pipeline.ts",
+    "pipeline:local": "npx tsx scripts/local-cron-pipeline.ts",
     "pipeline:install-cron": "bash scripts/install-cron.sh"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "bullmq": "^5.34.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.0.0",
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^22.13.4",
     "@types/papaparse": "^5.3.15",
     "@types/pg": "^8.16.0",
