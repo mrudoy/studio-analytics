@@ -3610,7 +3610,9 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   }
 
   // Build metric rows
-  const metrics: { label: string; value: string; delta?: number | null; deltaPercent?: number | null; isPositiveGood?: boolean; color?: string }[] = [];
+  // Columnar rows: label | count | change # | change %
+  // "isNetChange" rows only show label + value (no delta columns)
+  const metrics: { label: string; value: string; delta?: number | null; deltaPercent?: number | null; isPositiveGood?: boolean; color?: string; isNetChange?: boolean }[] = [];
 
   if (latestW) {
     const newVal = weeklyKeyNew(latestW);
@@ -3623,13 +3625,17 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
 
     const churnVal = weeklyKeyChurn(latestW);
     const churnDelta = prevW ? -(churnVal - weeklyKeyChurn(prevW)) : null;
-    metrics.push({ label: `Churned ${wkLabel}`, value: String(churnVal), delta: churnDelta, isPositiveGood: true });
+    const churnDeltaPct = prevW && weeklyKeyChurn(prevW) > 0
+      ? Math.round((churnDelta! / weeklyKeyChurn(prevW)) * 100)
+      : null;
+    metrics.push({ label: `Churned ${wkLabel}`, value: String(churnVal), delta: churnDelta, deltaPercent: churnDeltaPct, isPositiveGood: true });
 
     const netVal = weeklyKeyNet(latestW);
     metrics.push({
       label: "Net change",
       value: formatDelta(netVal) || "0",
       color: netVal > 0 ? COLORS.success : netVal < 0 ? COLORS.error : undefined,
+      isNetChange: true,
     });
   }
 
@@ -3638,17 +3644,20 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
       label: "User churn rate (avg/mo)",
       value: `${churnData.avgUserChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgUserChurnRate),
+      isNetChange: true,
     });
     metrics.push({
       label: "MRR churn rate (avg/mo)",
       value: `${churnData.avgMrrChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgMrrChurnRate),
+      isNetChange: true,
     });
     if (churnData.atRiskCount > 0) {
       metrics.push({
         label: "At risk",
         value: String(churnData.atRiskCount),
         color: COLORS.warning,
+        isNetChange: true,
       });
     }
   }
@@ -3687,34 +3696,40 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
         </div>
       )}
 
-      {/* Metric rows — compact density */}
-      <div className="flex flex-col">
-        {metrics.map((m, i) => (
-          <div key={i} className={`flex justify-between items-center py-1.5 ${i < metrics.length - 1 ? "border-b border-border" : ""}`}>
-            <span className="text-xs text-muted-foreground">
-              {m.label}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-semibold tabular-nums" style={m.color ? { color: m.color } : undefined}>
-                {m.value}
-              </span>
-              {m.delta != null && (
-                <DeltaBadge delta={m.delta} deltaPercent={m.deltaPercent ?? null} isPositiveGood={m.isPositiveGood} compact />
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Pacing — single condensed muted line */}
-      {isPacing && pacingNew && (
-        <p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
-          Pacing {pacing!.daysElapsed}/{pacing!.daysInMonth}d
-          {" \u00b7 "}
-          {pacingNew(pacing!).actual} new / {pacingNew(pacing!).paced} proj
-          {pacingChurn && (<>{" \u00b7 "}{pacingChurn(pacing!).actual} churn / {pacingChurn(pacing!).paced} proj</>)}
-        </p>
-      )}
+      {/* Metric rows — 4-column table: Label | # | Δ# | Δ% */}
+      <table className="w-full text-xs">
+        <tbody>
+          {metrics.map((m, i) => {
+            const deltaColor = m.delta != null
+              ? m.delta === 0
+                ? "text-muted-foreground"
+                : (m.isPositiveGood ? m.delta > 0 : m.delta < 0)
+                  ? "text-emerald-600"
+                  : "text-red-500"
+              : "";
+            return (
+              <tr key={i} className={i < metrics.length - 1 ? "border-b border-border" : ""}>
+                <td className="py-1.5 pr-2 text-muted-foreground whitespace-nowrap">{m.label}</td>
+                <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-sm whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
+                  {m.value}
+                </td>
+                {!m.isNetChange ? (
+                  <>
+                    <td className={`py-1.5 px-2 text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
+                      {m.delta != null ? formatDelta(m.delta) : ""}
+                    </td>
+                    <td className={`py-1.5 pl-2 text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
+                      {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
+                    </td>
+                  </>
+                ) : (
+                  <td colSpan={2} />
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
 
       {/* MEMBER annual/monthly breakdown */}
       {churnData?.category === "MEMBER" && (() => {
