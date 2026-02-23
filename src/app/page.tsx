@@ -3705,9 +3705,9 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           <thead>
             <tr className="border-b border-border">
               <th className="pb-1.5 pr-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none"></th>
-              <th className="pb-1.5 px-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">#</th>
-              <th className="pb-1.5 px-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Δ#</th>
-              <th className="pb-1.5 pl-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Δ%</th>
+              <th className="pb-1.5 px-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Number</th>
+              <th className="pb-1.5 px-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Change</th>
+              <th className="pb-1.5 pl-2 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap leading-none">Change (%)</th>
             </tr>
           </thead>
           <tbody>
