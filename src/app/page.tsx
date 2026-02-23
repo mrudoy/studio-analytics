@@ -4641,15 +4641,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
   return (
     <div className="flex flex-col gap-4">
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <DashboardCard>
-          <CardHeader>
-            <CardDescription>Total Rental Revenue</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(totalAllTime)}</CardTitle>
-          </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">All time</CardFooter>
-        </DashboardCard>
-
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <DashboardCard>
           <CardHeader>
             <CardDescription>{currentYear} YTD</CardDescription>
