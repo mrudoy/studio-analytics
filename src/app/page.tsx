@@ -3750,7 +3750,7 @@ function ChurnSection({ churnRates, weekly }: {
 
 // ─── Merch Revenue Tab (Shopify data) ─────────────────────────
 
-function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
+function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastSyncAt?: string | null }) {
   const isMobile = useIsMobile();
 
   // Completed months only (exclude current)
@@ -4073,9 +4073,12 @@ function DashboardContent({ activeSection, data }: {
               <ShoppingBag className="size-7 shrink-0" style={{ color: SECTION_COLORS["revenue-merch"] }} />
               <h1 className="text-3xl font-semibold tracking-tight">Merch</h1>
             </div>
+            {data.shopify?.lastSyncAt && (
+              <p className="text-sm text-muted-foreground mt-1 ml-10">Last synced {formatRelativeTime(data.shopify.lastSyncAt)}</p>
+            )}
           </div>
           {data.shopifyMerch ? (
-            <MerchRevenueTab merch={data.shopifyMerch} />
+            <MerchRevenueTab merch={data.shopifyMerch} lastSyncAt={data.shopify?.lastSyncAt} />
           ) : (
             <DashboardCard>
               <CardContent>
