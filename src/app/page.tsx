@@ -3612,7 +3612,7 @@ function ChurnSection({ churnRates, weekly }: {
               >
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} />
                 <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
                 <ChartLegend content={<ChartLegendContent />} />
                 <Line type="monotone" dataKey="member" stroke="var(--color-member)" strokeWidth={2} dot={false} />
