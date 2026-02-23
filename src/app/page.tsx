@@ -3815,11 +3815,11 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
 //  INSIGHTS SECTION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const SEVERITY_COLORS: Record<string, { border: string; bg: string; text: string }> = {
-  critical: { border: "border-l-red-500", bg: "bg-red-50 dark:bg-red-950/20", text: "text-red-700 dark:text-red-400" },
-  warning:  { border: "border-l-amber-500", bg: "bg-amber-50 dark:bg-amber-950/20", text: "text-amber-700 dark:text-amber-400" },
-  info:     { border: "border-l-blue-500", bg: "bg-blue-50 dark:bg-blue-950/20", text: "text-blue-700 dark:text-blue-400" },
-  positive: { border: "border-l-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-950/20", text: "text-emerald-700 dark:text-emerald-400" },
+const INSIGHT_STYLES: Record<string, { accent: string; bg: string; badge: string; icon: string }> = {
+  critical: { accent: "#EF4444", bg: "bg-red-50/80 dark:bg-red-950/20", badge: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300", icon: "text-red-500" },
+  warning:  { accent: "#F59E0B", bg: "bg-amber-50/80 dark:bg-amber-950/20", badge: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300", icon: "text-amber-500" },
+  info:     { accent: "#3B82F6", bg: "bg-blue-50/80 dark:bg-blue-950/20", badge: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300", icon: "text-blue-500" },
+  positive: { accent: "#10B981", bg: "bg-emerald-50/80 dark:bg-emerald-950/20", badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300", icon: "text-emerald-500" },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -3828,6 +3828,17 @@ const CATEGORY_LABELS: Record<string, string> = {
   revenue: "Revenue",
   growth: "Growth",
 };
+
+/** Extract the leading number from the headline for a big metric display */
+function extractMetricFromHeadline(headline: string): { metric: string; rest: string } | null {
+  // Match patterns like "1,731 regulars...", "68% of SKY3...", "39% of new...", "9% above..."
+  const m = headline.match(/^([\d,]+%?)\s+(.+)$/);
+  if (m) return { metric: m[1], rest: m[2] };
+  // Match "This month's revenue is X% above/below"
+  const m2 = headline.match(/is (\d+%)\s+(above|below)\s+(.+)$/);
+  if (m2) return { metric: m2[1], rest: `${m2[2]} ${m2[3]}` };
+  return null;
+}
 
 function formatRelativeTimeShort(isoDate: string): string {
   const ms = Date.now() - new Date(isoDate).getTime();
@@ -3841,29 +3852,46 @@ function formatRelativeTimeShort(isoDate: string): string {
 }
 
 function InsightCard({ insight }: { insight: InsightRow }) {
-  const colors = SEVERITY_COLORS[insight.severity] || SEVERITY_COLORS.info;
+  const style = INSIGHT_STYLES[insight.severity] || INSIGHT_STYLES.info;
+  const extracted = extractMetricFromHeadline(insight.headline);
+
   return (
-    <div className={`rounded-lg border border-l-4 ${colors.border} ${colors.bg} p-4`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors.text} bg-white/60 dark:bg-white/10`}>
-              {CATEGORY_LABELS[insight.category] || insight.category}
-            </span>
+    <div
+      className={`relative rounded-xl border ${style.bg} p-5 overflow-hidden`}
+      style={{ borderLeftWidth: 5, borderLeftColor: style.accent }}
+    >
+      {/* Category + timestamp row */}
+      <div className="flex items-center justify-between mb-3">
+        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${style.badge}`}>
+          {CATEGORY_LABELS[insight.category] || insight.category}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTimeShort(insight.detectedAt)}
+        </span>
+      </div>
+
+      {/* Big metric + headline */}
+      {extracted ? (
+        <div className="mb-3">
+          <div className="text-3xl font-bold tracking-tight" style={{ color: style.accent }}>
+            {extracted.metric}
           </div>
-          <p className="text-sm font-semibold text-foreground leading-snug">
-            {insight.headline}
+          <p className="text-base font-medium text-foreground mt-1 leading-snug">
+            {extracted.rest}
           </p>
-          {insight.explanation && (
-            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-              {insight.explanation}
-            </p>
-          )}
         </div>
-      </div>
-      <div className="mt-3 text-xs text-muted-foreground">
-        Detected {formatRelativeTimeShort(insight.detectedAt)}
-      </div>
+      ) : (
+        <p className="text-base font-medium text-foreground mb-3 leading-snug">
+          {insight.headline}
+        </p>
+      )}
+
+      {/* Explanation */}
+      {insight.explanation && (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {insight.explanation}
+        </p>
+      )}
     </div>
   );
 }
@@ -3883,7 +3911,7 @@ function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {insights.map((insight) => (
         <InsightCard key={insight.id} insight={insight} />
       ))}
