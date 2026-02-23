@@ -152,13 +152,13 @@ const LABELS = {
   members: "Members",
   sky3: "Sky3",
   tv: "Sky Ting TV",
-  nonAutoRenew: "Non-Auto-Renew",
+  nonAutoRenew: "Non Auto-Renew",
   firstVisits: "First Visits",
   dropIns: "Drop-Ins",
   returningNonMembers: "Returning Non-Members",
   newCustomers: "New Customers",
   newCustomerFunnel: "New Customer Funnel",
-  conversionPool: "Non-Auto-Renew Funnel",
+  conversionPool: "Non Auto-Renew Funnel",
   revenue: "Revenue",
   merch: "Merch",
   mrr: "Monthly Recurring Revenue",
@@ -4155,7 +4155,7 @@ function DashboardContent({ activeSection, data }: {
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <RecycleOff className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Non-Auto-Renews</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Non Auto-Renews</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, intro week activity, and one-time purchases</p>
           </div>

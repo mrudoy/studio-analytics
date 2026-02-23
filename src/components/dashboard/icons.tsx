@@ -81,7 +81,7 @@ export function Recycle(props: IconProps) {
   );
 }
 
-/** Recycle with slash — Non-Auto-Renews */
+/** Recycle with slash — Non Auto-Renews */
 export function RecycleOff(props: IconProps) {
   return (
     <svg {...iconDefaults(props)}>
@@ -109,7 +109,7 @@ export function UserPlus(props: IconProps) {
   );
 }
 
-/** Users group — All Non-Auto-Renew Customers */
+/** Users group — All Non Auto-Renew Customers */
 export function UsersGroup(props: IconProps) {
   return (
     <svg {...iconDefaults(props)}>
