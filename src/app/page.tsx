@@ -3611,11 +3611,32 @@ function ChurnSection({ churnRates, weekly }: {
                   sky3: byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
                   tv: byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                 }))}
-                margin={{ top: 5, right: 10, left: 10, bottom: 0 }}
+                margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
               >
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `${v}%`}
+                  domain={[0, (dataMax: number) => {
+                    const padded = dataMax * 1.3;
+                    return Math.ceil(padded / 5) * 5;
+                  }]}
+                  ticks={(() => {
+                    const allRates = byCategory.member.monthly.map((m, i) => [
+                      m.userChurnRate,
+                      byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
+                      byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
+                    ]).flat();
+                    const maxRate = Math.max(...allRates, 0);
+                    const ceilMax = Math.ceil(maxRate * 1.3 / 5) * 5;
+                    const step = ceilMax <= 20 ? 5 : 10;
+                    const ticks: number[] = [];
+                    for (let i = 0; i <= ceilMax; i += step) ticks.push(i);
+                    return ticks;
+                  })()}
+                />
                 <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
                 <ChartLegend content={<ChartLegendContent />} />
                 <Line type="monotone" dataKey="member" stroke="var(--color-member)" strokeWidth={2} dot={false} />
