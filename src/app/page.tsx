@@ -4042,13 +4042,13 @@ function DashboardContent({ activeSection, data }: {
         </>
       )}
 
-      {/* ── REVENUE: CLASS REVENUE ── */}
+      {/* ── REVENUE: REVENUE OVERVIEW ── */}
       {activeSection === "revenue" && (
         <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <ClassRevenue className="size-7 shrink-0" style={{ color: SECTION_COLORS.revenue }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Class Revenue</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Revenue Overview</h1>
             </div>
           </div>
 
