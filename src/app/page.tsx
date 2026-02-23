@@ -4211,47 +4211,49 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
         )}
       </div>
 
-      {/* Top Products — expanded to 10 with rank + progress bar */}
-      {merch.topProducts.length > 0 && (
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>Top Products</CardTitle>
-            <CardDescription>By total revenue (all time)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col">
-              {merch.topProducts.map((product, i) => {
-                const maxRevenue = merch.topProducts[0]?.revenue || 1;
-                const pct = Math.round((product.revenue / maxRevenue) * 100);
-                return (
-                  <div key={i} className={`flex items-center gap-3 py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
-                    <span className="text-xs font-medium text-muted-foreground w-5 text-right shrink-0">#{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-baseline gap-2">
-                        <span className="text-sm font-medium truncate">{toTitleCase(product.title)}</span>
-                        <span className="text-sm font-semibold tabular-nums shrink-0">{formatCurrency(product.revenue)}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{ width: `${pct}%`, backgroundColor: COLORS.merch }}
-                          />
+      {/* Top Products + Category Breakdown — side by side */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Top Products — expanded to 10 with rank + progress bar */}
+        {merch.topProducts.length > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Top Products</CardTitle>
+              <CardDescription>By total revenue (all time)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col">
+                {merch.topProducts.map((product, i) => {
+                  const maxRevenue = merch.topProducts[0]?.revenue || 1;
+                  const pct = Math.round((product.revenue / maxRevenue) * 100);
+                  return (
+                    <div key={i} className={`flex items-center gap-3 py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
+                      <span className="text-xs font-medium text-muted-foreground w-5 text-right shrink-0">#{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline gap-2">
+                          <span className="text-sm font-medium truncate">{toTitleCase(product.title)}</span>
+                          <span className="text-sm font-semibold tabular-nums shrink-0">{formatCurrency(product.revenue)}</span>
                         </div>
-                        <span className="text-xs text-muted-foreground shrink-0">{formatNumber(product.unitsSold)} units</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${pct}%`, backgroundColor: COLORS.merch }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">{formatNumber(product.unitsSold)} units</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </DashboardCard>
-      )}
+                  );
+                })}
+              </div>
+            </CardContent>
+          </DashboardCard>
+        )}
 
-      {/* Category Breakdown */}
-      {categories.length > 0 && totalCategoryRevenue > 0 && (
-        <DashboardCard>
+        {/* Category Breakdown */}
+        {categories.length > 0 && totalCategoryRevenue > 0 && (
+          <DashboardCard>
           <CardHeader>
             <CardTitle>Product Categories</CardTitle>
             <CardDescription>Revenue by product type</CardDescription>
@@ -4307,6 +4309,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           </CardContent>
         </DashboardCard>
       )}
+      </div>
 
       {/* Customer Breakdown: Members vs Non-Members */}
       {merch.customerBreakdown && (
@@ -4491,6 +4494,70 @@ function DashboardContent({ activeSection, data, refreshData }: {
               <h1 className="text-3xl font-semibold tracking-tight">Revenue Overview</h1>
             </div>
           </div>
+
+          {/* Current month revenue-to-date card */}
+          {(() => {
+            const nowD = new Date();
+            const curKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
+            const curEntry = (data.monthlyRevenue || []).find((m) => m.month === curKey);
+            const prevKey = (() => {
+              const d = new Date(nowD.getFullYear(), nowD.getMonth() - 1, 1);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            })();
+            const prevEntry = (data.monthlyRevenue || []).find((m) => m.month === prevKey);
+            const curGross = curEntry?.gross ?? data.currentMonthRevenue ?? 0;
+            const curNet = curEntry?.net ?? data.currentMonthRevenue ?? 0;
+            const dayOfMonth = nowD.getDate();
+            const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
+            const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
+            const prevGross = prevEntry?.gross ?? data.previousMonthRevenue ?? 0;
+            const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
+            const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+            return curGross > 0 ? (
+              <DashboardCard>
+                <CardHeader>
+                  <CardDescription>{monthLabel} — Revenue to Date</CardDescription>
+                  <CardTitle className="text-3xl font-semibold tabular-nums">{formatCurrency(curGross)}</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-2">
+                  <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Net: </span>
+                      <span className="font-medium tabular-nums">{formatCurrency(curNet)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Day {dayOfMonth} of {daysInMonth} · </span>
+                      <span className="font-medium tabular-nums">Pacing: {formatCurrency(pacedGross)}</span>
+                    </div>
+                    {vsLastPct !== null && (
+                      <div>
+                        <span className="text-muted-foreground">vs {formatShortMonth(prevKey)}: </span>
+                        <span className={`font-medium tabular-nums ${vsLastPct >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {vsLastPct > 0 ? "+" : ""}{vsLastPct}%
+                        </span>
+                        <span className="text-muted-foreground"> (paced)</span>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+                {/* Progress bar */}
+                <CardFooter>
+                  <div className="w-full">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(100, Math.round((dayOfMonth / daysInMonth) * 100))}%`,
+                          backgroundColor: SECTION_COLORS.revenue,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </CardFooter>
+              </DashboardCard>
+            ) : null;
+          })()}
 
           <RevenueSection data={data} trends={trends} />
 
