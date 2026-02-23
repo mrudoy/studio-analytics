@@ -198,6 +198,10 @@ function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function formatCurrency(n: number): string {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
@@ -3611,7 +3615,7 @@ function ChurnSection({ churnRates, weekly }: {
               >
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} />
                 <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
                 <ChartLegend content={<ChartLegendContent />} />
                 <Line type="monotone" dataKey="member" stroke="var(--color-member)" strokeWidth={2} dot={false} />
@@ -3642,23 +3646,43 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
   }));
 
   const merchChartConfig = {
-    gross: { label: "Gross Revenue", color: COLORS.merch },
+    gross: { label: "Gross Revenue", color: SECTION_COLORS["revenue-merch"] },
   } satisfies ChartConfig;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI row */}
-      <DashboardCard>
-        <CardContent>
-          <MetricRow
-            slots={[
-              { value: formatCurrency(merch.mtdRevenue), label: "MTD Revenue" },
-              { value: formatCurrency(merch.avgMonthlyRevenue), label: "Avg Monthly" },
-              { value: `${merch.repeatCustomerRate}`, valueSuffix: "%", label: "Repeat Rate" },
-            ]}
-          />
-        </CardContent>
-      </DashboardCard>
+      {/* KPI row — 3 separate cards (matches Drop-ins pattern) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>MTD Revenue</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.mtdRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Month to date
+          </CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Avg Monthly</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.avgMonthlyRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Completed months average
+          </CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Repeat Rate</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{merch.repeatCustomerRate}%</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            Returning customers
+          </CardFooter>
+        </DashboardCard>
+      </div>
 
       {/* Monthly Revenue bar chart */}
       {chartData.length > 0 && (
@@ -3673,29 +3697,26 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
           </CardHeader>
           <CardContent>
             <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
-              <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: isMobile ? 8 : 16, right: isMobile ? 8 : 16 }}>
-                <YAxis hide domain={[0, "auto"]} />
+              <BarChart
+                accessibilityLayer
+                data={chartData}
+                margin={{ top: 20 }}
+              >
+                <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="month"
                   tickLine={false}
+                  tickMargin={10}
                   axisLine={false}
-                  tickMargin={8}
-                  fontSize={isMobile ? 11 : 12}
                 />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent indicator="line" formatter={(v) => formatCurrency(v as number)} />}
-                />
-                <Bar dataKey="gross" fill={COLORS.merch} radius={[4, 4, 0, 0]}>
-                  {!isMobile && (
-                    <LabelList
-                      position="top"
-                      offset={8}
-                      className="fill-foreground"
-                      fontSize={11}
-                      formatter={(v: number) => formatCompactCurrency(v)}
-                    />
-                  )}
+                <Bar dataKey="gross" fill={SECTION_COLORS["revenue-merch"]} radius={8}>
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                    formatter={(v: number) => formatCompactCurrency(v)}
+                  />
                 </Bar>
               </BarChart>
             </ChartContainer>
@@ -3718,7 +3739,7 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
               {merch.topProducts.map((product, i) => (
                 <div key={i} className={`flex justify-between items-center py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{product.title}</span>
+                    <span className="text-sm font-medium">{toTitleCase(product.title)}</span>
                     <span className="text-xs text-muted-foreground">{formatNumber(product.unitsSold)} units sold</span>
                   </div>
                   <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.revenue)}</span>
@@ -3914,9 +3935,7 @@ function DashboardContent({ activeSection, data }: {
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
             <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.member }}>
-              <Recycle className="size-[18px]" style={{ color: COLORS.member }} />
               <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.member }}>In-Studio Plans</h3>
-              <span className="text-xs text-muted-foreground">Members + Sky3</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
@@ -3953,9 +3972,7 @@ function DashboardContent({ activeSection, data }: {
           {/* Digital block: Sky Ting TV */}
           <div>
             <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.tv }}>
-              <RecycleOff className="size-[18px]" style={{ color: COLORS.tv }} />
               <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.tv }}>Digital</h3>
-              <span className="text-xs text-muted-foreground">Sky Ting TV</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
