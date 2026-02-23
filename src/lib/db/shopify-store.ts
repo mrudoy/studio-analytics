@@ -369,6 +369,74 @@ export async function getShopifyStats(): Promise<{
   };
 }
 
+/** Annual merch revenue by year (for YoY card). */
+export async function getShopifyAnnualRevenue(): Promise<
+  Array<{ year: number; gross: number; net: number; orderCount: number; avgOrderValue: number }>
+> {
+  const pool = getPool();
+  const res = await pool.query(`
+    SELECT
+      EXTRACT(YEAR FROM created_at)::int AS year,
+      SUM(total_price) AS gross,
+      SUM(subtotal_price) AS net,
+      COUNT(*) AS order_count,
+      CASE WHEN COUNT(*) > 0 THEN ROUND(SUM(total_price) / COUNT(*), 2) ELSE 0 END AS avg_order_value
+    FROM shopify_orders
+    WHERE financial_status NOT IN ('voided', 'refunded')
+      AND canceled_at IS NULL
+    GROUP BY EXTRACT(YEAR FROM created_at)
+    ORDER BY year
+  `);
+
+  return res.rows.map((r: { year: number; gross: string; net: string; order_count: string; avg_order_value: string }) => ({
+    year: r.year,
+    gross: parseFloat(r.gross) || 0,
+    net: parseFloat(r.net) || 0,
+    orderCount: parseInt(r.order_count) || 0,
+    avgOrderValue: parseFloat(r.avg_order_value) || 0,
+  }));
+}
+
+/** Revenue by product category (joined with shopify_products via product_id in line_items). */
+export async function getShopifyCategoryBreakdown(): Promise<
+  Array<{ category: string; revenue: number; units: number; orders: number }>
+> {
+  const pool = getPool();
+  const res = await pool.query(`
+    WITH line_data AS (
+      SELECT
+        so.id AS order_id,
+        li->>'title' AS li_title,
+        (li->>'price')::numeric * (li->>'quantity')::int AS li_revenue,
+        (li->>'quantity')::int AS li_qty,
+        (li->>'product_id')::bigint AS product_id
+      FROM shopify_orders so,
+           jsonb_array_elements(so.line_items) AS li
+      WHERE so.financial_status NOT IN ('voided', 'refunded')
+        AND so.canceled_at IS NULL
+    )
+    SELECT
+      CASE
+        WHEN sp.product_type IS NOT NULL AND sp.product_type <> '' THEN sp.product_type
+        ELSE 'Other'
+      END AS category,
+      SUM(ld.li_revenue) AS revenue,
+      SUM(ld.li_qty) AS units,
+      COUNT(DISTINCT ld.order_id) AS orders
+    FROM line_data ld
+    LEFT JOIN shopify_products sp ON sp.id = ld.product_id
+    GROUP BY category
+    ORDER BY revenue DESC
+  `);
+
+  return res.rows.map((r: { category: string; revenue: string; units: string; orders: string }) => ({
+    category: r.category,
+    revenue: parseFloat(r.revenue) || 0,
+    units: parseInt(r.units) || 0,
+    orders: parseInt(r.orders) || 0,
+  }));
+}
+
 /**
  * Cross-reference Shopify merch orders with Union.fit auto-renew subscriptions.
  * Matches on LOWER(email). A customer is "active subscriber" if they had ANY

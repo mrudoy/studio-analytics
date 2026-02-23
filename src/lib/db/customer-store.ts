@@ -218,7 +218,9 @@ export interface FullCustomerRow {
   livestreamRedeemed: number;
   inpersonRedeemed: number;
   replayRedeemed: number;
+  twitter?: string;
   instagram?: string;
+  facebook?: string;
   notes?: string;
   birthday?: string;
   howHeard?: string;
@@ -285,9 +287,10 @@ export async function saveFullCustomers(rows: FullCustomerRow[]): Promise<void> 
           current_paid_pass, current_paid_auto_renew, current_payment_plan,
           livestream_registrations, inperson_registrations, replay_registrations,
           livestream_redeemed, inperson_redeemed, replay_redeemed,
-          instagram, notes, birthday, how_heard, goals, neighborhood,
-          inspiration, practice_frequency, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+          twitter, instagram, facebook, notes, birthday,
+          how_heard, goals, neighborhood, inspiration, practice_frequency,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
         ON CONFLICT (email) DO UPDATE SET
           union_id = EXCLUDED.union_id,
           first_name = EXCLUDED.first_name,
@@ -308,7 +311,9 @@ export async function saveFullCustomers(rows: FullCustomerRow[]): Promise<void> 
           livestream_redeemed = EXCLUDED.livestream_redeemed,
           inperson_redeemed = EXCLUDED.inperson_redeemed,
           replay_redeemed = EXCLUDED.replay_redeemed,
+          twitter = EXCLUDED.twitter,
           instagram = EXCLUDED.instagram,
+          facebook = EXCLUDED.facebook,
           notes = EXCLUDED.notes,
           birthday = EXCLUDED.birthday,
           how_heard = EXCLUDED.how_heard,
@@ -338,7 +343,9 @@ export async function saveFullCustomers(rows: FullCustomerRow[]): Promise<void> 
           row.livestreamRedeemed,
           row.inpersonRedeemed,
           row.replayRedeemed,
+          row.twitter || null,
           row.instagram || null,
+          row.facebook || null,
           row.notes || null,
           row.birthday || null,
           row.howHeard || null,

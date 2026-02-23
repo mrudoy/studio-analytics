@@ -95,14 +95,20 @@ export const RevenueCategorySchema = z.object({
  */
 export const FullRegistrationSchema = z.object({
   eventName: z.string().default(""),
+  eventId: z.string().default(""),
+  performanceId: z.string().default(""),
   performanceStartsAt: z.string().default(""),
   locationName: z.string().default(""),
   videoName: z.string().default(""),
+  videoId: z.string().default(""),
   teacherName: z.string().default(""),
   firstName: z.string().default(""),
   lastName: z.string().default(""),
   email: z.string().default(""),
+  phoneNumber: z.string().default(""),
+  role: z.string().default(""),
   registeredAt: z.string().default(""),
+  canceledAt: z.string().default(""),
   attendedAt: z.string().default(""),
   registrationType: z.string().default(""),
   state: z.string().default(""),
@@ -115,6 +121,7 @@ export const FullRegistrationSchema = z.object({
       return val.trim().toLowerCase() === "true";
     })
     .default(false),
+  revenueState: z.string().default(""),
   revenue: money,
 });
 

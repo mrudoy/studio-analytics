@@ -322,17 +322,26 @@ export async function runPipelineFromFiles(
         progress("Saving registrations to database", 74);
         const regRows: RegistrationRow[] = fullRegsForDb.data.map((r) => ({
           eventName: r.eventName,
-          performanceStartsAt: "",
+          eventId: r.eventId || undefined,
+          performanceId: r.performanceId || undefined,
+          performanceStartsAt: r.performanceStartsAt || "",
           locationName: r.locationName,
+          videoName: r.videoName || undefined,
+          videoId: r.videoId || undefined,
           teacherName: r.teacherName,
           firstName: r.firstName,
           lastName: r.lastName,
           email: r.email,
+          phone: r.phoneNumber || undefined,
+          role: r.role || undefined,
+          registeredAt: r.registeredAt || undefined,
+          canceledAt: r.canceledAt || undefined,
           attendedAt: r.attendedAt,
           registrationType: r.registrationType,
           state: r.state,
           pass: r.pass,
           subscription: String(r.subscription),
+          revenueState: r.revenueState || undefined,
           revenue: r.revenue,
         }));
         await saveRegistrations(regRows);

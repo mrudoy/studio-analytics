@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { saveUploadedData, saveRevenueCategories } from "@/lib/db/revenue-store";
 import { saveAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
 import { saveFirstVisits, saveRegistrations, type RegistrationRow } from "@/lib/db/registration-store";
+import { saveFullCustomers, type FullCustomerRow } from "@/lib/db/customer-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
-import { RevenueCategorySchema, AutoRenewSchema, FullRegistrationSchema } from "@/lib/parser/schemas";
+import { RevenueCategorySchema, AutoRenewSchema, FullRegistrationSchema, CustomerExportSchema } from "@/lib/parser/schemas";
 import { z } from "zod";
 import { writeFileSync } from "fs";
 import { join } from "path";
@@ -100,19 +101,26 @@ export async function POST(request: Request) {
           .filter((r) => r.email && r.attendedAt) // skip rows without email or attended date
           .map((r) => ({
             eventName: r.eventName,
+            eventId: r.eventId || undefined,
+            performanceId: r.performanceId || undefined,
             performanceStartsAt: r.performanceStartsAt || r.attendedAt,
             locationName: r.locationName,
             videoName: r.videoName || undefined,
+            videoId: r.videoId || undefined,
             teacherName: r.teacherName,
             firstName: r.firstName,
             lastName: r.lastName,
             email: r.email,
+            phone: r.phoneNumber || undefined,
+            role: r.role || undefined,
             registeredAt: r.registeredAt || undefined,
+            canceledAt: r.canceledAt || undefined,
             attendedAt: r.attendedAt,
             registrationType: r.registrationType,
             state: r.state,
             pass: r.pass,
             subscription: String(r.subscription),
+            revenueState: r.revenueState || undefined,
             revenue: r.revenue,
           }));
         if (dataType === "first_visits") {
@@ -122,6 +130,52 @@ export async function POST(request: Request) {
         }
         parsedCount = rows.length;
         console.log(`[api/upload] Saved ${rows.length} ${dataType} from ${filename}`);
+      }
+      warnings.push(...result.warnings);
+    }
+
+    // ── Customer export CSV upload ─────────────────────────────
+    if (dataType === "customer_export") {
+      const result = parseCSV<z.infer<typeof CustomerExportSchema>>(savedPath, CustomerExportSchema);
+      if (result.data.length > 0) {
+        const rows: FullCustomerRow[] = result.data
+          .filter((r) => r.email)
+          .map((r) => ({
+            unionId: r.id,
+            firstName: r.firstName,
+            lastName: r.lastName,
+            email: r.email,
+            phone: r.phone || undefined,
+            role: r.role || undefined,
+            totalSpent: r.totalSpent,
+            ltv: r.ltv,
+            orderCount: r.orders,
+            currentFreePass: r.currentFreeNonAutoRenewPass,
+            currentFreeAutoRenew: r.currentFreeAutoRenewPass,
+            currentPaidPass: r.currentPaidNonAutoRenewPass,
+            currentPaidAutoRenew: r.currentPaidAutoRenewPass,
+            currentPaymentPlan: r.currentPaymentPlan,
+            livestreamRegistrations: r.livestreamRegistrations,
+            inpersonRegistrations: r.inpersonRegistrations,
+            replayRegistrations: r.replayRegistrations,
+            livestreamRedeemed: r.livestreamRegistrationsRedeemed,
+            inpersonRedeemed: r.inpersonRegistrationsRedeemed,
+            replayRedeemed: r.replayRegistrationsRedeemed,
+            twitter: r.twitter || undefined,
+            instagram: r.instagram || undefined,
+            facebook: r.facebook || undefined,
+            notes: r.notes || undefined,
+            birthday: r.birthday || undefined,
+            howHeard: r.howDidYouHearAboutUs || undefined,
+            goals: r.whatAreYourGoalsForJoiningSkyTing || undefined,
+            neighborhood: r.whatNeighborhoodDoYouLiveIn || undefined,
+            inspiration: r.whatInspiredYouToJoinSkyTing || undefined,
+            practiceFrequency: r.howManyTimesPerWeekDoYouWantToPractice || undefined,
+            createdAt: r.created,
+          }));
+        await saveFullCustomers(rows);
+        parsedCount = rows.length;
+        console.log(`[api/upload] Saved ${rows.length} customers from ${filename}`);
       }
       warnings.push(...result.warnings);
     }

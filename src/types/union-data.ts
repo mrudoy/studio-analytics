@@ -61,16 +61,26 @@ export type AutoRenewCategory = "MEMBER" | "SKY3" | "SKY_TING_TV" | "UNKNOWN";
 
 export interface FullRegistration {
   eventName: string;
+  eventId?: string;
+  performanceId?: string;
+  performanceStartsAt?: string;
   locationName: string;
+  videoName?: string;
+  videoId?: string;
   teacherName: string;
   firstName: string;
   lastName: string;
   email: string;
+  phoneNumber?: string;
+  role?: string;
+  registeredAt?: string;
+  canceledAt?: string;
   attendedAt: string;
   registrationType: string;
   state: string;
   pass: string;
   subscription: boolean;  // transformed from "true"/"false" string
+  revenueState?: string;
   revenue: number;
 }
 

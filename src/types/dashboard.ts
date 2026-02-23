@@ -24,6 +24,21 @@ export interface MerchCustomerBreakdown {
   total: { orders: number; revenue: number; customers: number };
 }
 
+export interface ShopifyAnnualRevenue {
+  year: number;
+  gross: number;
+  net: number;
+  orderCount: number;
+  avgOrderValue: number;
+}
+
+export interface ShopifyCategoryBreakdown {
+  category: string;
+  revenue: number;
+  units: number;
+  orders: number;
+}
+
 export interface ShopifyMerchData {
   mtdRevenue: number;
   monthlyRevenue: Array<{ month: string; gross: number; net: number; orderCount: number }>;
@@ -33,6 +48,8 @@ export interface ShopifyMerchData {
   repeatCustomerCount: number;
   totalCustomersWithOrders: number;
   customerBreakdown?: MerchCustomerBreakdown | null;
+  annualRevenue: ShopifyAnnualRevenue[];
+  categoryBreakdown: ShopifyCategoryBreakdown[];
 }
 
 export interface DashboardStats {

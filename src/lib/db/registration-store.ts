@@ -5,19 +5,26 @@ import { isDropInOrIntro } from "../analytics/categories";
 
 export interface RegistrationRow {
   eventName: string;
+  eventId?: string;
+  performanceId?: string;
   performanceStartsAt: string;
   locationName: string;
   videoName?: string;
+  videoId?: string;
   teacherName: string;
   firstName: string;
   lastName: string;
   email: string;
+  phone?: string;
+  role?: string;
   registeredAt?: string;
+  canceledAt?: string;
   attendedAt: string;
   registrationType: string;
   state: string;
   pass: string;
   subscription: string; // "true" or "false"
+  revenueState?: string;
   revenue: number;
 }
 
@@ -68,16 +75,31 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
     for (const r of rows) {
       await client.query(
         `INSERT INTO registrations (
-          event_name, performance_starts_at, location_name, video_name, teacher_name,
-          first_name, last_name, email, registered_at, attended_at,
-          registration_type, state, pass, subscription, revenue
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        ON CONFLICT (email, attended_at) DO NOTHING`,
+          event_name, event_id, performance_id, performance_starts_at,
+          location_name, video_name, video_id, teacher_name,
+          first_name, last_name, email, phone, role,
+          registered_at, canceled_at, attended_at,
+          registration_type, state, pass, subscription, revenue_state, revenue
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        ON CONFLICT (email, attended_at) DO UPDATE SET
+          event_name = COALESCE(EXCLUDED.event_name, registrations.event_name),
+          event_id = COALESCE(EXCLUDED.event_id, registrations.event_id),
+          performance_id = COALESCE(EXCLUDED.performance_id, registrations.performance_id),
+          performance_starts_at = COALESCE(EXCLUDED.performance_starts_at, registrations.performance_starts_at),
+          location_name = COALESCE(EXCLUDED.location_name, registrations.location_name),
+          video_name = COALESCE(EXCLUDED.video_name, registrations.video_name),
+          video_id = COALESCE(EXCLUDED.video_id, registrations.video_id),
+          phone = COALESCE(EXCLUDED.phone, registrations.phone),
+          role = COALESCE(EXCLUDED.role, registrations.role),
+          canceled_at = COALESCE(EXCLUDED.canceled_at, registrations.canceled_at),
+          revenue_state = COALESCE(EXCLUDED.revenue_state, registrations.revenue_state),
+          revenue = COALESCE(EXCLUDED.revenue, registrations.revenue)`,
         [
-          r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
-          r.teacherName, r.firstName, r.lastName, r.email,
-          r.registeredAt || null, r.attendedAt,
-          r.registrationType, r.state, r.pass, r.subscription,
+          r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt,
+          r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
+          r.firstName, r.lastName, r.email, r.phone || null, r.role || null,
+          r.registeredAt || null, r.canceledAt || null, r.attendedAt,
+          r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
           r.revenue,
         ]
       );

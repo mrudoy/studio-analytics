@@ -10,6 +10,8 @@ import {
   getShopifyTopProducts,
   getShopifyRepeatCustomerRate,
   getShopifyCustomerBreakdown,
+  getShopifyAnnualRevenue,
+  getShopifyCategoryBreakdown,
 } from "@/lib/db/shopify-store";
 import { getSpaStats } from "@/lib/db/spa-store";
 import type { RevenueCategory } from "@/types/union-data";
@@ -139,13 +141,15 @@ export async function GET() {
     let shopify: ShopifyStats | null = null;
     let shopifyMerch: ShopifyMerchData | null = null;
     try {
-      const [shopifyStats, mtd, revSummary, topProducts, repeatData, customerBreakdown] = await Promise.all([
+      const [shopifyStats, mtd, revSummary, topProducts, repeatData, customerBreakdown, annualRevenue, categoryBreakdown] = await Promise.all([
         getShopifyStats(),
         getShopifyMTDRevenue(),
         getShopifyRevenueSummary(),
-        getShopifyTopProducts(3),
+        getShopifyTopProducts(10),
         getShopifyRepeatCustomerRate(),
         getShopifyCustomerBreakdown(),
+        getShopifyAnnualRevenue(),
+        getShopifyCategoryBreakdown(),
       ]);
 
       shopify = shopifyStats;
@@ -170,6 +174,8 @@ export async function GET() {
           repeatCustomerCount: repeatData.repeatCount,
           totalCustomersWithOrders: repeatData.totalWithOrders,
           customerBreakdown: customerBreakdown.total.orders > 0 ? customerBreakdown : null,
+          annualRevenue,
+          categoryBreakdown,
         };
 
         // ── Revenue deduplication ──────────────────────────────

@@ -3980,7 +3980,8 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
 
   // Completed months only (exclude current)
   const nowDate = new Date();
-  const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+  const currentYear = nowDate.getFullYear();
+  const currentMonthKey = `${currentYear}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const completedMonths = merch.monthlyRevenue.filter((m) => m.month < currentMonthKey);
   const chartData = completedMonths.slice(-6).map((m) => ({
     month: formatShortMonth(m.month),
@@ -3988,14 +3989,49 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
     orders: m.orderCount,
   }));
 
+  // AOV trend — last 12 completed months
+  const aovData = completedMonths.slice(-12).map((m) => ({
+    month: formatShortMonth(m.month),
+    aov: m.orderCount > 0 ? Math.round(m.gross / m.orderCount) : 0,
+  }));
+
+  // Annual revenue YoY
+  const annualData = merch.annualRevenue || [];
+  const priorYear = currentYear - 1;
+  const priorYearData = annualData.find((a) => a.year === priorYear);
+  const olderYearData = annualData.find((a) => a.year === priorYear - 1);
+  const yoyDelta = olderYearData && olderYearData.gross > 0 && priorYearData
+    ? ((priorYearData.gross - olderYearData.gross) / olderYearData.gross * 100)
+    : null;
+
+  // Category breakdown
+  const categories = merch.categoryBreakdown || [];
+  const totalCategoryRevenue = categories.reduce((s, c) => s + c.revenue, 0);
+
   const merchChartConfig = {
     gross: { label: "Gross Revenue", color: SECTION_COLORS["revenue-merch"] },
   } satisfies ChartConfig;
 
+  const aovChartConfig = {
+    aov: { label: "Avg Order Value", color: COLORS.merch },
+  } satisfies ChartConfig;
+
+  const annualChartConfig = {
+    gross: { label: "Gross Revenue", color: COLORS.merch },
+  } satisfies ChartConfig;
+
+  // Bar chart data for annual revenue (complete years only)
+  const annualBarData = annualData
+    .filter((a) => a.year < currentYear)
+    .map((a) => ({ year: String(a.year), gross: a.gross }));
+
+  // Category colors
+  const categoryColors = ["#B8860B", "#4A7C59", "#5B7FA5", "#8B6FA5", "#8F7A5E", "#3A8A8A"];
+
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI row — 3 separate cards (matches Drop-ins pattern) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* KPI row — 4 cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <DashboardCard>
           <CardHeader>
             <CardDescription>MTD Revenue</CardDescription>
@@ -4006,15 +4042,31 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           </CardFooter>
         </DashboardCard>
 
-        <DashboardCard>
-          <CardHeader>
-            <CardDescription>Avg Monthly</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.avgMonthlyRevenue)}</CardTitle>
-          </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">
-            Completed months average
-          </CardFooter>
-        </DashboardCard>
+        {priorYearData && (
+          <DashboardCard>
+            <CardHeader>
+              <CardDescription>{priorYear} Revenue</CardDescription>
+              <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(priorYearData.gross)}</CardTitle>
+            </CardHeader>
+            <CardFooter className="text-sm text-muted-foreground">
+              {formatNumber(priorYearData.orderCount)} orders
+            </CardFooter>
+          </DashboardCard>
+        )}
+
+        {yoyDelta !== null && (
+          <DashboardCard>
+            <CardHeader>
+              <CardDescription>YoY Change</CardDescription>
+              <CardTitle className={`text-2xl font-semibold tabular-nums ${yoyDelta >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}%
+              </CardTitle>
+            </CardHeader>
+            <CardFooter className="text-sm text-muted-foreground">
+              {priorYear - 1} → {priorYear}
+            </CardFooter>
+          </DashboardCard>
+        )}
 
         <DashboardCard>
           <CardHeader>
@@ -4027,7 +4079,49 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
         </DashboardCard>
       </div>
 
-      {/* Monthly Revenue chart + Top Products side by side */}
+      {/* Annual Merch Revenue card */}
+      {annualBarData.length >= 2 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Annual Merch Revenue</CardTitle>
+            {yoyDelta !== null && (
+              <CardDescription>
+                {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% year over year
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={annualChartConfig} className="h-[220px] w-full">
+              <BarChart accessibilityLayer data={annualBarData} margin={{ top: 32 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="year" tickLine={false} tickMargin={10} axisLine={false} />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
+                />
+                <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
+                  {!isMobile && (
+                    <LabelList
+                      position="top"
+                      offset={12}
+                      className="fill-foreground"
+                      fontSize={12}
+                      formatter={(v: number) => formatCompactCurrency(v)}
+                    />
+                  )}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+          {priorYearData && (
+            <CardFooter className="text-sm text-muted-foreground">
+              {priorYear} AOV: {formatCurrency(priorYearData.avgOrderValue)}
+            </CardFooter>
+          )}
+        </DashboardCard>
+      )}
+
+      {/* Monthly Revenue chart + AOV trend side by side */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {chartData.length > 0 && (
           <DashboardCard>
@@ -4071,28 +4165,148 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           </DashboardCard>
         )}
 
-        {merch.topProducts.length > 0 && (
+        {aovData.length > 0 && (
           <DashboardCard>
             <CardHeader>
-              <CardTitle>Top Products</CardTitle>
-              <CardDescription>By total revenue (all time)</CardDescription>
+              <CardTitle>Average Order Value</CardTitle>
+              {aovData.length > 0 && (
+                <CardDescription>
+                  Latest: {formatCurrency(aovData[aovData.length - 1].aov)}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col">
-                {merch.topProducts.map((product, i) => (
-                  <div key={i} className={`flex justify-between items-center py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">{toTitleCase(product.title)}</span>
-                      <span className="text-xs text-muted-foreground">{formatNumber(product.unitsSold)} units sold</span>
-                    </div>
-                    <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.revenue)}</span>
-                  </div>
-                ))}
-              </div>
+              <ChartContainer config={aovChartConfig} className="h-[220px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={aovData}
+                  margin={{ top: 20, right: 10, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="aov"
+                    stroke="var(--color-aov)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ChartContainer>
             </CardContent>
+            <CardFooter className="text-sm text-muted-foreground">
+              Monthly AOV trend (last {aovData.length} months)
+            </CardFooter>
           </DashboardCard>
         )}
       </div>
+
+      {/* Top Products — expanded to 10 with rank + progress bar */}
+      {merch.topProducts.length > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Top Products</CardTitle>
+            <CardDescription>By total revenue (all time)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col">
+              {merch.topProducts.map((product, i) => {
+                const maxRevenue = merch.topProducts[0]?.revenue || 1;
+                const pct = Math.round((product.revenue / maxRevenue) * 100);
+                return (
+                  <div key={i} className={`flex items-center gap-3 py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
+                    <span className="text-xs font-medium text-muted-foreground w-5 text-right shrink-0">#{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-baseline gap-2">
+                        <span className="text-sm font-medium truncate">{toTitleCase(product.title)}</span>
+                        <span className="text-sm font-semibold tabular-nums shrink-0">{formatCurrency(product.revenue)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: COLORS.merch }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">{formatNumber(product.unitsSold)} units</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </DashboardCard>
+      )}
+
+      {/* Category Breakdown */}
+      {categories.length > 0 && totalCategoryRevenue > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Product Categories</CardTitle>
+            <CardDescription>Revenue by product type</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              {/* Stacked bar */}
+              <div className="flex h-3 rounded-full overflow-hidden">
+                {categories.map((cat, i) => {
+                  const pct = (cat.revenue / totalCategoryRevenue) * 100;
+                  if (pct < 1) return null;
+                  return (
+                    <div
+                      key={i}
+                      className="h-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: categoryColors[i % categoryColors.length],
+                        opacity: i === 0 ? 1 : 0.7 - (i * 0.1),
+                      }}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Detail rows */}
+              <div className="flex flex-col">
+                {categories.map((cat, i) => {
+                  const pct = totalCategoryRevenue > 0 ? Math.round((cat.revenue / totalCategoryRevenue) * 100) : 0;
+                  return (
+                    <div key={i} className={`flex items-center justify-between py-2.5 ${i < categories.length - 1 ? "border-b border-border" : ""}`}>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="size-3 rounded-full shrink-0"
+                          style={{ backgroundColor: categoryColors[i % categoryColors.length], opacity: i === 0 ? 1 : 0.7 - (i * 0.1) }}
+                        />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium">{toTitleCase(cat.category)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatNumber(cat.units)} units · {formatNumber(cat.orders)} orders
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-sm font-semibold tabular-nums">{formatCurrency(cat.revenue)}</span>
+                        <span className="text-xs text-muted-foreground">{pct}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </DashboardCard>
+      )}
 
       {/* Customer Breakdown: Members vs Non-Members */}
       {merch.customerBreakdown && (
