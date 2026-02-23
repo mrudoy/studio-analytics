@@ -231,3 +231,33 @@ export function BulbIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Lucide: triangle-alert — insight severity critical/warning */
+export function AlertTriangleIcon(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4m0 4h.01" />
+    </svg>
+  );
+}
+
+/** Lucide: info — insight severity info */
+export function InfoIcon(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4m0-4h.01" />
+    </svg>
+  );
+}
+
+/** Lucide: circle-check — insight severity positive */
+export function CircleCheckIcon(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}

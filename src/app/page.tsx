@@ -23,6 +23,9 @@ import {
   DeviceTv,
   BuildingIcon,
   BulbIcon,
+  AlertTriangleIcon,
+  InfoIcon,
+  CircleCheckIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -3790,11 +3793,16 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
 //  INSIGHTS SECTION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const INSIGHT_STYLES: Record<string, { accent: string; bg: string; badge: string; icon: string }> = {
-  critical: { accent: "#EF4444", bg: "bg-red-50/80 dark:bg-red-950/20", badge: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300", icon: "text-red-500" },
-  warning:  { accent: "#F59E0B", bg: "bg-amber-50/80 dark:bg-amber-950/20", badge: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300", icon: "text-amber-500" },
-  info:     { accent: "#3B82F6", bg: "bg-blue-50/80 dark:bg-blue-950/20", badge: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300", icon: "text-blue-500" },
-  positive: { accent: "#10B981", bg: "bg-emerald-50/80 dark:bg-emerald-950/20", badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300", icon: "text-emerald-500" },
+const INSIGHT_SEVERITY: Record<string, {
+  icon: typeof AlertTriangleIcon;
+  color: string;           // text color for the icon
+  badgeVariant: "destructive" | "secondary" | "outline" | "default";
+  badgeClass?: string;     // override badge color
+}> = {
+  critical: { icon: AlertTriangleIcon, color: "text-red-500",     badgeVariant: "destructive" },
+  warning:  { icon: AlertTriangleIcon, color: "text-amber-500",   badgeVariant: "secondary", badgeClass: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
+  info:     { icon: InfoIcon,          color: "text-blue-500",    badgeVariant: "secondary" },
+  positive: { icon: CircleCheckIcon,   color: "text-emerald-500", badgeVariant: "secondary", badgeClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -3803,17 +3811,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   revenue: "Revenue",
   growth: "Growth",
 };
-
-/** Extract the leading number from the headline for a big metric display */
-function extractMetricFromHeadline(headline: string): { metric: string; rest: string } | null {
-  // Match patterns like "1,731 regulars...", "68% of SKY3...", "39% of new...", "9% above..."
-  const m = headline.match(/^([\d,]+%?)\s+(.+)$/);
-  if (m) return { metric: m[1], rest: m[2] };
-  // Match "This month's revenue is X% above/below"
-  const m2 = headline.match(/is (\d+%)\s+(above|below)\s+(.+)$/);
-  if (m2) return { metric: m2[1], rest: `${m2[2]} ${m2[3]}` };
-  return null;
-}
 
 function formatRelativeTimeShort(isoDate: string): string {
   const ms = Date.now() - new Date(isoDate).getTime();
@@ -3827,47 +3824,33 @@ function formatRelativeTimeShort(isoDate: string): string {
 }
 
 function InsightCard({ insight }: { insight: InsightRow }) {
-  const style = INSIGHT_STYLES[insight.severity] || INSIGHT_STYLES.info;
-  const extracted = extractMetricFromHeadline(insight.headline);
+  const sev = INSIGHT_SEVERITY[insight.severity] || INSIGHT_SEVERITY.info;
+  const SevIcon = sev.icon;
 
   return (
-    <div
-      className={`relative rounded-xl border ${style.bg} p-5 overflow-hidden`}
-      style={{ borderLeftWidth: 5, borderLeftColor: style.accent }}
-    >
-      {/* Category + timestamp row */}
-      <div className="flex items-center justify-between mb-3">
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${style.badge}`}>
-          {CATEGORY_LABELS[insight.category] || insight.category}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {formatRelativeTimeShort(insight.detectedAt)}
-        </span>
-      </div>
-
-      {/* Big metric + headline */}
-      {extracted ? (
-        <div className="mb-3">
-          <div className="text-3xl font-bold tracking-tight" style={{ color: style.accent }}>
-            {extracted.metric}
-          </div>
-          <p className="text-base font-medium text-foreground mt-1 leading-snug">
-            {extracted.rest}
-          </p>
+    <DashboardCard>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <SevIcon size={18} className={sev.color} />
+          <CardTitle className="text-sm">{insight.headline}</CardTitle>
         </div>
-      ) : (
-        <p className="text-base font-medium text-foreground mb-3 leading-snug">
-          {insight.headline}
-        </p>
-      )}
-
-      {/* Explanation */}
+        <CardDescription className="flex items-center gap-2 mt-1">
+          <Badge variant={sev.badgeVariant} className={sev.badgeClass}>
+            {CATEGORY_LABELS[insight.category] || insight.category}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            {formatRelativeTimeShort(insight.detectedAt)}
+          </span>
+        </CardDescription>
+      </CardHeader>
       {insight.explanation && (
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          {insight.explanation}
-        </p>
+        <CardContent>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {insight.explanation}
+          </p>
+        </CardContent>
       )}
-    </div>
+    </DashboardCard>
   );
 }
 
