@@ -55,7 +55,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
@@ -2352,10 +2352,39 @@ function NewCustomerChartCard({ volume, cohorts }: {
   const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total3Week }));
 
   return (
-    <DashboardCard matchHeight>
+    <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <DashboardCard matchHeight className="@container/card">
       <CardHeader>
         <CardTitle>Weekly New Customers</CardTitle>
-        <CardDescription>Complete weeks and cohort breakdown</CardDescription>
+        <CardDescription>
+          <span className="hidden @[540px]/card:block">Complete weeks and cohort breakdown</span>
+          <span className="@[540px]/card:hidden">Weekly data</span>
+        </CardDescription>
+        <CardAction>
+          <ToggleGroup
+            variant="outline"
+            type="single"
+            value={activeTab}
+            onValueChange={(v) => { if (v) setActiveTab(v); }}
+            className="hidden @[540px]/card:flex"
+          >
+            <ToggleGroupItem value="complete">Complete ({displayComplete.length})</ToggleGroupItem>
+            {incompleteCohorts.length > 0 && (
+              <ToggleGroupItem value="inProgress">In progress ({incompleteCohorts.length})</ToggleGroupItem>
+            )}
+          </ToggleGroup>
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="complete" className="rounded-lg">Complete ({displayComplete.length})</SelectItem>
+              {incompleteCohorts.length > 0 && (
+                <SelectItem value="inProgress" className="rounded-lg">In progress ({incompleteCohorts.length})</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </CardAction>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -2414,14 +2443,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
             <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList variant="line" className="w-full justify-start">
-            <TabsTrigger value="complete">Complete ({displayComplete.length})</TabsTrigger>
-            {incompleteCohorts.length > 0 && (
-              <TabsTrigger value="inProgress">In progress ({incompleteCohorts.length})</TabsTrigger>
-            )}
-          </TabsList>
 
       <TabsContent value="complete">
       {/* Complete table */}
@@ -2546,9 +2567,9 @@ function NewCustomerChartCard({ volume, cohorts }: {
         </div>
       )}
       </TabsContent>
-      </Tabs>
       </CardContent>
     </DashboardCard>
+    </Tabs>
   );
 }
 
@@ -3178,22 +3199,49 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   }));
 
   return (
-    <DashboardCard>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Weekly Non Auto-Renew Customers</CardTitle>
-          <CardDescription>Complete weeks and customer breakdown</CardDescription>
+    <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <DashboardCard className="@container/card">
+      <CardHeader>
+        <div className="flex flex-row items-center justify-between w-full">
+          <div>
+            <CardTitle>Weekly Non Auto-Renew Customers</CardTitle>
+            <CardDescription>
+              <span className="hidden @[540px]/card:block">Complete weeks and customer breakdown</span>
+              <span className="@[540px]/card:hidden">Weekly data</span>
+            </CardDescription>
+          </div>
+          <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
+            <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {sliceOptions.map((o) => (
+                <SelectItem key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
-          <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {sliceOptions.map((o) => (
-              <SelectItem key={o.key} value={o.key} disabled={!pool.slices[o.key]}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CardAction>
+          <ToggleGroup
+            variant="outline"
+            type="single"
+            value={activeTab}
+            onValueChange={(v) => { if (v) setActiveTab(v); }}
+            className="hidden @[540px]/card:flex"
+          >
+            <ToggleGroupItem value="complete">Complete weeks ({displayWeeks.length})</ToggleGroupItem>
+            {wtd && <ToggleGroupItem value="wtd">This week (WTD)</ToggleGroupItem>}
+          </ToggleGroup>
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="complete" className="rounded-lg">Complete weeks ({displayWeeks.length})</SelectItem>
+              {wtd && <SelectItem value="wtd" className="rounded-lg">This week (WTD)</SelectItem>}
+            </SelectContent>
+          </Select>
+        </CardAction>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -3253,13 +3301,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
           </RAreaChart>
         </ChartContainer>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList variant="line" className="w-full justify-start">
-            <TabsTrigger value="complete">Complete weeks</TabsTrigger>
-            {wtd && <TabsTrigger value="wtd">Week to date</TabsTrigger>}
-          </TabsList>
-
-          <TabsContent value="complete">
+        <TabsContent value="complete">
             {displayWeeks.length > 0 && (
               <div className="w-full min-w-0 mt-4">
                 <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
@@ -3340,9 +3382,9 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
               </div>
             )}
           </TabsContent>
-        </Tabs>
       </CardContent>
     </DashboardCard>
+    </Tabs>
   );
 }
 

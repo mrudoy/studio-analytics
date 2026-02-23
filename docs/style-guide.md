@@ -157,6 +157,56 @@ Used for sub-modules (Drop-Ins, Intro Week, etc.) inside a section.
 dot (2.5x2.5 rounded-full) + text-base font-semibold + optional summary pill
 ```
 
+### Card Tab Switching (ToggleGroup + Select)
+
+When a card has multiple views (e.g. "Complete weeks" vs "This week (WTD)"), use this canonical pattern. **Never** use `TabsList` / `TabsTrigger` with `variant="line"` — always use `ToggleGroup variant="outline"` with a `Select` mobile fallback.
+
+```tsx
+<Tabs value={activeTab} onValueChange={setActiveTab}>
+  <DashboardCard className="@container/card">
+    <CardHeader>
+      <CardTitle>Card Title</CardTitle>
+      <CardDescription>
+        <span className="hidden @[540px]/card:block">Full description</span>
+        <span className="@[540px]/card:hidden">Short description</span>
+      </CardDescription>
+      <CardAction>
+        <ToggleGroup
+          variant="outline"
+          type="single"
+          value={activeTab}
+          onValueChange={(v) => { if (v) setActiveTab(v); }}
+          className="hidden @[540px]/card:flex"
+        >
+          <ToggleGroupItem value="complete">Complete weeks ({count})</ToggleGroupItem>
+          {wtd && <ToggleGroupItem value="wtd">This week (WTD)</ToggleGroupItem>}
+        </ToggleGroup>
+        <Select value={activeTab} onValueChange={setActiveTab}>
+          <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl">
+            <SelectItem value="complete" className="rounded-lg">Complete weeks ({count})</SelectItem>
+            {wtd && <SelectItem value="wtd" className="rounded-lg">This week (WTD)</SelectItem>}
+          </SelectContent>
+        </Select>
+      </CardAction>
+    </CardHeader>
+    <CardContent>
+      <TabsContent value="complete">...</TabsContent>
+      <TabsContent value="wtd">...</TabsContent>
+    </CardContent>
+  </DashboardCard>
+</Tabs>
+```
+
+**Rules:**
+- `<Tabs>` wraps the entire `<DashboardCard>` (not nested inside CardContent)
+- `@container/card` on the DashboardCard enables container queries
+- `ToggleGroup` is hidden below `@[540px]/card` breakpoint; `Select` is shown instead
+- `ToggleGroupItem` labels should include counts where relevant (e.g. "Complete (5)")
+- Use `Tabs` / `TabsContent` only for content switching — never render `TabsList` or `TabsTrigger`
+
 ---
 
 ## Charts (Recharts + shadcn/ui)
@@ -326,3 +376,4 @@ All bars use `radius={8}` for rounded corners.
 - Arbitrary Y-axis values (always round to clean multiples of 5)
 - Colored dots instead of icons for category identification (use icons from icons.tsx)
 - Hardcoded hex colors in chart elements (use `var(--color-*)` from ChartConfig)
+- `TabsList` / `TabsTrigger` with `variant="line"` for card view switching — use `ToggleGroup variant="outline"` + `Select` mobile fallback instead
