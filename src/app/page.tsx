@@ -102,6 +102,7 @@ import type {
   ShopifyMerchData,
   ShopifyStats,
   MerchCustomerBreakdown,
+  AnnualRevenueBreakdown,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -2223,6 +2224,111 @@ function MonthBreakdownCard({ monthlyRevenue, monthOverMonth }: {
             </div>
           </div>
         )}
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Annual Revenue Breakdown by Segment ────────────────────
+
+const ANNUAL_SEGMENT_COLORS: Record<string, string> = {
+  "In-Studio": "#5B7FA5",   // steel blue
+  "Digital": "#7B68AE",     // purple
+  "Retreats": "#B87333",    // copper
+  "Spa": "#4A7C59",         // forest green
+  "Merch": "#C4A35A",       // gold
+  "Other": "#999999",       // gray
+};
+
+const SEGMENT_ORDER = ["In-Studio", "Digital", "Retreats", "Spa", "Merch", "Other"];
+
+function AnnualSegmentBreakdownCard({ breakdown }: { breakdown: AnnualRevenueBreakdown[] }) {
+  // Only show complete years (exclude current year since it's partial)
+  const currentYear = new Date().getFullYear();
+  const completeYears = breakdown.filter((b) => b.year < currentYear);
+  const availableYears = completeYears.map((b) => b.year).sort((a, b) => b - a);
+
+  const [selectedYear, setSelectedYear] = useState<number>(availableYears[0] || currentYear - 1);
+
+  const yearData = breakdown.find((b) => b.year === selectedYear);
+  if (!yearData || availableYears.length === 0) return null;
+
+  // Sort segments by defined order
+  const sorted = [...yearData.segments].sort((a, b) => {
+    const ai = SEGMENT_ORDER.indexOf(a.segment);
+    const bi = SEGMENT_ORDER.indexOf(b.segment);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  return (
+    <DashboardCard>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Annual Revenue by Segment</CardTitle>
+            <CardDescription>
+              {selectedYear} total: {formatCurrency(yearData.totalGross)} gross · {formatCurrency(yearData.totalNet)} net
+            </CardDescription>
+          </div>
+          {availableYears.length > 1 && (
+            <div className="flex gap-1">
+              {availableYears.map((y) => (
+                <Button
+                  key={y}
+                  variant={y === selectedYear ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedYear(y)}
+                >
+                  {y}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-3">
+          {/* Stacked bar */}
+          <div className="flex h-4 rounded-full overflow-hidden">
+            {sorted.map((seg) => {
+              const pct = yearData.totalGross > 0 ? (seg.gross / yearData.totalGross) * 100 : 0;
+              if (pct < 0.5) return null;
+              return (
+                <div
+                  key={seg.segment}
+                  className="h-full transition-all"
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: ANNUAL_SEGMENT_COLORS[seg.segment] || "#999",
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          {/* Detail rows */}
+          <div className="flex flex-col">
+            {sorted.map((seg, i) => {
+              const pct = yearData.totalGross > 0 ? Math.round((seg.gross / yearData.totalGross) * 1000) / 10 : 0;
+              return (
+                <div key={seg.segment} className={`flex items-center justify-between py-2.5 ${i < sorted.length - 1 ? "border-b border-border" : ""}`}>
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className="size-3 rounded-full shrink-0"
+                      style={{ backgroundColor: ANNUAL_SEGMENT_COLORS[seg.segment] || "#999" }}
+                    />
+                    <span className="text-sm font-medium">{seg.segment}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
+                    <span className="text-sm font-semibold tabular-nums w-24 text-right">{formatCurrency(seg.gross)}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums w-20 text-right hidden sm:block">net {formatCurrency(seg.net)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </CardContent>
     </DashboardCard>
   );
@@ -4574,6 +4680,10 @@ function DashboardContent({ activeSection, data, refreshData }: {
               <MonthBreakdownCard monthlyRevenue={data.monthlyRevenue} monthOverMonth={data.monthOverMonth} />
               <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
             </div>
+          )}
+
+          {data.annualBreakdown && data.annualBreakdown.length > 0 && (
+            <AnnualSegmentBreakdownCard breakdown={data.annualBreakdown} />
           )}
 
           <MRRBreakdown data={data} />

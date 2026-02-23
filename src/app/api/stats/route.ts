@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getMonthlyMerchRevenue } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getMonthlyMerchRevenue, getAnnualRevenueBreakdown } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -284,7 +284,39 @@ export async function GET() {
       // Spa data may not exist yet
     }
 
-    // ── 8. Data freshness ──────────────────────────────────
+    // ── 8. Annual revenue breakdown by segment ─────────────
+    let annualBreakdown: import("@/types/dashboard").AnnualRevenueBreakdown[] | null = null;
+    try {
+      const raw = await getAnnualRevenueBreakdown();
+
+      // Replace Union.fit "Merch" with Shopify totals for deduplication
+      if (shopifyMerch?.annualRevenue) {
+        const shopifyByYear = new Map(shopifyMerch.annualRevenue.map((a) => [a.year, a]));
+        for (const yearData of raw) {
+          const shopYear = shopifyByYear.get(yearData.year);
+          if (shopYear) {
+            const merchIdx = yearData.segments.findIndex((s) => s.segment === "Merch");
+            const unionMerchGross = merchIdx >= 0 ? yearData.segments[merchIdx].gross : 0;
+            const unionMerchNet = merchIdx >= 0 ? yearData.segments[merchIdx].net : 0;
+            if (merchIdx >= 0) {
+              yearData.segments[merchIdx].gross = shopYear.gross;
+              yearData.segments[merchIdx].net = shopYear.net;
+            } else {
+              yearData.segments.push({ segment: "Merch", gross: shopYear.gross, net: shopYear.net });
+            }
+            yearData.totalGross = yearData.totalGross - unionMerchGross + shopYear.gross;
+            yearData.totalNet = yearData.totalNet - unionMerchNet + shopYear.net;
+          }
+        }
+      }
+
+      annualBreakdown = raw;
+      console.log(`[api/stats] Annual breakdown: ${raw.length} years`);
+    } catch (err) {
+      console.warn("[api/stats] Annual breakdown failed:", err);
+    }
+
+    // ── 9. Data freshness ──────────────────────────────────
     let dataFreshness: DataFreshness | null = null;
     try {
       const pool = getPool();
@@ -318,8 +350,11 @@ export async function GET() {
       console.warn("[api/stats] Data freshness query failed:", err);
     }
 
-    // ── 9. Return response ──────────────────────────────────
-    if (stats) stats.dataFreshness = dataFreshness;
+    // ── 10. Return response ──────────────────────────────────
+    if (stats) {
+      stats.dataFreshness = dataFreshness;
+      stats.annualBreakdown = annualBreakdown;
+    }
     return NextResponse.json({
       ...(stats || {}),
       trends,

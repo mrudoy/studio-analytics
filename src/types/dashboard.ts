@@ -96,6 +96,14 @@ export interface DashboardStats {
   shopify?: ShopifyStats | null;
   shopifyMerch?: ShopifyMerchData | null;
   spa?: SpaData | null;
+  annualBreakdown?: AnnualRevenueBreakdown[] | null;
+}
+
+export interface AnnualRevenueBreakdown {
+  year: number;
+  segments: Array<{ segment: string; gross: number; net: number }>;
+  totalGross: number;
+  totalNet: number;
 }
 
 export interface SpaServiceRow {

@@ -273,6 +273,89 @@ export async function getMonthlyMerchRevenue(): Promise<Map<string, { gross: num
   return map;
 }
 
+/**
+ * Annual revenue breakdown by business segment.
+ * Maps raw Union.fit categories into 6 high-level buckets:
+ *   Digital, In-Studio, Spa, Merch, Retreats, Other
+ */
+export async function getAnnualRevenueBreakdown(): Promise<
+  Array<{
+    year: number;
+    segments: Array<{ segment: string; gross: number; net: number }>;
+    totalGross: number;
+    totalNet: number;
+  }>
+> {
+  const pool = getPool();
+  const res = await pool.query(`
+    SELECT
+      EXTRACT(YEAR FROM period_start::date)::int AS year,
+      CASE
+        -- Digital (Sky Ting TV & related)
+        WHEN category ~* 'sky\\s*ting\\s*tv'
+          OR category ~* '10skyting'
+          OR category ~* 'digital\\s*all'
+          OR category ~* 'a\\s*la\\s*carte\\s*sky\\s*ting'
+          OR category ~* 'sky\\s*week\\s*tv'
+          OR category ~* 'friends\\s*of\\s*sky\\s*ting'
+          OR category ~* 'new\\s*subscriber\\s*special'
+          OR category ~* 'limited\\s*edition\\s*sky\\s*ting'
+          OR category ~* 'come\\s*back\\s*sky\\s*ting'
+          OR category ~* 'retreat\\s*ting'
+          THEN 'Digital'
+
+        -- Retreats (before in-studio to avoid overlap)
+        WHEN category ~* 'retreat' THEN 'Retreats'
+
+        -- Spa / Wellness
+        WHEN category ~* 'infrared|sauna|spa\\s*lounge|cupping|contrast\\s*suite|treatment\\s*room'
+          THEN 'Spa'
+
+        -- Merch / Retail
+        WHEN category ~* 'merch|product|food.*bev|gift\\s*card'
+          THEN 'Merch'
+
+        -- In-Studio (memberships, packs, drop-ins, intro, workshops, privates, donations, trainings, etc.)
+        WHEN category ~* 'sky\\s*unlimited|all\\s*access|10member|sky\\s*ting\\s*(monthly\\s*)?membership|ting\\s*fam|sky\\s*virgin|founding\\s*member|new\\s*member|back\\s*to\\s*school|secret\\s*membership|monthly\\s*membership'
+          OR category ~* 'sky\\s*3|sky\\s*5|skyhigh|5[\\s-]*pack'
+          OR category ~* 'drop[\\s-]*in|droplet'
+          OR category ~* 'intro\\s*week|unlimited\\s*week|sky\\s*virgin\\s*2\\s*week'
+          OR category ~* 'workshop|masterclass|specialty\\s*class'
+          OR category ~* 'teacher\\s*training|200hr|training'
+          OR category ~* 'private'
+          OR category ~* 'donation'
+          OR category ~* 'rental|teacher\\s*rental|studio\\s*rental'
+          OR category ~* 'community'
+          THEN 'In-Studio'
+
+        ELSE 'Other'
+      END AS segment,
+      SUM(revenue) AS gross,
+      SUM(net_revenue) AS net
+    FROM revenue_categories
+    GROUP BY year, segment
+    ORDER BY year, gross DESC
+  `);
+
+  // Group by year
+  const yearMap = new Map<number, { segments: Array<{ segment: string; gross: number; net: number }>; totalGross: number; totalNet: number }>();
+  for (const r of res.rows) {
+    const y = r.year as number;
+    if (!yearMap.has(y)) yearMap.set(y, { segments: [], totalGross: 0, totalNet: 0 });
+    const entry = yearMap.get(y)!;
+    const gross = parseFloat(r.gross) || 0;
+    const net = parseFloat(r.net) || 0;
+    entry.segments.push({ segment: r.segment, gross, net });
+    entry.totalGross += gross;
+    entry.totalNet += net;
+  }
+
+  return Array.from(yearMap.entries()).map(([year, data]) => ({
+    year,
+    ...data,
+  }));
+}
+
 export async function savePipelineRun(
   dateRangeStart: string,
   dateRangeEnd: string,
