@@ -3579,101 +3579,129 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
     }
   }
 
+  // Net change for footer
+  const netVal = latestW ? weeklyKeyNet(latestW) : 0;
+  const netLabel = netVal > 0 ? `+${netVal}` : netVal < 0 ? String(netVal) : "0";
+  const netColor = netVal > 0 ? "text-emerald-600" : netVal < 0 ? "text-red-500" : "text-muted-foreground";
+  const wkLabel = latestW ? weekLabel(latestW.period) : "";
+
+  // Churn note for MEMBER footer
+  const churnNote = churnData?.category === "MEMBER" ? (() => {
+    const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
+    if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
+    return `Annual: ${lastCompleted.annualCanceledCount}/${lastCompleted.annualActiveAtStart} churned · Monthly: ${lastCompleted.monthlyCanceledCount}/${lastCompleted.monthlyActiveAtStart} churned`;
+  })() : null;
+
   return (
-    <DashboardCard>
-      <CardHeader>
-        <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-3">
+      {/* ── Card 1: Chart card (shadcn BarChart pattern) ── */}
+      <DashboardCard>
+        <CardHeader>
           <div className="flex items-center gap-2">
             {Icon ? (
               <Icon className="size-4 shrink-0" style={{ color }} />
             ) : (
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
             )}
-            <span className="text-sm font-semibold leading-none">
-              {title}
-            </span>
+            <CardTitle>{title}</CardTitle>
           </div>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums">
-            {formatNumber(count)}
-          </span>
-        </div>
-      </CardHeader>
+          <CardDescription>
+            <span className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">{formatNumber(count)}</span>
+            {" "}<span>active subscribers</span>
+          </CardDescription>
+        </CardHeader>
 
-      <CardContent>
-        {/* Weekly new adds bar chart with total count labels */}
-        {barData.length > 0 && (
-          <div className="mb-4">
-            <ChartContainer config={{ newAdds: { label: "New", color } }} className="h-[100px] w-full">
-              <BarChart data={barData} margin={{ top: 24, right: 0, bottom: 0, left: 0 }}>
+        <CardContent>
+          {barData.length > 0 && (
+            <ChartContainer config={{ newAdds: { label: "New adds", color } }} className="h-[200px] w-full">
+              <BarChart
+                accessibilityLayer
+                data={barData}
+                margin={{ top: 20 }}
+              >
                 <CartesianGrid vertical={false} />
-                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                <XAxis
+                  dataKey="week"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                />
                 <YAxis hide />
-                <Bar dataKey="newAdds" fill={color} radius={[3, 3, 0, 0]} opacity={0.85}>
-                  <LabelList dataKey="newAdds" position="inside" style={{ fontSize: 11, fontWeight: 700, fill: "#fff" }} formatter={(v: number) => `+${v}`} />
-                  <LabelList dataKey="total" position="top" style={{ fontSize: 9, fontWeight: 500, fill: "var(--muted-foreground)" }} formatter={(v: number) => v.toLocaleString()} />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent hideLabel />}
+                />
+                <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                    formatter={(v: number) => `+${v}`}
+                  />
                 </Bar>
               </BarChart>
             </ChartContainer>
+          )}
+        </CardContent>
+
+        <CardFooter className="flex-col items-start gap-2 text-sm">
+          <div className={`flex gap-2 leading-none font-medium ${netColor}`}>
+            Net {netLabel} {wkLabel}
           </div>
-        )}
+          {churnNote && (
+            <div className="text-muted-foreground leading-none">
+              {churnNote}
+            </div>
+          )}
+        </CardFooter>
+      </DashboardCard>
 
-        {/* Metric rows — shadcn table: rounded border, bg-muted header */}
-        <div className="overflow-hidden rounded-lg border">
-          <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
-            <thead className="bg-muted [&_tr]:border-b">
-              <tr>
-                <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
-                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Number</th>
-                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change</th>
-                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change (%)</th>
-              </tr>
-            </thead>
-            <tbody className="[&_tr:last-child]:border-0">
-              {metrics.map((m, i) => {
-                const deltaColor = m.delta != null
-                  ? m.delta === 0
-                    ? "text-muted-foreground"
-                    : (m.isPositiveGood ? m.delta > 0 : m.delta < 0)
-                      ? "text-emerald-600"
-                      : "text-red-500"
-                  : "";
-                return (
-                  <tr key={i} className="border-b">
-                    <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
-                    <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
-                      {m.value}
-                    </td>
-                    {!m.isNetChange ? (
-                      <>
-                        <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
-                          {m.delta != null ? formatDelta(m.delta) : ""}
-                        </td>
-                        <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
-                          {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
-                        </td>
-                      </>
-                    ) : (
-                      <td colSpan={2} />
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* MEMBER annual/monthly breakdown */}
-        {churnData?.category === "MEMBER" && (() => {
-          const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
-          if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
-          return (
-            <p className="text-xs text-muted-foreground italic mt-2">
-              Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
-            </p>
-          );
-        })()}
-      </CardContent>
-    </DashboardCard>
+      {/* ── Table: metrics (standalone, no card wrapper) ── */}
+      <div className="overflow-hidden rounded-lg border">
+        <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+          <thead className="bg-muted [&_tr]:border-b">
+            <tr>
+              <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
+              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Number</th>
+              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change</th>
+              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change (%)</th>
+            </tr>
+          </thead>
+          <tbody className="[&_tr:last-child]:border-0">
+            {metrics.map((m, i) => {
+              const deltaColor = m.delta != null
+                ? m.delta === 0
+                  ? "text-muted-foreground"
+                  : (m.isPositiveGood ? m.delta > 0 : m.delta < 0)
+                    ? "text-emerald-600"
+                    : "text-red-500"
+                : "";
+              return (
+                <tr key={i} className="border-b">
+                  <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
+                  <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
+                    {m.value}
+                  </td>
+                  {!m.isNetChange ? (
+                    <>
+                      <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
+                        {m.delta != null ? formatDelta(m.delta) : ""}
+                      </td>
+                      <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
+                        {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={2} />
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
