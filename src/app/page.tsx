@@ -100,6 +100,8 @@ import type {
   ConversionPoolSliceData,
   IntroWeekData,
   ShopifyMerchData,
+  ShopifyStats,
+  MerchCustomerBreakdown,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -742,7 +744,7 @@ function useNextRunCountdown() {
   return countdown;
 }
 
-function DataSection({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid" }) {
+function DataSection({ lastUpdated, spreadsheetUrl, dataSource, shopify }: { lastUpdated: string | null; spreadsheetUrl?: string; dataSource?: "database" | "sheets" | "hybrid"; shopify?: ShopifyStats | null }) {
   const [refreshState, setRefreshState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [pipelineStep, setPipelineStep] = useState("");
   const [pipelinePercent, setPipelinePercent] = useState(0);
@@ -930,6 +932,53 @@ function DataSection({ lastUpdated, spreadsheetUrl, dataSource }: { lastUpdated:
             Waiting for first zip from Union.fit. Current data loaded via manual CSV uploads and legacy pipeline.
           </p>
         </ShadCardFooter>
+      </ShadCard>
+
+      {/* ── Shopify ── */}
+      <ShadCard className="md:col-span-2">
+        <ShadCardHeader>
+          <ShadCardTitle className="flex items-center gap-2">
+            <ShoppingBag className="size-5" style={{ color: SECTION_COLORS["revenue-merch"] }} />
+            Shopify
+            {shopify ? (
+              <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+            ) : (
+              <Badge variant="outline">Not connected</Badge>
+            )}
+          </ShadCardTitle>
+          <ShadCardDesc>Merch store data via Shopify API</ShadCardDesc>
+        </ShadCardHeader>
+        <ShadCardContent>
+          {shopify ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{shopify.totalOrders.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">Orders</p>
+              </div>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{formatCurrency(shopify.totalRevenue)}</p>
+                <p className="text-sm text-muted-foreground">Total Revenue</p>
+              </div>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{shopify.productCount.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">Products</p>
+              </div>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{shopify.customerCount.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">Customers</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Connect Shopify in Settings to see merch data here.</p>
+          )}
+        </ShadCardContent>
+        {shopify?.lastSyncAt && (
+          <ShadCardFooter className="border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              Last synced {formatRelativeTime(shopify.lastSyncAt)} · {formatDateTime(shopify.lastSyncAt)}
+            </p>
+          </ShadCardFooter>
+        )}
       </ShadCard>
     </div>
   );
@@ -1972,7 +2021,10 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
   );
 }
 
-function MonthBreakdownCard({ monthlyRevenue }: { monthlyRevenue: { month: string; gross: number; net: number }[] }) {
+function MonthBreakdownCard({ monthlyRevenue, monthOverMonth }: {
+  monthlyRevenue: { month: string; gross: number; net: number }[];
+  monthOverMonth?: MonthOverMonthData | null;
+}) {
   const nowDate = new Date();
   const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
   const completed = (monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
@@ -1982,7 +2034,7 @@ function MonthBreakdownCard({ monthlyRevenue }: { monthlyRevenue: { month: strin
   return (
     <DashboardCard>
       <CardHeader>
-        <CardTitle>{formatMonthLabel(currentMonth.month)} Breakdown</CardTitle>
+        <CardTitle>{formatMonthLabel(currentMonth.month)} Revenue</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col">
@@ -1999,6 +2051,37 @@ function MonthBreakdownCard({ monthlyRevenue }: { monthlyRevenue: { month: strin
             </div>
           ))}
         </div>
+
+        {/* Year-over-Year comparison */}
+        {monthOverMonth?.priorYear && monthOverMonth?.current && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
+            <div className="flex flex-col">
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground">
+                  {monthOverMonth.monthName} {monthOverMonth.priorYear.year}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                  {formatCurrency(monthOverMonth.priorYear.gross)}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground">
+                  {monthOverMonth.monthName} {monthOverMonth.current.year}
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatCurrency(monthOverMonth.current.gross)}
+                </span>
+              </div>
+              {monthOverMonth.yoyGrossPct !== null && (
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-sm text-muted-foreground">Change</span>
+                  <DeltaBadge delta={monthOverMonth.yoyGrossChange ?? null} deltaPercent={monthOverMonth.yoyGrossPct} isCurrency compact />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </CardContent>
     </DashboardCard>
   );
@@ -2007,10 +2090,10 @@ function MonthBreakdownCard({ monthlyRevenue }: { monthlyRevenue: { month: strin
 // ─── MRR Breakdown (standalone) ──────────────────────────────
 
 function MRRBreakdown({ data }: { data: DashboardStats }) {
-  const segments = [
-    { label: LABELS.members, value: data.mrr.member, color: COLORS.member },
-    { label: LABELS.sky3, value: data.mrr.sky3, color: COLORS.sky3 },
-    { label: LABELS.tv, value: data.mrr.skyTingTv, color: COLORS.tv },
+  const segments: { label: string; value: number; color: string; icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
+    { label: LABELS.members, value: data.mrr.member, color: COLORS.member, icon: ArrowBadgeDown },
+    { label: LABELS.sky3, value: data.mrr.sky3, color: COLORS.sky3, icon: BrandSky },
+    { label: LABELS.tv, value: data.mrr.skyTingTv, color: COLORS.tv, icon: DeviceTv },
     ...(data.mrr.unknown > 0 ? [{ label: "Other", value: data.mrr.unknown, color: "#999" }] : []),
   ].filter(s => s.value > 0);
 
@@ -2027,7 +2110,11 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
           {segments.map((seg, i) => (
             <div key={i} className={`flex justify-between items-center py-2.5 ${i < segments.length - 1 ? "border-b border-border" : ""}`}>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color, opacity: 0.85 }} />
+                {seg.icon ? (
+                  <seg.icon className="size-4 shrink-0" style={{ color: seg.color }} />
+                ) : (
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color, opacity: 0.85 }} />
+                )}
                 <span className="text-sm text-muted-foreground">{seg.label}</span>
               </div>
               <span className="text-sm font-semibold tabular-nums">
@@ -3705,71 +3792,160 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
         </DashboardCard>
       </div>
 
-      {/* Monthly Revenue bar chart */}
-      {chartData.length > 0 && (
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>Monthly Merch Revenue</CardTitle>
-            {completedMonths.length > 0 && (
-              <CardDescription>
-                {formatShortMonth(completedMonths[completedMonths.length - 1].month)}: {formatCurrency(completedMonths[completedMonths.length - 1].gross)}
-              </CardDescription>
-            )}
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
-              <BarChart
-                accessibilityLayer
-                data={chartData}
-                margin={{ top: 20 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  tickMargin={10}
-                  axisLine={false}
-                />
-                <Bar dataKey="gross" fill={SECTION_COLORS["revenue-merch"]} radius={8}>
-                  <LabelList
-                    position="top"
-                    offset={12}
-                    className="fill-foreground"
-                    fontSize={12}
-                    formatter={(v: number) => formatCompactCurrency(v)}
+      {/* Monthly Revenue chart + Top Products side by side */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {chartData.length > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Monthly Merch Revenue</CardTitle>
+              {completedMonths.length > 0 && (
+                <CardDescription>
+                  {formatShortMonth(completedMonths[completedMonths.length - 1].month)}: {formatCurrency(completedMonths[completedMonths.length - 1].gross)}
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
+                <BarChart
+                  accessibilityLayer
+                  data={chartData}
+                  margin={{ top: 20 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
                   />
-                </Bar>
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-          <CardFooter className="text-sm text-muted-foreground">
-            Last {chartData.length} months of Shopify merch revenue
-          </CardFooter>
-        </DashboardCard>
-      )}
+                  <Bar dataKey="gross" fill={SECTION_COLORS["revenue-merch"]} radius={8}>
+                    <LabelList
+                      position="top"
+                      offset={12}
+                      className="fill-foreground"
+                      fontSize={12}
+                      formatter={(v: number) => formatCompactCurrency(v)}
+                    />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+            <CardFooter className="text-sm text-muted-foreground">
+              Last {chartData.length} months of Shopify merch revenue
+            </CardFooter>
+          </DashboardCard>
+        )}
 
-      {/* Top Products */}
-      {merch.topProducts.length > 0 && (
+        {merch.topProducts.length > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Top Products</CardTitle>
+              <CardDescription>By total revenue (all time)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col">
+                {merch.topProducts.map((product, i) => (
+                  <div key={i} className={`flex justify-between items-center py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium">{toTitleCase(product.title)}</span>
+                      <span className="text-xs text-muted-foreground">{formatNumber(product.unitsSold)} units sold</span>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.revenue)}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </DashboardCard>
+        )}
+      </div>
+
+      {/* Customer Breakdown: Members vs Non-Members */}
+      {merch.customerBreakdown && (
         <DashboardCard>
           <CardHeader>
-            <CardTitle>Top Products</CardTitle>
-            <CardDescription>By total revenue (all time)</CardDescription>
+            <CardTitle>Buyer Breakdown</CardTitle>
+            <CardDescription>Merch orders by auto-renew status</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col">
-              {merch.topProducts.map((product, i) => (
-                <div key={i} className={`flex justify-between items-center py-2.5 ${i < merch.topProducts.length - 1 ? "border-b border-border" : ""}`}>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{toTitleCase(product.title)}</span>
-                    <span className="text-xs text-muted-foreground">{formatNumber(product.unitsSold)} units sold</span>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.revenue)}</span>
-                </div>
-              ))}
-            </div>
+            <MerchBuyerBreakdown breakdown={merch.customerBreakdown} />
           </CardContent>
         </DashboardCard>
       )}
+    </div>
+  );
+}
+
+function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown }) {
+  const subPct = breakdown.total.revenue > 0
+    ? Math.round((breakdown.subscriber.revenue / breakdown.total.revenue) * 100)
+    : 0;
+  const nonSubPct = 100 - subPct;
+
+  const rows = [
+    {
+      label: "Auto-Renew",
+      icon: Recycle,
+      color: SECTION_COLORS["growth-auto"],
+      orders: breakdown.subscriber.orders,
+      revenue: breakdown.subscriber.revenue,
+      customers: breakdown.subscriber.customers,
+      pct: subPct,
+    },
+    {
+      label: "Non Auto-Renew",
+      icon: RecycleOff,
+      color: SECTION_COLORS["growth-non-auto"],
+      orders: breakdown.nonSubscriber.orders,
+      revenue: breakdown.nonSubscriber.revenue,
+      customers: breakdown.nonSubscriber.customers,
+      pct: nonSubPct,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Revenue split bar */}
+      <div className="flex h-3 rounded-full overflow-hidden">
+        {subPct > 0 && (
+          <div
+            className="h-full transition-all"
+            style={{ width: `${subPct}%`, backgroundColor: SECTION_COLORS["growth-auto"] }}
+          />
+        )}
+        {nonSubPct > 0 && (
+          <div
+            className="h-full transition-all"
+            style={{ width: `${nonSubPct}%`, backgroundColor: SECTION_COLORS["growth-non-auto"], opacity: 0.5 }}
+          />
+        )}
+      </div>
+
+      {/* Detail rows */}
+      <div className="flex flex-col">
+        {rows.map((row, i) => (
+          <div key={i} className={`flex items-center justify-between py-2.5 ${i < rows.length - 1 ? "border-b border-border" : ""}`}>
+            <div className="flex items-center gap-2">
+              <row.icon className="size-4 shrink-0" style={{ color: row.color }} />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">{row.label}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatNumber(row.customers)} customers · {formatNumber(row.orders)} orders
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="text-sm font-semibold tabular-nums">{formatCurrency(row.revenue)}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">{row.pct}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Total */}
+      <div className="flex justify-between items-center pt-2 border-t border-border">
+        <span className="text-sm text-muted-foreground">Total</span>
+        <span className="text-sm font-semibold tabular-nums">{formatCurrency(breakdown.total.revenue)}</span>
+      </div>
     </div>
   );
 }
@@ -3870,53 +4046,12 @@ function DashboardContent({ activeSection, data }: {
 
           {data.monthlyRevenue && data.monthlyRevenue.length > 0 && (
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-              <MonthBreakdownCard monthlyRevenue={data.monthlyRevenue} />
+              <MonthBreakdownCard monthlyRevenue={data.monthlyRevenue} monthOverMonth={data.monthOverMonth} />
               <AnnualRevenueCard monthlyRevenue={data.monthlyRevenue} projection={trends?.projection} />
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <MRRBreakdown data={data} />
-            {data.monthOverMonth ? (
-              <Card>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.yoy}</p>
-                  <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                    {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}: {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex justify-between py-2.5 border-b border-border">
-                    <span className="text-sm text-muted-foreground">
-                      {data.monthOverMonth.monthName} {data.monthOverMonth.priorYear?.year}
-                    </span>
-                    <span className="text-sm font-semibold text-muted-foreground tabular-nums">
-                      {formatCurrency(data.monthOverMonth.priorYear?.gross ?? 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-2.5 border-b border-border">
-                    <span className="text-sm text-muted-foreground">
-                      {data.monthOverMonth.monthName} {data.monthOverMonth.current?.year}
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {formatCurrency(data.monthOverMonth.current?.gross ?? 0)}
-                    </span>
-                  </div>
-                  {data.monthOverMonth.yoyGrossPct !== null && (
-                    <div className="flex justify-between items-center py-2.5">
-                      <span className="text-sm text-muted-foreground">Change</span>
-                      <DeltaBadge delta={data.monthOverMonth.yoyGrossChange ?? null} deltaPercent={data.monthOverMonth.yoyGrossPct} isCurrency compact />
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ) : (
-              <Card>
-                <p className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide mb-2">Year over Year</p>
-                <p className="text-sm text-muted-foreground opacity-60">No data available</p>
-              </Card>
-            )}
-          </div>
+          <MRRBreakdown data={data} />
         </div>
       )}
 
@@ -4104,7 +4239,7 @@ function DashboardContent({ activeSection, data }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Pipeline status, data freshness, and refresh controls</p>
           </div>
-          <DataSection lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} />
+          <DataSection lastUpdated={data.lastUpdated} spreadsheetUrl={data.spreadsheetUrl} dataSource={data.dataSource} shopify={data.shopify} />
         </div>
       )}
     </div>
