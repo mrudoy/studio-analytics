@@ -3691,6 +3691,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
               <BarChart data={barData} margin={{ top: 24, right: 0, bottom: 0, left: 0 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                <YAxis hide />
                 <Bar dataKey="newAdds" fill={color} radius={[3, 3, 0, 0]} opacity={0.85}>
                   <LabelList dataKey="newAdds" position="inside" style={{ fontSize: 11, fontWeight: 700, fill: "#fff" }} formatter={(v: number) => `+${v}`} />
                   <LabelList dataKey="total" position="top" style={{ fontSize: 9, fontWeight: 500, fill: "var(--muted-foreground)" }} formatter={(v: number) => v.toLocaleString()} />
