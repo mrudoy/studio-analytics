@@ -3694,26 +3694,26 @@ function MerchRevenueTab({ merch }: { merch: ShopifyMerchData }) {
           </CardHeader>
           <CardContent>
             <ChartContainer config={merchChartConfig} className="h-[220px] w-full">
-              <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: isMobile ? 8 : 16, right: isMobile ? 8 : 16 }}>
-                <YAxis hide domain={[0, "auto"]} />
+              <BarChart
+                accessibilityLayer
+                data={chartData}
+                margin={{ top: 20 }}
+              >
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="month"
                   tickLine={false}
+                  tickMargin={10}
                   axisLine={false}
-                  tickMargin={8}
-                  fontSize={isMobile ? 11 : 12}
                 />
-                <Bar dataKey="gross" fill={SECTION_COLORS["revenue-merch"]} radius={[4, 4, 0, 0]}>
-                  {!isMobile && (
-                    <LabelList
-                      position="top"
-                      offset={8}
-                      className="fill-foreground"
-                      fontSize={11}
-                      formatter={(v: number) => formatCompactCurrency(v)}
-                    />
-                  )}
+                <Bar dataKey="gross" fill={SECTION_COLORS["revenue-merch"]} radius={8}>
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                    formatter={(v: number) => formatCompactCurrency(v)}
+                  />
                 </Bar>
               </BarChart>
             </ChartContainer>
@@ -3932,9 +3932,7 @@ function DashboardContent({ activeSection, data }: {
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
             <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.member }}>
-              <Recycle className="size-[18px]" style={{ color: COLORS.member }} />
               <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.member }}>In-Studio Plans</h3>
-              <span className="text-xs text-muted-foreground">Members + Sky3</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
@@ -3971,9 +3969,7 @@ function DashboardContent({ activeSection, data }: {
           {/* Digital block: Sky Ting TV */}
           <div>
             <div className="flex items-center gap-2.5 border-l-[3px] pl-3 py-1 mb-3" style={{ borderColor: COLORS.tv }}>
-              <RecycleOff className="size-[18px]" style={{ color: COLORS.tv }} />
               <h3 className="text-base font-semibold tracking-tight" style={{ color: COLORS.tv }}>Digital</h3>
-              <span className="text-xs text-muted-foreground">Sky Ting TV</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
