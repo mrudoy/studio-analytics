@@ -2626,14 +2626,14 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       {/* ── Subsection A: Drop-ins ── */}
       {dropIns && (
         <div className="flex flex-col gap-3">
-          <SubsectionHeader icon={Ticket} color={COLORS.dropIn}>Drop-ins</SubsectionHeader>
+          <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
           <DropInsSubsection dropIns={dropIns} />
         </div>
       )}
 
       {/* ── Subsection B: Other pass types ── */}
       <div className="flex flex-col gap-3">
-        <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Intro Week</SubsectionHeader>
+        <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
           <IntroWeekModule introWeek={introWeek} />
         </div>
@@ -2641,7 +2641,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
 
       {/* ── Subsection C: Conversion ── */}
       <div className="flex flex-col gap-3">
-        <SubsectionHeader icon={ArrowRightLeft} color="hsl(150, 45%, 42%)">Conversion</SubsectionHeader>
+        <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Conversion</h3>
         {(newCustomerVolume || newCustomerCohorts) && (
           <p className="text-[15px] font-semibold text-muted-foreground">New Customers</p>
         )}
@@ -4166,12 +4166,12 @@ function DashboardContent({ activeSection, data }: {
           </div>
           {trends?.dropIns && (
             <div className="flex flex-col gap-3">
-              <SubsectionHeader icon={Ticket} color={COLORS.dropIn}>Drop-ins</SubsectionHeader>
+              <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
               <DropInsSubsection dropIns={trends.dropIns} />
             </div>
           )}
           <div className="flex flex-col gap-3">
-            <SubsectionHeader icon={Tag} color="hsl(200, 45%, 50%)">Intro Week</SubsectionHeader>
+            <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
               <IntroWeekModule introWeek={trends?.introWeek ?? null} />
             </div>
