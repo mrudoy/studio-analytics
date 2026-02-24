@@ -51,7 +51,6 @@ export async function GET() {
   `);
 
   // 4. Cross-over: do spa customers also take classes?
-  // Find spa customer emails, then check if they have non-spa registrations
   const crossover = await pool.query(`
     WITH spa_customers AS (
       SELECT DISTINCT email
@@ -67,8 +66,7 @@ export async function GET() {
       FROM spa_customers sc
       LEFT JOIN registrations r
         ON r.email = sc.email
-        AND NOT ${SPA_LOC.replace(/location_name/g, 'r.location_name')}
-        AND (r.location_name IS NULL OR r.location_name NOT IN ('SPA Lounge', 'SPA LOUNGE', 'TREATMENT ROOM'))
+        AND NOT (r.location_name ~* 'spa lounge|treatment room')
       GROUP BY sc.email
     ) sub
   `);
