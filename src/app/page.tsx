@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
 import Link from "next/link";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download, Sparkles } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -28,6 +28,7 @@ import {
   AlertTriangleIcon,
   InfoIcon,
   CircleCheckIcon,
+  BubbleIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -5772,7 +5773,7 @@ function DashboardView() {
         className="h-12 gap-2 rounded-full px-5 shadow-lg"
         style={{ backgroundColor: "#D4A030", color: "#fff" }}
       >
-        <Sparkles className="h-4 w-4" />
+        <BubbleIcon size={18} />
         Ask AI
       </Button>
     </Link>
