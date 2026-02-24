@@ -133,12 +133,50 @@ export interface SpaServiceRow {
   totalNetRevenue: number;
 }
 
+export interface SpaVisitFrequency {
+  bucket: string;
+  customers: number;
+}
+
+export interface SpaCrossover {
+  total: number;
+  alsoTakeClasses: number;
+  spaOnly: number;
+}
+
+export interface SpaSubscriberOverlap {
+  total: number;
+  areSubscribers: number;
+  notSubscribers: number;
+}
+
+export interface SpaSubscriberPlan {
+  planName: string;
+  customers: number;
+}
+
+export interface SpaMonthlyVisits {
+  month: string;
+  visits: number;
+  uniqueVisitors: number;
+}
+
+export interface SpaCustomerBehavior {
+  uniqueCustomers: number;
+  frequency: SpaVisitFrequency[];
+  crossover: SpaCrossover;
+  subscriberOverlap: SpaSubscriberOverlap;
+  subscriberPlans: SpaSubscriberPlan[];
+  monthlyVisits: SpaMonthlyVisits[];
+}
+
 export interface SpaData {
   mtdRevenue: number;
   avgMonthlyRevenue: number;
   totalRevenue: number;
   monthlyRevenue: Array<{ month: string; gross: number; net: number }>;
   serviceBreakdown: SpaServiceRow[];
+  customerBehavior: SpaCustomerBehavior | null;
 }
 
 export interface RevenueCategoryData {

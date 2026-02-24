@@ -284,6 +284,7 @@ export async function GET() {
             totalRevenue: s.totalRevenue,
             totalNetRevenue: s.totalNetRevenue,
           })),
+          customerBehavior: spaStats.customerBehavior ?? null,
         };
       }
     } catch {

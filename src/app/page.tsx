@@ -22,6 +22,7 @@ import {
   BrandSky,
   DeviceTv,
   BuildingIcon,
+  Droplet,
   BulbIcon,
   AlertTriangleIcon,
   InfoIcon,
@@ -106,6 +107,7 @@ import type {
   MerchCustomerBreakdown,
   AnnualRevenueBreakdown,
   RentalRevenueData,
+  SpaData,
   InsightRow,
   OverviewData,
   TimeWindowMetrics,
@@ -189,6 +191,7 @@ const COLORS = {
   dropIn: "#8F7A5E",     // warm sienna for drop-ins (desaturated)
   conversionPool: "#6B5F78", // muted plum for conversion pool (desaturated)
   merch: "#B8860B",          // dark goldenrod for merch/shopify
+  spa: "#6B8E9B",            // blue-grey for spa
 };
 
 // ─── Formatting helpers ──────────────────────────────────────
@@ -4658,6 +4661,344 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  SPA & WELLNESS TAB — Revenue + customer behavior analytics
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function SpaRevenueTab({ spa }: { spa: SpaData }) {
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const cb = spa.customerBehavior;
+
+  // Monthly revenue chart (completed months, last 12)
+  const completedMonthly = spa.monthlyRevenue
+    .filter((m) => m.month < currentMonthKey)
+    .sort((a, b) => a.month.localeCompare(b.month));
+  const revenueChartData = completedMonthly.slice(-12).map((m) => ({
+    month: formatShortMonth(m.month),
+    gross: m.gross,
+  }));
+
+  const revenueChartConfig = {
+    gross: { label: "Revenue", color: COLORS.spa },
+  } satisfies ChartConfig;
+
+  // Monthly visits chart (from behavior data, sorted chronologically)
+  const visitsChartData = cb
+    ? [...cb.monthlyVisits].sort((a, b) => a.month.localeCompare(b.month)).slice(-12).map((m) => ({
+        month: formatShortMonth(m.month),
+        visits: m.visits,
+        uniqueVisitors: m.uniqueVisitors,
+      }))
+    : [];
+
+  const visitsChartConfig = {
+    visits: { label: "Total Visits", color: COLORS.spa },
+    uniqueVisitors: { label: "Unique Visitors", color: "#B87333" },
+  } satisfies ChartConfig;
+
+  // Service breakdown colors
+  const serviceColors = ["#6B8E9B", "#B87333", "#4A7C59", "#8B6FA5", "#8F7A5E"];
+  const totalServiceRevenue = spa.serviceBreakdown.reduce((s, svc) => s + svc.totalRevenue, 0);
+
+  // Crossover/subscriber colors
+  const crossoverColor = "#4A7C59";     // green = takes classes
+  const spaOnlyColor = "#B87333";       // copper = spa only
+  const subscriberColor = COLORS.member; // subscriber green
+  const nonSubColor = "#9CA3AF";         // gray for non-subscriber
+
+  // Frequency data
+  const totalFreqCustomers = cb ? cb.frequency.reduce((s, f) => s + f.customers, 0) : 0;
+
+  // Categorize subscriber plans into Member / Sky3 / TV / Other
+  const planCategories = cb ? (() => {
+    let memberCount = 0, sky3Count = 0, tvCount = 0, otherCount = 0;
+    for (const p of cb.subscriberPlans) {
+      const name = p.planName.toUpperCase();
+      if (name.includes("TV") || name.includes("ON DEMAND")) tvCount += p.customers;
+      else if (name.includes("SKY3") || name.includes("SKYHIGH3")) sky3Count += p.customers;
+      else if (name.includes("MEMBER") || name.includes("UNLIMITED") || name.includes("10MEMBER") || name.includes("ALL ACCESS") || name.includes("VIRGIN") || name.includes("TING FAM")) memberCount += p.customers;
+      else otherCount += p.customers;
+    }
+    return [
+      { label: "Member", count: memberCount, color: COLORS.member },
+      { label: "Sky3", count: sky3Count, color: COLORS.sky3 },
+      { label: "Sky Ting TV", count: tvCount, color: COLORS.tv },
+      ...(otherCount > 0 ? [{ label: "Other", count: otherCount, color: "#9CA3AF" }] : []),
+    ].filter(c => c.count > 0);
+  })() : [];
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* KPI row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>MTD Revenue</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(spa.mtdRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">Month to date</CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Avg Monthly</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(spa.avgMonthlyRevenue)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">{completedMonthly.length} completed months</CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Unique Customers</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{cb ? formatNumber(cb.uniqueCustomers) : "—"}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">All time</CardFooter>
+        </DashboardCard>
+
+        <DashboardCard>
+          <CardHeader>
+            <CardDescription>Repeat Rate</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">
+              {cb ? `${Math.round(((cb.uniqueCustomers - (cb.frequency.find(f => f.bucket === "1 visit")?.customers ?? 0)) / cb.uniqueCustomers) * 100)}%` : "—"}
+            </CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">2+ visits</CardFooter>
+        </DashboardCard>
+      </div>
+
+      {/* Monthly Revenue + Monthly Visits charts side by side */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {revenueChartData.length > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Monthly Revenue</CardTitle>
+              <CardDescription>Last 12 completed months</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={revenueChartConfig} className="h-[200px] w-full">
+                <BarChart data={revenueChartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v: number) => formatCompactCurrency(v)} />
+                  <ChartTooltip content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                  <Bar dataKey="gross" fill={COLORS.spa} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </DashboardCard>
+        )}
+
+        {visitsChartData.length > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>Monthly Visits</CardTitle>
+              <CardDescription>Visits and unique visitors</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={visitsChartConfig} className="h-[200px] w-full">
+                <BarChart data={visitsChartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis tickLine={false} axisLine={false} fontSize={11} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="visits" fill={COLORS.spa} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="uniqueVisitors" fill="#B87333" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </DashboardCard>
+        )}
+      </div>
+
+      {/* Customer Behavior section */}
+      {cb && (
+        <>
+          {/* Who Are Spa Customers? — Crossover + Subscriber overlap side by side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Crossover: classes vs spa-only */}
+            <DashboardCard>
+              <CardHeader>
+                <CardTitle>Class Crossover</CardTitle>
+                <CardDescription>Do spa customers also take classes?</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-3">
+                  {/* Split bar */}
+                  <div className="flex h-3 rounded-full overflow-hidden">
+                    {cb.crossover.alsoTakeClasses > 0 && (
+                      <div className="h-full" style={{ width: `${Math.round((cb.crossover.alsoTakeClasses / cb.crossover.total) * 100)}%`, backgroundColor: crossoverColor }} />
+                    )}
+                    {cb.crossover.spaOnly > 0 && (
+                      <div className="h-full" style={{ width: `${Math.round((cb.crossover.spaOnly / cb.crossover.total) * 100)}%`, backgroundColor: spaOnlyColor }} />
+                    )}
+                  </div>
+
+                  {/* Detail rows */}
+                  {[
+                    { label: "Also take classes", count: cb.crossover.alsoTakeClasses, color: crossoverColor, pct: Math.round((cb.crossover.alsoTakeClasses / cb.crossover.total) * 100) },
+                    { label: "Spa only", count: cb.crossover.spaOnly, color: spaOnlyColor, pct: Math.round((cb.crossover.spaOnly / cb.crossover.total) * 100) },
+                  ].map((row, i) => (
+                    <div key={i} className={`flex items-center justify-between py-2.5 ${i === 0 ? "border-b border-border" : ""}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block size-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                        <span className="text-sm font-medium">{row.label}</span>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-sm font-semibold tabular-nums">{formatNumber(row.count)}</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{row.pct}%</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                    <span className="text-sm text-muted-foreground">Total Spa Customers</span>
+                    <span className="text-sm font-semibold tabular-nums">{formatNumber(cb.crossover.total)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </DashboardCard>
+
+            {/* Subscriber overlap */}
+            <DashboardCard>
+              <CardHeader>
+                <CardTitle>Subscriber Overlap</CardTitle>
+                <CardDescription>Are spa customers auto-renew subscribers?</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-3">
+                  {/* Split bar */}
+                  <div className="flex h-3 rounded-full overflow-hidden">
+                    {cb.subscriberOverlap.areSubscribers > 0 && (
+                      <div className="h-full" style={{ width: `${Math.round((cb.subscriberOverlap.areSubscribers / cb.subscriberOverlap.total) * 100)}%`, backgroundColor: subscriberColor }} />
+                    )}
+                    {cb.subscriberOverlap.notSubscribers > 0 && (
+                      <div className="h-full" style={{ width: `${Math.round((cb.subscriberOverlap.notSubscribers / cb.subscriberOverlap.total) * 100)}%`, backgroundColor: nonSubColor }} />
+                    )}
+                  </div>
+
+                  {/* Detail rows */}
+                  {[
+                    { label: "Subscribers", count: cb.subscriberOverlap.areSubscribers, color: subscriberColor, pct: Math.round((cb.subscriberOverlap.areSubscribers / cb.subscriberOverlap.total) * 100) },
+                    { label: "Non-Subscribers", count: cb.subscriberOverlap.notSubscribers, color: nonSubColor, pct: Math.round((cb.subscriberOverlap.notSubscribers / cb.subscriberOverlap.total) * 100) },
+                  ].map((row, i) => (
+                    <div key={i} className={`flex items-center justify-between py-2.5 ${i === 0 ? "border-b border-border" : ""}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block size-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                        <span className="text-sm font-medium">{row.label}</span>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-sm font-semibold tabular-nums">{formatNumber(row.count)}</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{row.pct}%</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Plan breakdown for subscribers */}
+                  {planCategories.length > 0 && (
+                    <div className="pt-2 border-t border-border">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">By Plan Type</span>
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {planCategories.map((cat, i) => (
+                          <div key={i} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-block size-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                              <span className="text-sm text-muted-foreground">{cat.label}</span>
+                            </div>
+                            <span className="text-sm font-medium tabular-nums">{formatNumber(cat.count)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </DashboardCard>
+          </div>
+
+          {/* Visit Frequency + Service Breakdown side by side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Visit frequency */}
+            <DashboardCard>
+              <CardHeader>
+                <CardTitle>Visit Frequency</CardTitle>
+                <CardDescription>How often do customers visit the spa?</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-2">
+                  {cb.frequency.map((f, i) => {
+                    const pct = totalFreqCustomers > 0 ? Math.round((f.customers / totalFreqCustomers) * 100) : 0;
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground w-20 shrink-0">{f.bucket}</span>
+                        <div className="flex-1 h-5 bg-muted/50 rounded overflow-hidden relative">
+                          <div
+                            className="h-full rounded transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: COLORS.spa, opacity: 0.8 }}
+                          />
+                          <span className="absolute inset-0 flex items-center px-2 text-xs font-medium tabular-nums">
+                            {formatNumber(f.customers)} ({pct}%)
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </DashboardCard>
+
+            {/* Service breakdown */}
+            <DashboardCard>
+              <CardHeader>
+                <CardTitle>Revenue by Service</CardTitle>
+                <CardDescription>All-time revenue breakdown</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-3">
+                  {/* Stacked bar */}
+                  <div className="flex h-3 rounded-full overflow-hidden">
+                    {spa.serviceBreakdown.map((svc, i) => {
+                      const pct = totalServiceRevenue > 0 ? (svc.totalRevenue / totalServiceRevenue) * 100 : 0;
+                      return pct > 0 ? (
+                        <div key={i} className="h-full" style={{ width: `${pct}%`, backgroundColor: serviceColors[i % serviceColors.length] }} />
+                      ) : null;
+                    })}
+                  </div>
+
+                  {/* Detail rows */}
+                  <div className="flex flex-col">
+                    {spa.serviceBreakdown.map((svc, i) => {
+                      const pct = totalServiceRevenue > 0 ? Math.round((svc.totalRevenue / totalServiceRevenue) * 100) : 0;
+                      return (
+                        <div key={i} className={`flex items-center justify-between py-2.5 ${i < spa.serviceBreakdown.length - 1 ? "border-b border-border" : ""}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block size-2.5 rounded-full shrink-0" style={{ backgroundColor: serviceColors[i % serviceColors.length] }} />
+                            <span className="text-sm font-medium">{svc.category}</span>
+                          </div>
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-sm font-semibold tabular-nums">{formatCurrency(svc.totalRevenue)}</span>
+                            <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                    <span className="text-sm text-muted-foreground">Total</span>
+                    <span className="text-sm font-semibold tabular-nums">{formatCurrency(totalServiceRevenue)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </DashboardCard>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  RENTAL REVENUE TAB — Studio & Teacher rentals from spreadsheet
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -4684,9 +5025,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
   // KPI computations
   const totalAllTime = rental.monthly.reduce((s, m) => s + m.total, 0);
   const currentYearData = annualData.find((a) => a.year === currentYear);
-  const priorYearData = annualData.find((a) => a.year === currentYear - 1);
   const ytdRevenue = currentYearData?.total ?? 0;
-  const priorYearRevenue = priorYearData?.total ?? 0;
   const avgMonthly = completedMonthly.length > 0
     ? completedMonthly.reduce((s, m) => s + m.total, 0) / completedMonthly.length
     : 0;
@@ -4715,7 +5054,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
   return (
     <div className="flex flex-col gap-4">
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <DashboardCard>
           <CardHeader>
             <CardDescription>{currentYear} YTD</CardDescription>
@@ -4723,16 +5062,6 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">Year to date</CardFooter>
         </DashboardCard>
-
-        {priorYearData && (
-          <DashboardCard>
-            <CardHeader>
-              <CardDescription>{currentYear - 1} Total</CardDescription>
-              <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(priorYearRevenue)}</CardTitle>
-            </CardHeader>
-            <CardFooter className="text-sm text-muted-foreground">Full year</CardFooter>
-          </DashboardCard>
-        )}
 
         <DashboardCard>
           <CardHeader>
@@ -5077,6 +5406,28 @@ function DashboardContent({ activeSection, data, refreshData }: {
             <DashboardCard>
               <CardContent>
                 <NoDataInline label="No merch data available. Connect Shopify to see merch revenue." />
+              </CardContent>
+            </DashboardCard>
+          )}
+        </div>
+      )}
+
+      {/* ── REVENUE: SPA & WELLNESS ── */}
+      {activeSection === "revenue-spa" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <Droplet className="size-7 shrink-0" style={{ color: SECTION_COLORS["revenue-spa"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Spa & Wellness</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Revenue, visits, and customer behavior analytics</p>
+          </div>
+          {data.spa ? (
+            <SpaRevenueTab spa={data.spa} />
+          ) : (
+            <DashboardCard>
+              <CardContent>
+                <NoDataInline label="No spa data available." />
               </CardContent>
             </DashboardCard>
           )}

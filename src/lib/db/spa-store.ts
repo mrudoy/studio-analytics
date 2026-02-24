@@ -118,6 +118,151 @@ export async function getSpaMTDRevenue(): Promise<number> {
   return parseFloat(res.rows[0].mtd) || 0;
 }
 
+// ── Customer behavior (from registrations table) ─────────────
+
+/** Spa bookings in the registrations table are at these locations */
+const SPA_LOCATION_FILTER = `location_name IN ('SPA Lounge', 'SPA LOUNGE', 'TREATMENT ROOM')`;
+
+export interface SpaVisitFrequency {
+  bucket: string;
+  customers: number;
+}
+
+export interface SpaCrossover {
+  total: number;
+  alsoTakeClasses: number;
+  spaOnly: number;
+}
+
+export interface SpaSubscriberOverlap {
+  total: number;
+  areSubscribers: number;
+  notSubscribers: number;
+}
+
+export interface SpaSubscriberPlan {
+  planName: string;
+  customers: number;
+}
+
+export interface SpaMonthlyVisits {
+  month: string;
+  visits: number;
+  uniqueVisitors: number;
+}
+
+export interface SpaCustomerBehavior {
+  uniqueCustomers: number;
+  frequency: SpaVisitFrequency[];
+  crossover: SpaCrossover;
+  subscriberOverlap: SpaSubscriberOverlap;
+  subscriberPlans: SpaSubscriberPlan[];
+  monthlyVisits: SpaMonthlyVisits[];
+}
+
+/** Customer behavior analytics — who uses the spa? */
+export async function getSpaCustomerBehavior(): Promise<SpaCustomerBehavior | null> {
+  const pool = getPool();
+
+  // 1. Get all unique spa customer emails
+  const emailsRes = await pool.query(`
+    SELECT DISTINCT email
+    FROM registrations
+    WHERE ${SPA_LOCATION_FILTER} AND email IS NOT NULL AND email != ''
+  `);
+  const spaEmails = emailsRes.rows.map((r: Record<string, unknown>) => r.email as string);
+
+  if (spaEmails.length === 0) return null;
+
+  // 2. Visit frequency buckets
+  const freqRes = await pool.query(`
+    SELECT bucket, COUNT(*) AS customers FROM (
+      SELECT
+        CASE
+          WHEN COUNT(*) = 1 THEN '1 visit'
+          WHEN COUNT(*) BETWEEN 2 AND 3 THEN '2-3 visits'
+          WHEN COUNT(*) BETWEEN 4 AND 6 THEN '4-6 visits'
+          WHEN COUNT(*) BETWEEN 7 AND 10 THEN '7-10 visits'
+          ELSE '11+ visits'
+        END AS bucket
+      FROM registrations
+      WHERE ${SPA_LOCATION_FILTER} AND email IS NOT NULL AND email != ''
+      GROUP BY email
+    ) sub
+    GROUP BY bucket
+    ORDER BY MIN(CASE bucket
+      WHEN '1 visit' THEN 1 WHEN '2-3 visits' THEN 2
+      WHEN '4-6 visits' THEN 3 WHEN '7-10 visits' THEN 4 ELSE 5 END)
+  `);
+
+  // 3. Crossover: how many also take classes?
+  const classCheckRes = await pool.query(`
+    SELECT DISTINCT email
+    FROM registrations
+    WHERE email = ANY($1)
+      AND NOT (${SPA_LOCATION_FILTER})
+  `, [spaEmails]);
+  const classEmails = new Set(classCheckRes.rows.map((r: Record<string, unknown>) => r.email));
+
+  // 4. Subscriber overlap
+  const subRes = await pool.query(`
+    SELECT COUNT(DISTINCT customer_email) AS cnt
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+  `, [spaEmails.map(e => e.toLowerCase())]);
+  const areSubscribers = Number(subRes.rows[0].cnt);
+
+  // 5. Subscriber plan breakdown
+  const planRes = await pool.query(`
+    SELECT plan_name, COUNT(DISTINCT customer_email) AS customers
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    GROUP BY plan_name
+    ORDER BY customers DESC
+    LIMIT 15
+  `, [spaEmails.map(e => e.toLowerCase())]);
+
+  // 6. Monthly visits
+  const monthlyRes = await pool.query(`
+    SELECT
+      SUBSTR(attended_at, 1, 7) AS month,
+      COUNT(*) AS visits,
+      COUNT(DISTINCT email) AS unique_visitors
+    FROM registrations
+    WHERE ${SPA_LOCATION_FILTER} AND attended_at IS NOT NULL
+    GROUP BY SUBSTR(attended_at, 1, 7)
+    ORDER BY month DESC
+    LIMIT 18
+  `);
+
+  return {
+    uniqueCustomers: spaEmails.length,
+    frequency: freqRes.rows.map((r: Record<string, unknown>) => ({
+      bucket: r.bucket as string,
+      customers: Number(r.customers),
+    })),
+    crossover: {
+      total: spaEmails.length,
+      alsoTakeClasses: classEmails.size,
+      spaOnly: spaEmails.length - classEmails.size,
+    },
+    subscriberOverlap: {
+      total: spaEmails.length,
+      areSubscribers,
+      notSubscribers: spaEmails.length - areSubscribers,
+    },
+    subscriberPlans: planRes.rows.map((r: Record<string, unknown>) => ({
+      planName: r.plan_name as string,
+      customers: Number(r.customers),
+    })),
+    monthlyVisits: monthlyRes.rows.map((r: Record<string, unknown>) => ({
+      month: r.month as string,
+      visits: Number(r.visits),
+      uniqueVisitors: Number(r.unique_visitors),
+    })),
+  };
+}
+
 // ── Aggregate stats ─────────────────────────────────────────
 
 export interface SpaStats {
@@ -126,14 +271,16 @@ export interface SpaStats {
   monthlyRevenue: SpaMonthlyRevenue[];
   serviceBreakdown: SpaServiceRevenue[];
   totalRevenue: number;
+  customerBehavior: SpaCustomerBehavior | null;
 }
 
 /** Full spa stats for the dashboard. */
 export async function getSpaStats(): Promise<SpaStats> {
-  const [mtd, monthly, services] = await Promise.all([
+  const [mtd, monthly, services, behavior] = await Promise.all([
     getSpaMTDRevenue(),
     getSpaMonthlyRevenue(),
     getSpaServiceBreakdown(),
+    getSpaCustomerBehavior().catch(() => null),
   ]);
 
   // Average from completed months only (exclude current)
@@ -152,5 +299,6 @@ export async function getSpaStats(): Promise<SpaStats> {
     monthlyRevenue: monthly,
     serviceBreakdown: services,
     totalRevenue,
+    customerBehavior: behavior,
   };
 }
