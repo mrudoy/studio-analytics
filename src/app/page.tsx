@@ -4353,6 +4353,8 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
                     tickLine={false}
                     tickMargin={10}
                     axisLine={false}
+                    interval={0}
+                    fontSize={11}
                   />
                   <ChartTooltip
                     cursor={false}
@@ -4365,7 +4367,15 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
                     strokeWidth={2}
                     dot={{ r: 3 }}
                     activeDot={{ r: 5 }}
-                  />
+                  >
+                    <LabelList
+                      dataKey="aov"
+                      position="top"
+                      offset={8}
+                      fontSize={11}
+                      formatter={(v: number) => `$${v}`}
+                    />
+                  </Line>
                 </LineChart>
               </ChartContainer>
             </CardContent>
