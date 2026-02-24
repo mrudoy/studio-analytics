@@ -72,6 +72,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import {
   DashboardCard,
   CardHeader,
   CardTitle,
@@ -2088,9 +2096,6 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 
 // ─── Overview Section ─────────────────────────────────────────
 
-// Fixed column widths for alignment across both overview tables
-const OV_W = { metric: 150, active: 80, window: 110 } as const;
-
 function OverviewSection({ data }: { data: OverviewData }) {
   const windows: TimeWindowMetrics[] = [data.yesterday, data.thisWeek, data.lastWeek, data.thisMonth, data.lastMonth];
   const active = data.currentActive;
@@ -2120,14 +2125,14 @@ function OverviewSection({ data }: { data: OverviewData }) {
     { key: "introWeeks", icon: CalendarWeek, label: "Intro Weeks", color: COLORS.copper, getCount: (w) => w.activity.introWeeks },
   ];
 
-  const colMetric = { width: OV_W.metric, minWidth: OV_W.metric };
-  const colActive = { width: OV_W.active, minWidth: OV_W.active };
-  const colWindow = { width: OV_W.window, minWidth: OV_W.window };
+  // Shared classes for overview table columns
+  const thData = "text-right text-muted-foreground";
+  const tdData = "text-right tabular-nums";
 
   return (
-    <div className="flex flex-col gap-4 items-start">
+    <div className="flex flex-col gap-4">
       {/* ── AUTO-RENEWS ─────────────────────── */}
-      <DashboardCard className="w-fit">
+      <DashboardCard>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Recycle className="size-5" style={{ color: SECTION_COLORS["growth-auto"] }} />
@@ -2135,61 +2140,59 @@ function OverviewSection({ data }: { data: OverviewData }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="text-sm" style={{ fontFamily: FONT_SANS }}>
-              <thead>
-                <tr className="border-b border-border">
-                  <th className={`${modThClass} !text-left`} style={colMetric}>Metric</th>
-                  <th className={modThClass} style={colActive}>Active</th>
-                  {windows.map((w) => (
-                    <th key={w.label} className={modThClass} style={colWindow}>
-                      <div>{w.label}</div>
-                      <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => (
-                  <tr key={key} className="border-b border-border/50 last:border-0 transition-colors hover:bg-muted/50">
-                    <td className={`${modTdClass} !text-left font-medium`} style={colMetric}>
-                      <div className="flex items-center gap-2">
-                        <Icon size={16} style={{ color }} className="shrink-0" />
-                        <span>{label}</span>
-                      </div>
-                    </td>
-                    <td className={`${modTdClass} font-semibold`} style={colActive}>{formatNumber(activeCount)}</td>
-                    {windows.map((w) => {
-                      const sub = getSub(w);
-                      const net = sub.new - sub.churned;
-                      const isEmpty = sub.new === 0 && sub.churned === 0;
-                      return (
-                        <td key={w.label} className={modTdClass} style={colWindow}>
-                          {isEmpty ? (
-                            <span className="text-muted-foreground/40">—</span>
-                          ) : (
-                            <>
-                              <div className={`font-semibold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
-                                {net > 0 ? "+" : ""}{net}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground/50 leading-tight">
-                                +{sub.new} / -{sub.churned}
-                              </div>
-                            </>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
+          <Table style={{ tableLayout: "fixed", fontFamily: FONT_SANS }}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[150px] text-muted-foreground">Metric</TableHead>
+                <TableHead className={`w-[80px] ${thData}`}>Active</TableHead>
+                {windows.map((w) => (
+                  <TableHead key={w.label} className={thData}>
+                    <div>{w.label}</div>
+                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
+                  </TableHead>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => (
+                <TableRow key={key}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <Icon size={16} style={{ color }} className="shrink-0" />
+                      <span>{label}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className={`${tdData} font-semibold`}>{formatNumber(activeCount)}</TableCell>
+                  {windows.map((w) => {
+                    const sub = getSub(w);
+                    const net = sub.new - sub.churned;
+                    const isEmpty = sub.new === 0 && sub.churned === 0;
+                    return (
+                      <TableCell key={w.label} className={tdData}>
+                        {isEmpty ? (
+                          <span className="text-muted-foreground/40">—</span>
+                        ) : (
+                          <>
+                            <div className={`font-semibold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                              {net > 0 ? "+" : ""}{net}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground/50 leading-tight">
+                              +{sub.new} / -{sub.churned}
+                            </div>
+                          </>
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </DashboardCard>
 
       {/* ── NON AUTO-RENEWS ─────────────────── */}
-      <DashboardCard className="w-fit">
+      <DashboardCard>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <RecycleOff className="size-5" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
@@ -2197,45 +2200,45 @@ function OverviewSection({ data }: { data: OverviewData }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="text-sm" style={{ fontFamily: FONT_SANS }}>
-              <thead>
-                <tr className="border-b border-border">
-                  <th className={`${modThClass} !text-left`} style={colMetric}>Metric</th>
-                  {windows.map((w) => (
-                    <th key={w.label} className={modThClass} style={colWindow}>
-                      <div>{w.label}</div>
-                      <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => (
-                  <tr key={key} className="border-b border-border/50 last:border-0 transition-colors hover:bg-muted/50">
-                    <td className={`${modTdClass} !text-left font-medium`} style={colMetric}>
-                      <div className="flex items-center gap-2">
-                        <Icon size={16} style={{ color }} className="shrink-0" />
-                        <span>{label}</span>
-                      </div>
-                    </td>
-                    {windows.map((w) => {
-                      const count = getCount(w);
-                      return (
-                        <td key={w.label} className={`${modTdClass} font-semibold`} style={colWindow}>
-                          {count === 0 ? (
-                            <span className="text-muted-foreground/40">—</span>
-                          ) : (
-                            formatNumber(count)
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
+          <Table style={{ tableLayout: "fixed", fontFamily: FONT_SANS }}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[150px] text-muted-foreground">Metric</TableHead>
+                <TableHead className="w-[80px]" />
+                {windows.map((w) => (
+                  <TableHead key={w.label} className={thData}>
+                    <div>{w.label}</div>
+                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
+                  </TableHead>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => (
+                <TableRow key={key}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <Icon size={16} style={{ color }} className="shrink-0" />
+                      <span>{label}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell />
+                  {windows.map((w) => {
+                    const count = getCount(w);
+                    return (
+                      <TableCell key={w.label} className={`${tdData} font-semibold`}>
+                        {count === 0 ? (
+                          <span className="text-muted-foreground/40">—</span>
+                        ) : (
+                          formatNumber(count)
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </DashboardCard>
     </div>
