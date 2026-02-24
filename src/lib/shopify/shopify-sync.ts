@@ -14,6 +14,7 @@ import {
   getLatestShopifyOrderId,
   getLatestShopifyProductId,
   getLatestShopifyCustomerId,
+  touchShopifySyncTimestamp,
 } from "../db/shopify-store";
 
 export interface ShopifySyncOptions {
@@ -96,6 +97,9 @@ export async function runShopifySync(opts: ShopifySyncOptions): Promise<ShopifyS
     // Inventory access might not be granted — non-fatal
     console.warn(`[shopify] Inventory sync skipped:`, err instanceof Error ? err.message : err);
   }
+
+  // Always update the sync timestamp so "Last synced" reflects this run
+  await touchShopifySyncTimestamp();
 
   progress("Shopify sync complete", 1.0);
 

@@ -369,6 +369,18 @@ export async function getShopifyStats(): Promise<{
   };
 }
 
+/**
+ * Touch synced_at on the latest order so MAX(synced_at) reflects the current sync,
+ * even when no new orders were fetched.
+ */
+export async function touchShopifySyncTimestamp(): Promise<void> {
+  const pool = getPool();
+  await pool.query(`
+    UPDATE shopify_orders SET synced_at = NOW()
+    WHERE id = (SELECT id FROM shopify_orders ORDER BY id DESC LIMIT 1)
+  `);
+}
+
 /** Annual merch revenue by year (for YoY card). */
 export async function getShopifyAnnualRevenue(): Promise<
   Array<{ year: number; gross: number; net: number; orderCount: number; avgOrderValue: number }>
