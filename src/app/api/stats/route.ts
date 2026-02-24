@@ -451,6 +451,16 @@ export async function GET() {
       // insights table may not exist yet
     }
 
+    // ── 9c. Overview data ──────────────────────────────────────
+    let overviewData = null;
+    try {
+      const { getOverviewData } = await import("@/lib/db/overview-store");
+      overviewData = await getOverviewData();
+      console.log("[api/stats] Loaded overview data");
+    } catch (err) {
+      console.warn("[api/stats] Overview data failed:", err);
+    }
+
     // ── 10. Return response ──────────────────────────────────
     if (stats) {
       stats.dataFreshness = dataFreshness;
@@ -467,6 +477,7 @@ export async function GET() {
       shopifyMerch,
       spa,
       insights,
+      overviewData,
       dataSource: "database",
     });
   } catch (error) {

@@ -281,6 +281,44 @@ export async function getRegistrationsByWeek(startDate?: string, endDate?: strin
 }
 
 /**
+ * Count drop-in (non-subscriber) registrations in a date range.
+ */
+export async function getDropInCountForRange(
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT COUNT(*) AS cnt
+     FROM registrations
+     WHERE attended_at IS NOT NULL AND attended_at != ''
+       AND attended_at >= $1 AND attended_at < $2
+       AND (subscription = 'false' OR subscription IS NULL)`,
+    [startDate, endDate]
+  );
+  return Number(res.rows[0].cnt);
+}
+
+/**
+ * Count intro week passes used in a date range (from first_visits).
+ */
+export async function getIntroWeekCountForRange(
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT COUNT(*) AS cnt
+     FROM first_visits
+     WHERE attended_at IS NOT NULL AND attended_at != ''
+       AND attended_at >= $1 AND attended_at < $2
+       AND UPPER(pass) LIKE '%INTRO%'`,
+    [startDate, endDate]
+  );
+  return Number(res.rows[0].cnt);
+}
+
+/**
  * Get drop-in attendance stats (MTD, previous month, weekly average).
  */
 export async function getDropInStats(): Promise<AttendanceStats | null> {

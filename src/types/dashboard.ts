@@ -98,6 +98,7 @@ export interface DashboardStats {
   spa?: SpaData | null;
   annualBreakdown?: AnnualRevenueBreakdown[] | null;
   rentalRevenue?: RentalRevenueData | null;
+  overviewData?: OverviewData | null;
 }
 
 export interface RentalMonthRow {
@@ -433,6 +434,36 @@ export interface ConversionPoolSliceData {
 
 export interface ConversionPoolModuleData {
   slices: Partial<Record<ConversionPoolSlice, ConversionPoolSliceData>>;
+}
+
+// ── Overview types ─────────────────────────────────────────
+
+/** Metrics for a single time window (Yesterday, Last Week, This Month, Last Month) */
+export interface TimeWindowMetrics {
+  label: string;        // "Yesterday", "Last Week", etc.
+  sublabel: string;     // "Mon, Feb 23", "Feb 17 - Feb 23"
+  startDate: string;    // YYYY-MM-DD
+  endDate: string;      // YYYY-MM-DD (exclusive)
+  subscriptions: {
+    member:    { new: number; churned: number };
+    sky3:      { new: number; churned: number };
+    skyTingTv: { new: number; churned: number };
+  };
+  activity: {
+    dropIns: number;
+    introWeeks: number;
+  };
+  revenue: {
+    merch: number;
+  };
+}
+
+/** Full overview data: all 4 time windows */
+export interface OverviewData {
+  yesterday: TimeWindowMetrics;
+  lastWeek: TimeWindowMetrics;
+  thisMonth: TimeWindowMetrics;
+  lastMonth: TimeWindowMetrics;
 }
 
 // ── Trends aggregate ───────────────────────────────────────

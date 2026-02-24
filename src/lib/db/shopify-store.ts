@@ -291,6 +291,23 @@ export async function getShopifyMTDRevenue(): Promise<number> {
   return parseFloat(res.rows[0].mtd) || 0;
 }
 
+/** Shopify revenue for an arbitrary date range (exclusive end). */
+export async function getShopifyRevenueForRange(
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT COALESCE(SUM(total_price), 0) AS total
+     FROM shopify_orders
+     WHERE created_at >= $1 AND created_at < $2
+       AND financial_status NOT IN ('voided', 'refunded')
+       AND canceled_at IS NULL`,
+    [startDate, endDate]
+  );
+  return parseFloat(res.rows[0].total) || 0;
+}
+
 /** Top products by total revenue from order line_items (JSONB). */
 export async function getShopifyTopProducts(
   limit = 3

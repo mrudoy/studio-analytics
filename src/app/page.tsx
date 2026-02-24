@@ -107,6 +107,8 @@ import type {
   AnnualRevenueBreakdown,
   RentalRevenueData,
   InsightRow,
+  OverviewData,
+  TimeWindowMetrics,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -2073,6 +2075,96 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
             </CardContent>
           )}
         </DashboardCard>
+      ))}
+    </div>
+  );
+}
+
+// ─── Overview Section (time-window cards) ─────────────────────
+
+function OverviewSubscriptionRow({ label, newCount, churned }: {
+  label: string;
+  newCount: number;
+  churned: number;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium tabular-nums text-emerald-600">
+          +{formatNumber(newCount)}
+        </span>
+        <span className="text-sm font-medium tabular-nums text-red-500">
+          -{formatNumber(churned)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function OverviewActivityRow({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium tabular-nums">
+        {formatNumber(count)}
+      </span>
+    </div>
+  );
+}
+
+function OverviewTimeWindow({ window: w }: { window: TimeWindowMetrics }) {
+  return (
+    <div>
+      <h2 className="text-[15px] font-semibold text-muted-foreground mb-3">
+        {w.label} <span className="font-normal">— {w.sublabel}</span>
+      </h2>
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+        {/* Subscriptions card */}
+        <ShadCard>
+          <ShadCardHeader>
+            <ShadCardTitle className="text-base">{LABELS.autoRenews}</ShadCardTitle>
+          </ShadCardHeader>
+          <ShadCardContent className="flex flex-col gap-0.5">
+            <OverviewSubscriptionRow label={LABELS.members} newCount={w.subscriptions.member.new} churned={w.subscriptions.member.churned} />
+            <OverviewSubscriptionRow label={LABELS.sky3} newCount={w.subscriptions.sky3.new} churned={w.subscriptions.sky3.churned} />
+            <OverviewSubscriptionRow label={LABELS.tv} newCount={w.subscriptions.skyTingTv.new} churned={w.subscriptions.skyTingTv.churned} />
+          </ShadCardContent>
+        </ShadCard>
+
+        {/* Activity card */}
+        <ShadCard>
+          <ShadCardHeader>
+            <ShadCardTitle className="text-base">Activity</ShadCardTitle>
+          </ShadCardHeader>
+          <ShadCardContent className="flex flex-col gap-0.5">
+            <OverviewActivityRow label={LABELS.dropIns} count={w.activity.dropIns} />
+            <OverviewActivityRow label="Intro Weeks" count={w.activity.introWeeks} />
+          </ShadCardContent>
+        </ShadCard>
+
+        {/* Merch Revenue card */}
+        <ShadCard>
+          <ShadCardHeader>
+            <ShadCardTitle className="text-base">Merch Revenue</ShadCardTitle>
+          </ShadCardHeader>
+          <ShadCardContent>
+            <p className="text-2xl font-semibold tabular-nums">
+              {formatCurrency(w.revenue.merch)}
+            </p>
+          </ShadCardContent>
+        </ShadCard>
+      </div>
+    </div>
+  );
+}
+
+function OverviewSection({ data }: { data: OverviewData }) {
+  const windows = [data.yesterday, data.lastWeek, data.thisMonth, data.lastMonth];
+  return (
+    <div className="flex flex-col gap-6">
+      {windows.map((w) => (
+        <OverviewTimeWindow key={w.label} window={w} />
       ))}
     </div>
   );
@@ -4832,57 +4924,11 @@ function DashboardContent({ activeSection, data, refreshData }: {
               </p>
             )}
           </div>
-          <KPIHeroStrip tiles={(() => {
-            // Use last completed week if current week has no movement, else current
-            const completedW = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
-            const latestW = completedW.length >= 1 ? completedW[completedW.length - 1] : null;
-            const inStudioCount = data.activeSubscribers.member + data.activeSubscribers.sky3;
-            const inStudioNet = latestW
-              ? latestW.netMemberGrowth + latestW.netSky3Growth
-              : null;
-            const digitalNet = latestW
-              ? latestW.newSkyTingTv - latestW.skyTingTvChurn
-              : null;
-            const heroWeekLabel = latestW ? `net ${weekLabel(latestW.period)}` : undefined;
-
-            const nowDate = new Date();
-            const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
-            const mr = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
-            const latestMonthly = mr.length > 0 ? mr[mr.length - 1] : null;
-            const prevMonthly = mr.length > 1 ? mr[mr.length - 2] : null;
-            const heroLabel = latestMonthly
-              ? `${formatMonthLabel(latestMonthly.month)} Revenue`
-              : "Revenue MTD";
-            const heroValue = latestMonthly
-              ? latestMonthly.gross
-              : data.currentMonthRevenue;
-            const heroSublabel = prevMonthly
-              ? `${formatMonthLabel(prevMonthly.month)}: ${formatCurrency(prevMonthly.gross)}`
-              : data.previousMonthRevenue > 0
-                ? `Last month: ${formatCurrency(data.previousMonthRevenue)}`
-                : undefined;
-
-            const tiles: HeroTile[] = [
-              {
-                label: heroLabel,
-                value: formatCurrency(heroValue),
-                sublabel: heroSublabel,
-              },
-              {
-                label: "In-Studio Subscribers",
-                value: formatNumber(inStudioCount),
-                delta: inStudioNet,
-                sublabel: inStudioNet != null ? heroWeekLabel : undefined,
-              },
-              {
-                label: LABELS.tv,
-                value: formatNumber(data.activeSubscribers.skyTingTv),
-                delta: digitalNet,
-                sublabel: digitalNet != null ? heroWeekLabel : undefined,
-              },
-            ];
-            return tiles;
-          })()} />
+          {data.overviewData ? (
+            <OverviewSection data={data.overviewData} />
+          ) : (
+            <NoData label="Overview data not available" />
+          )}
         </>
       )}
 
