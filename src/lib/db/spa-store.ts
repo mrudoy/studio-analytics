@@ -280,7 +280,7 @@ export async function getSpaStats(): Promise<SpaStats> {
     getSpaMTDRevenue(),
     getSpaMonthlyRevenue(),
     getSpaServiceBreakdown(),
-    getSpaCustomerBehavior().catch(() => null),
+    getSpaCustomerBehavior().catch((err) => { console.error("[spa] getSpaCustomerBehavior error:", err); return null; }),
   ]);
 
   // Average from completed months only (exclude current)
