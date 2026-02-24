@@ -2102,7 +2102,7 @@ function OverviewSubCell({ newCount, churned }: { newCount: number; churned: num
   return (
     <td className={`px-2 py-2.5 text-center tabular-nums ${OV_COL.window}`}>
       {isEmpty ? (
-        <span className="text-[15px] font-bold text-muted-foreground/40">—</span>
+        <div className="text-[15px] font-bold text-muted-foreground/40">—</div>
       ) : (
         <>
           <div className={`text-[15px] font-bold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
@@ -2122,12 +2122,19 @@ function OverviewCountCell({ count }: { count: number }) {
   return (
     <td className={`px-2 py-2.5 text-center tabular-nums ${OV_COL.window}`}>
       {count === 0 ? (
-        <span className="text-[15px] font-bold text-muted-foreground/40">—</span>
+        <div className="text-[15px] font-bold text-muted-foreground/40">—</div>
       ) : (
-        <span className="text-[15px] font-bold">{formatNumber(count)}</span>
+        <div className="text-[15px] font-bold">{formatNumber(count)}</div>
       )}
     </td>
   );
+}
+
+/** Format merch revenue for overview sidebar */
+function formatMerchCompact(n: number): string {
+  if (n === 0) return "—";
+  if (n >= 1000) return `$${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`;
+  return `$${Math.round(n)}`;
 }
 
 function OverviewSection({ data }: { data: OverviewData }) {
@@ -2150,109 +2157,134 @@ function OverviewSection({ data }: { data: OverviewData }) {
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* ── AUTO-RENEWS table ─────────────────── */}
-      <ShadCard>
-        <ShadCardHeader className="pb-2">
-          <ShadCardTitle className="text-base">{LABELS.autoRenews}</ShadCardTitle>
-        </ShadCardHeader>
-        <ShadCardContent className="overflow-x-auto p-0">
-          <table className="border-collapse text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className={`px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10 ${OV_COL.label}`}>Metric</th>
-                <th className={`px-2 py-2 text-center text-xs font-medium text-muted-foreground whitespace-nowrap border-r border-border/30 ${OV_COL.active}`}>Current Active</th>
-                {windows.map((w) => (
-                  <th key={w.label} className={thWindow}>
-                    <div>{w.label}</div>
-                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Members */}
-              <tr className="border-b border-border/40 last:border-b-0">
-                <MetricLabel icon={ArrowBadgeDown} label={LABELS.members} color={COLORS.member} />
-                <td className={`px-2 py-2.5 text-center tabular-nums border-r border-border/30 ${OV_COL.active}`}>
-                  <span className="text-[15px] font-bold">{formatNumber(active.member)}</span>
-                </td>
-                {windows.map((w) => (
-                  <OverviewSubCell key={w.label} newCount={w.subscriptions.member.new} churned={w.subscriptions.member.churned} />
-                ))}
-              </tr>
-              {/* Sky Ting TV */}
-              <tr className="border-b border-border/40 last:border-b-0">
-                <MetricLabel icon={DeviceTv} label={LABELS.tv} color={COLORS.tv} />
-                <td className={`px-2 py-2.5 text-center tabular-nums border-r border-border/30 ${OV_COL.active}`}>
-                  <span className="text-[15px] font-bold">{formatNumber(active.skyTingTv)}</span>
-                </td>
-                {windows.map((w) => (
-                  <OverviewSubCell key={w.label} newCount={w.subscriptions.skyTingTv.new} churned={w.subscriptions.skyTingTv.churned} />
-                ))}
-              </tr>
-              {/* Sky3 */}
-              <tr className="border-b border-border/40 last:border-b-0">
-                <MetricLabel icon={BrandSky} label={LABELS.sky3} color={COLORS.sky3} />
-                <td className={`px-2 py-2.5 text-center tabular-nums border-r border-border/30 ${OV_COL.active}`}>
-                  <span className="text-[15px] font-bold">{formatNumber(active.sky3)}</span>
-                </td>
-                {windows.map((w) => (
-                  <OverviewSubCell key={w.label} newCount={w.subscriptions.sky3.new} churned={w.subscriptions.sky3.churned} />
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </ShadCardContent>
-      </ShadCard>
+    <div className="flex gap-6 items-start">
+      {/* ── Left: stacked metric tables ──────── */}
+      <div className="flex flex-col gap-7 min-w-0">
+        {/* ── AUTO-RENEWS table ─────────────────── */}
+        <ShadCard className="w-fit">
+          <ShadCardHeader className="pb-2">
+            <ShadCardTitle className="text-base">{LABELS.autoRenews}</ShadCardTitle>
+          </ShadCardHeader>
+          <ShadCardContent className="overflow-x-auto p-0">
+            <table className="border-collapse text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className={`px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10 ${OV_COL.label}`}>Metric</th>
+                  <th className={`px-2 py-2 text-center text-xs font-medium text-muted-foreground whitespace-nowrap border-r border-border/30 ${OV_COL.active}`}>Current Active</th>
+                  {windows.map((w) => (
+                    <th key={w.label} className={thWindow}>
+                      <div>{w.label}</div>
+                      <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Members */}
+                <tr className="border-b border-border/40 last:border-b-0">
+                  <MetricLabel icon={ArrowBadgeDown} label={LABELS.members} color={COLORS.member} />
+                  <td className={`px-2 py-2.5 text-center tabular-nums border-r border-border/30 ${OV_COL.active}`}>
+                    <div className="text-[15px] font-bold">{formatNumber(active.member)}</div>
+                  </td>
+                  {windows.map((w) => (
+                    <OverviewSubCell key={w.label} newCount={w.subscriptions.member.new} churned={w.subscriptions.member.churned} />
+                  ))}
+                </tr>
+                {/* Sky Ting TV */}
+                <tr className="border-b border-border/40 last:border-b-0">
+                  <MetricLabel icon={DeviceTv} label={LABELS.tv} color={COLORS.tv} />
+                  <td className={`px-2 py-2.5 text-center tabular-nums border-r border-border/30 ${OV_COL.active}`}>
+                    <div className="text-[15px] font-bold">{formatNumber(active.skyTingTv)}</div>
+                  </td>
+                  {windows.map((w) => (
+                    <OverviewSubCell key={w.label} newCount={w.subscriptions.skyTingTv.new} churned={w.subscriptions.skyTingTv.churned} />
+                  ))}
+                </tr>
+                {/* Sky3 */}
+                <tr className="border-b border-border/40 last:border-b-0">
+                  <MetricLabel icon={BrandSky} label={LABELS.sky3} color={COLORS.sky3} />
+                  <td className={`px-2 py-2.5 text-center tabular-nums border-r border-border/30 ${OV_COL.active}`}>
+                    <div className="text-[15px] font-bold">{formatNumber(active.sky3)}</div>
+                  </td>
+                  {windows.map((w) => (
+                    <OverviewSubCell key={w.label} newCount={w.subscriptions.sky3.new} churned={w.subscriptions.sky3.churned} />
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </ShadCardContent>
+        </ShadCard>
 
-      {/* ── NON AUTO-RENEWS table ─────────────── */}
-      <ShadCard>
-        <ShadCardHeader className="pb-2">
-          <ShadCardTitle className="text-base">Non Auto-Renews</ShadCardTitle>
+        {/* ── NON AUTO-RENEWS table ─────────────── */}
+        <ShadCard className="w-fit">
+          <ShadCardHeader className="pb-2">
+            <ShadCardTitle className="text-base">Non Auto-Renews</ShadCardTitle>
+          </ShadCardHeader>
+          <ShadCardContent className="overflow-x-auto p-0">
+            <table className="border-collapse text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className={`px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10 ${OV_COL.label}`}>Metric</th>
+                  {/* Spacer column matching Current Active width to keep windows aligned */}
+                  <th className={`${OV_COL.active} border-r border-border/30`} />
+                  {windows.map((w) => (
+                    <th key={w.label} className={thWindow}>
+                      <div>{w.label}</div>
+                      <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Drop-ins */}
+                <tr className="border-b border-border/40 last:border-b-0">
+                  <MetricLabel icon={DoorEnter} label={LABELS.dropIns} color={COLORS.dropIn} />
+                  <td className={`border-r border-border/30 ${OV_COL.active}`} />
+                  {windows.map((w) => (
+                    <OverviewCountCell key={w.label} count={w.activity.dropIns} />
+                  ))}
+                </tr>
+                {/* Guests */}
+                <tr className="border-b border-border/40 last:border-b-0">
+                  <MetricLabel icon={UserStar} label="Guests" color={COLORS.teal} />
+                  <td className={`border-r border-border/30 ${OV_COL.active}`} />
+                  {windows.map((w) => (
+                    <OverviewCountCell key={w.label} count={w.activity.guests} />
+                  ))}
+                </tr>
+                {/* Intro Weeks */}
+                <tr className="border-b border-border/40 last:border-b-0">
+                  <MetricLabel icon={CalendarWeek} label="Intro Weeks" color={COLORS.copper} />
+                  <td className={`border-r border-border/30 ${OV_COL.active}`} />
+                  {windows.map((w) => (
+                    <OverviewCountCell key={w.label} count={w.activity.introWeeks} />
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </ShadCardContent>
+        </ShadCard>
+      </div>
+
+      {/* ── Right: Merch Revenue sidebar card ── */}
+      <ShadCard className="w-[200px] shrink-0">
+        <ShadCardHeader className="pb-3">
+          <ShadCardTitle className="text-base flex items-center gap-2">
+            <ShoppingBag size={16} style={{ color: COLORS.merch }} className="shrink-0" />
+            <span>Merch</span>
+          </ShadCardTitle>
         </ShadCardHeader>
-        <ShadCardContent className="overflow-x-auto p-0">
-          <table className="border-collapse text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className={`px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10 ${OV_COL.label}`}>Metric</th>
-                {/* Spacer column matching Current Active width to keep windows aligned */}
-                <th className={`${OV_COL.active} border-r border-border/30`} />
-                {windows.map((w) => (
-                  <th key={w.label} className={thWindow}>
-                    <div>{w.label}</div>
-                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Drop-ins */}
-              <tr className="border-b border-border/40 last:border-b-0">
-                <MetricLabel icon={DoorEnter} label={LABELS.dropIns} color={COLORS.dropIn} />
-                <td className={`border-r border-border/30 ${OV_COL.active}`} />
-                {windows.map((w) => (
-                  <OverviewCountCell key={w.label} count={w.activity.dropIns} />
-                ))}
-              </tr>
-              {/* Guests */}
-              <tr className="border-b border-border/40 last:border-b-0">
-                <MetricLabel icon={UserStar} label="Guests" color={COLORS.teal} />
-                <td className={`border-r border-border/30 ${OV_COL.active}`} />
-                {windows.map((w) => (
-                  <OverviewCountCell key={w.label} count={w.activity.guests} />
-                ))}
-              </tr>
-              {/* Intro Weeks */}
-              <tr className="border-b border-border/40 last:border-b-0">
-                <MetricLabel icon={CalendarWeek} label="Intro Weeks" color={COLORS.copper} />
-                <td className={`border-r border-border/30 ${OV_COL.active}`} />
-                {windows.map((w) => (
-                  <OverviewCountCell key={w.label} count={w.activity.introWeeks} />
-                ))}
-              </tr>
-            </tbody>
-          </table>
+        <ShadCardContent className="pt-0">
+          <div className="flex flex-col gap-3">
+            {windows.map((w) => (
+              <div key={w.label} className="flex items-baseline justify-between gap-3">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{w.label}</span>
+                <span className={`text-sm font-bold tabular-nums ${w.revenue.merch === 0 ? "text-muted-foreground/40" : ""}`}>
+                  {formatMerchCompact(w.revenue.merch)}
+                </span>
+              </div>
+            ))}
+          </div>
         </ShadCardContent>
       </ShadCard>
     </div>
