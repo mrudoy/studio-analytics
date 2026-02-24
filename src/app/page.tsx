@@ -586,10 +586,10 @@ function PipelineView() {
               }}
             >
               <div className="text-center space-y-1">
-                <p className="font-medium text-emerald-700">
+                <p className="font-medium text-emerald-600">
                   Pipeline complete
                 </p>
-                <p className="text-sm text-emerald-700 opacity-80">
+                <p className="text-sm text-emerald-600 opacity-80">
                   Finished in {Math.round(status.duration / 1000)}s
                 </p>
               </div>
@@ -710,7 +710,7 @@ function DeltaBadge({ delta, deltaPercent, isPositiveGood = true, isCurrency = f
 
   const isPositive = delta > 0;
   const isGood = isPositiveGood ? isPositive : !isPositive;
-  const colorClass = delta === 0 ? "text-muted-foreground" : isGood ? "text-emerald-700" : "text-destructive";
+  const colorClass = delta === 0 ? "text-muted-foreground" : isGood ? "text-emerald-600" : "text-red-500";
   const bgClass = delta === 0 ? "bg-muted" : isGood ? "bg-emerald-50" : "bg-red-50";
   const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "";
 
@@ -823,7 +823,7 @@ function BackupStatusCard() {
           <CloudUpload className="size-5 text-blue-600" />
           Cloud Backups
           {latest ? (
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-emerald-200">
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-600 border-emerald-200">
               {backups.length} backup{backups.length !== 1 ? "s" : ""}
             </Badge>
           ) : (
@@ -961,7 +961,7 @@ function DataSection({ lastUpdated, spreadsheetUrl, dataSource, shopify }: { las
           <ShadCardTitle className="flex items-center gap-2">
             Last Update
             {lastUpdated && (
-              <Badge variant={isStale ? "destructive" : "secondary"} className={!isStale ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}>
+              <Badge variant={isStale ? "destructive" : "secondary"} className={!isStale ? "bg-emerald-100 text-emerald-600 border-emerald-200" : ""}>
                 {isStale ? "Stale" : "Fresh"}
               </Badge>
             )}
@@ -1105,7 +1105,7 @@ function DataSection({ lastUpdated, spreadsheetUrl, dataSource, shopify }: { las
             <ShoppingBag className="size-5" style={{ color: SECTION_COLORS["revenue-merch"] }} />
             Shopify
             {shopify ? (
-              <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+              <Badge variant="secondary" className="bg-emerald-100 text-emerald-600 border-emerald-200">Connected</Badge>
             ) : (
               <Badge variant="outline">Not connected</Badge>
             )}
@@ -1871,8 +1871,8 @@ function Chip({ children, variant = "neutral", title: chipTitle }: {
 }) {
   const variantClass: Record<ChipVariant, string> = {
     neutral: "text-muted-foreground bg-muted",
-    positive: "text-emerald-700 bg-emerald-50",
-    negative: "text-destructive bg-red-50",
+    positive: "text-emerald-600 bg-emerald-50",
+    negative: "text-red-500 bg-red-50",
     accent: "text-foreground bg-muted",
   };
   return (
@@ -2055,7 +2055,7 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
               tile.delta != null && tile.delta !== 0
                 ? (tile.delta > 0) === (tile.isPositiveGood !== false)
                   ? "text-emerald-600"
-                  : "text-red-600"
+                  : "text-red-500"
                 : ""
             }`}>
               {tile.value}
@@ -2216,7 +2216,7 @@ function MonthBreakdownCard({ monthlyRevenue, monthOverMonth }: {
           ].map((row, i) => (
             <div key={i} className={`flex justify-between items-center py-2.5 ${i < 2 ? "border-b border-border" : ""}`}>
               <span className="text-sm text-muted-foreground">{row.label}</span>
-              <span className={`text-sm tabular-nums ${row.bold ? "font-semibold" : "font-medium"} ${row.destructive ? "text-destructive" : ""}`}>
+              <span className={`text-sm tabular-nums ${row.bold ? "font-semibold" : "font-medium"} ${row.destructive ? "text-red-500" : ""}`}>
                 {row.value}
               </span>
             </div>
