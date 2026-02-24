@@ -27,6 +27,9 @@ import {
   AlertTriangleIcon,
   InfoIcon,
   CircleCheckIcon,
+  DoorEnter,
+  UserStar,
+  CalendarWeek,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -2089,14 +2092,12 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 function OverviewSubCell({ newCount, churned }: { newCount: number; churned: number }) {
   const net = newCount - churned;
   return (
-    <td className="px-3 py-2 text-right tabular-nums">
-      <div className={`text-sm font-semibold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+    <td className="px-3 py-2.5 text-right tabular-nums">
+      <div className={`text-[15px] font-bold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
         {net > 0 ? "+" : ""}{net}
       </div>
-      <div className="text-[11px] text-muted-foreground leading-tight">
-        <span className="text-emerald-600/70">+{newCount}</span>
-        {" / "}
-        <span className="text-red-500/70">-{churned}</span>
+      <div className="text-[11px] text-muted-foreground/60 leading-tight">
+        +{newCount} / -{churned}
       </div>
     </td>
   );
@@ -2105,8 +2106,8 @@ function OverviewSubCell({ newCount, churned }: { newCount: number; churned: num
 /** Activity count cell (drop-ins, guests, intro weeks) */
 function OverviewCountCell({ count }: { count: number }) {
   return (
-    <td className="px-3 py-2 text-right tabular-nums">
-      <span className="text-sm font-semibold">{formatNumber(count)}</span>
+    <td className="px-3 py-2.5 text-right tabular-nums">
+      <span className="text-[15px] font-bold">{formatNumber(count)}</span>
     </td>
   );
 }
@@ -2116,7 +2117,19 @@ function OverviewSection({ data }: { data: OverviewData }) {
   const active = data.currentActive;
 
   const thClass = "px-3 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap";
-  const metricLabelClass = "px-3 py-2 text-sm font-medium text-foreground whitespace-nowrap sticky left-0 bg-card z-10";
+  const labelCellClass = "px-3 py-2.5 whitespace-nowrap sticky left-0 bg-card z-10";
+
+  /** Row label with icon + color, consistent across the dashboard */
+  function MetricLabel({ icon: Icon, label, color }: { icon: React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>; label: string; color: string }) {
+    return (
+      <td className={labelCellClass}>
+        <div className="flex items-center gap-2">
+          <Icon size={16} style={{ color }} className="shrink-0" />
+          <span className="text-sm font-medium">{label}</span>
+        </div>
+      </td>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -2126,7 +2139,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
           <ShadCardTitle className="text-base">{LABELS.autoRenews}</ShadCardTitle>
         </ShadCardHeader>
         <ShadCardContent className="overflow-x-auto p-0">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full max-w-[820px] border-collapse text-sm">
             <thead>
               <tr className="border-b">
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10">Metric</th>
@@ -2134,37 +2147,37 @@ function OverviewSection({ data }: { data: OverviewData }) {
                 {windows.map((w) => (
                   <th key={w.label} className={thClass}>
                     <div>{w.label}</div>
-                    <div className="font-normal text-[10px]">{w.sublabel}</div>
+                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {/* Members */}
-              <tr className="border-b last:border-b-0">
-                <td className={metricLabelClass}>{LABELS.members}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  <span className="text-sm font-semibold">{formatNumber(active.member)}</span>
+              <tr className="border-b border-border/40 last:border-b-0">
+                <MetricLabel icon={ArrowBadgeDown} label={LABELS.members} color={COLORS.member} />
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  <span className="text-[15px] font-bold">{formatNumber(active.member)}</span>
                 </td>
                 {windows.map((w) => (
                   <OverviewSubCell key={w.label} newCount={w.subscriptions.member.new} churned={w.subscriptions.member.churned} />
                 ))}
               </tr>
               {/* Sky Ting TV */}
-              <tr className="border-b last:border-b-0">
-                <td className={metricLabelClass}>{LABELS.tv}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  <span className="text-sm font-semibold">{formatNumber(active.skyTingTv)}</span>
+              <tr className="border-b border-border/40 last:border-b-0">
+                <MetricLabel icon={DeviceTv} label={LABELS.tv} color={COLORS.tv} />
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  <span className="text-[15px] font-bold">{formatNumber(active.skyTingTv)}</span>
                 </td>
                 {windows.map((w) => (
                   <OverviewSubCell key={w.label} newCount={w.subscriptions.skyTingTv.new} churned={w.subscriptions.skyTingTv.churned} />
                 ))}
               </tr>
               {/* Sky3 */}
-              <tr className="border-b last:border-b-0">
-                <td className={metricLabelClass}>{LABELS.sky3}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  <span className="text-sm font-semibold">{formatNumber(active.sky3)}</span>
+              <tr className="border-b border-border/40 last:border-b-0">
+                <MetricLabel icon={BrandSky} label={LABELS.sky3} color={COLORS.sky3} />
+                <td className="px-3 py-2.5 text-right tabular-nums">
+                  <span className="text-[15px] font-bold">{formatNumber(active.sky3)}</span>
                 </td>
                 {windows.map((w) => (
                   <OverviewSubCell key={w.label} newCount={w.subscriptions.sky3.new} churned={w.subscriptions.sky3.churned} />
@@ -2181,40 +2194,36 @@ function OverviewSection({ data }: { data: OverviewData }) {
           <ShadCardTitle className="text-base">Non Auto-Renews</ShadCardTitle>
         </ShadCardHeader>
         <ShadCardContent className="overflow-x-auto p-0">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full max-w-[720px] border-collapse text-sm">
             <thead>
               <tr className="border-b">
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10">Metric</th>
-                <th className={thClass}>&nbsp;</th>
                 {windows.map((w) => (
                   <th key={w.label} className={thClass}>
                     <div>{w.label}</div>
-                    <div className="font-normal text-[10px]">{w.sublabel}</div>
+                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {/* Drop-ins */}
-              <tr className="border-b last:border-b-0">
-                <td className={metricLabelClass}>{LABELS.dropIns}</td>
-                <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+              <tr className="border-b border-border/40 last:border-b-0">
+                <MetricLabel icon={DoorEnter} label={LABELS.dropIns} color={COLORS.dropIn} />
                 {windows.map((w) => (
                   <OverviewCountCell key={w.label} count={w.activity.dropIns} />
                 ))}
               </tr>
               {/* Guests */}
-              <tr className="border-b last:border-b-0">
-                <td className={metricLabelClass}>Guests</td>
-                <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+              <tr className="border-b border-border/40 last:border-b-0">
+                <MetricLabel icon={UserStar} label="Guests" color={COLORS.teal} />
                 {windows.map((w) => (
                   <OverviewCountCell key={w.label} count={w.activity.guests} />
                 ))}
               </tr>
               {/* Intro Weeks */}
-              <tr className="border-b last:border-b-0">
-                <td className={metricLabelClass}>Intro Weeks</td>
-                <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+              <tr className="border-b border-border/40 last:border-b-0">
+                <MetricLabel icon={CalendarWeek} label="Intro Weeks" color={COLORS.copper} />
                 {windows.map((w) => (
                   <OverviewCountCell key={w.label} count={w.activity.introWeeks} />
                 ))}

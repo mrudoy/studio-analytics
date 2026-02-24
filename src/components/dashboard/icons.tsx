@@ -262,6 +262,40 @@ export function CircleCheckIcon(props: IconProps) {
   );
 }
 
+/** Door enter — Drop-In visits */
+export function DoorEnter(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M13 12v.01" />
+      <path d="M3 21h18" />
+      <path d="M5 21V5a2 2 0 0 1 2-2h7.5M17 13.5V21" />
+      <path d="M14 7h7m0 0l-3-3m3 3l-3 3" />
+    </svg>
+  );
+}
+
+/** User with star — Guest pass */
+export function UserStar(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0" />
+      <path d="M6 21v-2a4 4 0 0 1 4-4h.5" />
+      <path d="m15.5 15.5l1.5 3l3-1l-1 3h-4l-1-3z" />
+    </svg>
+  );
+}
+
+/** Calendar clock — Intro Week */
+export function CalendarWeek(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+      <path d="M16 3v4M8 3v4M4 11h16" />
+      <path d="M12 15h2v2" />
+    </svg>
+  );
+}
+
 /** Chat bubble — Ask AI button */
 export function BubbleIcon(props: IconProps) {
   return (
