@@ -35,9 +35,10 @@ When answering questions:
 async function fetchDashboardData(): Promise<string> {
   try {
     // Fetch from our own API to get the full dashboard data
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
+      || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+      || "http://localhost:3000";
 
     const res = await fetch(`${baseUrl}/api/stats`, {
       cache: "no-store",
