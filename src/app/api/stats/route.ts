@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown, getMonthlyRentalRevenue, getAnnualRentalRevenue } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown, getMonthlyRentalRevenue, getAnnualRentalRevenue, getMonthlyRetreatRevenue } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -106,14 +106,23 @@ export async function GET() {
     let monthOverMonth = null;
 
     // ── 5. Monthly revenue timeline ──────────────────────────
-    let monthlyRevenue: { month: string; gross: number; net: number }[] = [];
+    let monthlyRevenue: { month: string; gross: number; net: number; retreatGross?: number; retreatNet?: number }[] = [];
     try {
-      const allMonthly = await getAllMonthlyRevenue();
-      monthlyRevenue = allMonthly.map((m) => ({
-        month: m.periodStart.slice(0, 7),
-        gross: Math.round(m.totalRevenue * 100) / 100,
-        net: Math.round(m.totalNetRevenue * 100) / 100,
-      }));
+      const [allMonthly, retreatByMonth] = await Promise.all([
+        getAllMonthlyRevenue(),
+        getMonthlyRetreatRevenue(),
+      ]);
+      monthlyRevenue = allMonthly.map((m) => {
+        const mKey = m.periodStart.slice(0, 7);
+        const retreat = retreatByMonth.get(mKey);
+        return {
+          month: mKey,
+          gross: Math.round(m.totalRevenue * 100) / 100,
+          net: Math.round(m.totalNetRevenue * 100) / 100,
+          retreatGross: retreat ? Math.round(retreat.gross * 100) / 100 : 0,
+          retreatNet: retreat ? Math.round(retreat.net * 100) / 100 : 0,
+        };
+      });
 
       // Override currentMonthRevenue with actual monthly data if available
       if (stats && monthlyRevenue.length > 0) {
@@ -193,7 +202,7 @@ export async function GET() {
               const shopMonth = shopifyByMonth.get(m.month);
               if (shopMonth) {
                 monthlyRevenue[i] = {
-                  month: m.month,
+                  ...m,
                   gross: Math.round((m.gross + shopMonth.gross) * 100) / 100,
                   net: Math.round((m.net + shopMonth.net) * 100) / 100,
                 };
@@ -318,7 +327,7 @@ export async function GET() {
               const deductNet = unionR?.net ?? 0;
               const addAmount = ssR ?? 0;
               monthlyRevenue[i] = {
-                month: m.month,
+                ...m,
                 gross: Math.round((m.gross - deductGross + addAmount) * 100) / 100,
                 net: Math.round((m.net - deductNet + addAmount) * 100) / 100,
               };

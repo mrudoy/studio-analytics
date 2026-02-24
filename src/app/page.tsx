@@ -4900,12 +4900,16 @@ function DashboardContent({ activeSection, data, refreshData }: {
 
             // If we have current month data, show MTD with pacing
             if (curEntry && curEntry.gross > 0) {
-              const curGross = curEntry.gross;
-              const curNet = curEntry.net;
+              const retreatGross = curEntry.retreatGross ?? 0;
+              const retreatNet = curEntry.retreatNet ?? 0;
+              const curGross = curEntry.gross - retreatGross;
+              const curNet = curEntry.net - retreatNet;
               const dayOfMonth = nowD.getDate();
               const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
               const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
-              const prevGross = prevEntry?.gross ?? 0;
+              // For pacing comparison, also subtract retreat from previous month
+              const prevRetreat = prevEntry?.retreatGross ?? 0;
+              const prevGross = (prevEntry?.gross ?? 0) - prevRetreat;
               const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
               const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
@@ -4935,6 +4939,12 @@ function DashboardContent({ activeSection, data, refreshData }: {
                         </div>
                       )}
                     </div>
+                    {retreatGross > 0 && (
+                      <div className="mt-2 text-sm text-muted-foreground">
+                        + Retreat revenue: <span className="font-medium tabular-nums text-foreground/70">{formatCurrency(retreatGross)}</span>
+                        <span className="ml-1 text-xs">(pass-through, ~30% retained)</span>
+                      </div>
+                    )}
                   </CardContent>
                   <CardFooter>
                     <div className="w-full">

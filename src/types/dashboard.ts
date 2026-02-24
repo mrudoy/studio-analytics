@@ -92,7 +92,7 @@ export interface DashboardStats {
   trends?: TrendsData | null;
   revenueCategories?: RevenueCategoryData | null;
   monthOverMonth?: MonthOverMonthData | null;
-  monthlyRevenue?: { month: string; gross: number; net: number }[];
+  monthlyRevenue?: { month: string; gross: number; net: number; retreatGross?: number; retreatNet?: number }[];
   shopify?: ShopifyStats | null;
   shopifyMerch?: ShopifyMerchData | null;
   spa?: SpaData | null;
