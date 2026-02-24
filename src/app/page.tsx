@@ -2088,6 +2088,9 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 
 // ─── Overview Section ─────────────────────────────────────────
 
+// Fixed column widths for alignment across both overview tables
+const OV_W = { metric: 150, active: 80, window: 110 } as const;
+
 function OverviewSection({ data }: { data: OverviewData }) {
   const windows: TimeWindowMetrics[] = [data.yesterday, data.thisWeek, data.lastWeek, data.thisMonth, data.lastMonth];
   const active = data.currentActive;
@@ -2117,10 +2120,14 @@ function OverviewSection({ data }: { data: OverviewData }) {
     { key: "introWeeks", icon: CalendarWeek, label: "Intro Weeks", color: COLORS.copper, getCount: (w) => w.activity.introWeeks },
   ];
 
+  const colMetric = { width: OV_W.metric, minWidth: OV_W.metric };
+  const colActive = { width: OV_W.active, minWidth: OV_W.active };
+  const colWindow = { width: OV_W.window, minWidth: OV_W.window };
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 items-start">
       {/* ── AUTO-RENEWS ─────────────────────── */}
-      <DashboardCard>
+      <DashboardCard className="w-fit">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Recycle className="size-5" style={{ color: SECTION_COLORS["growth-auto"] }} />
@@ -2129,13 +2136,13 @@ function OverviewSection({ data }: { data: OverviewData }) {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
+            <table className="text-sm" style={{ fontFamily: FONT_SANS }}>
               <thead>
                 <tr className="border-b border-border">
-                  <th className={`${modThClass} !text-left`}>Metric</th>
-                  <th className={modThClass}>Active</th>
+                  <th className={`${modThClass} !text-left`} style={colMetric}>Metric</th>
+                  <th className={modThClass} style={colActive}>Active</th>
                   {windows.map((w) => (
-                    <th key={w.label} className={modThClass}>
+                    <th key={w.label} className={modThClass} style={colWindow}>
                       <div>{w.label}</div>
                       <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
                     </th>
@@ -2145,19 +2152,19 @@ function OverviewSection({ data }: { data: OverviewData }) {
               <tbody>
                 {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => (
                   <tr key={key} className="border-b border-border/50 last:border-0 transition-colors hover:bg-muted/50">
-                    <td className={`${modTdClass} !text-left font-medium`}>
+                    <td className={`${modTdClass} !text-left font-medium`} style={colMetric}>
                       <div className="flex items-center gap-2">
                         <Icon size={16} style={{ color }} className="shrink-0" />
                         <span>{label}</span>
                       </div>
                     </td>
-                    <td className={`${modTdClass} font-semibold`}>{formatNumber(activeCount)}</td>
+                    <td className={`${modTdClass} font-semibold`} style={colActive}>{formatNumber(activeCount)}</td>
                     {windows.map((w) => {
                       const sub = getSub(w);
                       const net = sub.new - sub.churned;
                       const isEmpty = sub.new === 0 && sub.churned === 0;
                       return (
-                        <td key={w.label} className={modTdClass}>
+                        <td key={w.label} className={modTdClass} style={colWindow}>
                           {isEmpty ? (
                             <span className="text-muted-foreground/40">—</span>
                           ) : (
@@ -2182,7 +2189,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
       </DashboardCard>
 
       {/* ── NON AUTO-RENEWS ─────────────────── */}
-      <DashboardCard>
+      <DashboardCard className="w-fit">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <RecycleOff className="size-5" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
@@ -2191,12 +2198,12 @@ function OverviewSection({ data }: { data: OverviewData }) {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
+            <table className="text-sm" style={{ fontFamily: FONT_SANS }}>
               <thead>
                 <tr className="border-b border-border">
-                  <th className={`${modThClass} !text-left`}>Metric</th>
+                  <th className={`${modThClass} !text-left`} style={colMetric}>Metric</th>
                   {windows.map((w) => (
-                    <th key={w.label} className={modThClass}>
+                    <th key={w.label} className={modThClass} style={colWindow}>
                       <div>{w.label}</div>
                       <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
                     </th>
@@ -2206,7 +2213,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
               <tbody>
                 {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => (
                   <tr key={key} className="border-b border-border/50 last:border-0 transition-colors hover:bg-muted/50">
-                    <td className={`${modTdClass} !text-left font-medium`}>
+                    <td className={`${modTdClass} !text-left font-medium`} style={colMetric}>
                       <div className="flex items-center gap-2">
                         <Icon size={16} style={{ color }} className="shrink-0" />
                         <span>{label}</span>
@@ -2215,7 +2222,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
                     {windows.map((w) => {
                       const count = getCount(w);
                       return (
-                        <td key={w.label} className={`${modTdClass} font-semibold`}>
+                        <td key={w.label} className={`${modTdClass} font-semibold`} style={colWindow}>
                           {count === 0 ? (
                             <span className="text-muted-foreground/40">—</span>
                           ) : (
