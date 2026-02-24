@@ -46,8 +46,6 @@ import {
   Line,
   LineChart,
   LabelList,
-  Pie,
-  PieChart,
   XAxis,
   YAxis,
   ReferenceLine,
@@ -3147,54 +3145,61 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
   );
 }
 
-// ─── Conversion Time Pie Card ────────────────────────────────
+// ─── Conversion Time Horizontal Bar Card ─────────────────────
 
 function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
   const data: ConversionPoolSliceData | null = pool.slices.all ?? null;
   if (!data?.lagStats) return null;
   const { lagStats } = data;
 
-  const pieColors = ["hsl(270, 15%, 42%)", "hsl(270, 15%, 58%)", "hsl(270, 15%, 72%)", "hsl(270, 15%, 84%)"];
-  const pieData = [
-    { bucket: "0-30d", count: lagStats.timeBucket0to30, fill: pieColors[0] },
-    { bucket: "31-90d", count: lagStats.timeBucket31to90, fill: pieColors[1] },
-    { bucket: "91-180d", count: lagStats.timeBucket91to180, fill: pieColors[2] },
-    { bucket: "180d+", count: lagStats.timeBucket180plus, fill: pieColors[3] },
+  const barColors = ["hsl(270, 15%, 42%)", "hsl(270, 15%, 58%)", "hsl(270, 15%, 72%)", "hsl(270, 15%, 84%)"];
+  const barData = [
+    { bucket: "0–30d", count: lagStats.timeBucket0to30, fill: barColors[0] },
+    { bucket: "31–90d", count: lagStats.timeBucket31to90, fill: barColors[1] },
+    { bucket: "91–180d", count: lagStats.timeBucket91to180, fill: barColors[2] },
+    { bucket: "180d+", count: lagStats.timeBucket180plus, fill: barColors[3] },
   ].filter((d) => d.count > 0);
 
-  const pieConfig = Object.fromEntries(pieData.map((d) => [d.bucket, { label: d.bucket, color: d.fill }])) as ChartConfig;
+  const barConfig = Object.fromEntries(barData.map((d) => [d.bucket, { label: d.bucket, color: d.fill }])) as ChartConfig;
 
   return (
     <DashboardCard>
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle>Time to Convert</CardTitle>
         <CardDescription>
           Median: {lagStats.historicalMedianTimeToConvert != null ? `${lagStats.historicalMedianTimeToConvert}d` : "\u2014"} (last 12 weeks)
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-1 pb-0">
-        {pieData.length > 0 ? (
-          <ChartContainer config={pieConfig} className="mx-auto h-[250px] w-full">
-            <PieChart>
-              <Pie
-                data={pieData}
-                dataKey="count"
-                label={({ payload, ...props }) => (
-                  <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
-                    <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                  </text>
-                )}
-                nameKey="bucket"
-              >
+      <CardContent>
+        {barData.length > 0 ? (
+          <ChartContainer config={barConfig} className="h-[200px] w-full">
+            <BarChart
+              accessibilityLayer
+              data={barData}
+              layout="vertical"
+              margin={{ left: 0, right: 40 }}
+            >
+              <CartesianGrid horizontal={false} />
+              <YAxis
+                dataKey="bucket"
+                type="category"
+                tickLine={false}
+                axisLine={false}
+                width={70}
+                tick={{ fontSize: 12 }}
+              />
+              <XAxis type="number" hide />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+              <Bar dataKey="count" radius={8}>
                 <LabelList
-                  dataKey="bucket"
-                  position="inside"
-                  fill="#fff"
-                  fontSize={11}
+                  position="right"
+                  offset={8}
+                  className="fill-foreground"
+                  fontSize={12}
                   fontWeight={600}
                 />
-              </Pie>
-            </PieChart>
+              </Bar>
+            </BarChart>
           </ChartContainer>
         ) : (
           <div className="flex items-center justify-center h-[200px]">
@@ -3202,58 +3207,68 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
           </div>
         )}
       </CardContent>
+      <CardFooter className="text-sm text-muted-foreground">
+        Days from first visit to auto-renew subscription
+      </CardFooter>
     </DashboardCard>
   );
 }
 
-// ─── Conversion Visits Pie Card ──────────────────────────────
+// ─── Conversion Visits Horizontal Bar Card ───────────────────
 
 function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
   const data: ConversionPoolSliceData | null = pool.slices.all ?? null;
   if (!data?.lagStats) return null;
   const { lagStats } = data;
 
-  const pieColors = ["hsl(270, 15%, 42%)", "hsl(270, 15%, 58%)", "hsl(270, 15%, 72%)", "hsl(270, 15%, 84%)"];
-  const pieData = [
-    { bucket: "1-2 visits", count: lagStats.visitBucket1to2, fill: pieColors[0] },
-    { bucket: "3-5 visits", count: lagStats.visitBucket3to5, fill: pieColors[1] },
-    { bucket: "6-10 visits", count: lagStats.visitBucket6to10, fill: pieColors[2] },
-    { bucket: "11+ visits", count: lagStats.visitBucket11plus, fill: pieColors[3] },
+  const barColors = ["hsl(270, 15%, 42%)", "hsl(270, 15%, 58%)", "hsl(270, 15%, 72%)", "hsl(270, 15%, 84%)"];
+  const barData = [
+    { bucket: "1–2", count: lagStats.visitBucket1to2, fill: barColors[0] },
+    { bucket: "3–5", count: lagStats.visitBucket3to5, fill: barColors[1] },
+    { bucket: "6–10", count: lagStats.visitBucket6to10, fill: barColors[2] },
+    { bucket: "11+", count: lagStats.visitBucket11plus, fill: barColors[3] },
   ].filter((d) => d.count > 0);
 
-  const pieConfig = Object.fromEntries(pieData.map((d) => [d.bucket, { label: d.bucket, color: d.fill }])) as ChartConfig;
+  const barConfig = Object.fromEntries(barData.map((d) => [d.bucket, { label: d.bucket + " visits", color: d.fill }])) as ChartConfig;
 
   return (
     <DashboardCard>
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle>Visits Before Convert</CardTitle>
         <CardDescription>
           Avg: {lagStats.historicalAvgVisitsBeforeConvert != null ? lagStats.historicalAvgVisitsBeforeConvert.toFixed(1) : "\u2014"} (last 12 weeks)
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex-1 pb-0">
-        {pieData.length > 0 ? (
-          <ChartContainer config={pieConfig} className="mx-auto h-[250px] w-full">
-            <PieChart>
-              <Pie
-                data={pieData}
-                dataKey="count"
-                label={({ payload, ...props }) => (
-                  <text x={props.x} y={props.y} textAnchor={props.textAnchor} dominantBaseline={props.dominantBaseline} fill="hsla(var(--foreground))">
-                    <tspan fontWeight={700} fontSize={13}>{formatNumber(payload.count)}</tspan>
-                  </text>
-                )}
-                nameKey="bucket"
-              >
+      <CardContent>
+        {barData.length > 0 ? (
+          <ChartContainer config={barConfig} className="h-[200px] w-full">
+            <BarChart
+              accessibilityLayer
+              data={barData}
+              layout="vertical"
+              margin={{ left: 0, right: 40 }}
+            >
+              <CartesianGrid horizontal={false} />
+              <YAxis
+                dataKey="bucket"
+                type="category"
+                tickLine={false}
+                axisLine={false}
+                width={50}
+                tick={{ fontSize: 12 }}
+              />
+              <XAxis type="number" hide />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+              <Bar dataKey="count" radius={8}>
                 <LabelList
-                  dataKey="bucket"
-                  position="inside"
-                  fill="#fff"
-                  fontSize={11}
+                  position="right"
+                  offset={8}
+                  className="fill-foreground"
+                  fontSize={12}
                   fontWeight={600}
                 />
-              </Pie>
-            </PieChart>
+              </Bar>
+            </BarChart>
           </ChartContainer>
         ) : (
           <div className="flex items-center justify-center h-[200px]">
@@ -3261,6 +3276,9 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
           </div>
         )}
       </CardContent>
+      <CardFooter className="text-sm text-muted-foreground">
+        Total drop-in visits before subscribing
+      </CardFooter>
     </DashboardCard>
   );
 }
