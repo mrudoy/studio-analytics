@@ -2128,6 +2128,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
   // Shared classes for overview table columns
   const thData = "text-right text-muted-foreground";
   const tdData = "text-right tabular-nums";
+  const rowHeight = "h-[50px]"; // consistent row height across both tables
 
   return (
     <div className="flex flex-col gap-4">
@@ -2155,7 +2156,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
             </TableHeader>
             <TableBody>
               {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => (
-                <TableRow key={key}>
+                <TableRow key={key} className={rowHeight}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <Icon size={16} style={{ color }} className="shrink-0" />
@@ -2215,7 +2216,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
             </TableHeader>
             <TableBody>
               {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => (
-                <TableRow key={key}>
+                <TableRow key={key} className={rowHeight}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <Icon size={16} style={{ color }} className="shrink-0" />
