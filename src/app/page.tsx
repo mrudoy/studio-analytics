@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download } from "lucide-react";
+import Link from "next/link";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download, Sparkles } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -5701,6 +5702,7 @@ function DashboardView() {
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   return (
+    <>
     <DashboardLayout>
       {(activeSection) => {
         if (loadState.state === "loading") {
@@ -5764,6 +5766,17 @@ function DashboardView() {
         return <DashboardContent activeSection={activeSection} data={loadState.data} refreshData={fetchStats} />;
       }}
     </DashboardLayout>
+    {/* Floating "Ask AI" button */}
+    <Link href="/ask" className="fixed bottom-6 right-6 z-50">
+      <Button
+        className="h-12 gap-2 rounded-full px-5 shadow-lg"
+        style={{ backgroundColor: "#D4A030", color: "#fff" }}
+      >
+        <Sparkles className="h-4 w-4" />
+        Ask AI
+      </Button>
+    </Link>
+    </>
   );
 }
 

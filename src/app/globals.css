@@ -110,6 +110,17 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Prompt-kit loader animations */
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes bounce-dots {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
 /* Skeleton pulse */
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.6; }
