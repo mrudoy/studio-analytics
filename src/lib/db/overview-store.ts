@@ -1,12 +1,13 @@
 /**
  * Overview store — computes time-window metrics for the Overview page.
  *
- * Returns data for 4 windows: Yesterday, Last Week, This Month, Last Month.
- * Each window has subscription changes, activity counts, and merch revenue.
+ * Returns data for 5 windows: Yesterday, This Week, Last Week, This Month, Last Month.
+ * Each window has subscription changes, activity counts (including guests), and merch revenue.
+ * Also returns current active subscriber counts by tier.
  */
 
-import { getNewAutoRenews, getCanceledAutoRenews } from "./auto-renew-store";
-import { getDropInCountForRange, getIntroWeekCountForRange } from "./registration-store";
+import { getNewAutoRenews, getCanceledAutoRenews, getAutoRenewStats } from "./auto-renew-store";
+import { getDropInCountForRange, getIntroWeekCountForRange, getGuestCountForRange } from "./registration-store";
 import { getShopifyRevenueForRange } from "./shopify-store";
 import type { OverviewData, TimeWindowMetrics } from "@/types/dashboard";
 import type { StoredAutoRenew } from "./auto-renew-store";
@@ -27,6 +28,22 @@ function getYesterday() {
     day: "numeric",
   });
   return { start: toISO(yesterday), end: toISO(today), label: "Yesterday", sublabel };
+}
+
+function getThisWeek() {
+  const now = new Date();
+  const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // ISO: Mon=1, Sun=7
+  const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek + 1);
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return {
+    start: toISO(thisMonday),
+    end: toISO(tomorrow),
+    label: "This Week",
+    sublabel: `${fmt(thisMonday)} – ${fmt(today)}`,
+  };
 }
 
 function getLastWeek() {
@@ -91,11 +108,12 @@ async function computeWindow(
   label: string,
   sublabel: string,
 ): Promise<TimeWindowMetrics> {
-  const [newAR, canceledAR, dropIns, introWeeks, merchRevenue] = await Promise.all([
+  const [newAR, canceledAR, dropIns, introWeeks, guests, merchRevenue] = await Promise.all([
     getNewAutoRenews(start, end),
     getCanceledAutoRenews(start, end),
     getDropInCountForRange(start, end),
     getIntroWeekCountForRange(start, end),
+    getGuestCountForRange(start, end),
     getShopifyRevenueForRange(start, end).catch(() => 0),
   ]);
 
@@ -115,6 +133,7 @@ async function computeWindow(
     activity: {
       dropIns,
       introWeeks,
+      guests,
     },
     revenue: {
       merch: Math.round(merchRevenue * 100) / 100,
@@ -126,16 +145,30 @@ async function computeWindow(
 
 export async function getOverviewData(): Promise<OverviewData> {
   const y = getYesterday();
+  const tw = getThisWeek();
   const lw = getLastWeek();
   const tm = getThisMonth();
   const lm = getLastMonth();
 
-  const [yesterday, lastWeek, thisMonth, lastMonth] = await Promise.all([
+  const [yesterday, thisWeek, lastWeek, thisMonth, lastMonth, arStats] = await Promise.all([
     computeWindow(y.start, y.end, y.label, y.sublabel),
+    computeWindow(tw.start, tw.end, tw.label, tw.sublabel),
     computeWindow(lw.start, lw.end, lw.label, lw.sublabel),
     computeWindow(tm.start, tm.end, tm.label, tm.sublabel),
     computeWindow(lm.start, lm.end, lm.label, lm.sublabel),
+    getAutoRenewStats(),
   ]);
 
-  return { yesterday, lastWeek, thisMonth, lastMonth };
+  return {
+    yesterday,
+    thisWeek,
+    lastWeek,
+    thisMonth,
+    lastMonth,
+    currentActive: {
+      member: arStats?.active.member ?? 0,
+      sky3: arStats?.active.sky3 ?? 0,
+      skyTingTv: arStats?.active.skyTingTv ?? 0,
+    },
+  };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight, Settings, FileText } from "lucide-react";
+import { BubbleIcon } from "./icons";
 import {
   Sidebar,
   SidebarContent,
@@ -118,6 +119,14 @@ export function AppSidebar({ activeSection, onSectionChange, variant = "inset" }
       <SidebarFooter>
         <SidebarSeparator />
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Ask AI">
+              <a href="/ask" className="flex items-center gap-2">
+                <BubbleIcon size={16} />
+                <span>Ask AI</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Settings">
               <a href="/settings">

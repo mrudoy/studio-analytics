@@ -154,8 +154,8 @@ ${t.dropIns.wtd ? `- Week-to-Date: ${t.dropIns.wtd.visits} visits (${t.dropIns.w
       if (t.weekly?.length > 0) {
         const last4 = t.weekly.slice(-4);
         sections.push(`## Weekly Growth Trends (last 4 weeks)
-${last4.map((w: { period: string; newMembers: number; newSky3: number; memberChurn: number; sky3Churn: number; revenueAdded: number; revenueLost: number }) =>
-  `- ${w.period}: +${w.newMembers} members, +${w.newSky3} Sky3, -${w.memberChurn} member churn, -${w.sky3Churn} Sky3 churn | Revenue +$${Math.round(w.revenueAdded).toLocaleString()} / -$${Math.round(w.revenueLost).toLocaleString()}`
+${last4.map((w: { period: string; newMembers: number; newSky3: number; newSkyTingTv: number; memberChurn: number; sky3Churn: number; skyTingTvChurn: number; revenueAdded: number; revenueLost: number }) =>
+  `- ${w.period}: +${w.newMembers} members, +${w.newSky3} Sky3, +${w.newSkyTingTv} Sky Ting TV, -${w.memberChurn} member churn, -${w.sky3Churn} Sky3 churn, -${w.skyTingTvChurn} TV churn | Revenue +$${Math.round(w.revenueAdded).toLocaleString()} / -$${Math.round(w.revenueLost).toLocaleString()}`
 ).join("\n")}`);
       }
 
@@ -238,11 +238,18 @@ ${rr.annual.map((a: { year: number; total: number; studioRental: number; teacher
     // 10. Overview snapshots
     if (data.overviewData) {
       const ov = data.overviewData;
-      const formatWindow = (w: { label: string; sublabel: string; subscriptions: { member: { new: number; churned: number }; sky3: { new: number; churned: number }; skyTingTv: { new: number; churned: number } }; activity: { dropIns: number; introWeeks: number }; revenue: { merch: number } }) =>
-        `**${w.label}** (${w.sublabel}): +${w.subscriptions.member.new} members / -${w.subscriptions.member.churned} churned, +${w.subscriptions.sky3.new} Sky3 / -${w.subscriptions.sky3.churned} churned, ${w.activity.dropIns} drop-ins, ${w.activity.introWeeks} intro weeks, $${Math.round(w.revenue.merch)} merch`;
+      const formatWindow = (w: { label: string; sublabel: string; subscriptions: { member: { new: number; churned: number }; sky3: { new: number; churned: number }; skyTingTv: { new: number; churned: number } }; activity: { dropIns: number; introWeeks: number; guests?: number }; revenue: { merch: number } }) =>
+        `**${w.label}** (${w.sublabel}): +${w.subscriptions.member.new} members / -${w.subscriptions.member.churned} churned, +${w.subscriptions.sky3.new} Sky3 / -${w.subscriptions.sky3.churned} churned, +${w.subscriptions.skyTingTv.new} Sky Ting TV / -${w.subscriptions.skyTingTv.churned} churned, ${w.activity.dropIns} drop-ins, ${w.activity.introWeeks} intro weeks${w.activity.guests != null ? `, ${w.activity.guests} guests` : ""}, $${Math.round(w.revenue.merch)} merch`;
+
+      if (ov.currentActive) {
+        sections.push(`## Current Active Subscribers
+- Members: ${ov.currentActive.member}
+- Sky Ting TV: ${ov.currentActive.skyTingTv}
+- Sky3: ${ov.currentActive.sky3}`);
+      }
 
       sections.push(`## Overview Snapshots
-${[ov.yesterday, ov.lastWeek, ov.thisMonth, ov.lastMonth].map(formatWindow).join("\n")}`);
+${[ov.yesterday, ov.thisWeek, ov.lastWeek, ov.thisMonth, ov.lastMonth].filter(Boolean).map(formatWindow).join("\n")}`);
     }
 
     // 11. Revenue Categories

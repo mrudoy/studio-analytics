@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import Link from "next/link";
 import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
@@ -28,7 +27,6 @@ import {
   AlertTriangleIcon,
   InfoIcon,
   CircleCheckIcon,
-  BubbleIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -2085,92 +2083,146 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
   );
 }
 
-// ─── Overview Section (time-window cards) ─────────────────────
+// ─── Overview Section (dense table layout) ───────────────────
 
-function OverviewSubscriptionRow({ label, newCount, churned }: {
-  label: string;
-  newCount: number;
-  churned: number;
-}) {
+/** Auto-renew subscription cell: shows net change + new/churned detail */
+function OverviewSubCell({ newCount, churned }: { newCount: number; churned: number }) {
+  const net = newCount - churned;
   return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium tabular-nums text-emerald-600">
-          +{formatNumber(newCount)}
-        </span>
-        <span className="text-sm font-medium tabular-nums text-red-500">
-          -{formatNumber(churned)}
-        </span>
+    <td className="px-3 py-2 text-right tabular-nums">
+      <div className={`text-sm font-semibold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+        {net > 0 ? "+" : ""}{net}
       </div>
-    </div>
+      <div className="text-[11px] text-muted-foreground leading-tight">
+        <span className="text-emerald-600/70">+{newCount}</span>
+        {" / "}
+        <span className="text-red-500/70">-{churned}</span>
+      </div>
+    </td>
   );
 }
 
-function OverviewActivityRow({ label, count }: { label: string; count: number }) {
+/** Activity count cell (drop-ins, guests, intro weeks) */
+function OverviewCountCell({ count }: { count: number }) {
   return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium tabular-nums">
-        {formatNumber(count)}
-      </span>
-    </div>
-  );
-}
-
-function OverviewTimeWindow({ window: w }: { window: TimeWindowMetrics }) {
-  return (
-    <div>
-      <h2 className="text-[15px] font-semibold text-muted-foreground mb-3">
-        {w.label} <span className="font-normal">— {w.sublabel}</span>
-      </h2>
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
-        {/* Subscriptions card */}
-        <ShadCard>
-          <ShadCardHeader>
-            <ShadCardTitle className="text-base">{LABELS.autoRenews}</ShadCardTitle>
-          </ShadCardHeader>
-          <ShadCardContent className="flex flex-col gap-0.5">
-            <OverviewSubscriptionRow label={LABELS.members} newCount={w.subscriptions.member.new} churned={w.subscriptions.member.churned} />
-            <OverviewSubscriptionRow label={LABELS.sky3} newCount={w.subscriptions.sky3.new} churned={w.subscriptions.sky3.churned} />
-            <OverviewSubscriptionRow label={LABELS.tv} newCount={w.subscriptions.skyTingTv.new} churned={w.subscriptions.skyTingTv.churned} />
-          </ShadCardContent>
-        </ShadCard>
-
-        {/* Activity card */}
-        <ShadCard>
-          <ShadCardHeader>
-            <ShadCardTitle className="text-base">Activity</ShadCardTitle>
-          </ShadCardHeader>
-          <ShadCardContent className="flex flex-col gap-0.5">
-            <OverviewActivityRow label={LABELS.dropIns} count={w.activity.dropIns} />
-            <OverviewActivityRow label="Intro Weeks" count={w.activity.introWeeks} />
-          </ShadCardContent>
-        </ShadCard>
-
-        {/* Merch Revenue card */}
-        <ShadCard>
-          <ShadCardHeader>
-            <ShadCardTitle className="text-base">Merch Revenue</ShadCardTitle>
-          </ShadCardHeader>
-          <ShadCardContent>
-            <p className="text-2xl font-semibold tabular-nums">
-              {formatCurrency(w.revenue.merch)}
-            </p>
-          </ShadCardContent>
-        </ShadCard>
-      </div>
-    </div>
+    <td className="px-3 py-2 text-right tabular-nums">
+      <span className="text-sm font-semibold">{formatNumber(count)}</span>
+    </td>
   );
 }
 
 function OverviewSection({ data }: { data: OverviewData }) {
-  const windows = [data.yesterday, data.lastWeek, data.thisMonth, data.lastMonth];
+  const windows: TimeWindowMetrics[] = [data.yesterday, data.thisWeek, data.lastWeek, data.thisMonth, data.lastMonth];
+  const active = data.currentActive;
+
+  const thClass = "px-3 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap";
+  const metricLabelClass = "px-3 py-2 text-sm font-medium text-foreground whitespace-nowrap sticky left-0 bg-card z-10";
+
   return (
-    <div className="flex flex-col gap-6">
-      {windows.map((w) => (
-        <OverviewTimeWindow key={w.label} window={w} />
-      ))}
+    <div className="flex flex-col gap-5">
+      {/* ── AUTO-RENEWS table ─────────────────── */}
+      <ShadCard>
+        <ShadCardHeader className="pb-2">
+          <ShadCardTitle className="text-base">{LABELS.autoRenews}</ShadCardTitle>
+        </ShadCardHeader>
+        <ShadCardContent className="overflow-x-auto p-0">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10">Metric</th>
+                <th className={thClass}>Current Active</th>
+                {windows.map((w) => (
+                  <th key={w.label} className={thClass}>
+                    <div>{w.label}</div>
+                    <div className="font-normal text-[10px]">{w.sublabel}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Members */}
+              <tr className="border-b last:border-b-0">
+                <td className={metricLabelClass}>{LABELS.members}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <span className="text-sm font-semibold">{formatNumber(active.member)}</span>
+                </td>
+                {windows.map((w) => (
+                  <OverviewSubCell key={w.label} newCount={w.subscriptions.member.new} churned={w.subscriptions.member.churned} />
+                ))}
+              </tr>
+              {/* Sky Ting TV */}
+              <tr className="border-b last:border-b-0">
+                <td className={metricLabelClass}>{LABELS.tv}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <span className="text-sm font-semibold">{formatNumber(active.skyTingTv)}</span>
+                </td>
+                {windows.map((w) => (
+                  <OverviewSubCell key={w.label} newCount={w.subscriptions.skyTingTv.new} churned={w.subscriptions.skyTingTv.churned} />
+                ))}
+              </tr>
+              {/* Sky3 */}
+              <tr className="border-b last:border-b-0">
+                <td className={metricLabelClass}>{LABELS.sky3}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <span className="text-sm font-semibold">{formatNumber(active.sky3)}</span>
+                </td>
+                {windows.map((w) => (
+                  <OverviewSubCell key={w.label} newCount={w.subscriptions.sky3.new} churned={w.subscriptions.sky3.churned} />
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </ShadCardContent>
+      </ShadCard>
+
+      {/* ── NON AUTO-RENEWS table ─────────────── */}
+      <ShadCard>
+        <ShadCardHeader className="pb-2">
+          <ShadCardTitle className="text-base">Non Auto-Renews</ShadCardTitle>
+        </ShadCardHeader>
+        <ShadCardContent className="overflow-x-auto p-0">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground sticky left-0 bg-card z-10">Metric</th>
+                <th className={thClass}>&nbsp;</th>
+                {windows.map((w) => (
+                  <th key={w.label} className={thClass}>
+                    <div>{w.label}</div>
+                    <div className="font-normal text-[10px]">{w.sublabel}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Drop-ins */}
+              <tr className="border-b last:border-b-0">
+                <td className={metricLabelClass}>{LABELS.dropIns}</td>
+                <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+                {windows.map((w) => (
+                  <OverviewCountCell key={w.label} count={w.activity.dropIns} />
+                ))}
+              </tr>
+              {/* Guests */}
+              <tr className="border-b last:border-b-0">
+                <td className={metricLabelClass}>Guests</td>
+                <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+                {windows.map((w) => (
+                  <OverviewCountCell key={w.label} count={w.activity.guests} />
+                ))}
+              </tr>
+              {/* Intro Weeks */}
+              <tr className="border-b last:border-b-0">
+                <td className={metricLabelClass}>Intro Weeks</td>
+                <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+                {windows.map((w) => (
+                  <OverviewCountCell key={w.label} count={w.activity.introWeeks} />
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </ShadCardContent>
+      </ShadCard>
     </div>
   );
 }
@@ -5703,7 +5755,6 @@ function DashboardView() {
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   return (
-    <>
     <DashboardLayout>
       {(activeSection) => {
         if (loadState.state === "loading") {
@@ -5767,17 +5818,6 @@ function DashboardView() {
         return <DashboardContent activeSection={activeSection} data={loadState.data} refreshData={fetchStats} />;
       }}
     </DashboardLayout>
-    {/* Floating "Ask AI" button */}
-    <Link href="/ask" className="fixed bottom-6 right-6 z-50">
-      <Button
-        className="h-12 gap-2 rounded-full px-5 shadow-lg"
-        style={{ backgroundColor: "#D4A030", color: "#fff" }}
-      >
-        <BubbleIcon size={18} />
-        Ask AI
-      </Button>
-    </Link>
-    </>
   );
 }
 

@@ -490,18 +490,28 @@ export interface TimeWindowMetrics {
   activity: {
     dropIns: number;
     introWeeks: number;
+    guests: number;
   };
   revenue: {
     merch: number;
   };
 }
 
-/** Full overview data: all 4 time windows */
+/** Current active auto-renew subscriber counts by tier */
+export interface CurrentActiveSubscribers {
+  member: number;
+  sky3: number;
+  skyTingTv: number;
+}
+
+/** Full overview data: all 5 time windows + current active counts */
 export interface OverviewData {
   yesterday: TimeWindowMetrics;
+  thisWeek: TimeWindowMetrics;
   lastWeek: TimeWindowMetrics;
   thisMonth: TimeWindowMetrics;
   lastMonth: TimeWindowMetrics;
+  currentActive: CurrentActiveSubscribers;
 }
 
 // ── Trends aggregate ───────────────────────────────────────

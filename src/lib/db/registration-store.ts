@@ -300,6 +300,26 @@ export async function getDropInCountForRange(
 }
 
 /**
+ * Count guest/community pass visits in a date range (from first_visits).
+ * Guest passes include GUEST and COMMUNITY passes.
+ */
+export async function getGuestCountForRange(
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT COUNT(*) AS cnt
+     FROM first_visits
+     WHERE attended_at IS NOT NULL AND attended_at != ''
+       AND attended_at >= $1 AND attended_at < $2
+       AND (UPPER(pass) LIKE '%GUEST%' OR UPPER(pass) LIKE '%COMMUNITY%')`,
+    [startDate, endDate]
+  );
+  return Number(res.rows[0].cnt);
+}
+
+/**
  * Count intro week passes used in a date range (from first_visits).
  */
 export async function getIntroWeekCountForRange(
