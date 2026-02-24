@@ -2122,13 +2122,16 @@ function OverviewSection({ data }: { data: OverviewData }) {
       {/* ── AUTO-RENEWS ─────────────────────── */}
       <DashboardCard>
         <CardHeader>
-          <CardTitle>{LABELS.autoRenews}</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Recycle className="size-5" style={{ color: SECTION_COLORS["growth-auto"] }} />
+            {LABELS.autoRenews}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
-              <thead className="bg-muted [&_tr]:border-b">
-                <tr>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
+              <thead>
+                <tr className="border-b border-border">
                   <th className={`${modThClass} !text-left`}>Metric</th>
                   <th className={modThClass}>Active</th>
                   {windows.map((w) => (
@@ -2139,9 +2142,9 @@ function OverviewSection({ data }: { data: OverviewData }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="[&_tr:last-child]:border-0">
+              <tbody>
                 {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => (
-                  <tr key={key} className="border-b transition-colors hover:bg-muted/50">
+                  <tr key={key} className="border-b border-border/50 last:border-0 transition-colors hover:bg-muted/50">
                     <td className={`${modTdClass} !text-left font-medium`}>
                       <div className="flex items-center gap-2">
                         <Icon size={16} style={{ color }} className="shrink-0" />
@@ -2181,13 +2184,16 @@ function OverviewSection({ data }: { data: OverviewData }) {
       {/* ── NON AUTO-RENEWS ─────────────────── */}
       <DashboardCard>
         <CardHeader>
-          <CardTitle>Non Auto-Renews</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <RecycleOff className="size-5" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+            Non Auto-Renews
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
-              <thead className="bg-muted [&_tr]:border-b">
-                <tr>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ fontFamily: FONT_SANS }}>
+              <thead>
+                <tr className="border-b border-border">
                   <th className={`${modThClass} !text-left`}>Metric</th>
                   {windows.map((w) => (
                     <th key={w.label} className={modThClass}>
@@ -2197,9 +2203,9 @@ function OverviewSection({ data }: { data: OverviewData }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="[&_tr:last-child]:border-0">
+              <tbody>
                 {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => (
-                  <tr key={key} className="border-b transition-colors hover:bg-muted/50">
+                  <tr key={key} className="border-b border-border/50 last:border-0 transition-colors hover:bg-muted/50">
                     <td className={`${modTdClass} !text-left font-medium`}>
                       <div className="flex items-center gap-2">
                         <Icon size={16} style={{ color }} className="shrink-0" />
