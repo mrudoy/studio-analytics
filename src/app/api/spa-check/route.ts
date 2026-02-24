@@ -75,16 +75,16 @@ export async function GET() {
     let subscriberPlans: { plan_name: string; customers: number }[] = [];
     if (spaEmails.length > 0) {
       const subRes = await pool.query(`
-        SELECT COUNT(DISTINCT email) AS cnt
+        SELECT COUNT(DISTINCT customer_email) AS cnt
         FROM auto_renews
-        WHERE LOWER(email) = ANY($1)
+        WHERE LOWER(customer_email) = ANY($1)
       `, [spaEmails.map(e => e.toLowerCase())]);
       areSubscribers = Number(subRes.rows[0].cnt);
 
       const planRes = await pool.query(`
-        SELECT plan_name, COUNT(DISTINCT email) AS customers
+        SELECT plan_name, COUNT(DISTINCT customer_email) AS customers
         FROM auto_renews
-        WHERE LOWER(email) = ANY($1)
+        WHERE LOWER(customer_email) = ANY($1)
         GROUP BY plan_name
         ORDER BY customers DESC
         LIMIT 20
