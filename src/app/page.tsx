@@ -4766,28 +4766,58 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
         </DashboardCard>
       </div>
 
-      {/* Monthly Revenue + Monthly Visits charts side by side */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {revenueChartData.length > 0 && (
-          <DashboardCard>
-            <CardHeader>
-              <CardTitle>Monthly Revenue</CardTitle>
-              <CardDescription>Last 12 completed months</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={revenueChartConfig} className="h-[200px] w-full">
-                <BarChart data={revenueChartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v: number) => formatCompactCurrency(v)} />
-                  <ChartTooltip content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
-                  <Bar dataKey="gross" fill={COLORS.spa} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </DashboardCard>
-        )}
+      {/* Monthly Revenue — area chart (matches Revenue Overview style) */}
+      {revenueChartData.length > 1 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Monthly Revenue</CardTitle>
+            <CardDescription>Last 12 completed months</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={revenueChartConfig} className="h-[250px] w-full">
+              <RAreaChart accessibilityLayer data={revenueChartData} margin={{ top: 20, left: 24, right: 24 }}>
+                <defs>
+                  <linearGradient id="fillSpaGross" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-gross)" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="var(--color-gross)" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} />
+                <YAxis hide domain={["dataMin - 2000", "dataMax + 1000"]} />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  fontSize={12}
+                />
+                <ChartTooltip content={<ChartTooltipContent formatter={(v) => formatCurrency(Number(v))} />} />
+                <Area
+                  dataKey="gross"
+                  type="natural"
+                  fill="url(#fillSpaGross)"
+                  fillOpacity={0.4}
+                  stroke="var(--color-gross)"
+                  strokeWidth={2}
+                  dot={{ fill: "var(--color-gross)" }}
+                  activeDot={{ r: 6 }}
+                >
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                    formatter={(v: number) => formatCompactCurrency(v)}
+                  />
+                </Area>
+              </RAreaChart>
+            </ChartContainer>
+          </CardContent>
+        </DashboardCard>
+      )}
 
+      {/* Monthly Visits — area chart */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {visitsChartData.length > 0 && (
           <DashboardCard>
             <CardHeader>
