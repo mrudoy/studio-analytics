@@ -78,7 +78,6 @@ import {
   ModuleHeader as DModuleHeader,
   MetricRow,
   InfoTooltip,
-  Chip as DChip,
   CardDisclosure as DCardDisclosure,
   SparklineSlot,
   SectionHeader as DSectionHeader,
@@ -3477,7 +3476,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
                   }}
                 >
                   <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
-                    <DChip variant="accent">WTD</DChip>{" "}
+                    <Badge variant="outline">WTD</Badge>{" "}
                     {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
                     {wtd.daysLeft > 0 && (
                       <span className="text-[11px] text-muted-foreground ml-1.5">
