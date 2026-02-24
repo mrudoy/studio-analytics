@@ -860,19 +860,19 @@ function BackupStatusCard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="text-left px-3 py-2 font-medium">Backup</th>
+                      <th className="text-left px-4 py-2 font-medium">Backup</th>
                       <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Date</th>
                       <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Size</th>
-                      <th className="text-right px-3 py-2 font-medium">Link</th>
+                      <th className="text-right px-4 py-2 font-medium">Link</th>
                     </tr>
                   </thead>
                   <tbody>
                     {backups.slice(0, 5).map((b) => (
                       <tr key={b.tag} className="border-b last:border-0">
-                        <td className="px-3 py-2 font-mono text-xs">{b.tag.replace("backup-", "")}</td>
-                        <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{formatRelativeTime(b.createdAt)}</td>
-                        <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{(b.sizeBytes / 1024).toFixed(0)} KB</td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-4 py-2 font-mono text-xs">{b.tag.replace("backup-", "")}</td>
+                        <td className="px-4 py-2 text-muted-foreground hidden sm:table-cell">{formatRelativeTime(b.createdAt)}</td>
+                        <td className="px-4 py-2 text-muted-foreground hidden sm:table-cell">{(b.sizeBytes / 1024).toFixed(0)} KB</td>
+                        <td className="px-4 py-2 text-right">
                           <a href={b.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
                             <Download className="size-3" />
                             View
@@ -1394,10 +1394,19 @@ function Card({ children, padding, matchHeight = false }: { children: React.Reac
 function NoData({ label }: { label: string }) {
   return (
     <Card>
-      <p className="text-sm text-muted-foreground">
-        {label}: <span className="opacity-60">No data available</span>
-      </p>
+      <div className="flex items-center justify-center py-8">
+        <p className="text-sm text-muted-foreground">{label}</p>
+      </div>
     </Card>
+  );
+}
+
+/** Inline empty state for use inside an existing card/chart container */
+function NoDataInline({ label = "No data available" }: { label?: string }) {
+  return (
+    <div className="flex items-center justify-center h-[200px]">
+      <span className="text-sm text-muted-foreground">{label}</span>
+    </div>
   );
 }
 
@@ -3076,9 +3085,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
                 })}
               </div>
             ) : (
-              <div className="flex items-center justify-center h-[160px]">
-                <span className="text-sm text-muted-foreground">No data available</span>
-              </div>
+              <NoDataInline />
             )}
           </CardContent>
         </DashboardCard>
@@ -3202,9 +3209,7 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
             </BarChart>
           </ChartContainer>
         ) : (
-          <div className="flex items-center justify-center h-[200px]">
-            <span className="text-sm text-muted-foreground">No data available</span>
-          </div>
+          <NoDataInline />
         )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
@@ -3271,9 +3276,7 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
             </BarChart>
           </ChartContainer>
         ) : (
-          <div className="flex items-center justify-center h-[200px]">
-            <span className="text-sm text-muted-foreground">No data available</span>
-          </div>
+          <NoDataInline />
         )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
@@ -3873,12 +3876,7 @@ function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
   if (!insights || insights.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <DashboardCard>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">No insights detected yet</p>
-            <p className="text-xs text-muted-foreground mt-1">Run the pipeline to generate actionable insights from your data</p>
-          </CardContent>
-        </DashboardCard>
+        <NoData label="No insights detected yet. Run the pipeline to generate actionable insights." />
       </div>
     );
   }
@@ -4344,7 +4342,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               )}
             </CardHeader>
             <CardContent>
-              <ChartContainer config={aovChartConfig} className="h-[220px] w-full">
+              <ChartContainer config={aovChartConfig} className="h-[200px] w-full">
                 <LineChart
                   accessibilityLayer
                   data={aovData}
@@ -5013,9 +5011,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
           ) : (
             <DashboardCard>
               <CardContent>
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No merch data available. Connect Shopify to see merch revenue.
-                </p>
+                <NoDataInline label="No merch data available. Connect Shopify to see merch revenue." />
               </CardContent>
             </DashboardCard>
           )}
@@ -5037,9 +5033,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
           ) : (
             <DashboardCard>
               <CardContent>
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No rental revenue data available.
-                </p>
+                <NoDataInline label="No rental revenue data available." />
               </CardContent>
             </DashboardCard>
           )}
