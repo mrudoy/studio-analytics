@@ -536,6 +536,7 @@ export interface InsightRow {
 
 export interface UsageSegment {
   name: string;        // "Dormant", "Casual", etc.
+  rangeLabel: string;  // "0/mo", "1-2/mo", etc.
   count: number;
   percent: number;
   color: string;

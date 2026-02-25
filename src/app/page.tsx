@@ -3957,14 +3957,26 @@ function InsightCard({ insight }: { insight: InsightRow }) {
 
 // ── Usage Section ─────────────────────────────────────────
 
+const USAGE_CATEGORY_META: Record<string, { icon: React.FC<{ className?: string; style?: React.CSSProperties }>; color: string }> = {
+  MEMBER:      { icon: ArrowBadgeDown, color: COLORS.member },
+  SKY3:        { icon: BrandSky,       color: COLORS.sky3 },
+  SKY_TING_TV: { icon: DeviceTv,       color: COLORS.tv },
+};
+
 function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
   const maxPercent = Math.max(...data.segments.map(s => s.percent), 1);
+  const meta = USAGE_CATEGORY_META[data.category];
+  const Icon = meta?.icon;
+  const iconColor = meta?.color;
 
   return (
     <DashboardCard>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
+          <div className="flex items-center gap-2">
+            {Icon && <Icon className="size-5" style={{ color: iconColor }} />}
+            <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
+          </div>
           <span className="text-sm text-muted-foreground font-medium">{data.totalActive.toLocaleString()} Active</span>
         </div>
         <CardDescription>
@@ -3975,7 +3987,10 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
         <div className="space-y-2">
           {data.segments.map((seg) => (
             <div key={seg.name} className="flex items-center gap-2 text-sm">
-              <span className="w-[110px] shrink-0 text-muted-foreground truncate">{seg.name}</span>
+              <div className="w-[130px] shrink-0 flex items-baseline gap-1.5">
+                <span className="text-muted-foreground truncate">{seg.name}</span>
+                <span className="text-[10px] text-muted-foreground/60 tabular-nums">{seg.rangeLabel}</span>
+              </div>
               <div className="flex-1 h-5 rounded-sm overflow-hidden bg-muted/40">
                 <div
                   className="h-full rounded-sm transition-all"

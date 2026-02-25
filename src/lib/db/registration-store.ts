@@ -1436,34 +1436,35 @@ import type { UsageCategoryData, UsageSegment, UsageData } from "@/types/dashboa
 
 interface SegmentDef {
   name: string;
-  min: number;   // exclusive lower bound (visits > min)
-  max: number;   // inclusive upper bound (visits <= max), Infinity for unbounded
+  rangeLabel: string;  // human-readable range, e.g. "0/mo", "1-2/mo"
+  min: number;         // exclusive lower bound (visits > min)
+  max: number;         // inclusive upper bound (visits <= max), Infinity for unbounded
 }
 
 const MEMBER_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",     min: -1,  max: 0 },
-  { name: "Casual",      min: 0,   max: 2 },
-  { name: "Developing",  min: 2,   max: 4 },
-  { name: "Established", min: 4,   max: 8 },
-  { name: "Committed",   min: 8,   max: 12 },
-  { name: "Core",        min: 12,  max: Infinity },
+  { name: "Dormant",     rangeLabel: "0/mo",   min: -1,  max: 0 },
+  { name: "Casual",      rangeLabel: "1-2/mo", min: 0,   max: 2 },
+  { name: "Developing",  rangeLabel: "2-4/mo", min: 2,   max: 4 },
+  { name: "Established", rangeLabel: "4-8/mo", min: 4,   max: 8 },
+  { name: "Committed",   rangeLabel: "8-12/mo", min: 8,   max: 12 },
+  { name: "Core",        rangeLabel: "12+/mo", min: 12,  max: Infinity },
 ];
 
 const SKY3_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",            min: -1,  max: 0 },
-  { name: "Under-Using",        min: 0,   max: 1 },
-  { name: "On Pace",            min: 1,   max: 3 },
-  { name: "Over-Using",         min: 3,   max: 5 },
-  { name: "Upgrade Candidate",  min: 5,   max: Infinity },
+  { name: "Dormant",            rangeLabel: "0/mo",  min: -1,  max: 0 },
+  { name: "Under-Using",        rangeLabel: "<1/mo", min: 0,   max: 1 },
+  { name: "On Pace",            rangeLabel: "1-3/mo", min: 1,   max: 3 },
+  { name: "Over-Using",         rangeLabel: "3-5/mo", min: 3,   max: 5 },
+  { name: "Upgrade Candidate",  rangeLabel: "5+/mo", min: 5,   max: Infinity },
 ];
 
 const TV_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",   min: -1,  max: 0 },
-  { name: "Casual",    min: 0,   max: 2 },
-  { name: "Moderate",  min: 2,   max: 4 },
-  { name: "Regular",   min: 4,   max: 8 },
-  { name: "Active",    min: 8,   max: 12 },
-  { name: "Power",     min: 12,  max: Infinity },
+  { name: "Dormant",   rangeLabel: "0/mo",   min: -1,  max: 0 },
+  { name: "Casual",    rangeLabel: "1-2/mo", min: 0,   max: 2 },
+  { name: "Moderate",  rangeLabel: "2-4/mo", min: 2,   max: 4 },
+  { name: "Regular",   rangeLabel: "4-8/mo", min: 4,   max: 8 },
+  { name: "Active",    rangeLabel: "8-12/mo", min: 8,   max: 12 },
+  { name: "Power",     rangeLabel: "12+/mo", min: 12,  max: Infinity },
 ];
 
 const CATEGORY_CONFIG: Record<string, {
@@ -1509,12 +1510,12 @@ function buildSegmentColors(baseColor: string, count: number): string[] {
 export async function getUsageFrequencyByCategory(): Promise<UsageData> {
   const pool = getPool();
 
-  // CTE: active subscribers with categories, using same logic as categories.ts
+  // CTE: active subscribers with categories (one row per email+category pair).
+  // A person with both a Member and TV sub appears in BOTH categories.
   const query = `
-    WITH active_subs AS (
-      SELECT DISTINCT ON (LOWER(customer_email))
+    WITH categorized AS (
+      SELECT
         LOWER(customer_email) as email,
-        plan_name,
         CASE
           WHEN UPPER(plan_name) LIKE '%SKY3%'
             OR UPPER(plan_name) LIKE '%SKY5%'
@@ -1544,7 +1545,11 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
       WHERE plan_state NOT IN ('Canceled', 'Invalid')
         AND customer_email IS NOT NULL
         AND customer_email != ''
-      ORDER BY LOWER(customer_email), plan_name
+    ),
+    active_subs AS (
+      SELECT DISTINCT email, category
+      FROM categorized
+      WHERE category != 'UNKNOWN'
     ),
     visit_counts AS (
       SELECT
@@ -1563,7 +1568,6 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
       COALESCE(v.visits, 0) as visits
     FROM active_subs s
     LEFT JOIN visit_counts v ON s.email = v.email
-    WHERE s.category != 'UNKNOWN'
   `;
 
   const { rows } = await pool.query(query);
@@ -1613,6 +1617,7 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
       }).length;
       return {
         name: seg.name,
+        rangeLabel: seg.rangeLabel,
         count,
         percent: totalActive > 0 ? Math.round((count / totalActive) * 1000) / 10 : 0,
         color: segmentColors[i],
