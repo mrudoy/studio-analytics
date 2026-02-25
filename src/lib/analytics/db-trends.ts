@@ -976,7 +976,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
         canceledMrr: Math.round(canceledMrr * 100) / 100,
       };
 
-      // MEMBER-only: annual vs monthly breakdown
+      // MEMBER-only: annual vs monthly breakdown + eligible churn rate
       if (cat === "MEMBER") {
         const annualActive = activeAtStart.filter((r) => r.isAnnual);
         const monthlyActive = activeAtStart.filter((r) => !r.isAnnual);
@@ -986,6 +986,10 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
         entry.annualCanceledCount = annualCanceled.length;
         entry.monthlyActiveAtStart = monthlyActive.length;
         entry.monthlyCanceledCount = monthlyCanceled.length;
+        // Eligible churn: only monthly subscribers can churn month-to-month
+        entry.eligibleChurnRate = monthlyActive.length > 0
+          ? Math.round((monthlyCanceled.length / monthlyActive.length) * 1000) / 10
+          : 0;
       }
 
       monthlyChurn.push(entry);
@@ -1003,12 +1007,18 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     // At-risk per category (in-memory)
     const atRiskCount = catRows.filter((r) => AT_RISK_STATES.includes(r.plan_state)).length;
 
+    // MEMBER-only: average eligible churn rate (monthly subscribers only)
+    const avgEligible = cat === "MEMBER" && completed.length > 0
+      ? Math.round((completed.reduce((s, r) => s + (r.eligibleChurnRate ?? 0), 0) / completed.length) * 10) / 10
+      : undefined;
+
     catResults[cat] = {
       category: cat,
       monthly: monthlyChurn,
       avgUserChurnRate: avgUser,
       avgMrrChurnRate: avgMrr,
       atRiskCount,
+      ...(avgEligible !== undefined && { avgEligibleChurnRate: avgEligible }),
     };
   }
 

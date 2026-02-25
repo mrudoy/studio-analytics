@@ -3871,6 +3871,13 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
       value: `${churnData.avgUserChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgUserChurnRate),
     });
+    if (churnData.avgEligibleChurnRate != null) {
+      metrics.push({
+        label: "Eligible Churn Rate (Avg/Mo)",
+        value: `${churnData.avgEligibleChurnRate.toFixed(1)}%`,
+        color: churnBenchmarkColor(churnData.avgEligibleChurnRate),
+      });
+    }
     metrics.push({
       label: "MRR Churn Rate (Avg/Mo)",
       value: `${churnData.avgMrrChurnRate.toFixed(1)}%`,
@@ -4338,6 +4345,14 @@ function ChurnSection({ churnRates, weekly }: {
                   {cat.data.avgUserChurnRate.toFixed(1)}%
                 </span>
               </div>
+              {cat.data.avgEligibleChurnRate != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Eligible Churn Rate (Avg/Mo)</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgEligibleChurnRate) }}>
+                    {cat.data.avgEligibleChurnRate.toFixed(1)}%
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between items-center py-1.5 border-b border-border">
                 <span className="text-xs text-muted-foreground">MRR Churn Rate (Avg/Mo)</span>
                 <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgMrrChurnRate) }}>

@@ -327,6 +327,8 @@ export interface CategoryMonthlyChurn {
   annualActiveAtStart?: number;
   monthlyCanceledCount?: number;
   monthlyActiveAtStart?: number;
+  /** MEMBER-only: churn rate using only monthly (eligible) subscribers as denominator */
+  eligibleChurnRate?: number;
 }
 
 /** Churn summary for one auto-renew category */
@@ -336,6 +338,8 @@ export interface CategoryChurnData {
   avgUserChurnRate: number;
   avgMrrChurnRate: number;
   atRiskCount: number;
+  /** MEMBER-only: avg churn rate using only monthly (eligible) subscribers */
+  avgEligibleChurnRate?: number;
 }
 
 export interface ChurnRateData {
