@@ -2862,9 +2862,11 @@ function NewCustomerChartCard({ volume, cohorts }: {
           </RAreaChart>
         </ChartContainer>
 
-      {/* Unified table: complete cohorts, then in-progress (gray) */}
+      </CardContent>
+
+      {/* Cohort table — separated by border-t, not nested card */}
       {cohorts && (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="border-t">
           <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
             <thead className="bg-muted [&_tr]:border-b">
               <tr>
@@ -2967,7 +2969,6 @@ function NewCustomerChartCard({ volume, cohorts }: {
           </table>
         </div>
       )}
-      </CardContent>
     </DashboardCard>
   );
 }
@@ -3164,60 +3165,61 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
             </BarChart>
           </ChartContainer>
 
-          {/* Table — shadcn v4 DataTable pattern */}
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
-              <thead className="bg-muted [&_tr]:border-b">
-                <tr>
-                  <th className={`${modThClass} !text-left`}>Week</th>
-                  <th className={modThClass}>Visits</th>
-                  <th className={modThClass}>Customers</th>
-                  <th className={modThClass}>First %</th>
-                </tr>
-              </thead>
-              <tbody className="[&_tr:last-child]:border-0">
-                {displayWeeks.map((w) => {
-                  const isHovered = hoveredWeek === w.weekStart;
-                  const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
-                  const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
-                  return (
-                    <tr
-                      key={w.weekStart}
-                      className="border-b transition-colors hover:bg-muted/50"
-                      style={{
-                        borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
-                      }}
-                      onMouseEnter={() => setHoveredWeek(w.weekStart)}
-                      onMouseLeave={() => setHoveredWeek(null)}
-                    >
-                      <td className={`${modTdClass} !text-left font-medium`}>
-                        {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
-                        {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
-                      </td>
-                      <td className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
-                      <td className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
-                      <td className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
-                    </tr>
-                  );
-                })}
-                {/* WTD row — inline as a muted/gray row */}
-                {wtd && (
-                  <tr className="border-b bg-muted/50">
-                    <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
-                      {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
-                      {" "}<span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">WTD</span>
-                    </td>
-                    <td className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(wtd.visits)}</td>
-                    <td className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(wtd.uniqueCustomers)}</td>
-                    <td className={`${modTdClass} text-muted-foreground`}>
-                      {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </CardContent>
+
+        {/* Table — separated by border-t, not nested card */}
+        <div className="border-t">
+          <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+            <thead className="bg-muted [&_tr]:border-b">
+              <tr>
+                <th className={`${modThClass} !text-left`}>Week</th>
+                <th className={modThClass}>Visits</th>
+                <th className={modThClass}>Customers</th>
+                <th className={modThClass}>First %</th>
+              </tr>
+            </thead>
+            <tbody className="[&_tr:last-child]:border-0">
+              {displayWeeks.map((w) => {
+                const isHovered = hoveredWeek === w.weekStart;
+                const isLatest = w.weekStart === displayWeeks[displayWeeks.length - 1]?.weekStart;
+                const firstPct = w.uniqueCustomers > 0 ? Math.round((w.firstTime / w.uniqueCustomers) * 100) : 0;
+                return (
+                  <tr
+                    key={w.weekStart}
+                    className="border-b transition-colors hover:bg-muted/50"
+                    style={{
+                      borderLeft: isHovered ? `2px solid ${COLORS.dropIn}` : "2px solid transparent",
+                    }}
+                    onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                    onMouseLeave={() => setHoveredWeek(null)}
+                  >
+                    <td className={`${modTdClass} !text-left font-medium`}>
+                      {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
+                      {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                    </td>
+                    <td className={`${modTdClass} font-semibold`}>{formatNumber(w.visits)}</td>
+                    <td className={`${modTdClass} font-medium`}>{formatNumber(w.uniqueCustomers)}</td>
+                    <td className={`${modTdClass} text-muted-foreground`}>{firstPct}%</td>
+                  </tr>
+                );
+              })}
+              {/* WTD row — inline as a muted/gray row */}
+              {wtd && (
+                <tr className="border-b bg-muted/50">
+                  <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
+                    {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                    {" "}<span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">WTD</span>
+                  </td>
+                  <td className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(wtd.visits)}</td>
+                  <td className={`${modTdClass} font-medium text-muted-foreground`}>{formatNumber(wtd.uniqueCustomers)}</td>
+                  <td className={`${modTdClass} text-muted-foreground`}>
+                    {wtd.uniqueCustomers > 0 ? `${Math.round((wtd.firstTime / wtd.uniqueCustomers) * 100)}%` : "\u2014"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </DashboardCard>
 
       {/* ── Row 3: Drop-in Frequency (horizontal bars) ── */}
