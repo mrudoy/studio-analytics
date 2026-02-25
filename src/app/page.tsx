@@ -3856,8 +3856,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
             <tr>
               <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
               <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Number</th>
-              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change</th>
-              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Change (%)</th>
+              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">vs Prior Week</th>
             </tr>
           </thead>
           <tbody className="[&_tr:last-child]:border-0">
@@ -3876,16 +3875,11 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
                     {m.value}
                   </td>
                   {!m.isNetChange ? (
-                    <>
-                      <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
-                        {m.delta != null ? formatDelta(m.delta) : ""}
-                      </td>
-                      <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor} opacity-75`}>
-                        {m.deltaPercent != null ? `${m.deltaPercent > 0 ? "+" : ""}${m.deltaPercent}%` : ""}
-                      </td>
-                    </>
+                    <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
+                      {m.delta != null ? formatDelta(m.delta) : ""}
+                    </td>
                   ) : (
-                    <td colSpan={2} />
+                    <td />
                   )}
                 </tr>
               );
