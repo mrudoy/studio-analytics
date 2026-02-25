@@ -224,9 +224,40 @@ export class UnionClient {
   async login(email: string, password: string): Promise<void> {
     if (!this.page) throw new Error("Client not initialized");
 
-    this.progress("Navigating to Union.fit sign-in page");
-    await this.page.goto(`${BASE_URL}/signin`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {}); // Wait for JS hydration
+    const signinUrl = `${BASE_URL}/signin`;
+
+    // Navigate with retry — sometimes pages redirect to unexpected URLs (favicon.ico, etc.)
+    for (let navAttempt = 0; navAttempt < 3; navAttempt++) {
+      this.progress(`Navigating to Union.fit sign-in page${navAttempt > 0 ? ` (attempt ${navAttempt + 1})` : ""}`);
+      await this.page.goto(signinUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await this.page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+
+      const urlAfterNav = this.page.url();
+      console.log(`[union-client] Post-navigation URL: ${urlAfterNav}`);
+
+      // If we ended up at favicon.ico or a completely wrong URL, clear session cookies and retry
+      // Keep cf_clearance (Cloudflare bypass) but remove session cookies that may cause bad redirects
+      if (urlAfterNav.includes("favicon.ico") || (!urlAfterNav.includes("union.fit") && !urlAfterNav.includes("localhost"))) {
+        console.warn(`[union-client] Unexpected URL after navigation: ${urlAfterNav} — clearing session cookies and retrying`);
+        if (this.context) {
+          // Get current cookies, keep only Cloudflare and analytics ones
+          const currentCookies = await this.context.cookies();
+          const keepNames = new Set(["cf_clearance", "_ga", "_ga_E4S9TLB3M8", "_fbp"]);
+          const sessionCookies = currentCookies.filter((c) => !keepNames.has(c.name));
+          console.log(`[union-client] Clearing ${sessionCookies.length} session cookies, keeping ${keepNames.size} essential cookies`);
+          await this.context.clearCookies();
+          // Re-add only the essential cookies
+          const essentialCookies = currentCookies.filter((c) => keepNames.has(c.name));
+          if (essentialCookies.length > 0) {
+            await this.context.addCookies(essentialCookies);
+          }
+        }
+        await this.page.waitForTimeout(2000);
+        continue;
+      }
+
+      break; // Navigation succeeded to a reasonable URL
+    }
 
     // Check for and handle Cloudflare challenge with extended patience
     await this.handleCloudflareChallenge();

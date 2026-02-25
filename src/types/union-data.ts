@@ -10,6 +10,7 @@ export interface Order {
   created: string;
   code: string;
   customer: string;
+  email?: string;    // customer_email from transaction CSV
   type: string;
   payment: string;
   total: number;

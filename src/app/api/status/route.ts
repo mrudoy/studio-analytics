@@ -45,13 +45,19 @@ export async function GET(request: NextRequest) {
           }
 
           const state = await job.getState();
-          const progress = job.progress as { step?: string; percent?: number; startedAt?: number } | undefined;
+          const progress = job.progress as {
+            step?: string;
+            percent?: number;
+            startedAt?: number;
+            categories?: Record<string, unknown>;
+          } | undefined;
 
           if (state === "active" || state === "waiting" || state === "delayed") {
             send("progress", {
               step: progress?.step || "Processing...",
               percent: progress?.percent || 0,
               startedAt: progress?.startedAt || 0,
+              categories: progress?.categories || null,
             });
           } else if (state === "completed") {
             const result = job.returnvalue;
@@ -81,14 +87,14 @@ export async function GET(request: NextRequest) {
         }
       }, 1000);
 
-      // Timeout after 30 minutes — safety net in case pipeline is slow
+      // Timeout after 75 minutes — safety net (pipeline polls Gmail for up to 60 min)
       setTimeout(() => {
         if (!closed) {
           send("error", { message: "Job timed out" });
           clearInterval(interval);
           closeStream();
         }
-      }, 1800000);
+      }, 4_500_000);
     },
   });
 

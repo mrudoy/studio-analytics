@@ -160,6 +160,7 @@ export async function initDatabase(): Promise<void> {
       created_at TEXT,
       code TEXT,
       customer TEXT,
+      email TEXT,
       order_type TEXT,
       payment TEXT,
       total REAL DEFAULT 0,
@@ -230,6 +231,9 @@ export async function initDatabase(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_insights_detected ON insights(detected_at)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_insights_detector ON insights(detector)`);
 
+  // Migrations: add columns that may not exist on older DBs
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS email TEXT`);
+
   // Performance indexes
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_ar_state ON auto_renews(plan_state);
@@ -240,6 +244,7 @@ export async function initDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_reg_subscription ON registrations(subscription);
     CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(order_type);
+    CREATE INDEX IF NOT EXISTS idx_orders_email ON orders(email);
     CREATE INDEX IF NOT EXISTS idx_newcust_created ON new_customers(created_at);
     CREATE INDEX IF NOT EXISTS idx_newcust_email ON new_customers(email);
     CREATE INDEX IF NOT EXISTS idx_fv_email ON first_visits(email);

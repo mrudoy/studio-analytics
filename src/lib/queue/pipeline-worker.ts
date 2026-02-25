@@ -9,8 +9,9 @@ import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 
-/** Maximum total time the pipeline is allowed to run before being killed. */
-const PIPELINE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+/** Maximum total time the pipeline is allowed to run before being killed.
+ *  70 min to accommodate 60-min email polling + Playwright triggers + analytics. */
+const PIPELINE_TIMEOUT_MS = 70 * 60 * 1000; // 70 minutes
 
 /**
  * Race a promise against a timeout. If the timeout fires first, throw.
@@ -29,15 +30,17 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 
 let pipelineStartedAt = 0;
 
-function updateProgress(job: Job, step: string, percent: number) {
-  job.updateProgress({ step, percent, startedAt: pipelineStartedAt });
+import type { CategoryProgress } from "@/types/pipeline";
+
+function updateProgress(job: Job, step: string, percent: number, categories?: Record<string, CategoryProgress>) {
+  job.updateProgress({ step, percent, startedAt: pipelineStartedAt, categories });
 }
 
 async function runPipeline(job: Job): Promise<PipelineResult> {
   return withTimeout(
     runPipelineInner(job),
     PIPELINE_TIMEOUT_MS,
-    "Pipeline timed out after 20 minutes — try again or check Union.fit connectivity"
+    "Pipeline timed out after 70 minutes — try again or check Union.fit connectivity"
   );
 }
 
@@ -51,14 +54,11 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     throw new Error("No Union.fit credentials configured. Go to Settings to configure.");
   }
 
-  // Build date range from job params or per-report watermarks
-  let dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
+  // Date range: if explicitly provided in the job, pass it through as an override.
+  // Otherwise, the email-pipeline builds per-report ranges from watermarks automatically.
+  const dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
     ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
-    : "";
-
-  if (!dateRange) {
-    dateRange = await buildDateRange();
-  }
+    : undefined;
 
   // ── Email pipeline (primary path) ──
   // All CSV downloads go through: Playwright clicks "Download CSV" button →
@@ -78,8 +78,8 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     unionEmail: settings.credentials.email,
     unionPassword: settings.credentials.password,
     robotEmail: settings.robotEmail.address,
-    dateRange,
-    onProgress: (step, percent) => updateProgress(job, step, percent),
+    dateRange: dateRange || undefined,
+    onProgress: (step, percent, categories) => updateProgress(job, step, percent, categories),
   });
 
   // ── Shopify sync (non-fatal — dashboard still works without it) ──
@@ -173,7 +173,7 @@ export function startPipelineWorker(): Worker {
     {
       connection: getRedisConnection(),
       concurrency: 1,
-      lockDuration: 1_500_000, // 25 minutes — pipeline timeout is 20 min + margin
+      lockDuration: 4_500_000, // 75 minutes — pipeline timeout is 70 min + margin
     }
   );
 

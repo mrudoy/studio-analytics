@@ -115,6 +115,11 @@ export default function SettingsPage() {
       setStatus("saved");
       setSettings((s) => ({ ...s, password: "" }));
 
+      if (new URLSearchParams(window.location.search).get("from") === "pipeline") {
+        window.location.href = "/pipeline";
+        return;
+      }
+
       const refreshRes = await fetch("/api/settings");
       const refreshData = await refreshRes.json();
       setCurrentEmail(refreshData.email || null);

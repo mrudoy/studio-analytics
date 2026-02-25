@@ -19,7 +19,7 @@ import { UnionClient } from "./union-client";
 import { REPORT_URLS, type ReportType } from "./selectors";
 import type { Page, Download } from "playwright";
 import { join } from "path";
-import { mkdirSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 
 const BASE_URL = "https://www.union.fit/admin/orgs/sky-ting";
 
@@ -70,13 +70,16 @@ export interface TriggerResult {
  * Captures direct browser downloads when they occur; otherwise marks the report
  * as pending email delivery.
  *
+ * `dateRanges` is a per-report map so each report uses its own watermark-based
+ * date range. Smaller ranges → smaller CSVs → more direct downloads (no email wait).
+ *
  * Returns which reports were triggered, which downloaded directly, and which
  * are awaiting email delivery.
  */
 export async function triggerCSVDownloads(
   email: string,
   password: string,
-  dateRange: string,
+  dateRanges: Record<string, string>,
   options?: {
     onProgress?: (step: string) => void;
     includeOptional?: boolean;
@@ -107,23 +110,51 @@ export async function triggerCSVDownloads(
     const page = client.getPage();
     if (!page) throw new Error("No page available after login");
 
-    // Trigger required reports
+    // Trigger required reports — retry once on failure (page may need more load time)
     for (const reportType of REPORTS_TO_TRIGGER) {
-      try {
-        onProgress?.(`Triggering CSV download: ${reportType}`);
-        const downloadResult = await triggerDownloadCSV(page, reportType, dateRange);
-        result.triggered.push(reportType);
+      let lastError = "";
+      let succeeded = false;
 
-        if (downloadResult.filePath) {
-          result.directDownloads.push({ report: reportType, filePath: downloadResult.filePath });
-          onProgress?.(`Direct download captured: ${reportType}`);
-        } else {
-          result.emailPending.push(reportType);
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const reportDateRange = dateRanges[reportType] || dateRanges['_default'] || '';
+          onProgress?.(`Triggering CSV download: ${reportType}${attempt > 1 ? " (retry)" : ""}`);
+          const downloadResult = await triggerDownloadCSV(page, reportType, reportDateRange);
+          result.triggered.push(reportType);
+
+          if (downloadResult.filePath) {
+            result.directDownloads.push({ report: reportType, filePath: downloadResult.filePath });
+            onProgress?.(`Direct download captured: ${reportType}`);
+          } else {
+            result.emailPending.push(reportType);
+          }
+          succeeded = true;
+          break;
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err);
+          console.warn(`[csv-trigger] Attempt ${attempt} failed for ${reportType}: ${lastError}`);
+
+          // On first failure, take diagnostic screenshot and retry
+          if (attempt === 1) {
+            try {
+              const screenshotPath = join(DOWNLOADS_DIR, `debug-${reportType}-${Date.now()}.png`);
+              await page.screenshot({ path: screenshotPath, fullPage: true });
+              console.log(`[csv-trigger] Debug screenshot saved: ${screenshotPath}`);
+              // Also dump visible button/link text for debugging
+              const buttons = await page.locator('button, a, input[type="submit"]').allTextContents();
+              const meaningful = buttons.filter((t) => t.trim().length > 0 && t.trim().length < 50);
+              console.log(`[csv-trigger] Visible buttons on ${reportType}: ${meaningful.join(" | ")}`);
+            } catch {
+              // Screenshot failed — continue anyway
+            }
+            // Brief pause before retry
+            await page.waitForTimeout(2000);
+          }
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[csv-trigger] Failed to trigger ${reportType}: ${msg}`);
-        result.failed.push({ report: reportType, error: msg });
+      }
+
+      if (!succeeded) {
+        result.failed.push({ report: reportType, error: lastError });
       }
     }
 
@@ -131,8 +162,9 @@ export async function triggerCSVDownloads(
     if (options?.includeOptional !== false) {
       for (const reportType of OPTIONAL_REPORTS) {
         try {
+          const optDateRange = dateRanges[reportType] || dateRanges['_default'] || '';
           onProgress?.(`Triggering CSV download: ${reportType} (optional)`);
-          const downloadResult = await triggerDownloadCSV(page, reportType, dateRange);
+          const downloadResult = await triggerDownloadCSV(page, reportType, optDateRange);
           result.triggered.push(reportType);
 
           if (downloadResult.filePath) {
@@ -189,12 +221,17 @@ async function triggerDownloadCSV(
   await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
   // Wait for the report toolbar to load — try multiple indicators
+  // Also look for <a> and <button> elements containing "View" (covers both element types)
   await Promise.race([
-    page.locator('button.form-control:has-text("View")').first().waitFor({ state: "visible", timeout: 15000 }),
+    page.locator('button:has-text("View"), a:has-text("View")').first().waitFor({ state: "visible", timeout: 15000 }),
     page.locator('.dropdown-toggle').first().waitFor({ state: "visible", timeout: 15000 }),
+    page.locator('.btn-group').first().waitFor({ state: "visible", timeout: 15000 }),
     page.locator('button[value="csv"]').first().waitFor({ state: "visible", timeout: 15000 }),
     new Promise((resolve) => setTimeout(resolve, 15000)), // fallback max wait
   ]).catch(() => {}); // Non-fatal — proceed to try clicking anyway
+
+  // Extra stability wait — some pages have client-side routing that can destroy the context
+  await page.waitForTimeout(1000);
 
   // Check for Cloudflare
   const content = await page.content();
@@ -227,7 +264,7 @@ async function triggerDownloadCSV(
   ]);
 
   // Strategy 1: Try "View" dropdown → "Download CSV" link
-  const viewClicked = await tryViewDropdownCSV(page);
+  const viewClicked = await tryViewDropdownCSV(page, reportUrl);
   if (viewClicked) {
     console.log(`[csv-trigger] Triggered via View dropdown: ${reportType}`);
     const filePath = await captureDownload(downloadPromise, reportType);
@@ -289,38 +326,120 @@ async function captureDownload(
  * Try to click "Download CSV" from the "View" dropdown menu.
  * Returns true if successful, false if the dropdown/option wasn't found.
  *
- * Union.fit UI structure (Bootstrap btn-group):
- *   <div class="btn-group">
- *     <button class="form-control button-min-width-70">View</button>   <- main button
- *     <button class="dropdown-toggle dropdown-toggle-split">...</button> <- caret toggle
- *     <div class="dropdown-menu">
- *       <button class="dropdown-item">Download CSV</button>              <- target
- *     </div>
- *   </div>
- *
- * Important: Many rows in report tables also have "View" links/buttons,
- * so we must target the btn-group in the toolbar, not table row buttons.
+ * Union.fit UI: The toolbar has a [View] button and a [∨] chevron button
+ * as siblings inside a parent container. Clicking ∨ opens a dropdown
+ * with "Download CSV". The actual CSS classes vary across pages, so
+ * we use class-agnostic detection as the primary strategy.
  */
-async function tryViewDropdownCSV(page: Page): Promise<boolean> {
-  // Strategy 1: btn-group with "View" button + dropdown toggle (most common)
+async function tryViewDropdownCSV(page: Page, reportUrl?: string): Promise<boolean> {
+  // ── Strategy 0 (PRIMARY): Use JavaScript to find toolbar View dropdown ──
+  // The toolbar "View" element can be a <button> or <a> tag. On pages with
+  // data tables (New Customers, Canceled Auto-Renews), each row also has a
+  // "View" button. We use JS to find View elements NOT inside <tr>/<td> tags.
   try {
-    const btnGroup = page.locator('.btn-group:has(button.form-control:has-text("View"))').first();
+    // Wait for page to be fully stable before evaluating
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
 
-    if (await btnGroup.isVisible({ timeout: 3000 }).catch(() => false)) {
+    // Find toolbar View elements via JS — returns their indices for Playwright to click
+    let toolbarViewCount = 0;
+    for (let evalAttempt = 0; evalAttempt < 2; evalAttempt++) {
+      try {
+        toolbarViewCount = await page.evaluate(() => {
+          const elements = document.querySelectorAll('button, a');
+          let count = 0;
+          for (const el of elements) {
+            const text = el.textContent?.trim() || '';
+            if (!/^View\b/i.test(text)) continue;
+            // Skip elements inside table rows (these are per-row View buttons)
+            if (el.closest('tr') || el.closest('td') || el.closest('tbody')) continue;
+            // Mark toolbar View elements with a data attribute for Playwright
+            (el as HTMLElement).setAttribute('data-csv-toolbar-view', String(count));
+            count++;
+          }
+          return count;
+        });
+        break; // evaluate succeeded
+      } catch (evalErr) {
+        const msg = evalErr instanceof Error ? evalErr.message : String(evalErr);
+        console.log(`[csv-trigger] Strategy 0 evaluate attempt ${evalAttempt + 1} failed: ${msg}`);
+        if (evalAttempt === 0) {
+          // Re-navigate to the page and wait for stability
+          if (reportUrl) {
+            await page.goto(reportUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+          }
+          await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
+
+    console.log(`[csv-trigger] Strategy 0: found ${toolbarViewCount} toolbar "View" elements (excluding table rows)`);
+
+    // Try each toolbar View element (last to first — toolbar is usually after nav)
+    for (let i = toolbarViewCount - 1; i >= 0; i--) {
+      const viewEl = page.locator(`[data-csv-toolbar-view="${i}"]`);
+      if (!(await viewEl.isVisible({ timeout: 2000 }).catch(() => false))) continue;
+
+      // Click it — might be a dropdown toggle itself
+      await viewEl.click();
+      await page.waitForTimeout(600);
+
+      const csvBtn = page.locator('text="Download CSV"').first();
+      if (await csvBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        console.log(`[csv-trigger] Found CSV by clicking toolbar View #${i} (strategy 0a)`);
+        await csvBtn.click();
+        await page.waitForTimeout(2000);
+        return true;
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+
+      // Try sibling elements (split-button pattern: [View] [▾])
+      const parent = viewEl.locator('..');
+      const siblings = parent.locator('button, a');
+      const sibCount = await siblings.count();
+
+      for (let j = 0; j < sibCount; j++) {
+        const sibling = siblings.nth(j);
+        const text = (await sibling.textContent().catch(() => ''))?.trim();
+        if (text && /^View\b/i.test(text)) continue; // skip the View element itself
+        if (!(await sibling.isVisible().catch(() => false))) continue;
+
+        await sibling.click();
+        await page.waitForTimeout(600);
+
+        const csvBtnSib = page.locator('text="Download CSV"').first();
+        if (await csvBtnSib.isVisible({ timeout: 1500 }).catch(() => false)) {
+          console.log(`[csv-trigger] Found CSV via toolbar View sibling (strategy 0b)`);
+          await csvBtnSib.click();
+          await page.waitForTimeout(2000);
+          return true;
+        }
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      }
+    }
+  } catch (err) {
+    console.log(`[csv-trigger] Strategy 0 error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // ── Strategy 1: Bootstrap btn-group with specific classes ──
+  try {
+    // Also check for <a> tags in btn-group (some pages use links instead of buttons)
+    const btnGroup = page.locator('.btn-group').filter({
+      has: page.locator('button:has-text("View"), a:has-text("View")')
+    }).first();
+    if (await btnGroup.isVisible({ timeout: 2000 }).catch(() => false)) {
       const toggle = btnGroup.locator('.dropdown-toggle-split, .dropdown-toggle').first();
-      if (await toggle.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await toggle.isVisible({ timeout: 1500 }).catch(() => false)) {
         await toggle.click();
         await page.waitForTimeout(500);
 
-        const downloadBtn = btnGroup.locator('button:has-text("Download CSV"), a:has-text("Download CSV")').first();
+        const downloadBtn = page.locator('text="Download CSV"').first();
         if (await downloadBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          console.log(`[csv-trigger] Found CSV via btn-group dropdown (strategy 1)`);
           await downloadBtn.click();
           await page.waitForTimeout(2000);
-
-          const pageContent = await page.content();
-          if (pageContent.includes("emailed") || pageContent.includes("export")) {
-            console.log(`[csv-trigger] Confirmation banner detected after click`);
-          }
           return true;
         }
         await page.keyboard.press("Escape");
@@ -330,56 +449,26 @@ async function tryViewDropdownCSV(page: Page): Promise<boolean> {
     // Fall through
   }
 
-  // Strategy 2: input-group layout variant
-  try {
-    const inputGroup = page.locator('.input-group:has(button:has-text("View"))').first();
-    if (await inputGroup.isVisible({ timeout: 2000 }).catch(() => false)) {
-      const toggle = inputGroup.locator('.dropdown-toggle-split, .dropdown-toggle').first();
-      if (await toggle.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await toggle.click();
-        await page.waitForTimeout(500);
-      }
-    }
-
-    const downloadBtn = page.locator('button.dropdown-item:has-text("Download CSV")').first();
-    if (await downloadBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await downloadBtn.click();
-      await page.waitForTimeout(2000);
-
-      const pageContent = await page.content();
-      if (pageContent.includes("emailed") || pageContent.includes("export")) {
-        console.log(`[csv-trigger] Confirmation banner detected after click (strategy 2)`);
-      }
-      return true;
-    }
-  } catch {
-    // Fall through
-  }
-
-  // Strategy 3: Find ANY dropdown toggle on the page and check each for CSV option.
-  // Catches pages where the toolbar structure differs from the expected patterns.
+  // ── Strategy 2: Find ANY dropdown toggle on the page ──
   try {
     const allToggles = page.locator('.dropdown-toggle, .dropdown-toggle-split');
     const count = await allToggles.count();
 
-    for (let i = 0; i < Math.min(count, 5); i++) {
+    for (let i = 0; i < Math.min(count, 8); i++) {
       const toggle = allToggles.nth(i);
       if (!(await toggle.isVisible().catch(() => false))) continue;
+      // Skip toggles inside table rows
+      const inTable = await toggle.evaluate((el) => !!(el.closest('tr') || el.closest('td') || el.closest('tbody')));
+      if (inTable) continue;
 
       await toggle.click();
       await page.waitForTimeout(500);
 
-      // Look for any visible CSV option in any open dropdown
-      const csvOption = page.locator('.dropdown-item:visible').filter({ hasText: /CSV/i }).first();
+      const csvOption = page.locator('text="Download CSV"').first();
       if (await csvOption.isVisible({ timeout: 1000 }).catch(() => false)) {
-        console.log(`[csv-trigger] Found CSV option via dropdown toggle #${i + 1}`);
+        console.log(`[csv-trigger] Found CSV option via dropdown toggle #${i + 1} (strategy 2)`);
         await csvOption.click();
         await page.waitForTimeout(2000);
-
-        const pageContent = await page.content();
-        if (pageContent.includes("emailed") || pageContent.includes("export")) {
-          console.log(`[csv-trigger] Confirmation banner detected after click (strategy 3)`);
-        }
         return true;
       }
 
@@ -390,7 +479,7 @@ async function tryViewDropdownCSV(page: Page): Promise<boolean> {
     // Fall through
   }
 
-  // Strategy 4: Look for any direct CSV/Export link or button on the page
+  // ── Strategy 3: Direct CSV/Export link already visible on page ──
   try {
     const exportLink = page.locator(
       'a:has-text("Download CSV"), a:has-text("Export CSV"), ' +
@@ -399,7 +488,7 @@ async function tryViewDropdownCSV(page: Page): Promise<boolean> {
     ).first();
 
     if (await exportLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-      console.log(`[csv-trigger] Found direct CSV/export link (strategy 4)`);
+      console.log(`[csv-trigger] Found direct CSV/export link (strategy 3)`);
       await exportLink.click();
       await page.waitForTimeout(2000);
       return true;

@@ -31,6 +31,7 @@ export const OrderSchema = z.object({
   created: z.string().default(""),
   code: z.string().default(""),
   customer: z.string().default(""),
+  email: z.string().optional().default(""),  // customer_email from transaction CSV
   type: z.string().default(""),
   payment: z.string().default(""),
   total: money,

@@ -422,6 +422,7 @@ export async function runPipelineFromFiles(
         created: o.created,
         code: o.code,
         customer: o.customer,
+        email: o.email || "",
         type: o.type,
         payment: o.payment,
         total: o.total,

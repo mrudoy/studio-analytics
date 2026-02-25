@@ -5,7 +5,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 ## Open
 
 - [x] ~~Fix stretched fonts~~ — `FONT_SANS` was overriding body's DM Sans with Helvetica Neue; `DS.weight.normal` was 500 (too heavy); DM Sans 700 wasn't loaded but used as bold. Fixed: FONT_SANS → DM Sans, weights → 400/500/600, loaded 700 in layout.tsx.
-- [ ] **CRITICAL: Pipeline has no working automation.** Railway cron fires but Cloudflare blocks Playwright. No local fallback exists. Data goes stale silently. Need either: (A) daily zip pipeline from Union.fit emails, (B) local cron/launchd runner, or (C) stale-data alerting. User flagged this as an architecture gap.
+- [x] ~~**Pipeline automation**: local pipeline server now always-on at `localhost:3099` via launchd (`com.skyting.pipeline-server`). Control panel at `localhost:3099/pipeline` — trigger, progress, freshness display. 6am auto-trigger via `com.skyting.pipeline` launchd agent curls the server with staleness guard (skips if <18h old). Env copied to `~/.local/skyting-pipeline.env` to bypass macOS TCC.~~
 - [ ] Schedule is now set to every 6 hours (`0 */6 * * *`) — need to re-save from Settings UI on Railway for it to take effect
 - [x] ~~Verify FreshnessBadge pill spacing looks correct on prod after deploy~~ — multiple deploys since, layout confirmed
 - [x] ~~Verify Revenue section shows 2025 total alongside 2026 forecast on prod~~ — revenue section redesigned with full monthly bar chart
@@ -33,7 +33,8 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] **Shopify API + Merch tab** — Built on Railway staging. Branch `desktop/member-card-v2` (other machine) is merging main into it, then adding a "Merch" sub-tab inside Revenue section alongside "Class Revenue". Uses Tabs component with variant="line". Shopify API feeds the Merch data. DO NOT edit Revenue section here — being modified on other machine.
 - [ ] User note: NO SCRAPING — pipeline triggers CSV downloads via Playwright locally, emails arrive, data gets processed. Browser part must run locally (not Railway).
 - [ ] User note: Mike works on TWO machines — another machine may be running dev server or making changes simultaneously. Watch for port conflicts, stale processes, and git divergence.
-- [ ] **Overview page redesign** — Replace current 3-tile KPI hero entirely with time-based sections: "Yesterday", "Last Week", "This Month", "Last Month". Each section has grouped cards (Subscriptions, Activity, Revenue). Metrics per section: sub changes by plan (new/churned), drop-ins, intro weeks purchased, merch revenue. Always show zeros. No total studio visits (dropped).
+- [ ] **Daily email digest** — Send the Overview page data (Yesterday, Last Week, This Month, Last Month) as an email to 4 recipients at 7am every morning. Need to decide: email service (Resend, SendGrid, SES, or Gmail API), template format (HTML email matching dashboard style), and where it runs (Railway cron or local launchd trigger after pipeline completes). Recipients TBD (get 4 addresses from Mike).
+- [x] ~~**Overview page redesign** — Replaced KPI hero with time-based sections (Yesterday, Last Week, This Month, Last Month). Grouped cards: Subscriptions, Activity, Merch Revenue. Committed `3e08e04`.~~
 - [x] ~~Style guide~~ — created `docs/style-guide.md` with full typography hierarchy (section headers, sub-group headers, card titles, KPI values), color system, icon mapping, chart rules, and anti-patterns. Sub-group headers: text-[15px] font-semibold text-muted-foreground, no icons, no border-left.
 
 ### Data Report Key (from Data.pdf)

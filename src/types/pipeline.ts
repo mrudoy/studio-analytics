@@ -1,7 +1,17 @@
+export type CategoryState = "pending" | "downloading" | "parsing" | "saved" | "failed" | "skipped";
+
+export interface CategoryProgress {
+  state: CategoryState;
+  recordCount?: number;
+  error?: string;
+  deliveryMethod?: "direct" | "email";
+}
+
 export interface PipelineProgress {
   step: string;
   percent: number;
   startedAt?: number;
+  categories?: Record<string, CategoryProgress>;
 }
 
 export interface ValidationCheck {

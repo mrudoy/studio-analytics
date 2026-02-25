@@ -6,6 +6,7 @@ export interface OrderRow {
   created: string;
   code: string;
   customer: string;
+  email: string;
   type: string;
   payment: string;
   total: number;
@@ -16,6 +17,7 @@ export interface StoredOrder {
   createdAt: string;
   code: string;
   customer: string;
+  email: string;
   orderType: string;
   payment: string;
   total: number;
@@ -52,10 +54,11 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
     await client.query("BEGIN");
     for (const r of rows) {
       await client.query(
-        `INSERT INTO orders (created_at, code, customer, order_type, payment, total)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (code) DO NOTHING`,
-        [r.created, r.code, r.customer, r.type, r.payment, r.total]
+        `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (code) DO UPDATE SET email = EXCLUDED.email
+           WHERE orders.email IS NULL OR orders.email = ''`,
+        [r.created, r.code, r.customer, r.email, r.type, r.payment, r.total]
       );
     }
     await client.query("COMMIT");
@@ -79,7 +82,7 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
 export async function getOrders(startDate?: string, endDate?: string): Promise<StoredOrder[]> {
   const pool = getPool();
   let query = `
-    SELECT id, created_at, code, customer, order_type, payment, total
+    SELECT id, created_at, code, customer, email, order_type, payment, total
     FROM orders
     WHERE created_at IS NOT NULL AND created_at != ''
   `;
@@ -104,6 +107,7 @@ export async function getOrders(startDate?: string, endDate?: string): Promise<S
     createdAt: r.created_at as string,
     code: r.code as string,
     customer: r.customer as string,
+    email: (r.email as string) || "",
     orderType: r.order_type as string,
     payment: r.payment as string,
     total: r.total as number,
