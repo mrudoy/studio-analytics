@@ -370,7 +370,7 @@ function formatWeekRangeLabel(start: string, end: string): string {
 /** Smart "this week" / "last week" / "Week of Feb 17" label based on period date */
 function weekLabel(period: string): string {
   const d = new Date(period + "T00:00:00");
-  if (isNaN(d.getTime())) return "this week";
+  if (isNaN(d.getTime())) return "This Week";
   const now = new Date();
   // Get current week's Monday
   const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
@@ -379,10 +379,10 @@ function weekLabel(period: string): string {
   const lastMonday = new Date(thisMonday);
   lastMonday.setDate(lastMonday.getDate() - 7);
 
-  if (d.getTime() === thisMonday.getTime()) return "this week";
-  if (d.getTime() === lastMonday.getTime()) return "last week";
+  if (d.getTime() === thisMonday.getTime()) return "This Week";
+  if (d.getTime() === lastMonday.getTime()) return "Last Week";
   const month = d.toLocaleDateString("en-US", { month: "short" });
-  return `week of ${month} ${d.getDate()}`;
+  return `Week of ${month} ${d.getDate()}`;
 }
 
 function formatMonthLabel(period: string): string {
@@ -2345,10 +2345,10 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
           {momDelta != null && momDeltaPct != null && (
             <CardFooter className="flex-col items-start gap-2 text-sm">
               <div className="flex gap-2 leading-none font-medium">
-                {momDeltaPct > 0 ? "+" : ""}{momDeltaPct}% month over month
+                {momDeltaPct > 0 ? "+" : ""}{momDeltaPct}% Month over Month
               </div>
               <div className="text-muted-foreground leading-none">
-                Last 12 months of gross revenue
+                Last 12 Months of Gross Revenue
               </div>
             </CardFooter>
           )}
@@ -2744,7 +2744,7 @@ function NewCustomerKPICards({ volume, cohorts }: {
           </CardTitle>
         </CardHeader>
         <CardFooter className="text-sm text-muted-foreground">
-          Current week cohort
+          Current Week Cohort
         </CardFooter>
       </DashboardCard>
 
@@ -2759,7 +2759,7 @@ function NewCustomerKPICards({ volume, cohorts }: {
           </CardTitle>
         </CardHeader>
         <CardFooter className="text-sm text-muted-foreground">
-          {completeCohorts.length} complete cohort{completeCohorts.length !== 1 ? "s" : ""}
+          {completeCohorts.length} Complete Cohort{completeCohorts.length !== 1 ? "s" : ""}
         </CardFooter>
       </DashboardCard>
 
@@ -2774,7 +2774,7 @@ function NewCustomerKPICards({ volume, cohorts }: {
           </CardTitle>
         </CardHeader>
         <CardFooter className="text-sm text-muted-foreground">
-          Based on avg conversion rate
+          Based on Avg Conversion Rate
         </CardFooter>
       </DashboardCard>
     </div>
@@ -2802,7 +2802,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
     <DashboardCard matchHeight className="@container/card">
       <CardHeader>
         <CardTitle>Weekly New Customers</CardTitle>
-        <CardDescription>Complete weeks and cohort breakdown</CardDescription>
+        <CardDescription>Complete Weeks and Cohort Breakdown</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -2989,7 +2989,7 @@ function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
     <DashboardCard matchHeight>
       <CardHeader>
         <CardTitle>Customers By Week</CardTitle>
-        <CardDescription>New intro week customers by week</CardDescription>
+        <CardDescription>New Intro Week Customers by Week</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -3008,7 +3008,7 @@ function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
             {lastWeekDelta > 0 ? "+" : ""}{lastWeekDelta}% vs 4-week average
           </div>
           <div className="text-muted-foreground leading-none">
-            Intro week signups
+            Intro Week Signups
           </div>
         </CardFooter>
       )}
@@ -3029,7 +3029,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader subtitle="Drop-ins, Intro Week, and other non-subscribed activity">{LABELS.nonAutoRenew}</SectionHeader>
+      <SectionHeader subtitle="Drop-ins, Intro Week, and Other Non-Subscribed Activity">{LABELS.nonAutoRenew}</SectionHeader>
 
       {/* ── Subsection A: Drop-ins ── */}
       {dropIns && (
@@ -3107,7 +3107,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatNumber(wtd?.visits ?? 0)}</CardTitle>
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">
-            {wtdDayLabel ? `Through ${wtdDayLabel}` : "Week to date"}
+            {wtdDayLabel ? `Through ${wtdDayLabel}` : "Week to Date"}
           </CardFooter>
         </DashboardCard>
 
@@ -3117,7 +3117,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatNumber(typicalWeekVisits)}</CardTitle>
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">
-            4-week average
+            4-Week Average
           </CardFooter>
         </DashboardCard>
 
@@ -3129,7 +3129,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
             </CardTitle>
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">
-            vs prior 4 weeks
+            vs Prior 4 Weeks
           </CardFooter>
         </DashboardCard>
       </div>
@@ -3138,7 +3138,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
       <DashboardCard>
         <CardHeader>
           <CardTitle>Weekly Drop-ins</CardTitle>
-          <CardDescription>Complete weeks{wtd ? " and week-to-date" : ""}</CardDescription>
+          <CardDescription>Complete Weeks{wtd ? " and Week-to-Date" : ""}</CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
@@ -3230,7 +3230,7 @@ function DropInsSubsection({ dropIns }: { dropIns: DropInModuleData }) {
               <CardTitle>Drop-in Frequency</CardTitle>
               <InfoTooltip tooltip="Distribution of unique drop-in customers by visit count over the last 90 days." />
             </div>
-            <CardDescription>Last 90 days{frequency ? ` · ${formatNumber(frequency.totalCustomers)} unique visitors` : ""}</CardDescription>
+            <CardDescription>Last 90 Days{frequency ? ` · ${formatNumber(frequency.totalCustomers)} Unique Visitors` : ""}</CardDescription>
           </CardHeader>
 
           <CardContent className="flex-1">
@@ -3288,7 +3288,7 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
           </CardTitle>
         </CardHeader>
         <CardFooter className="text-sm text-muted-foreground">
-          Active pool (7d)
+          Active Pool (7d)
         </CardFooter>
       </DashboardCard>
 
@@ -3318,7 +3318,7 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
           </CardTitle>
         </CardHeader>
         <CardFooter className="text-sm text-muted-foreground">
-          This week
+          This Week
         </CardFooter>
       </DashboardCard>
     </div>
@@ -3386,7 +3386,7 @@ function ConversionTimeCard({ pool }: { pool: ConversionPoolModuleData }) {
         )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
-        Days from first visit to auto-renew subscription
+        Days from First Visit to Auto-Renew Subscription
       </CardFooter>
     </DashboardCard>
   );
@@ -3453,7 +3453,7 @@ function ConversionVisitsCard({ pool }: { pool: ConversionPoolModuleData }) {
         )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
-        Total drop-in visits before subscribing
+        Total Drop-in Visits Before Subscribing
       </CardFooter>
     </DashboardCard>
   );
@@ -3478,7 +3478,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
     { key: "drop-ins", label: "Drop-ins" },
     { key: "intro-week", label: "Intro Week" },
     { key: "class-packs", label: "Class Packs" },
-    { key: "high-intent", label: "High intent" },
+    { key: "high-intent", label: "High Intent" },
   ];
 
   const chartData = displayWeeks.map((w) => ({
@@ -3493,7 +3493,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
         <div className="flex flex-row items-center justify-between w-full">
           <div>
             <CardTitle>Weekly Non Auto-Renew Customers</CardTitle>
-            <CardDescription>Complete weeks{wtd ? " and week-to-date" : ""}</CardDescription>
+            <CardDescription>Complete Weeks{wtd ? " and Week-to-Date" : ""}</CardDescription>
           </div>
           <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
             <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
@@ -3683,7 +3683,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
     const netVal = weeklyKeyNet(latestW);
     const prevNetVal = prevW ? weeklyKeyNet(prevW) : null;
     metrics.push({
-      label: "Net change",
+      label: "Net Change",
       value: formatDelta(netVal) || "0",
       priorValue: prevNetVal != null ? (formatDelta(prevNetVal) || "0") : null,
       color: netVal > 0 ? COLORS.success : netVal < 0 ? COLORS.error : undefined,
@@ -3692,18 +3692,18 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
 
   if (churnData) {
     metrics.push({
-      label: "User churn rate (avg/mo)",
+      label: "User Churn Rate (Avg/Mo)",
       value: `${churnData.avgUserChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgUserChurnRate),
     });
     metrics.push({
-      label: "MRR churn rate (avg/mo)",
+      label: "MRR Churn Rate (Avg/Mo)",
       value: `${churnData.avgMrrChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgMrrChurnRate),
     });
     if (churnData.atRiskCount > 0) {
       metrics.push({
-        label: "At risk",
+        label: "At Risk",
         value: String(churnData.atRiskCount),
         color: COLORS.warning,
       });
@@ -3734,7 +3734,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           )}
           <CardTitle>{title}</CardTitle>
         </div>
-        <CardDescription>New adds per week</CardDescription>
+        <CardDescription>New Adds per Week</CardDescription>
         <CardAction>
           <span className="text-2xl font-semibold tracking-tight tabular-nums">{formatNumber(count)}</span>
         </CardAction>
@@ -3742,7 +3742,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
 
       <CardContent>
         {barData.length > 0 && (
-          <ChartContainer config={{ newAdds: { label: "New adds", color } }} className="h-[200px] w-full">
+          <ChartContainer config={{ newAdds: { label: "New Adds", color } }} className="h-[200px] w-full">
             <BarChart
               accessibilityLayer
               data={barData}
@@ -3845,7 +3845,7 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
         <CardTitle>Annual Net Revenue</CardTitle>
         {olderTotal > 0 && priorTotal > 0 && (
           <CardDescription>
-            {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% year over year
+            {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% Year over Year
           </CardDescription>
         )}
       </CardHeader>
@@ -4031,13 +4031,13 @@ function ChurnSection({ churnRates, weekly }: {
             </div>
             <div className="flex flex-col">
               <div className="flex justify-between items-center py-1.5 border-b border-border">
-                <span className="text-xs text-muted-foreground">User churn rate (avg/mo)</span>
+                <span className="text-xs text-muted-foreground">User Churn Rate (Avg/Mo)</span>
                 <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgUserChurnRate) }}>
                   {cat.data.avgUserChurnRate.toFixed(1)}%
                 </span>
               </div>
               <div className="flex justify-between items-center py-1.5 border-b border-border">
-                <span className="text-xs text-muted-foreground">MRR churn rate (avg/mo)</span>
+                <span className="text-xs text-muted-foreground">MRR Churn Rate (Avg/Mo)</span>
                 <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgMrrChurnRate) }}>
                   {cat.data.avgMrrChurnRate.toFixed(1)}%
                 </span>
@@ -4050,7 +4050,7 @@ function ChurnSection({ churnRates, weekly }: {
               )}
               {cat.data.atRiskCount > 0 && (
                 <div className="flex justify-between items-center py-1.5">
-                  <span className="text-xs text-muted-foreground">At risk</span>
+                  <span className="text-xs text-muted-foreground">At Risk</span>
                   <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{cat.data.atRiskCount}</span>
                 </div>
               )}
@@ -4090,7 +4090,7 @@ function ChurnSection({ churnRates, weekly }: {
         <DashboardCard className="@container/card">
           <CardHeader>
             <CardTitle>Monthly Churn Rate Trend</CardTitle>
-            <CardDescription>User churn rate by category over time</CardDescription>
+            <CardDescription>User Churn Rate by Category over Time</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
@@ -4288,7 +4288,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.mtdRevenue)}</CardTitle>
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">
-            Month to date
+            Month to Date
           </CardFooter>
         </DashboardCard>
 
@@ -4298,7 +4298,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(ytdRevenue)}</CardTitle>
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">
-            Year to date
+            Year to Date
           </CardFooter>
         </DashboardCard>
 
@@ -4322,7 +4322,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
             <CardTitle className="text-2xl font-semibold tabular-nums">{merch.repeatCustomerRate}%</CardTitle>
           </CardHeader>
           <CardFooter className="text-sm text-muted-foreground">
-            Returning customers
+            Returning Customers
           </CardFooter>
         </DashboardCard>
       </div>
@@ -4335,7 +4335,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               <CardTitle>Annual Merch Revenue</CardTitle>
               {yoyDelta !== null && (
                 <CardDescription>
-                  {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% year over year
+                  {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}% Year over Year
                 </CardDescription>
               )}
             </CardHeader>
@@ -4371,7 +4371,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           <DashboardCard>
             <CardHeader>
               <CardTitle>Buyer Breakdown</CardTitle>
-              <CardDescription>Merch orders by auto-renew status</CardDescription>
+              <CardDescription>Merch Orders by Auto-Renew Status</CardDescription>
             </CardHeader>
             <CardContent>
               <MerchBuyerBreakdown breakdown={merch.customerBreakdown} />
@@ -4419,7 +4419,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               </ChartContainer>
             </CardContent>
             <CardFooter className="text-sm text-muted-foreground">
-              Last {chartData.length} months of Shopify merch revenue
+              Last {chartData.length} Months of Shopify Merch Revenue
             </CardFooter>
           </DashboardCard>
         )}
@@ -4474,7 +4474,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
               </ChartContainer>
             </CardContent>
             <CardFooter className="text-sm text-muted-foreground">
-              Monthly AOV trend (last {aovData.length} months)
+              Monthly AOV Trend (Last {aovData.length} Months)
             </CardFooter>
           </DashboardCard>
         )}
@@ -4487,7 +4487,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           <DashboardCard>
             <CardHeader>
               <CardTitle>Top Products</CardTitle>
-              <CardDescription>By total revenue (all time)</CardDescription>
+              <CardDescription>By Total Revenue (All Time)</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col">
@@ -4525,7 +4525,7 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
           <DashboardCard>
           <CardHeader>
             <CardTitle>Product Categories</CardTitle>
-            <CardDescription>Revenue by product type</CardDescription>
+            <CardDescription>Revenue by Product Type</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-3">
@@ -4735,7 +4735,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <CardDescription>MTD Revenue</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(spa.mtdRevenue)}</CardTitle>
           </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">Month to date</CardFooter>
+          <CardFooter className="text-sm text-muted-foreground">Month to Date</CardFooter>
         </DashboardCard>
 
         <DashboardCard>
@@ -4743,7 +4743,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <CardDescription>Avg Monthly</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(spa.avgMonthlyRevenue)}</CardTitle>
           </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">{completedMonthly.length} completed months</CardFooter>
+          <CardFooter className="text-sm text-muted-foreground">{completedMonthly.length} Completed Months</CardFooter>
         </DashboardCard>
 
         <DashboardCard>
@@ -4751,7 +4751,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <CardDescription>Unique Customers</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">{cb ? formatNumber(cb.uniqueCustomers) : "—"}</CardTitle>
           </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">All time</CardFooter>
+          <CardFooter className="text-sm text-muted-foreground">All Time</CardFooter>
         </DashboardCard>
 
         <DashboardCard>
@@ -4770,7 +4770,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
         <DashboardCard>
           <CardHeader>
             <CardTitle>Monthly Revenue</CardTitle>
-            <CardDescription>Last 12 completed months</CardDescription>
+            <CardDescription>Last 12 Completed Months</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer config={revenueChartConfig} className="h-[250px] w-full">
@@ -4821,7 +4821,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
           <DashboardCard>
             <CardHeader>
               <CardTitle>Monthly Visits</CardTitle>
-              <CardDescription>Visits and unique visitors</CardDescription>
+              <CardDescription>Visits and Unique Visitors</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={visitsChartConfig} className="h-[200px] w-full">
@@ -4849,7 +4849,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <DashboardCard>
               <CardHeader>
                 <CardTitle>Class Crossover</CardTitle>
-                <CardDescription>Do spa customers also take classes?</CardDescription>
+                <CardDescription>Do Spa Customers Also Take Classes?</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-3">
@@ -4892,7 +4892,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <DashboardCard>
               <CardHeader>
                 <CardTitle>Subscriber Overlap</CardTitle>
-                <CardDescription>Are spa customers auto-renew subscribers?</CardDescription>
+                <CardDescription>Are Spa Customers Auto-Renew Subscribers?</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-3">
@@ -4951,7 +4951,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <DashboardCard>
               <CardHeader>
                 <CardTitle>Visit Frequency</CardTitle>
-                <CardDescription>How often do customers visit the spa?</CardDescription>
+                <CardDescription>How Often Do Customers Visit the Spa?</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-2">
@@ -4980,7 +4980,7 @@ function SpaRevenueTab({ spa }: { spa: SpaData }) {
             <DashboardCard>
               <CardHeader>
                 <CardTitle>Revenue by Service</CardTitle>
-                <CardDescription>All-time revenue breakdown</CardDescription>
+                <CardDescription>All-Time Revenue Breakdown</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-3">
@@ -5089,7 +5089,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
             <CardDescription>{currentYear} YTD</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(ytdRevenue)}</CardTitle>
           </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">Year to date</CardFooter>
+          <CardFooter className="text-sm text-muted-foreground">Year to Date</CardFooter>
         </DashboardCard>
 
         <DashboardCard>
@@ -5097,7 +5097,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
             <CardDescription>Avg Monthly</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(avgMonthly)}</CardTitle>
           </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">{completedMonthly.length} months</CardFooter>
+          <CardFooter className="text-sm text-muted-foreground">{completedMonthly.length} Months</CardFooter>
         </DashboardCard>
       </div>
 
@@ -5106,7 +5106,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
         <DashboardCard>
           <CardHeader>
             <CardTitle>Monthly Rental Revenue</CardTitle>
-            <CardDescription>Studio Rental vs Teacher Rentals (last 12 completed months)</CardDescription>
+            <CardDescription>Studio Rental vs Teacher Rentals (Last 12 Completed Months)</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer config={rentalChartConfig} className="h-[200px] w-full">
@@ -5131,7 +5131,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
           <DashboardCard>
             <CardHeader>
               <CardTitle>Annual Rental Revenue</CardTitle>
-              <CardDescription>By year</CardDescription>
+              <CardDescription>By Year</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={annualChartConfig} className="h-[200px] w-full">
@@ -5153,7 +5153,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
         <DashboardCard>
           <CardHeader>
             <CardTitle>Revenue Split</CardTitle>
-            <CardDescription>Studio Rental vs Teacher Rentals (all time)</CardDescription>
+            <CardDescription>Studio Rental vs Teacher Rentals (All Time)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-3">
@@ -5199,7 +5199,7 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
       <DashboardCard>
         <CardHeader>
           <CardTitle>Monthly Breakdown</CardTitle>
-          <CardDescription>All rental revenue by month</CardDescription>
+          <CardDescription>All Rental Revenue by Month</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
