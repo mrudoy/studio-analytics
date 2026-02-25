@@ -3733,14 +3733,14 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
       ? Math.round((newDelta! / weeklyKeyNew(prevW)) * 100)
       : null;
     const wkLabel = weekLabel(latestW.period);
-    metrics.push({ label: `New ${wkLabel}`, value: String(newVal), delta: newDelta, deltaPercent: newDeltaPct, isPositiveGood: true });
+    metrics.push({ label: `New ${wkLabel}`, value: `+${newVal}`, delta: newDelta, deltaPercent: newDeltaPct, isPositiveGood: true });
 
     const churnVal = weeklyKeyChurn(latestW);
     const churnDelta = prevW ? churnVal - weeklyKeyChurn(prevW) : null;
     const churnDeltaPct = prevW && weeklyKeyChurn(prevW) > 0
       ? Math.round((churnDelta! / weeklyKeyChurn(prevW)) * 100)
       : null;
-    metrics.push({ label: `Churned ${wkLabel}`, value: String(churnVal), delta: churnDelta, deltaPercent: churnDeltaPct, isPositiveGood: false });
+    metrics.push({ label: `Churned ${wkLabel}`, value: `-${churnVal}`, delta: churnDelta, deltaPercent: churnDeltaPct, isPositiveGood: false });
 
     const netVal = weeklyKeyNet(latestW);
     metrics.push({
