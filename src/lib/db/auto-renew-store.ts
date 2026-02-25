@@ -238,14 +238,71 @@ export async function getCanceledAutoRenews(startDate: string, endDate: string):
 }
 
 /**
+ * Canonical active subscriber counts by category — SINGLE SOURCE OF TRUTH.
+ *
+ * Returns unique people (distinct emails) per category. A person with
+ * subscriptions in multiple categories appears in each. Every section
+ * of the dashboard (Growth, Usage, Churn, Overview) MUST use this
+ * function for "X Active" numbers.
+ */
+export interface ActiveCounts {
+  member: number;
+  sky3: number;
+  skyTingTv: number;
+  unknown: number;
+  total: number;
+}
+
+export async function getActiveCounts(): Promise<ActiveCounts> {
+  const active = await getActiveAutoRenews();
+
+  const emailSets = {
+    member: new Set<string>(),
+    sky3: new Set<string>(),
+    skyTingTv: new Set<string>(),
+    unknown: new Set<string>(),
+  };
+
+  for (const ar of active) {
+    const email = ar.customerEmail.toLowerCase();
+    if (!email) continue;
+    const key = ar.category === "MEMBER" ? "member"
+      : ar.category === "SKY3" ? "sky3"
+      : ar.category === "SKY_TING_TV" ? "skyTingTv"
+      : "unknown";
+    emailSets[key].add(email);
+  }
+
+  const counts: ActiveCounts = {
+    member: emailSets.member.size,
+    sky3: emailSets.sky3.size,
+    skyTingTv: emailSets.skyTingTv.size,
+    unknown: emailSets.unknown.size,
+    total: 0,
+  };
+  // Total = union of all emails (a person in both Member + TV counts once in total)
+  const allEmails = new Set<string>();
+  for (const s of Object.values(emailSets)) {
+    for (const e of s) allEmails.add(e);
+  }
+  counts.total = allEmails.size;
+
+  return counts;
+}
+
+/**
  * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
+ *
+ * Active counts use getActiveCounts() — unique people, not subscription rows.
+ * MRR sums all subscription rows (a person with 2 plans contributes 2x MRR).
  */
 export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   const active = await getActiveAutoRenews();
   if (active.length === 0) return null;
 
-  const counts = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+  const counts = await getActiveCounts();
+
   const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
 
   for (const ar of active) {
@@ -253,8 +310,6 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
-
-    counts[key]++;
     mrr[key] += ar.monthlyRate;
   }
 
@@ -264,13 +319,11 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   mrr.skyTingTv = Math.round(mrr.skyTingTv * 100) / 100;
   mrr.unknown = Math.round(mrr.unknown * 100) / 100;
 
-  const totalActive = counts.member + counts.sky3 + counts.skyTingTv + counts.unknown;
   const totalMRR = mrr.member + mrr.sky3 + mrr.skyTingTv + mrr.unknown;
 
   return {
     active: {
       ...counts,
-      total: totalActive,
     },
     mrr: {
       ...mrr,
@@ -280,7 +333,7 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
       member: counts.member > 0 ? Math.round((mrr.member / counts.member) * 100) / 100 : 0,
       sky3: counts.sky3 > 0 ? Math.round((mrr.sky3 / counts.sky3) * 100) / 100 : 0,
       skyTingTv: counts.skyTingTv > 0 ? Math.round((mrr.skyTingTv / counts.skyTingTv) * 100) / 100 : 0,
-      overall: totalActive > 0 ? Math.round((totalMRR / totalActive) * 100) / 100 : 0,
+      overall: counts.total > 0 ? Math.round((totalMRR / counts.total) * 100) / 100 : 0,
     },
   };
 }

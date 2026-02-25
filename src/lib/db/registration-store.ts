@@ -1497,20 +1497,23 @@ function buildSegmentColors(baseColor: string, count: number): string[] {
 /**
  * Get usage frequency data segmented by plan category.
  *
- * Uses getActiveAutoRenews() from auto-renew-store (same data source as
- * the Growth section) so category assignment uses the exact same
- * getCategory() TypeScript logic — no SQL CASE WHEN drift.
+ * Uses getActiveCounts() + getActiveAutoRenews() from auto-renew-store
+ * as the SINGLE SOURCE OF TRUTH for "X Active" numbers. The counts
+ * shown here will exactly match Growth, Overview, and every other section.
  *
  * Then joins visit counts from registrations in last 90 days.
  */
 export async function getUsageFrequencyByCategory(): Promise<UsageData> {
-  const { getActiveAutoRenews } = await import("./auto-renew-store");
+  const { getActiveAutoRenews, getActiveCounts } = await import("./auto-renew-store");
   const pool = getPool();
 
-  // 1. Get active subs with category from the same source as Growth section
+  // 1. Get canonical active counts (single source of truth)
+  const canonicalCounts = await getActiveCounts();
+
+  // 2. Get active subs to build email→category mapping
   const activeSubs = await getActiveAutoRenews();
 
-  // Build map: category → Set of unique emails (count each person once per category)
+  // Build map: category → Set of unique emails
   const catEmails = new Map<string, Set<string>>();
   for (const sub of activeSubs) {
     if (sub.category === "UNKNOWN") continue;
@@ -1520,7 +1523,7 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
     catEmails.get(sub.category)!.add(email);
   }
 
-  // 2. Get visit counts from registrations (last 90 days)
+  // 3. Get visit counts from registrations (last 90 days)
   const visitQuery = `
     SELECT
       LOWER(email) as email,
@@ -1538,7 +1541,7 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
     visitMap.set(r.email as string, Number(r.visits));
   }
 
-  // 3. Build per-category visit arrays
+  // 4. Build per-category visit arrays
   const byCategory = new Map<string, number[]>();
   for (const [cat, emails] of catEmails) {
     const visits: number[] = [];
@@ -1548,13 +1551,21 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
     byCategory.set(cat, visits);
   }
 
+  // Canonical count map for display (must match Growth exactly)
+  const canonicalCountMap: Record<string, number> = {
+    MEMBER: canonicalCounts.member,
+    SKY3: canonicalCounts.sky3,
+    SKY_TING_TV: canonicalCounts.skyTingTv,
+  };
+
   const monthsInWindow = 3; // 90 days ≈ 3 months
   const categories: UsageCategoryData[] = [];
   let upgradeOpportunities = 0;
 
   for (const [cat, config] of Object.entries(CATEGORY_CONFIG)) {
     const visitsList = byCategory.get(cat) || [];
-    const totalActive = visitsList.length;
+    // Use canonical count from getActiveCounts() — single source of truth
+    const totalActive = canonicalCountMap[cat] ?? visitsList.length;
     if (totalActive === 0) continue;
 
     // Convert total visits to avg visits per month
