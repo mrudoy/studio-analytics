@@ -20,6 +20,18 @@ interface ScheduleState {
   message: string;
 }
 
+interface DigestState {
+  enabled: boolean;
+  recipients: string[];
+  resendApiKey: string;
+  fromAddress: string;
+  hasResendKey: boolean; // from server (key exists in env or settings)
+  newEmail: string;      // input field for adding a recipient
+  testEmail: string;     // input field for test email target
+  testStatus: "idle" | "sending" | "sent" | "error";
+  testMessage: string;
+}
+
 const SCHEDULE_PRESETS: Record<string, { label: string; cron: string }> = {
   "10am-4pm": { label: "10am & 4pm daily", cron: "0 10,16 * * *" },
   "every-6h": { label: "Every 6 hours", cron: "0 */6 * * *" },
@@ -49,6 +61,17 @@ export default function SettingsPage() {
     saving: false,
     message: "",
   });
+  const [digest, setDigest] = useState<DigestState>({
+    enabled: false,
+    recipients: [],
+    resendApiKey: "",
+    fromAddress: "",
+    hasResendKey: false,
+    newEmail: "",
+    testEmail: "",
+    testStatus: "idle",
+    testMessage: "",
+  });
 
   useEffect(() => {
     fetch("/api/settings")
@@ -56,6 +79,15 @@ export default function SettingsPage() {
       .then((data) => {
         setCurrentEmail(data.email || null);
         setCurrentRobotEmail(data.robotEmail || null);
+        if (data.emailDigest) {
+          setDigest((d) => ({
+            ...d,
+            enabled: data.emailDigest.enabled ?? false,
+            recipients: data.emailDigest.recipients ?? [],
+            hasResendKey: data.emailDigest.hasResendKey ?? false,
+            fromAddress: data.emailDigest.fromAddress || "",
+          }));
+        }
       })
       .catch(() => {});
 
@@ -86,7 +118,7 @@ export default function SettingsPage() {
     setErrorMsg("");
 
     try {
-      const body: Record<string, string> = {};
+      const body: Record<string, unknown> = {};
       if (settings.email && settings.password) {
         body.email = settings.email;
         body.password = settings.password;
@@ -100,6 +132,14 @@ export default function SettingsPage() {
       if (settings.robotEmail) {
         body.robotEmail = settings.robotEmail;
       }
+
+      // Always include email digest config so enabled/disabled state persists
+      body.emailDigest = {
+        enabled: digest.enabled,
+        recipients: digest.recipients,
+        ...(digest.resendApiKey ? { resendApiKey: digest.resendApiKey } : {}),
+        ...(digest.fromAddress ? { fromAddress: digest.fromAddress } : {}),
+      };
 
       const res = await fetch("/api/settings", {
         method: "PUT",
@@ -124,6 +164,15 @@ export default function SettingsPage() {
       const refreshData = await refreshRes.json();
       setCurrentEmail(refreshData.email || null);
       setCurrentRobotEmail(refreshData.robotEmail || null);
+      if (refreshData.emailDigest) {
+        setDigest((d) => ({
+          ...d,
+          enabled: refreshData.emailDigest.enabled ?? false,
+          recipients: refreshData.emailDigest.recipients ?? [],
+          hasResendKey: refreshData.emailDigest.hasResendKey ?? false,
+          resendApiKey: "", // clear after save — it's stored server-side
+        }));
+      }
     } catch (err) {
       setStatus("error");
       setErrorMsg(err instanceof Error ? err.message : "Save failed");
@@ -182,6 +231,54 @@ export default function SettingsPage() {
         ...s,
         saving: false,
         message: err instanceof Error ? err.message : "Failed to save",
+      }));
+    }
+  }
+
+  function addRecipient() {
+    const email = digest.newEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) return;
+    if (digest.recipients.includes(email)) {
+      setDigest((d) => ({ ...d, newEmail: "" }));
+      return;
+    }
+    setDigest((d) => ({
+      ...d,
+      recipients: [...d.recipients, email],
+      newEmail: "",
+    }));
+  }
+
+  function removeRecipient(email: string) {
+    setDigest((d) => ({
+      ...d,
+      recipients: d.recipients.filter((e) => e !== email),
+    }));
+  }
+
+  async function handleTestEmail() {
+    const target = digest.testEmail.trim() || digest.recipients[0];
+    if (!target) return;
+    setDigest((d) => ({ ...d, testStatus: "sending", testMessage: "" }));
+
+    try {
+      const res = await fetch("/api/settings/test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toAddress: target,
+          resendApiKey: digest.resendApiKey || undefined,
+          fromAddress: digest.fromAddress || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setDigest((d) => ({ ...d, testStatus: "sent", testMessage: data.message }));
+    } catch (err) {
+      setDigest((d) => ({
+        ...d,
+        testStatus: "error",
+        testMessage: err instanceof Error ? err.message : "Failed to send test email",
       }));
     }
   }
@@ -525,6 +622,208 @@ export default function SettingsPage() {
                 <span className="text-sm" style={{ color: "var(--st-success)" }}>
                   {schedule.message}
                 </span>
+              )}
+            </div>
+          </div>
+
+          <hr style={{ borderColor: "var(--st-border)" }} />
+
+          {/* Email Digest */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl" style={{ color: "var(--st-text-primary)" }}>
+                Email Digest
+              </h2>
+              <span
+                className="text-xs font-medium px-2.5 py-1 rounded-full"
+                style={{
+                  backgroundColor: digest.enabled
+                    ? "rgba(22, 163, 74, 0.1)"
+                    : digest.recipients.length > 0
+                    ? "rgba(234, 179, 8, 0.1)"
+                    : "rgba(107, 114, 128, 0.1)",
+                  color: digest.enabled
+                    ? "#16a34a"
+                    : digest.recipients.length > 0
+                    ? "#ca8a04"
+                    : "#6b7280",
+                }}
+              >
+                {digest.enabled ? "Active" : digest.recipients.length > 0 ? "Paused" : "Not configured"}
+              </span>
+            </div>
+            <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+              Send the auto-renew summary to your team after each pipeline run.
+              Powered by{" "}
+              <a
+                href="https://resend.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--st-accent)" }}
+              >
+                Resend
+              </a>
+              .
+            </p>
+
+            {/* Enable toggle */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={digest.enabled}
+                onChange={(e) => setDigest((d) => ({ ...d, enabled: e.target.checked }))}
+                className="w-5 h-5 rounded"
+                style={{ accentColor: "var(--st-accent)" }}
+              />
+              <span className="text-sm font-medium" style={{ color: "var(--st-text-primary)" }}>
+                Send digest after pipeline completes
+              </span>
+            </label>
+
+            {/* Resend API Key */}
+            <div>
+              <label
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: "var(--st-text-secondary)" }}
+              >
+                Resend API Key
+              </label>
+              <input
+                type="password"
+                value={digest.resendApiKey}
+                onChange={(e) => setDigest((d) => ({ ...d, resendApiKey: e.target.value }))}
+                className={inputFocusClass}
+                style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
+                placeholder={digest.hasResendKey ? "Key configured (enter new to replace)" : "re_xxxxxxxx"}
+              />
+              <p className="text-xs mt-1" style={{ color: "var(--st-text-secondary)" }}>
+                Get a free API key at{" "}
+                <a
+                  href="https://resend.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--st-accent)" }}
+                >
+                  resend.com/api-keys
+                </a>
+                {" "}(100 emails/day free).
+                Or set <code style={{ fontSize: "0.75rem" }}>RESEND_API_KEY</code> env var on Railway.
+              </p>
+            </div>
+
+            {/* Recipients list */}
+            <div>
+              <label
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: "var(--st-text-secondary)" }}
+              >
+                Recipients
+              </label>
+              {digest.recipients.length > 0 ? (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {digest.recipients.map((email) => (
+                    <span
+                      key={email}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm"
+                      style={{
+                        backgroundColor: "var(--st-bg-section)",
+                        border: "1px solid var(--st-border)",
+                        color: "var(--st-text-primary)",
+                      }}
+                    >
+                      {email}
+                      <button
+                        onClick={() => removeRecipient(email)}
+                        className="ml-0.5 hover:opacity-70 transition-opacity"
+                        style={{ color: "var(--st-text-secondary)", fontSize: "1.1rem", lineHeight: 1 }}
+                        title="Remove"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm mb-3" style={{ color: "var(--st-text-secondary)" }}>
+                  No recipients added yet.
+                </p>
+              )}
+
+              {/* Add recipient input */}
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={digest.newEmail}
+                  onChange={(e) => setDigest((d) => ({ ...d, newEmail: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); addRecipient(); }
+                  }}
+                  className={inputFocusClass}
+                  style={{ ...inputStyle, outlineColor: "var(--st-accent)", flex: 1 }}
+                  placeholder="team@skyting.com"
+                />
+                <button
+                  onClick={addRecipient}
+                  className="px-4 py-2 text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: "var(--st-bg-dark)",
+                    color: "var(--st-text-light)",
+                    borderRadius: "var(--st-radius-pill)",
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Test email */}
+            <div
+              className="rounded-xl p-4 space-y-3"
+              style={{
+                backgroundColor: "var(--st-bg-section)",
+                border: "1px solid var(--st-border)",
+              }}
+            >
+              <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+                Send a test email to verify everything works. Uses live dashboard data.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={digest.testEmail}
+                  onChange={(e) => setDigest((d) => ({ ...d, testEmail: e.target.value }))}
+                  className={inputFocusClass}
+                  style={{ ...inputStyle, outlineColor: "var(--st-accent)", flex: 1 }}
+                  placeholder={digest.recipients[0] || "your@email.com"}
+                />
+                <button
+                  onClick={handleTestEmail}
+                  disabled={digest.testStatus === "sending"}
+                  className="px-5 py-2 text-sm font-medium uppercase tracking-wider transition-all disabled:opacity-50 whitespace-nowrap"
+                  style={{
+                    backgroundColor: "var(--st-bg-dark)",
+                    color: "var(--st-text-light)",
+                    borderRadius: "var(--st-radius-pill)",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  {digest.testStatus === "sending" ? "Sending..." : "Send Test"}
+                </button>
+              </div>
+              {digest.testMessage && (
+                <p
+                  className="text-sm"
+                  style={{
+                    color:
+                      digest.testStatus === "sent"
+                        ? "var(--st-success)"
+                        : digest.testStatus === "error"
+                        ? "var(--st-error)"
+                        : "var(--st-text-secondary)",
+                  }}
+                >
+                  {digest.testMessage}
+                </p>
               )}
             </div>
           </div>

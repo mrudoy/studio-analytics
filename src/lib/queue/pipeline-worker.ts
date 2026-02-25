@@ -222,6 +222,19 @@ export function startPipelineWorker(): Worker {
     } catch (err) {
       console.warn(`[worker] Post-pipeline backup failed:`, err instanceof Error ? err.message : err);
     }
+
+    // Send daily digest email (non-fatal — pipeline still succeeds without it)
+    try {
+      const { sendDigestEmail } = await import("../email/email-sender");
+      const emailResult = await sendDigestEmail();
+      if (emailResult.sent > 0) {
+        console.log(`[worker] Digest email sent to ${emailResult.sent} recipients`);
+      } else if (emailResult.skipped) {
+        console.log(`[worker] Digest email skipped: ${emailResult.skipped}`);
+      }
+    } catch (emailErr) {
+      console.warn(`[worker] Digest email failed (non-fatal):`, emailErr instanceof Error ? emailErr.message : emailErr);
+    }
   });
 
   w.on("failed", (job, err) => {

@@ -44,6 +44,17 @@ export interface ShopifyConfig {
   clientSecret: string;
 }
 
+export interface EmailDigestConfig {
+  /** Whether the digest is active (false = paused) */
+  enabled: boolean;
+  /** Recipient email addresses */
+  recipients: string[];
+  /** Resend API key (stored encrypted alongside other credentials) */
+  resendApiKey?: string;
+  /** From address for outgoing emails (e.g. "Sky Ting <digest@skyting.com>") */
+  fromAddress?: string;
+}
+
 export interface AppSettings {
   credentials?: UnionCredentials;
   robotEmail?: RobotEmailConfig;
@@ -51,6 +62,7 @@ export interface AppSettings {
   rawDataSpreadsheetId?: string;
   schedule?: ScheduleConfig;
   shopify?: ShopifyConfig;
+  emailDigest?: EmailDigestConfig;
 }
 
 export function encryptSettings(settings: AppSettings): string {
@@ -106,11 +118,22 @@ function loadSettingsFromEnv(): AppSettings | null {
       }
     : undefined;
 
+  const emailDigest: EmailDigestConfig | undefined = process.env.RESEND_API_KEY
+    ? {
+        enabled: true,
+        recipients: process.env.DIGEST_RECIPIENTS
+          ? process.env.DIGEST_RECIPIENTS.split(",").map((e) => e.trim()).filter(Boolean)
+          : [],
+        resendApiKey: process.env.RESEND_API_KEY,
+        fromAddress: process.env.DIGEST_FROM_ADDRESS,
+      }
+    : undefined;
+
   // Return settings if we have at least Union credentials or Shopify config
   if (!email || !password) {
     // No Union creds — still return partial settings if Shopify is configured
-    if (!shopify) return null;
-    return { shopify };
+    if (!shopify && !emailDigest) return null;
+    return { shopify, emailDigest };
   }
 
   return {
@@ -128,6 +151,7 @@ function loadSettingsFromEnv(): AppSettings | null {
         }
       : undefined,
     shopify,
+    emailDigest,
   };
 }
 

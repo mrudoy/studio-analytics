@@ -23,6 +23,13 @@ export async function GET() {
       email: settings?.credentials?.email ? maskEmail(settings.credentials.email) : null,
       robotEmail: settings?.robotEmail?.address ? maskEmail(settings.robotEmail.address) : null,
       shopifyStore: settings?.shopify?.storeName || null,
+      // Email digest — return full config (recipients are not secret)
+      emailDigest: {
+        enabled: settings?.emailDigest?.enabled ?? false,
+        recipients: settings?.emailDigest?.recipients ?? [],
+        hasResendKey: !!(settings?.emailDigest?.resendApiKey || process.env.RESEND_API_KEY),
+        fromAddress: settings?.emailDigest?.fromAddress || null,
+      },
     });
   } catch {
     return NextResponse.json({ hasCredentials: false });
@@ -70,6 +77,22 @@ export async function PUT(request: Request) {
         storeName: body.shopifyStoreName,
         clientId: body.shopifyClientId,
         clientSecret: body.shopifyClientSecret,
+      };
+    }
+
+    // Email digest config
+    if (body.emailDigest !== undefined) {
+      const d = body.emailDigest;
+      const existingDigest = existing.emailDigest || { enabled: false, recipients: [] };
+
+      updated.emailDigest = {
+        enabled: d.enabled ?? existingDigest.enabled,
+        recipients: Array.isArray(d.recipients)
+          ? d.recipients.filter((e: string) => typeof e === "string" && e.includes("@"))
+          : existingDigest.recipients,
+        // Only update API key if explicitly provided (don't overwrite with undefined)
+        resendApiKey: d.resendApiKey || existingDigest.resendApiKey,
+        fromAddress: d.fromAddress !== undefined ? d.fromAddress : existingDigest.fromAddress,
       };
     }
 
