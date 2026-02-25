@@ -1497,88 +1497,55 @@ function buildSegmentColors(baseColor: string, count: number): string[] {
 /**
  * Get usage frequency data segmented by plan category.
  *
- * SQL approach:
- *   1. CTE active_subs: all active auto-renew subscribers with their plan category
- *   2. CTE visit_counts: registrations in last 90 days grouped by email
- *   3. LEFT JOIN so dormant subscribers (0 visits) appear
- *   4. Return raw rows with { email, category, visits }
+ * Uses getActiveAutoRenews() from auto-renew-store (same data source as
+ * the Growth section) so category assignment uses the exact same
+ * getCategory() TypeScript logic — no SQL CASE WHEN drift.
  *
- * TypeScript bucketing:
- *   - Group by category, apply segment definitions
- *   - Calculate median and mean avg visits/month
+ * Then joins visit counts from registrations in last 90 days.
  */
 export async function getUsageFrequencyByCategory(): Promise<UsageData> {
+  const { getActiveAutoRenews } = await import("./auto-renew-store");
   const pool = getPool();
 
-  // CTE: active subscribers with categories (one row per email+category pair).
-  // A person with both a Member and TV sub appears in BOTH categories.
-  const query = `
-    WITH categorized AS (
-      SELECT
-        LOWER(customer_email) as email,
-        CASE
-          WHEN UPPER(plan_name) LIKE '%SKY3%'
-            OR UPPER(plan_name) LIKE '%SKY5%'
-            OR UPPER(plan_name) LIKE '%SKYHIGH%'
-            OR UPPER(plan_name) LIKE '%5 PACK%'
-            OR UPPER(plan_name) LIKE '%5-PACK%'
-            THEN 'SKY3'
-          WHEN UPPER(plan_name) LIKE '%SKY TING TV%'
-            OR UPPER(plan_name) LIKE '%SKYTING TV%'
-            OR UPPER(plan_name) LIKE '%RETREAT TING%'
-            OR UPPER(plan_name) LIKE '%SKY WEEK TV%'
-            OR UPPER(plan_name) LIKE '%10SKYTING%'
-            OR UPPER(plan_name) LIKE '%SUNLIFE%'
-            OR UPPER(plan_name) LIKE '%FRIENDS OF SKY TING%'
-            OR UPPER(plan_name) LIKE '%COME BACK SKY TING%'
-            OR UPPER(plan_name) LIKE '%NEW SUBSCRIBER SPECIAL%'
-            THEN 'SKY_TING_TV'
-          WHEN UPPER(plan_name) LIKE '%UNLIMITED%'
-            OR UPPER(plan_name) LIKE '%MEMBER%'
-            OR UPPER(plan_name) LIKE '%ALL ACCESS%'
-            OR UPPER(plan_name) LIKE '%TING FAM%'
-            OR UPPER(plan_name) LIKE '%10MEMBER%'
-            THEN 'MEMBER'
-          ELSE 'UNKNOWN'
-        END as category
-      FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid')
-        AND customer_email IS NOT NULL
-        AND customer_email != ''
-    ),
-    active_subs AS (
-      SELECT DISTINCT email, category
-      FROM categorized
-      WHERE category != 'UNKNOWN'
-    ),
-    visit_counts AS (
-      SELECT
-        LOWER(r.email) as email,
-        COUNT(*) as visits
-      FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
-        AND r.state IN ('redeemed', 'confirmed')
-        AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
-      GROUP BY LOWER(r.email)
-    )
+  // 1. Get active subs with category from the same source as Growth section
+  const activeSubs = await getActiveAutoRenews();
+
+  // Build map: category → Set of unique emails (count each person once per category)
+  const catEmails = new Map<string, Set<string>>();
+  for (const sub of activeSubs) {
+    if (sub.category === "UNKNOWN") continue;
+    const email = sub.customerEmail.toLowerCase();
+    if (!email) continue;
+    if (!catEmails.has(sub.category)) catEmails.set(sub.category, new Set());
+    catEmails.get(sub.category)!.add(email);
+  }
+
+  // 2. Get visit counts from registrations (last 90 days)
+  const visitQuery = `
     SELECT
-      s.email,
-      s.category,
-      COALESCE(v.visits, 0) as visits
-    FROM active_subs s
-    LEFT JOIN visit_counts v ON s.email = v.email
+      LOWER(email) as email,
+      COUNT(*) as visits
+    FROM registrations
+    WHERE attended_at IS NOT NULL AND attended_at != ''
+      AND email IS NOT NULL AND email != ''
+      AND state IN ('redeemed', 'confirmed')
+      AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+    GROUP BY LOWER(email)
   `;
+  const { rows: visitRows } = await pool.query(visitQuery);
+  const visitMap = new Map<string, number>();
+  for (const r of visitRows) {
+    visitMap.set(r.email as string, Number(r.visits));
+  }
 
-  const { rows } = await pool.query(query);
-
-  // Group by category
+  // 3. Build per-category visit arrays
   const byCategory = new Map<string, number[]>();
-  for (const row of rows) {
-    const cat = row.category as string;
-    const visits = Number(row.visits);
-    if (!byCategory.has(cat)) byCategory.set(cat, []);
-    byCategory.get(cat)!.push(visits);
+  for (const [cat, emails] of catEmails) {
+    const visits: number[] = [];
+    for (const email of emails) {
+      visits.push(visitMap.get(email) ?? 0);
+    }
+    byCategory.set(cat, visits);
   }
 
   const monthsInWindow = 3; // 90 days ≈ 3 months
