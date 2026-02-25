@@ -1434,65 +1434,60 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Pr
 
 import type { UsageCategoryData, UsageSegment, UsageData } from "@/types/dashboard";
 
+// ── Segment color palette ────────────────────────────────
+// Red/yellow/green semantic: red = disengaged, yellow = developing, green = healthy
+// Blue = neutral/informational (e.g. Sky3 members who may be in the wrong plan)
+const SEG_RED      = "#C4605A";
+const SEG_RED_LITE = "#D4817B";
+const SEG_YELLOW   = "#CDA63A";
+const SEG_GREEN_LT = "#8BB574";
+const SEG_GREEN    = "#5E9A4B";
+const SEG_GREEN_DK = "#3D6B48";
+const SEG_BLUE     = "#5B7FA5";
+
 interface SegmentDef {
   name: string;
   rangeLabel: string;  // human-readable range, e.g. "0/mo", "1-2/mo"
+  color: string;       // explicit semantic color
   min: number;         // exclusive lower bound (visits > min)
   max: number;         // inclusive upper bound (visits <= max), Infinity for unbounded
 }
 
+// Members: red → yellow → shades of green
 const MEMBER_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",     rangeLabel: "0/mo",   min: -1,  max: 0 },
-  { name: "Casual",      rangeLabel: "1-2/mo", min: 0,   max: 2 },
-  { name: "Developing",  rangeLabel: "2-4/mo", min: 2,   max: 4 },
-  { name: "Established", rangeLabel: "4-8/mo", min: 4,   max: 8 },
-  { name: "Committed",   rangeLabel: "8-12/mo", min: 8,   max: 12 },
-  { name: "Core",        rangeLabel: "12+/mo", min: 12,  max: Infinity },
+  { name: "Dormant",     rangeLabel: "0/mo",    color: SEG_RED,      min: -1,  max: 0 },
+  { name: "Casual",      rangeLabel: "1-2/mo",  color: SEG_RED_LITE, min: 0,   max: 2 },
+  { name: "Developing",  rangeLabel: "2-4/mo",  color: SEG_YELLOW,   min: 2,   max: 4 },
+  { name: "Established", rangeLabel: "4-8/mo",  color: SEG_GREEN_LT, min: 4,   max: 8 },
+  { name: "Committed",   rangeLabel: "8-12/mo", color: SEG_GREEN,    min: 8,   max: 12 },
+  { name: "Core",        rangeLabel: "12+/mo",  color: SEG_GREEN_DK, min: 12,  max: Infinity },
 ];
 
+// Sky3: red → green → blue (over-users = wrong plan, not bad)
 const SKY3_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",            rangeLabel: "0/mo",  min: -1,  max: 0 },
-  { name: "Under-Using",        rangeLabel: "<1/mo", min: 0,   max: 1 },
-  { name: "On Pace",            rangeLabel: "1-3/mo", min: 1,   max: 3 },
-  { name: "Over-Using",         rangeLabel: "3-5/mo", min: 3,   max: 5 },
-  { name: "Upgrade Candidate",  rangeLabel: "5+/mo", min: 5,   max: Infinity },
+  { name: "Dormant",     rangeLabel: "0/mo",   color: SEG_RED,      min: -1,  max: 0 },
+  { name: "Under-Using", rangeLabel: "<1/mo",  color: SEG_RED_LITE, min: 0,   max: 1 },
+  { name: "On Pace",     rangeLabel: "1-3/mo", color: SEG_GREEN,    min: 1,   max: 3 },
+  { name: "Over-Using",  rangeLabel: "3+/mo",  color: SEG_BLUE,     min: 3,   max: Infinity },
 ];
 
+// Sky Ting TV: red → yellow → shades of green
 const TV_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",   rangeLabel: "0/mo",   min: -1,  max: 0 },
-  { name: "Casual",    rangeLabel: "1-2/mo", min: 0,   max: 2 },
-  { name: "Moderate",  rangeLabel: "2-4/mo", min: 2,   max: 4 },
-  { name: "Regular",   rangeLabel: "4-8/mo", min: 4,   max: 8 },
-  { name: "Active",    rangeLabel: "8-12/mo", min: 8,   max: 12 },
-  { name: "Power",     rangeLabel: "12+/mo", min: 12,  max: Infinity },
+  { name: "Dormant",  rangeLabel: "0/mo",   color: SEG_RED,      min: -1,  max: 0 },
+  { name: "Casual",   rangeLabel: "1-2/mo", color: SEG_YELLOW,   min: 0,   max: 2 },
+  { name: "Moderate", rangeLabel: "2-4/mo", color: SEG_GREEN_LT, min: 2,   max: 4 },
+  { name: "Regular",  rangeLabel: "4-8/mo", color: SEG_GREEN,    min: 4,   max: 8 },
+  { name: "Active",   rangeLabel: "8+/mo",  color: SEG_GREEN_DK, min: 8,   max: Infinity },
 ];
 
 const CATEGORY_CONFIG: Record<string, {
   label: string;
   segments: SegmentDef[];
-  baseColor: string;
 }> = {
-  MEMBER:      { label: "Members",     segments: MEMBER_SEGMENTS, baseColor: "#4A7C59" },
-  SKY3:        { label: "Sky3",        segments: SKY3_SEGMENTS,   baseColor: "#5B7FA5" },
-  SKY_TING_TV: { label: "Sky Ting TV", segments: TV_SEGMENTS,     baseColor: "#8B6FA5" },
+  MEMBER:      { label: "Members",     segments: MEMBER_SEGMENTS },
+  SKY3:        { label: "Sky3",        segments: SKY3_SEGMENTS },
+  SKY_TING_TV: { label: "Sky Ting TV", segments: TV_SEGMENTS },
 };
-
-/**
- * Build segment colors as an opacity ramp of the base color.
- * First segment (dormant) uses 30% opacity, last uses 100%.
- */
-function buildSegmentColors(baseColor: string, count: number): string[] {
-  // Parse hex to RGB
-  const r = parseInt(baseColor.slice(1, 3), 16);
-  const g = parseInt(baseColor.slice(3, 5), 16);
-  const b = parseInt(baseColor.slice(5, 7), 16);
-  const minOpacity = 0.3;
-  const maxOpacity = 1.0;
-  return Array.from({ length: count }, (_, i) => {
-    const opacity = count === 1 ? 1.0 : minOpacity + (maxOpacity - minOpacity) * (i / (count - 1));
-    return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(2)})`;
-  });
-}
 
 /**
  * Get usage frequency data segmented by plan category.
@@ -1587,8 +1582,7 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
     const withVisits = totalActive - dormant;
 
     // Build segments
-    const segmentColors = buildSegmentColors(config.baseColor, config.segments.length);
-    const segments: UsageSegment[] = config.segments.map((seg, i) => {
+    const segments: UsageSegment[] = config.segments.map((seg) => {
       const count = avgPerMonth.filter(v => {
         if (seg.max === 0) return v === 0; // dormant = exactly 0
         return v > seg.min && v <= seg.max;
@@ -1598,7 +1592,7 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
         rangeLabel: seg.rangeLabel,
         count,
         percent: totalActive > 0 ? Math.round((count / totalActive) * 1000) / 10 : 0,
-        color: segmentColors[i],
+        color: seg.color,
       };
     });
 
