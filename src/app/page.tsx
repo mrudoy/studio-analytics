@@ -4187,7 +4187,7 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
               <TableHead className="text-xs">&nbsp;</TableHead>
               <TableHead className="w-[55px] text-right text-xs">Total</TableHead>
               <TableHead className="w-[50px] text-right text-xs">%</TableHead>
-              <TableHead className="w-[36px] text-right text-xs"><DownloadIcon className="size-3.5 ml-auto text-muted-foreground" /></TableHead>
+              <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -4208,11 +4208,11 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
                 </TableCell>
                 <TableCell className="py-1.5 text-right tabular-nums text-sm">{seg.count.toLocaleString()}</TableCell>
                 <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{seg.percent}%</TableCell>
-                <TableCell className="py-1.5 text-right">
+                <TableCell className="py-1.5 px-0 text-center">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-7"
+                    className="size-7 mx-auto"
                     onClick={() => downloadSegment(seg.name)}
                     title={`Download ${seg.name} as CSV`}
                   >
@@ -4252,19 +4252,6 @@ function UsageSection({ usage }: { usage: UsageData | null }) {
         {tvData && <UsageCategoryCard data={tvData} />}
       </div>
 
-      {/* Upgrade opportunities callout */}
-      {usage.upgradeOpportunities > 0 && (
-        <DashboardCard>
-          <CardContent className="py-3">
-            <div className="flex items-center gap-2 text-sm">
-              <ChartBarPopular className="size-4 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
-              <span>
-                <strong>{usage.upgradeOpportunities}</strong> Sky3 members averaging 3+/mo &mdash; candidates for Member upgrade
-              </span>
-            </div>
-          </CardContent>
-        </DashboardCard>
-      )}
     </div>
   );
 }
