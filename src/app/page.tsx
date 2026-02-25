@@ -3814,10 +3814,6 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
                 axisLine={false}
               />
               <YAxis hide />
-              <ChartTooltip
-                cursor={false}
-                content={<ChartTooltipContent hideLabel />}
-              />
               <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
                 <LabelList
                   position="top"
