@@ -35,12 +35,19 @@ export interface SpaServiceRevenue {
 export async function getSpaServiceBreakdown(): Promise<SpaServiceRevenue[]> {
   const pool = getPool();
   const res = await pool.query(
-    `SELECT
+    `WITH deduped AS (
+       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+         category, revenue, net_revenue, period_start
+       FROM revenue_categories
+       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+       ORDER BY category, LEFT(period_start, 7), period_end DESC
+     )
+     SELECT
        category,
        SUM(revenue) AS total_revenue,
        SUM(net_revenue) AS total_net_revenue,
        COUNT(DISTINCT SUBSTR(period_start, 1, 7)) AS months
-     FROM revenue_categories
+     FROM deduped
      WHERE category = ANY($1)
      GROUP BY category
      ORDER BY total_revenue DESC`,
@@ -68,14 +75,20 @@ export interface SpaMonthlyRevenue {
 export async function getSpaMonthlyRevenue(): Promise<SpaMonthlyRevenue[]> {
   const pool = getPool();
   const res = await pool.query(
-    `SELECT
+    `WITH deduped AS (
+       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+         category, revenue, net_revenue, period_start
+       FROM revenue_categories
+       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+       ORDER BY category, LEFT(period_start, 7), period_end DESC
+     )
+     SELECT
        SUBSTR(period_start, 1, 7) AS month,
        category,
-       SUM(revenue) AS revenue,
-       SUM(net_revenue) AS net_revenue
-     FROM revenue_categories
+       revenue,
+       net_revenue
+     FROM deduped
      WHERE category = ANY($1)
-     GROUP BY SUBSTR(period_start, 1, 7), category
      ORDER BY month, category`,
     [SPA_CATEGORIES as unknown as string[]]
   );
@@ -108,8 +121,15 @@ export async function getSpaMTDRevenue(): Promise<number> {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const res = await pool.query(
-    `SELECT COALESCE(SUM(revenue), 0) AS mtd
-     FROM revenue_categories
+    `WITH deduped AS (
+       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+         category, revenue, period_start
+       FROM revenue_categories
+       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+       ORDER BY category, LEFT(period_start, 7), period_end DESC
+     )
+     SELECT COALESCE(SUM(revenue), 0) AS mtd
+     FROM deduped
      WHERE category = ANY($1)
        AND SUBSTR(period_start, 1, 7) = $2`,
     [SPA_CATEGORIES as unknown as string[], currentMonth]

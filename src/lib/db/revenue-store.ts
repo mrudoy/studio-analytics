@@ -32,6 +32,27 @@ export async function saveRevenueCategories(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // For single-month periods: delete any existing rows in the same month
+    // with a DIFFERENT period range. Union.fit revenue data is cumulative,
+    // so the latest pipeline run replaces all prior partial-month data.
+    // This prevents the double-counting bug where multiple period ranges
+    // (e.g. Feb 1-23 + Feb 24-24) overlap and get summed.
+    if (!isMultiMonth) {
+      const monthPrefix = periodStart.slice(0, 7); // YYYY-MM
+      const { rowCount } = await client.query(
+        `DELETE FROM revenue_categories
+         WHERE LEFT(period_start, 7) = $1
+           AND LEFT(period_end, 7) = $1
+           AND NOT (period_start = $2 AND period_end = $3)
+           AND locked = 0`,
+        [monthPrefix, periodStart, periodEnd]
+      );
+      if (rowCount && rowCount > 0) {
+        console.log(`[revenue-store] Cleaned ${rowCount} stale rows for ${monthPrefix} (replaced by ${periodStart}–${periodEnd})`);
+      }
+    }
+
     for (const row of rows) {
       await client.query(
         `INSERT INTO revenue_categories (period_start, period_end, category, revenue, union_fees, stripe_fees, other_fees, transfers, refunded, union_fees_refunded, net_revenue)
@@ -165,8 +186,9 @@ export async function getAllPeriods(): Promise<{ periodStart: string; periodEnd:
 }
 
 /**
- * Get revenue totals for a specific month (period_start = YYYY-MM-01, period_end = YYYY-MM-last).
- * Returns null if no data for that month.
+ * Get revenue totals for a specific month.
+ * Deduplicates overlapping period ranges by keeping only the row with the
+ * latest period_end per (category, month). Returns null if no data for that month.
  */
 export async function getMonthlyRevenue(year: number, month: number): Promise<{
   periodStart: string;
@@ -177,17 +199,21 @@ export async function getMonthlyRevenue(year: number, month: number): Promise<{
   categories: StoredRevenueRow[];
 } | null> {
   const pool = getPool();
-  const startStr = `${year}-${String(month).padStart(2, "0")}-01`;
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
 
-  // Find any period that starts with this month (period_end varies: 28/29/30/31)
+  // Deduplicate: for each category in this month, take the row with the latest period_end
   const { rows } = await pool.query(
-    `SELECT period_start, period_end, category, revenue, union_fees, stripe_fees,
-            other_fees, transfers, refunded, union_fees_refunded, net_revenue, locked
-     FROM revenue_categories
-     WHERE period_start = $1
-       AND period_end LIKE $2
-     ORDER BY revenue DESC`,
-    [startStr, `${year}-${String(month).padStart(2, "0")}-%`]
+    `WITH deduped AS (
+       SELECT DISTINCT ON (category)
+         period_start, period_end, category, revenue, union_fees, stripe_fees,
+         other_fees, transfers, refunded, union_fees_refunded, net_revenue, locked
+       FROM revenue_categories
+       WHERE LEFT(period_start, 7) = $1
+         AND LEFT(period_end, 7) = $1
+       ORDER BY category, period_end DESC
+     )
+     SELECT * FROM deduped ORDER BY revenue DESC`,
+    [monthStr]
   );
 
   if (rows.length === 0) return null;
@@ -219,7 +245,9 @@ export async function getMonthlyRevenue(year: number, month: number): Promise<{
 
 /**
  * Get all monthly revenue summaries (periods where start and end are within the same month).
- * Excludes annual/multi-month periods. Ordered chronologically.
+ * Excludes annual/multi-month periods. Deduplicates overlapping periods within the same month
+ * by keeping only the row with the latest period_end per (category, month).
+ * Ordered chronologically.
  */
 export async function getAllMonthlyRevenue(): Promise<{
   periodStart: string;
@@ -230,11 +258,21 @@ export async function getAllMonthlyRevenue(): Promise<{
 }[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT period_start, period_end, COUNT(*) as category_count,
-            SUM(revenue) as total_revenue, SUM(net_revenue) as total_net_revenue
-     FROM revenue_categories
-     WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-     GROUP BY period_start, period_end
+    `WITH deduped AS (
+       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+         period_start, period_end, category, revenue, net_revenue
+       FROM revenue_categories
+       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+       ORDER BY category, LEFT(period_start, 7), period_end DESC
+     )
+     SELECT
+       MIN(period_start) AS period_start,
+       MAX(period_end) AS period_end,
+       COUNT(*) AS category_count,
+       SUM(revenue) AS total_revenue,
+       SUM(net_revenue) AS total_net_revenue
+     FROM deduped
+     GROUP BY LEFT(period_start, 7)
      ORDER BY period_start ASC`
   );
 
@@ -254,14 +292,20 @@ export async function getAllMonthlyRevenue(): Promise<{
 export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: number; net: number }>> {
   const pool = getPool();
   const { rows } = await pool.query(`
+    WITH deduped AS (
+      SELECT DISTINCT ON (category, LEFT(period_start, 7))
+        category, revenue, net_revenue, period_start
+      FROM revenue_categories
+      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+      ORDER BY category, LEFT(period_start, 7), period_end DESC
+    )
     SELECT
       LEFT(period_start, 7) AS month,
       SUM(revenue) AS gross,
       SUM(net_revenue) AS net
-    FROM revenue_categories
+    FROM deduped
     WHERE category ~* 'retreat'
       AND NOT category ~* 'retreat\\s*ting'
-      AND LEFT(period_start, 7) = LEFT(period_end, 7)
     GROUP BY LEFT(period_start, 7)
     ORDER BY month
   `);
@@ -284,13 +328,19 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
 export async function getMonthlyMerchRevenue(): Promise<Map<string, { gross: number; net: number }>> {
   const pool = getPool();
   const { rows } = await pool.query(`
+    WITH deduped AS (
+      SELECT DISTINCT ON (category, LEFT(period_start, 7))
+        category, revenue, net_revenue, period_start
+      FROM revenue_categories
+      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+      ORDER BY category, LEFT(period_start, 7), period_end DESC
+    )
     SELECT
       LEFT(period_start, 7) AS month,
       SUM(revenue) AS gross,
       SUM(net_revenue) AS net
-    FROM revenue_categories
+    FROM deduped
     WHERE category IN ('Merch', 'Products')
-      AND LEFT(period_start, 7) = LEFT(period_end, 7)
     GROUP BY LEFT(period_start, 7)
     ORDER BY month
   `);
@@ -309,6 +359,8 @@ export async function getMonthlyMerchRevenue(): Promise<Map<string, { gross: num
  * Annual revenue breakdown by business segment.
  * Maps raw Union.fit categories into 6 high-level buckets:
  *   Digital, In-Studio, Spa, Merch, Retreats, Other
+ * Deduplicates overlapping period ranges: for each (category, month),
+ * keeps only the row with the latest period_end.
  */
 export async function getAnnualRevenueBreakdown(): Promise<
   Array<{
@@ -320,6 +372,13 @@ export async function getAnnualRevenueBreakdown(): Promise<
 > {
   const pool = getPool();
   const res = await pool.query(`
+    WITH deduped AS (
+      SELECT DISTINCT ON (category, LEFT(period_start, 7))
+        category, revenue, net_revenue, period_start
+      FROM revenue_categories
+      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+      ORDER BY category, LEFT(period_start, 7), period_end DESC
+    )
     SELECT
       EXTRACT(YEAR FROM period_start::date)::int AS year,
       CASE
@@ -370,7 +429,7 @@ export async function getAnnualRevenueBreakdown(): Promise<
       END AS segment,
       SUM(revenue) AS gross,
       SUM(net_revenue) AS net
-    FROM revenue_categories
+    FROM deduped
     GROUP BY year, segment
     ORDER BY year, gross DESC
   `);
