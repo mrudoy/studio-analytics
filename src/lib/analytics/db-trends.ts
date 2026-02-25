@@ -36,6 +36,7 @@ import {
   getConversionPoolWeekly,
   getConversionPoolWTD,
   getConversionPoolLagStats,
+  getUsageFrequencyByCategory,
   type PoolSliceKey,
 } from "../db/registration-store";
 import type {
@@ -54,6 +55,7 @@ import type {
   ConversionPoolModuleData,
   ConversionPoolSliceData,
   ConversionPoolSlice,
+  UsageData,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -817,6 +819,16 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
+  // ── 11. Usage frequency segments by plan category ──────────
+  let usage: UsageData | null = null;
+
+  try {
+    usage = await getUsageFrequencyByCategory();
+    if (usage.categories.length === 0) usage = null;
+  } catch (err) {
+    console.warn("[db-trends] Failed to compute usage frequency data:", err);
+  }
+
   console.log(
     `[db-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins typical=${dropIns.typicalWeekVisits}/wk, trend=${dropIns.trend}` : "") +
@@ -824,7 +836,8 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     (newCustomerVolume ? `, new customers this week=${newCustomerVolume.currentWeekCount}` : "") +
     (newCustomerCohorts ? `, cohort avg conversion=${newCustomerCohorts.avgConversionRate?.toFixed(1) ?? "N/A"}%` : "") +
     (churnRates ? `, member churn=${churnRates.avgMemberRate.toFixed(1)}%, sky3 churn=${churnRates.avgSky3Rate.toFixed(1)}%` : "") +
-    (conversionPool?.slices?.all ? `, conversion pool=${conversionPool.slices.all.avgPool7d} avg pool, ${conversionPool.slices.all.avgRate.toFixed(2)}% avg rate` : "")
+    (conversionPool?.slices?.all ? `, conversion pool=${conversionPool.slices.all.avgPool7d} avg pool, ${conversionPool.slices.all.avgRate.toFixed(2)}% avg rate` : "") +
+    (usage ? `, usage: ${usage.categories.map(c => `${c.label}=${c.totalActive}`).join(", ")}` : "")
   );
 
   return {
@@ -840,6 +853,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     newCustomerVolume,
     newCustomerCohorts,
     conversionPool,
+    usage,
   };
 }
 

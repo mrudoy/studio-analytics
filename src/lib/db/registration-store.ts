@@ -1429,3 +1429,212 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Pr
     historicalAvgVisitsBeforeConvert: r.historicalAvgVisitsBeforeConvert != null ? Number(r.historicalAvgVisitsBeforeConvert) : null,
   };
 }
+
+// ── Usage Frequency by Category ──────────────────────────────
+
+import type { UsageCategoryData, UsageSegment, UsageData } from "@/types/dashboard";
+
+interface SegmentDef {
+  name: string;
+  min: number;   // exclusive lower bound (visits > min)
+  max: number;   // inclusive upper bound (visits <= max), Infinity for unbounded
+}
+
+const MEMBER_SEGMENTS: SegmentDef[] = [
+  { name: "Dormant",     min: -1,  max: 0 },
+  { name: "Casual",      min: 0,   max: 2 },
+  { name: "Developing",  min: 2,   max: 4 },
+  { name: "Established", min: 4,   max: 8 },
+  { name: "Committed",   min: 8,   max: 12 },
+  { name: "Core",        min: 12,  max: Infinity },
+];
+
+const SKY3_SEGMENTS: SegmentDef[] = [
+  { name: "Dormant",            min: -1,  max: 0 },
+  { name: "Under-Using",        min: 0,   max: 1 },
+  { name: "On Pace",            min: 1,   max: 3 },
+  { name: "Over-Using",         min: 3,   max: 5 },
+  { name: "Upgrade Candidate",  min: 5,   max: Infinity },
+];
+
+const TV_SEGMENTS: SegmentDef[] = [
+  { name: "Dormant",   min: -1,  max: 0 },
+  { name: "Casual",    min: 0,   max: 2 },
+  { name: "Moderate",  min: 2,   max: 4 },
+  { name: "Regular",   min: 4,   max: 8 },
+  { name: "Active",    min: 8,   max: 12 },
+  { name: "Power",     min: 12,  max: Infinity },
+];
+
+const CATEGORY_CONFIG: Record<string, {
+  label: string;
+  segments: SegmentDef[];
+  baseColor: string;
+}> = {
+  MEMBER:      { label: "Members",     segments: MEMBER_SEGMENTS, baseColor: "#4A7C59" },
+  SKY3:        { label: "Sky3",        segments: SKY3_SEGMENTS,   baseColor: "#5B7FA5" },
+  SKY_TING_TV: { label: "Sky Ting TV", segments: TV_SEGMENTS,     baseColor: "#8B6FA5" },
+};
+
+/**
+ * Build segment colors as an opacity ramp of the base color.
+ * First segment (dormant) uses 30% opacity, last uses 100%.
+ */
+function buildSegmentColors(baseColor: string, count: number): string[] {
+  // Parse hex to RGB
+  const r = parseInt(baseColor.slice(1, 3), 16);
+  const g = parseInt(baseColor.slice(3, 5), 16);
+  const b = parseInt(baseColor.slice(5, 7), 16);
+  const minOpacity = 0.3;
+  const maxOpacity = 1.0;
+  return Array.from({ length: count }, (_, i) => {
+    const opacity = count === 1 ? 1.0 : minOpacity + (maxOpacity - minOpacity) * (i / (count - 1));
+    return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(2)})`;
+  });
+}
+
+/**
+ * Get usage frequency data segmented by plan category.
+ *
+ * SQL approach:
+ *   1. CTE active_subs: all active auto-renew subscribers with their plan category
+ *   2. CTE visit_counts: registrations in last 90 days grouped by email
+ *   3. LEFT JOIN so dormant subscribers (0 visits) appear
+ *   4. Return raw rows with { email, category, visits }
+ *
+ * TypeScript bucketing:
+ *   - Group by category, apply segment definitions
+ *   - Calculate median and mean avg visits/month
+ */
+export async function getUsageFrequencyByCategory(): Promise<UsageData> {
+  const pool = getPool();
+
+  // CTE: active subscribers with categories, using same logic as categories.ts
+  const query = `
+    WITH active_subs AS (
+      SELECT DISTINCT ON (LOWER(customer_email))
+        LOWER(customer_email) as email,
+        plan_name,
+        CASE
+          WHEN UPPER(plan_name) LIKE '%SKY3%'
+            OR UPPER(plan_name) LIKE '%SKY5%'
+            OR UPPER(plan_name) LIKE '%SKYHIGH%'
+            OR UPPER(plan_name) LIKE '%5 PACK%'
+            OR UPPER(plan_name) LIKE '%5-PACK%'
+            THEN 'SKY3'
+          WHEN UPPER(plan_name) LIKE '%SKY TING TV%'
+            OR UPPER(plan_name) LIKE '%SKYTING TV%'
+            OR UPPER(plan_name) LIKE '%RETREAT TING%'
+            OR UPPER(plan_name) LIKE '%SKY WEEK TV%'
+            OR UPPER(plan_name) LIKE '%10SKYTING%'
+            OR UPPER(plan_name) LIKE '%SUNLIFE%'
+            OR UPPER(plan_name) LIKE '%FRIENDS OF SKY TING%'
+            OR UPPER(plan_name) LIKE '%COME BACK SKY TING%'
+            OR UPPER(plan_name) LIKE '%NEW SUBSCRIBER SPECIAL%'
+            THEN 'SKY_TING_TV'
+          WHEN UPPER(plan_name) LIKE '%UNLIMITED%'
+            OR UPPER(plan_name) LIKE '%MEMBER%'
+            OR UPPER(plan_name) LIKE '%ALL ACCESS%'
+            OR UPPER(plan_name) LIKE '%TING FAM%'
+            OR UPPER(plan_name) LIKE '%10MEMBER%'
+            THEN 'MEMBER'
+          ELSE 'UNKNOWN'
+        END as category
+      FROM auto_renews
+      WHERE plan_state NOT IN ('Canceled', 'Invalid')
+        AND customer_email IS NOT NULL
+        AND customer_email != ''
+      ORDER BY LOWER(customer_email), plan_name
+    ),
+    visit_counts AS (
+      SELECT
+        LOWER(r.email) as email,
+        COUNT(*) as visits
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.email IS NOT NULL AND r.email != ''
+        AND r.state IN ('redeemed', 'confirmed')
+        AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+      GROUP BY LOWER(r.email)
+    )
+    SELECT
+      s.email,
+      s.category,
+      COALESCE(v.visits, 0) as visits
+    FROM active_subs s
+    LEFT JOIN visit_counts v ON s.email = v.email
+    WHERE s.category != 'UNKNOWN'
+  `;
+
+  const { rows } = await pool.query(query);
+
+  // Group by category
+  const byCategory = new Map<string, number[]>();
+  for (const row of rows) {
+    const cat = row.category as string;
+    const visits = Number(row.visits);
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(visits);
+  }
+
+  const monthsInWindow = 3; // 90 days ≈ 3 months
+  const categories: UsageCategoryData[] = [];
+  let upgradeOpportunities = 0;
+
+  for (const [cat, config] of Object.entries(CATEGORY_CONFIG)) {
+    const visitsList = byCategory.get(cat) || [];
+    const totalActive = visitsList.length;
+    if (totalActive === 0) continue;
+
+    // Convert total visits to avg visits per month
+    const avgPerMonth = visitsList.map(v => v / monthsInWindow);
+
+    // Sort for median
+    const sorted = [...avgPerMonth].sort((a, b) => a - b);
+    const median = sorted.length > 0
+      ? sorted.length % 2 === 0
+        ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+        : sorted[Math.floor(sorted.length / 2)]
+      : 0;
+    const mean = sorted.length > 0
+      ? sorted.reduce((s, v) => s + v, 0) / sorted.length
+      : 0;
+
+    // Count dormant (0 visits) and with visits
+    const dormant = visitsList.filter(v => v === 0).length;
+    const withVisits = totalActive - dormant;
+
+    // Build segments
+    const segmentColors = buildSegmentColors(config.baseColor, config.segments.length);
+    const segments: UsageSegment[] = config.segments.map((seg, i) => {
+      const count = avgPerMonth.filter(v => {
+        if (seg.max === 0) return v === 0; // dormant = exactly 0
+        return v > seg.min && v <= seg.max;
+      }).length;
+      return {
+        name: seg.name,
+        count,
+        percent: totalActive > 0 ? Math.round((count / totalActive) * 1000) / 10 : 0,
+        color: segmentColors[i],
+      };
+    });
+
+    categories.push({
+      category: cat,
+      label: config.label,
+      totalActive,
+      withVisits,
+      dormant,
+      segments,
+      median: Math.round(median * 10) / 10,
+      mean: Math.round(mean * 10) / 10,
+    });
+
+    // Upgrade opportunities: Sky3 members averaging 3+/mo
+    if (cat === "SKY3") {
+      upgradeOpportunities = avgPerMonth.filter(v => v >= 3).length;
+    }
+  }
+
+  return { categories, upgradeOpportunities };
+}

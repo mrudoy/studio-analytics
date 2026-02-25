@@ -532,6 +532,31 @@ export interface InsightRow {
   dismissed: boolean;
 }
 
+// ── Usage frequency segments ──────────────────────────────
+
+export interface UsageSegment {
+  name: string;        // "Dormant", "Casual", etc.
+  count: number;
+  percent: number;
+  color: string;
+}
+
+export interface UsageCategoryData {
+  category: string;              // "MEMBER" | "SKY3" | "SKY_TING_TV"
+  label: string;                 // "Members" | "Sky3" | "Sky Ting TV"
+  totalActive: number;
+  withVisits: number;
+  dormant: number;
+  segments: UsageSegment[];
+  median: number;                // median avg visits/mo
+  mean: number;                  // mean avg visits/mo
+}
+
+export interface UsageData {
+  categories: UsageCategoryData[];
+  upgradeOpportunities: number;  // Sky3 members visiting 3+/mo
+}
+
 // ── Trends aggregate ───────────────────────────────────────
 
 export interface TrendsData {
@@ -547,4 +572,5 @@ export interface TrendsData {
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
   conversionPool: ConversionPoolModuleData | null;
+  usage: UsageData | null;
 }

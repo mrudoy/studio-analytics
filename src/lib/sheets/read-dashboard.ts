@@ -367,7 +367,7 @@ export async function readTrendsData(spreadsheetId: string): Promise<TrendsData 
   // Legacy sheets path: only weekly/monthly/pacing/projection are fully typed.
   // Module-level data (dropIns, firstVisits, etc.) would need conversion to match
   // the DB-path types (DropInModuleData, etc.), so we null them out here.
-  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns: null, introWeek: null, firstVisits: null, returningNonMembers: null, churnRates: null, newCustomerVolume: null, newCustomerCohorts: null, conversionPool: null };
+  const data: TrendsData = { weekly, monthly, pacing, projection, dropIns: null, introWeek: null, firstVisits: null, returningNonMembers: null, churnRates: null, newCustomerVolume: null, newCustomerCohorts: null, conversionPool: null, usage: null };
   cachedTrends = { data, fetchedAt: Date.now() };
 
   console.log(

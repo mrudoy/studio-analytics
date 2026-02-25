@@ -15,6 +15,7 @@ import {
   Droplet,
   BuildingIcon,
   BulbIcon,
+  ActivityIcon,
 } from "./icons";
 
 export type SectionKey =
@@ -28,6 +29,7 @@ export type SectionKey =
   | "conversion-new"
   | "conversion-pool"
   | "churn"
+  | "usage"
   | "insights"
   | "data";
 
@@ -53,6 +55,7 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   "conversion-new":  "#B87333",  // copper
   "conversion-pool": "#B87333",
   churn:          "#A04040",  // muted red
+  usage:          "#7C6B8A",  // muted purple
   insights:       "#D4A030",  // amber/gold
   data:           "#6B5B73",  // dusty purple
 };
@@ -92,6 +95,7 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { key: "churn", label: "Churn", icon: HourglassLow, color: SECTION_COLORS.churn },
+  { key: "usage", label: "Usage", icon: ActivityIcon, color: SECTION_COLORS.usage },
   { key: "insights", label: "Insights", icon: BulbIcon, color: SECTION_COLORS.insights },
   { key: "data", label: "Data", icon: Database, color: SECTION_COLORS.data },
 ];
@@ -107,6 +111,7 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "conversion-new": ["Conversion", "New Customers"],
   "conversion-pool": ["Conversion", "Non Auto-Renew Customers"],
   churn: ["Churn"],
+  usage: ["Usage"],
   insights: ["Insights"],
   data: ["Data"],
 };

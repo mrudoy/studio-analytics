@@ -30,6 +30,7 @@ import {
   DoorEnter,
   UserStar,
   CalendarWeek,
+  ActivityIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -122,6 +123,8 @@ import type {
   InsightRow,
   OverviewData,
   TimeWindowMetrics,
+  UsageData,
+  UsageCategoryData,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -3952,6 +3955,88 @@ function InsightCard({ insight }: { insight: InsightRow }) {
   );
 }
 
+// ── Usage Section ─────────────────────────────────────────
+
+function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
+  const maxPercent = Math.max(...data.segments.map(s => s.percent), 1);
+
+  return (
+    <DashboardCard>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
+          <span className="text-sm text-muted-foreground font-medium">{data.totalActive.toLocaleString()} Active</span>
+        </div>
+        <CardDescription>
+          Median {data.median}/Mo &middot; Mean {data.mean}/Mo &middot; Last 3 Months
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="space-y-2">
+          {data.segments.map((seg) => (
+            <div key={seg.name} className="flex items-center gap-2 text-sm">
+              <span className="w-[110px] shrink-0 text-muted-foreground truncate">{seg.name}</span>
+              <div className="flex-1 h-5 rounded-sm overflow-hidden bg-muted/40">
+                <div
+                  className="h-full rounded-sm transition-all"
+                  style={{
+                    width: `${Math.max((seg.percent / maxPercent) * 100, 2)}%`,
+                    backgroundColor: seg.color,
+                  }}
+                />
+              </div>
+              <span className="w-[80px] text-right tabular-nums text-xs text-muted-foreground">
+                {seg.count.toLocaleString()} ({seg.percent}%)
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+function UsageSection({ usage }: { usage: UsageData | null }) {
+  if (!usage || usage.categories.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <NoData label="No usage data available. Ensure auto-renew and registration data is loaded." />
+      </div>
+    );
+  }
+
+  const memberData = usage.categories.find(c => c.category === "MEMBER");
+  const sky3Data = usage.categories.find(c => c.category === "SKY3");
+  const tvData = usage.categories.find(c => c.category === "SKY_TING_TV");
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Members card — full width (largest category, most detail) */}
+      {memberData && <UsageCategoryCard data={memberData} />}
+
+      {/* Sky3 + TV side-by-side */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {sky3Data && <UsageCategoryCard data={sky3Data} />}
+        {tvData && <UsageCategoryCard data={tvData} />}
+      </div>
+
+      {/* Upgrade opportunities callout */}
+      {usage.upgradeOpportunities > 0 && (
+        <DashboardCard>
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2 text-sm">
+              <ChartBarPopular className="size-4 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
+              <span>
+                <strong>{usage.upgradeOpportunities}</strong> Sky3 members averaging 3+/mo &mdash; candidates for Member upgrade
+              </span>
+            </div>
+          </CardContent>
+        </DashboardCard>
+      )}
+    </div>
+  );
+}
+
 function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
   if (!insights || insights.length === 0) {
     return (
@@ -5633,6 +5718,20 @@ function DashboardContent({ activeSection, data, refreshData }: {
             <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
           </div>
           <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+        </>
+      )}
+
+      {/* ── USAGE ── */}
+      {activeSection === "usage" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <ActivityIcon className="size-7 shrink-0" style={{ color: SECTION_COLORS.usage }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Usage</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Visit Frequency Segments by Plan Type</p>
+          </div>
+          <UsageSection usage={trends?.usage ?? null} />
         </>
       )}
 
