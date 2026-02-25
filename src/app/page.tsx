@@ -3724,23 +3724,17 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   // Build metric rows
   // Columnar rows: label | count | change # | change %
   // "isNetChange" rows only show label + value (no delta columns)
-  const metrics: { label: string; value: string; delta?: number | null; deltaPercent?: number | null; isPositiveGood?: boolean; color?: string; isNetChange?: boolean }[] = [];
+  const metrics: { label: string; value: string; priorValue?: string | null; color?: string; isNetChange?: boolean }[] = [];
 
   if (latestW) {
     const newVal = weeklyKeyNew(latestW);
-    const newDelta = prevW ? newVal - weeklyKeyNew(prevW) : null;
-    const newDeltaPct = prevW && weeklyKeyNew(prevW) > 0
-      ? Math.round((newDelta! / weeklyKeyNew(prevW)) * 100)
-      : null;
+    const prevNewVal = prevW ? weeklyKeyNew(prevW) : null;
     const wkLabel = weekLabel(latestW.period);
-    metrics.push({ label: `New ${wkLabel}`, value: `+${newVal}`, delta: newDelta, deltaPercent: newDeltaPct, isPositiveGood: true });
+    metrics.push({ label: `New ${wkLabel}`, value: `+${newVal}`, priorValue: prevNewVal != null ? `+${prevNewVal}` : null });
 
     const churnVal = weeklyKeyChurn(latestW);
-    const churnDelta = prevW ? churnVal - weeklyKeyChurn(prevW) : null;
-    const churnDeltaPct = prevW && weeklyKeyChurn(prevW) > 0
-      ? Math.round((churnDelta! / weeklyKeyChurn(prevW)) * 100)
-      : null;
-    metrics.push({ label: `Churned ${wkLabel}`, value: `-${churnVal}`, delta: churnDelta, deltaPercent: churnDeltaPct, isPositiveGood: false });
+    const prevChurnVal = prevW ? weeklyKeyChurn(prevW) : null;
+    metrics.push({ label: `Churned ${wkLabel}`, value: `-${churnVal}`, priorValue: prevChurnVal != null ? `-${prevChurnVal}` : null });
 
     const netVal = weeklyKeyNet(latestW);
     metrics.push({
@@ -3856,34 +3850,25 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
             <tr>
               <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
               <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Number</th>
-              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">vs Prior Week</th>
+              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Prior Week</th>
             </tr>
           </thead>
           <tbody className="[&_tr:last-child]:border-0">
-            {metrics.map((m, i) => {
-              const deltaColor = m.delta != null
-                ? m.delta === 0
-                  ? "text-muted-foreground"
-                  : (m.isPositiveGood ? m.delta > 0 : m.delta < 0)
-                    ? "text-emerald-600"
-                    : "text-red-500"
-                : "";
-              return (
+            {metrics.map((m, i) => (
                 <tr key={i} className="border-b">
                   <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
                   <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
                     {m.value}
                   </td>
                   {!m.isNetChange ? (
-                    <td className={`px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${deltaColor}`}>
-                      {m.delta != null ? formatDelta(m.delta) : ""}
+                    <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                      {m.priorValue ?? ""}
                     </td>
                   ) : (
                     <td />
                   )}
                 </tr>
-              );
-            })}
+            ))}
           </tbody>
         </table>
       </div>
