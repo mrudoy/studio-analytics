@@ -366,6 +366,35 @@ export interface TenureMetrics {
   survivalCurve: { month: number; retained: number }[];  // month 0..24+, retained as %
 }
 
+/** A member approaching their billing renewal date */
+export interface RenewalAlertMember {
+  name: string;
+  email: string;
+  planName: string;
+  isAnnual: boolean;
+  createdAt: string;
+  renewalDate: string;
+  daysUntilRenewal: number;
+  tenureMonths: number;
+}
+
+/** A member approaching a critical tenure milestone */
+export interface TenureMilestoneMember {
+  name: string;
+  email: string;
+  planName: string;
+  isAnnual: boolean;
+  createdAt: string;
+  tenureMonths: number;
+  milestone: string;
+}
+
+/** Actionable member alerts for the Retention section */
+export interface MemberAlerts {
+  renewalApproaching: RenewalAlertMember[];
+  tenureMilestones: TenureMilestoneMember[];
+}
+
 export interface ChurnRateData {
   /** Per-category churn data */
   byCategory: {
@@ -374,6 +403,8 @@ export interface ChurnRateData {
     skyTingTv: CategoryChurnData;
   };
   totalAtRisk: number;
+  /** Member-specific alerts: renewals approaching + tenure milestones */
+  memberAlerts?: MemberAlerts;
   /** Legacy flat fields (backward compat) */
   monthly: {
     month: string;

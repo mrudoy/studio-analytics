@@ -57,6 +57,9 @@ import type {
   ConversionPoolSlice,
   UsageData,
   TenureMetrics,
+  RenewalAlertMember,
+  TenureMilestoneMember,
+  MemberAlerts,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -858,6 +861,116 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   };
 }
 
+// ── Member Alerts: Renewal Approaching + Tenure Milestones ──
+
+type CategorizedRow = {
+  plan_name: string;
+  plan_state: string;
+  plan_price: number;
+  canceled_at: string | null;
+  created_at: string | null;
+  category: string;
+  isAnnual: boolean;
+  monthlyRate: number;
+  customer_name: string;
+  customer_email: string;
+};
+
+/**
+ * Compute next renewal date for a subscriber.
+ * Monthly: same day-of-month each month.
+ * Annual: same month+day each year.
+ */
+function getNextRenewalDate(createdAt: string, isAnnual: boolean): Date {
+  const created = new Date(createdAt);
+  const now = new Date();
+
+  if (isAnnual) {
+    // Next anniversary of the created_at date
+    const thisYear = new Date(now.getFullYear(), created.getMonth(), created.getDate());
+    if (thisYear > now) return thisYear;
+    return new Date(now.getFullYear() + 1, created.getMonth(), created.getDate());
+  } else {
+    // Next occurrence of the created_at day-of-month
+    const dayOfMonth = created.getDate();
+    // Try this month first
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), dayOfMonth);
+    if (thisMonth > now) return thisMonth;
+    // Next month
+    return new Date(now.getFullYear(), now.getMonth() + 1, dayOfMonth);
+  }
+}
+
+/**
+ * Compute member alerts: who's renewing soon + who's at a tenure milestone.
+ */
+function computeMemberAlerts(
+  allRows: CategorizedRow[],
+  activeStates: string[]
+): MemberAlerts {
+  const now = new Date();
+  const nowMs = now.getTime();
+  const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000;
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+  // Only active MEMBER subscribers with created_at
+  const activeMembers = allRows.filter(
+    (r) => r.category === "MEMBER" && r.created_at && activeStates.includes(r.plan_state)
+  );
+
+  // ── Renewal approaching (within 7 days) ──
+  const renewalApproaching: RenewalAlertMember[] = [];
+  for (const r of activeMembers) {
+    const renewal = getNextRenewalDate(r.created_at!, r.isAnnual);
+    const daysUntil = Math.ceil((renewal.getTime() - nowMs) / (24 * 60 * 60 * 1000));
+    if (daysUntil >= 0 && daysUntil <= 7) {
+      const tenure = (nowMs - new Date(r.created_at!).getTime()) / MS_PER_MONTH;
+      renewalApproaching.push({
+        name: r.customer_name,
+        email: r.customer_email,
+        planName: r.plan_name,
+        isAnnual: r.isAnnual,
+        createdAt: r.created_at!,
+        renewalDate: `${renewal.getFullYear()}-${String(renewal.getMonth() + 1).padStart(2, "0")}-${String(renewal.getDate()).padStart(2, "0")}`,
+        daysUntilRenewal: daysUntil,
+        tenureMonths: Math.round(tenure * 10) / 10,
+      });
+    }
+  }
+  renewalApproaching.sort((a, b) => a.daysUntilRenewal - b.daysUntilRenewal);
+
+  // ── Tenure milestones (within ±1 week of key months) ──
+  const MILESTONES = [
+    { months: 3, label: "3-month cliff" },
+    { months: 7, label: "7-month mark" },
+  ];
+  const WEEK_IN_MONTHS = 7 / 30.44; // ~0.23 months
+
+  const tenureMilestones: TenureMilestoneMember[] = [];
+  for (const r of activeMembers) {
+    const tenure = (nowMs - new Date(r.created_at!).getTime()) / MS_PER_MONTH;
+    for (const ms of MILESTONES) {
+      if (tenure >= ms.months - WEEK_IN_MONTHS && tenure <= ms.months + WEEK_IN_MONTHS) {
+        tenureMilestones.push({
+          name: r.customer_name,
+          email: r.customer_email,
+          planName: r.plan_name,
+          isAnnual: r.isAnnual,
+          createdAt: r.created_at!,
+          tenureMonths: Math.round(tenure * 10) / 10,
+          milestone: ms.label,
+        });
+        break; // only closest milestone per person
+      }
+    }
+  }
+  tenureMilestones.sort((a, b) => a.tenureMonths - b.tenureMonths);
+
+  console.log(`[member-alerts] ${renewalApproaching.length} renewals within 7 days, ${tenureMilestones.length} at tenure milestones`);
+
+  return { renewalApproaching, tenureMilestones };
+}
+
 // ── Churn Rate Computation ─────────────────────────────────
 
 /**
@@ -875,7 +988,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   const pool = getPool();
 
   const { rows: allRows } = await pool.query(
-    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at FROM auto_renews`
+    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_name, customer_email FROM auto_renews`
   );
 
   if (allRows.length === 0) return null;
@@ -908,6 +1021,8 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       category: getCategory(name),
       isAnnual: annual,
       monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
+      customer_name: (r.customer_name as string) || "",
+      customer_email: (r.customer_email as string) || "",
     };
   });
 
@@ -1144,6 +1259,9 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
 
   const totalAtRisk = CATEGORIES.reduce((s, c) => s + catResults[c].atRiskCount, 0);
 
+  // ── Member alerts: renewals approaching + tenure milestones ──
+  const memberAlerts = computeMemberAlerts(categorized, ACTIVE_STATES);
+
   // Legacy backward-compat monthly array
   const legacyMonthly = months.map((month) => {
     const mem = catResults.MEMBER.monthly.find((m) => m.month === month)!;
@@ -1166,6 +1284,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       skyTingTv: catResults.SKY_TING_TV,
     },
     totalAtRisk,
+    memberAlerts,
     // Legacy flat fields
     monthly: legacyMonthly,
     avgMemberRate: catResults.MEMBER.avgUserChurnRate,

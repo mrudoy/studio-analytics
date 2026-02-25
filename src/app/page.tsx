@@ -128,6 +128,7 @@ import type {
   UsageData,
   UsageCategoryData,
   TenureMetrics,
+  MemberAlerts,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -4296,13 +4297,20 @@ function ChurnSection({ churnRates, weekly }: {
 
   const mem = byCategory.member;
   const tenure = mem.tenureMetrics;
+  const alerts = churnRates.memberAlerts;
+
+  // Last completed month for raw counts
+  const lastComplete = mem.monthly.length >= 2 ? mem.monthly[mem.monthly.length - 2] : null;
 
   /** Reusable churn metric row */
-  function MetricRow({ label, value, color, suffix = "%" }: { label: string; value: number | undefined; color?: string; suffix?: string }) {
+  function MetricRow({ label, value, color, suffix = "%", context }: { label: string; value: number | undefined; color?: string; suffix?: string; context?: string }) {
     if (value == null) return null;
     return (
       <div className="flex justify-between items-center py-1.5 border-b border-border last:border-b-0">
-        <span className="text-xs text-muted-foreground">{label}</span>
+        <div className="flex flex-col">
+          <span className="text-xs text-muted-foreground">{label}</span>
+          {context && <span className="text-[10px] text-muted-foreground/60">{context}</span>}
+        </div>
         <span className="text-sm font-semibold tabular-nums" style={color ? { color } : undefined}>
           {value.toFixed(1)}{suffix}
         </span>
@@ -4327,7 +4335,7 @@ function ChurnSection({ churnRates, weekly }: {
               <span className="text-base font-semibold leading-none tracking-tight">Annual Members</span>
             </div>
             <div className="flex flex-col">
-              <MetricRow label="User Churn Rate (Avg/Mo)" value={mem.avgAnnualUserChurnRate} color={mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined} />
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={mem.avgAnnualUserChurnRate} color={mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined} context={lastComplete?.annualCanceledCount != null && lastComplete?.annualActiveAtStart ? `~${lastComplete.annualCanceledCount} of ${lastComplete.annualActiveAtStart}/mo` : undefined} />
               <MetricRow label="MRR Churn Rate (Avg/Mo)" value={mem.avgAnnualMrrChurnRate} color={mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined} />
               {mem.annualAtRiskCount != null && mem.annualAtRiskCount > 0 && (
                 <div className="flex justify-between items-center py-1.5">
@@ -4345,7 +4353,7 @@ function ChurnSection({ churnRates, weekly }: {
               <span className="text-base font-semibold leading-none tracking-tight">Monthly Members</span>
             </div>
             <div className="flex flex-col">
-              <MetricRow label="User Churn Rate (Avg/Mo)" value={mem.avgEligibleChurnRate} color={mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined} />
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={mem.avgEligibleChurnRate} color={mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined} context={lastComplete?.monthlyCanceledCount != null && lastComplete?.monthlyActiveAtStart ? `~${lastComplete.monthlyCanceledCount} of ${lastComplete.monthlyActiveAtStart}/mo` : undefined} />
               <MetricRow label="MRR Churn Rate (Avg/Mo)" value={mem.avgMonthlyMrrChurnRate} color={mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined} />
               {mem.monthlyAtRiskCount != null && mem.monthlyAtRiskCount > 0 && (
                 <div className="flex justify-between items-center py-1.5">
@@ -4431,6 +4439,79 @@ function ChurnSection({ churnRates, weekly }: {
                 </RAreaChart>
               </ChartContainer>
             )}
+          </Card>
+        )}
+
+        {/* Renewal Approaching */}
+        {alerts && alerts.renewalApproaching.length > 0 && (
+          <Card>
+            <div className="flex items-center gap-2 mb-3">
+              <CalendarWeek className="size-5 shrink-0" style={{ color: COLORS.warning }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Renewal This Week</span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{alerts.renewalApproaching.length}</Badge>
+            </div>
+            <Table style={{ fontFamily: FONT_SANS }}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Name</TableHead>
+                  <TableHead className="text-xs">Plan</TableHead>
+                  <TableHead className="text-xs text-right">Tenure</TableHead>
+                  <TableHead className="text-xs text-right">Renewal</TableHead>
+                  <TableHead className="w-[60px] text-xs text-right">Days</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.renewalApproaching.slice(0, 20).map((m, i) => (
+                  <TableRow key={`${m.email}-${i}`}>
+                    <TableCell className="py-1.5 text-sm font-medium">{m.name || m.email}</TableCell>
+                    <TableCell className="py-1.5 text-xs text-muted-foreground">{m.isAnnual ? "Annual" : "Monthly"}</TableCell>
+                    <TableCell className="py-1.5 text-xs text-right tabular-nums">{m.tenureMonths} mo</TableCell>
+                    <TableCell className="py-1.5 text-xs text-right tabular-nums">{m.renewalDate}</TableCell>
+                    <TableCell className="py-1.5 text-right">
+                      <Badge variant={m.daysUntilRenewal <= 2 ? "destructive" : "secondary"} className="text-[10px] px-1.5 py-0 tabular-nums">
+                        {m.daysUntilRenewal === 0 ? "Today" : `${m.daysUntilRenewal}d`}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+
+        {/* Tenure Milestones */}
+        {alerts && alerts.tenureMilestones.length > 0 && (
+          <Card>
+            <div className="flex items-center gap-2 mb-3">
+              <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Approaching Critical Tenure</span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{alerts.tenureMilestones.length}</Badge>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-2">Members near the 3-month commitment cliff or 7-month median tenure mark</p>
+            <Table style={{ fontFamily: FONT_SANS }}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Name</TableHead>
+                  <TableHead className="text-xs">Plan</TableHead>
+                  <TableHead className="text-xs text-right">Tenure</TableHead>
+                  <TableHead className="text-xs text-right">Milestone</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.tenureMilestones.map((m, i) => (
+                  <TableRow key={`${m.email}-${i}`}>
+                    <TableCell className="py-1.5 text-sm font-medium">{m.name || m.email}</TableCell>
+                    <TableCell className="py-1.5 text-xs text-muted-foreground">{m.isAnnual ? "Annual" : "Monthly"}</TableCell>
+                    <TableCell className="py-1.5 text-xs text-right tabular-nums">{m.tenureMonths} mo</TableCell>
+                    <TableCell className="py-1.5 text-right">
+                      <Badge variant={m.milestone.includes("cliff") ? "destructive" : "secondary"} className="text-[10px] px-1.5 py-0">
+                        {m.milestone}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </Card>
         )}
       </div>
