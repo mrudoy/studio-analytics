@@ -57,11 +57,36 @@ export async function saveInsights(insights: InsightInput[]): Promise<void> {
 }
 
 /**
+ * One-time cleanup: remove older duplicate insights per detector.
+ * Keeps only the most recent non-dismissed entry for each detector.
+ * Safe to call multiple times — it's a no-op once clean.
+ */
+export async function cleanupDuplicateInsights(): Promise<number> {
+  const pool = getPool();
+  const res = await pool.query(
+    `DELETE FROM insights a
+     USING insights b
+     WHERE a.detector = b.detector
+       AND a.dismissed = FALSE AND b.dismissed = FALSE
+       AND a.detected_at < b.detected_at`
+  );
+  const removed = res.rowCount ?? 0;
+  if (removed > 0) {
+    console.log(`[insights-store] Cleaned up ${removed} duplicate insights`);
+  }
+  return removed;
+}
+
+/**
  * Get recent insights, ordered by severity then date.
  * Returns undismissed insights from the last 30 days by default.
+ * Auto-cleans duplicates on each read to ensure stale data is removed.
  */
 export async function getRecentInsights(limit = 20): Promise<InsightRow[]> {
   const pool = getPool();
+
+  // Auto-cleanup stale duplicates
+  await cleanupDuplicateInsights();
 
   const res = await pool.query(
     `SELECT id, detector, headline, explanation, category, severity,

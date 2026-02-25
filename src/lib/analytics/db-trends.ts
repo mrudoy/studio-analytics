@@ -56,6 +56,7 @@ import type {
   ConversionPoolSliceData,
   ConversionPoolSlice,
   UsageData,
+  TenureMetrics,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -990,6 +991,23 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
         entry.eligibleChurnRate = monthlyActive.length > 0
           ? Math.round((monthlyCanceled.length / monthlyActive.length) * 1000) / 10
           : 0;
+        // Annual user churn rate
+        entry.annualUserChurnRate = annualActive.length > 0
+          ? Math.round((annualCanceled.length / annualActive.length) * 1000) / 10
+          : 0;
+        // Per-billing MRR split
+        const annualActiveMrr = annualActive.reduce((s, r) => s + r.monthlyRate, 0);
+        const annualCanceledMrr = annualCanceled.reduce((s, r) => s + r.monthlyRate, 0);
+        const monthlyActiveMrr = monthlyActive.reduce((s, r) => s + r.monthlyRate, 0);
+        const monthlyCanceledMrr = monthlyCanceled.reduce((s, r) => s + r.monthlyRate, 0);
+        entry.annualActiveMrrAtStart = Math.round(annualActiveMrr * 100) / 100;
+        entry.annualCanceledMrr = Math.round(annualCanceledMrr * 100) / 100;
+        entry.annualMrrChurnRate = annualActiveMrr > 0
+          ? Math.round((annualCanceledMrr / annualActiveMrr) * 1000) / 10 : 0;
+        entry.monthlyActiveMrrAtStart = Math.round(monthlyActiveMrr * 100) / 100;
+        entry.monthlyCanceledMrr = Math.round(monthlyCanceledMrr * 100) / 100;
+        entry.monthlyMrrChurnRate = monthlyActiveMrr > 0
+          ? Math.round((monthlyCanceledMrr / monthlyActiveMrr) * 1000) / 10 : 0;
       }
 
       monthlyChurn.push(entry);
@@ -1012,7 +1030,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       ? Math.round((completed.reduce((s, r) => s + (r.eligibleChurnRate ?? 0), 0) / completed.length) * 10) / 10
       : undefined;
 
-    catResults[cat] = {
+    const result: typeof catResults[typeof cat] = {
       category: cat,
       monthly: monthlyChurn,
       avgUserChurnRate: avgUser,
@@ -1020,6 +1038,108 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       atRiskCount,
       ...(avgEligible !== undefined && { avgEligibleChurnRate: avgEligible }),
     };
+
+    // MEMBER-only: split averages + at-risk by billing type
+    if (cat === "MEMBER" && completed.length > 0) {
+      const avg = (key: keyof CategoryMonthlyChurn) =>
+        Math.round((completed.reduce((s, r) => s + ((r[key] as number) ?? 0), 0) / completed.length) * 10) / 10;
+      result.avgAnnualUserChurnRate = avg("annualUserChurnRate");
+      result.avgAnnualMrrChurnRate = avg("annualMrrChurnRate");
+      result.avgMonthlyMrrChurnRate = avg("monthlyMrrChurnRate");
+      result.annualAtRiskCount = catRows.filter((r) => r.isAnnual && AT_RISK_STATES.includes(r.plan_state)).length;
+      result.monthlyAtRiskCount = catRows.filter((r) => !r.isAnnual && AT_RISK_STATES.includes(r.plan_state)).length;
+
+      // ── Tenure / retention metrics (MEMBER only) ────────────
+      const tenureRows = catRows.filter((r) => r.created_at);
+      if (tenureRows.length > 0) {
+        const nowMs = Date.now();
+        const CLIFF_MONTHS = 3; // 3-month minimum commitment
+        const MAX_CURVE_MONTHS = 24;
+
+        // Compute tenure in months for each subscriber
+        const tenures = tenureRows.map((r) => {
+          const createdMs = new Date(r.created_at!).getTime();
+          const endMs = r.canceled_at ? new Date(r.canceled_at).getTime() : nowMs;
+          const months = Math.max(0, (endMs - createdMs) / (30.44 * 24 * 60 * 60 * 1000));
+          return {
+            tenure: months,
+            isCensored: !r.canceled_at, // still active = censored
+          };
+        });
+
+        // ── Median Tenure (Kaplan-Meier estimate) ──
+        // Sort by tenure. For uncensored (canceled), that's an event.
+        // For censored (still active), they're "withdrawn" at their tenure point.
+        const sorted = [...tenures].sort((a, b) => a.tenure - b.tenure);
+        let medianTenure = MAX_CURVE_MONTHS; // default if never drops below 0.5
+        let medianFound = false;
+
+        // Build survival curve via Kaplan-Meier
+        const survivalCurve: { month: number; retained: number }[] = [{ month: 0, retained: 100 }];
+        // We need survival probability at each integer month
+        // Process events in order and track survival
+        const events: { time: number; isEvent: boolean }[] = sorted.map((t) => ({
+          time: t.tenure,
+          isEvent: !t.isCensored,
+        }));
+
+        // Group events by unique time points for proper KM calculation
+        let currentN = events.length;
+        let currentSurv = 1.0;
+        let eventIdx = 0;
+
+        for (let m = 1; m <= MAX_CURVE_MONTHS; m++) {
+          // Process all events that happened before month m
+          while (eventIdx < events.length && events[eventIdx].time < m) {
+            if (events[eventIdx].isEvent) {
+              // Churn event: decrease survival
+              currentSurv *= (currentN - 1) / currentN;
+            }
+            currentN--;
+            eventIdx++;
+          }
+          survivalCurve.push({ month: m, retained: Math.round(currentSurv * 1000) / 10 });
+
+          // Check for median
+          if (!medianFound && currentSurv < 0.5) {
+            medianTenure = m;
+            medianFound = true;
+          }
+        }
+
+        // If median not found from KM, use simple median of all tenures
+        if (!medianFound) {
+          const allTenures = tenures.map((t) => t.tenure).sort((a, b) => a - b);
+          medianTenure = Math.round(allTenures[Math.floor(allTenures.length / 2)] * 10) / 10;
+        } else {
+          medianTenure = Math.round(medianTenure * 10) / 10;
+        }
+
+        // ── Month-4 Renewal Rate ──
+        // Members who reached month 3 and chose to continue to month 4
+        const reachedMonth3 = tenures.filter((t) => t.tenure >= CLIFF_MONTHS);
+        const reachedMonth4 = tenures.filter((t) => t.tenure >= CLIFF_MONTHS + 1);
+        const month4RenewalRate = reachedMonth3.length > 0
+          ? Math.round((reachedMonth4.length / reachedMonth3.length) * 1000) / 10
+          : 0;
+
+        // ── Avg Post-Cliff Tenure ──
+        // For members surviving past the 3-month cliff, average total tenure
+        const postCliffMembers = tenures.filter((t) => t.tenure > CLIFF_MONTHS);
+        const avgPostCliffTenure = postCliffMembers.length > 0
+          ? Math.round((postCliffMembers.reduce((s, t) => s + t.tenure, 0) / postCliffMembers.length) * 10) / 10
+          : 0;
+
+        result.tenureMetrics = {
+          medianTenure,
+          month4RenewalRate,
+          avgPostCliffTenure,
+          survivalCurve,
+        };
+      }
+    }
+
+    catResults[cat] = result;
   }
 
   const totalAtRisk = CATEGORIES.reduce((s, c) => s + catResults[c].atRiskCount, 0);

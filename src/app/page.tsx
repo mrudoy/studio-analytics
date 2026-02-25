@@ -127,6 +127,7 @@ import type {
   TimeWindowMetrics,
   UsageData,
   UsageCategoryData,
+  TenureMetrics,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -3449,9 +3450,9 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
   if (!data) return null;
 
   const { wtd, lastCompleteWeek, avgRate } = data;
-  const heroPool = wtd?.activePool7d ?? lastCompleteWeek?.activePool7d ?? 0;
-  const heroConverts = wtd?.converts ?? lastCompleteWeek?.converts ?? 0;
-  const heroRate = wtd ? wtd.conversionRate : (lastCompleteWeek?.conversionRate ?? 0);
+  const heroPool = wtd?.activePool7d || lastCompleteWeek?.activePool7d || 0;
+  const heroConverts = wtd?.converts || lastCompleteWeek?.converts || 0;
+  const heroRate = wtd?.conversionRate || lastCompleteWeek?.conversionRate || 0;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3849,11 +3850,11 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   if (latestW) {
     const newVal = weeklyKeyNew(latestW);
     const prevNewVal = prevW ? weeklyKeyNew(prevW) : null;
-    metrics.push({ label: "New", value: `+${newVal}`, priorValue: prevNewVal != null ? `+${prevNewVal}` : null });
+    metrics.push({ label: "New", value: `+${newVal}`, priorValue: prevNewVal != null ? `+${prevNewVal}` : null, color: COLORS.success });
 
     const churnVal = weeklyKeyChurn(latestW);
     const prevChurnVal = prevW ? weeklyKeyChurn(prevW) : null;
-    metrics.push({ label: "Churned", value: `-${churnVal}`, priorValue: prevChurnVal != null ? `-${prevChurnVal}` : null });
+    metrics.push({ label: "Churned", value: `-${churnVal}`, priorValue: prevChurnVal != null ? `-${prevChurnVal}` : null, color: COLORS.error });
 
     const netVal = weeklyKeyNet(latestW);
     const prevNetVal = prevW ? weeklyKeyNet(prevW) : null;
@@ -4172,7 +4173,6 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
         </div>
         <CardDescription>
           Median {data.median}/Mo &middot; Mean {data.mean}/Mo &middot; Last 3 Months
-          <span className="block text-[10px] text-muted-foreground/50 mt-0.5">Click a segment to download list</span>
         </CardDescription>
         <CardAction>
           <span className="text-2xl font-semibold tracking-tight tabular-nums">{data.totalActive.toLocaleString()}</span>
@@ -4187,16 +4187,12 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
               <TableHead className="text-xs">&nbsp;</TableHead>
               <TableHead className="w-[55px] text-right text-xs">Total</TableHead>
               <TableHead className="w-[50px] text-right text-xs">%</TableHead>
+              <TableHead className="w-[36px] text-right text-xs"><DownloadIcon className="size-3.5 ml-auto text-muted-foreground" /></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.segments.map((seg) => (
-              <TableRow
-                key={seg.name}
-                onClick={() => downloadSegment(seg.name)}
-                className="cursor-pointer hover:bg-muted/40 transition-colors"
-                title={`Download ${seg.name} ${data.label} as CSV`}
-              >
+              <TableRow key={seg.name}>
                 <TableCell className="py-1.5 font-medium text-sm">{seg.name}</TableCell>
                 <TableCell className="py-1.5 text-xs text-muted-foreground tabular-nums">{seg.rangeLabel}</TableCell>
                 <TableCell className="py-1.5">
@@ -4212,6 +4208,17 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
                 </TableCell>
                 <TableCell className="py-1.5 text-right tabular-nums text-sm">{seg.count.toLocaleString()}</TableCell>
                 <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{seg.percent}%</TableCell>
+                <TableCell className="py-1.5 text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => downloadSegment(seg.name)}
+                    title={`Download ${seg.name} as CSV`}
+                  >
+                    <DownloadIcon className="size-3.5" />
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -4300,92 +4307,203 @@ function ChurnSection({ churnRates, weekly }: {
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
 
-  const categories = [
-    {
-      key: "member" as const,
-      label: LABELS.members,
-      color: COLORS.member,
-      icon: ArrowBadgeDown,
-      data: byCategory.member,
-      weeklyChurn: latestW ? latestW.memberChurn : null,
-    },
-    {
-      key: "sky3" as const,
-      label: LABELS.sky3,
-      color: COLORS.sky3,
-      icon: BrandSky,
-      data: byCategory.sky3,
-      weeklyChurn: latestW ? latestW.sky3Churn : null,
-    },
-    {
-      key: "skyTingTv" as const,
-      label: LABELS.tv,
-      color: COLORS.tv,
-      icon: DeviceTv,
-      data: byCategory.skyTingTv,
-      weeklyChurn: latestW ? latestW.skyTingTvChurn : null,
-    },
-  ];
+  const mem = byCategory.member;
+  const tenure = mem.tenureMetrics;
+
+  /** Reusable churn metric row */
+  function MetricRow({ label, value, color, suffix = "%" }: { label: string; value: number | undefined; color?: string; suffix?: string }) {
+    if (value == null) return null;
+    return (
+      <div className="flex justify-between items-center py-1.5 border-b border-border last:border-b-0">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="text-sm font-semibold tabular-nums" style={color ? { color } : undefined}>
+          {value.toFixed(1)}{suffix}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Summary cards — one per category */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {categories.map((cat) => (
-          <Card key={cat.key}>
+    <div className="flex flex-col gap-6">
+      {/* ── Members subsection ────────────────────────── */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <ArrowBadgeDown className="size-5" style={{ color: COLORS.member }} />
+          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Members</h3>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Annual Members card */}
+          <Card>
             <div className="flex items-center gap-2 mb-2">
-              <cat.icon className="size-5 shrink-0" style={{ color: cat.color }} />
-              <span className="text-base font-semibold leading-none tracking-tight">
-                {cat.label}
-              </span>
+              <CalendarWeek className="size-5 shrink-0" style={{ color: COLORS.member }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Annual Members</span>
             </div>
             <div className="flex flex-col">
-              <div className="flex justify-between items-center py-1.5 border-b border-border">
-                <span className="text-xs text-muted-foreground">User Churn Rate (Avg/Mo)</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgUserChurnRate) }}>
-                  {cat.data.avgUserChurnRate.toFixed(1)}%
-                </span>
-              </div>
-              {cat.data.avgEligibleChurnRate != null && (
-                <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Eligible Churn Rate (Avg/Mo)</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgEligibleChurnRate) }}>
-                    {cat.data.avgEligibleChurnRate.toFixed(1)}%
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between items-center py-1.5 border-b border-border">
-                <span className="text-xs text-muted-foreground">MRR Churn Rate (Avg/Mo)</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: churnBenchmarkColor(cat.data.avgMrrChurnRate) }}>
-                  {cat.data.avgMrrChurnRate.toFixed(1)}%
-                </span>
-              </div>
-              {cat.weeklyChurn != null && (
-                <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Churned {latestW ? weekLabel(latestW.period) : "this week"}</span>
-                  <span className="text-sm font-semibold tabular-nums">{cat.weeklyChurn}</span>
-                </div>
-              )}
-              {cat.data.atRiskCount > 0 && (
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={mem.avgAnnualUserChurnRate} color={mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined} />
+              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={mem.avgAnnualMrrChurnRate} color={mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined} />
+              {mem.annualAtRiskCount != null && mem.annualAtRiskCount > 0 && (
                 <div className="flex justify-between items-center py-1.5">
                   <span className="text-xs text-muted-foreground">At Risk</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{cat.data.atRiskCount}</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{mem.annualAtRiskCount}</span>
                 </div>
               )}
             </div>
-
-            {/* MEMBER annual/monthly breakdown */}
-            {cat.data.category === "MEMBER" && (() => {
-              const lastCompleted = cat.data.monthly.length >= 2 ? cat.data.monthly[cat.data.monthly.length - 2] : null;
-              if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
-              return (
-                <p className="text-xs text-muted-foreground italic mt-2">
-                  Annual: {lastCompleted.annualCanceledCount}/{lastCompleted.annualActiveAtStart} churned | Monthly: {lastCompleted.monthlyCanceledCount}/{lastCompleted.monthlyActiveAtStart} churned
-                </p>
-              );
-            })()}
           </Card>
-        ))}
+
+          {/* Monthly Members card */}
+          <Card>
+            <div className="flex items-center gap-2 mb-2">
+              <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Monthly Members</span>
+            </div>
+            <div className="flex flex-col">
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={mem.avgEligibleChurnRate} color={mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined} />
+              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={mem.avgMonthlyMrrChurnRate} color={mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined} />
+              {mem.monthlyAtRiskCount != null && mem.monthlyAtRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At Risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{mem.monthlyAtRiskCount}</span>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* Tenure / Retention metrics */}
+        {tenure && (
+          <Card>
+            <div className="flex items-center gap-2 mb-3">
+              <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.member }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Member Retention</span>
+            </div>
+
+            {/* KPI tiles */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.medianTenure.toFixed(1)} mo</span>
+                <span className="text-xs font-medium text-foreground">Median Tenure</span>
+                <span className="text-[11px] text-muted-foreground leading-snug">Half of all members stay longer than this, half leave sooner</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-2xl font-semibold tabular-nums tracking-tight" style={{ color: tenure.month4RenewalRate >= 70 ? COLORS.success : COLORS.warning }}>{tenure.month4RenewalRate.toFixed(1)}%</span>
+                <span className="text-xs font-medium text-foreground">Month-4 Renewal Rate</span>
+                <span className="text-[11px] text-muted-foreground leading-snug">After the 3-month minimum, this % of members choose to continue</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.avgPostCliffTenure.toFixed(1)} mo</span>
+                <span className="text-xs font-medium text-foreground">Avg Post-Cliff Tenure</span>
+                <span className="text-[11px] text-muted-foreground leading-snug">Members who stay past 3 months average this total membership length</span>
+              </div>
+            </div>
+
+            {/* Survival curve chart */}
+            {tenure.survivalCurve.length > 1 && (
+              <ChartContainer
+                config={{
+                  retained: { label: "Members Retained", color: COLORS.member },
+                } satisfies ChartConfig}
+                className="h-[180px] w-full"
+              >
+                <RAreaChart
+                  accessibilityLayer
+                  data={tenure.survivalCurve}
+                  margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(v) => `Mo ${v}`}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `${v}%`}
+                    domain={[0, 100]}
+                    ticks={[0, 25, 50, 75, 100]}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
+                  <defs>
+                    <linearGradient id="survivalGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS.member} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={COLORS.member} stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <Area
+                    type="stepAfter"
+                    dataKey="retained"
+                    stroke={COLORS.member}
+                    strokeWidth={2}
+                    fill="url(#survivalGradient)"
+                  />
+                  {/* Cliff reference line at month 3 */}
+                  <ReferenceLine x={3} stroke={COLORS.warning} strokeDasharray="4 4" label={{ value: "3-mo cliff", position: "top", fontSize: 10, fill: COLORS.warning }} />
+                </RAreaChart>
+              </ChartContainer>
+            )}
+          </Card>
+        )}
+      </div>
+
+      {/* ── Packs & Digital subsection ────────────────── */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
+          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Packs & Digital</h3>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Sky3 card */}
+          <Card>
+            <div className="flex items-center gap-2 mb-2">
+              <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+              <span className="text-base font-semibold leading-none tracking-tight">{LABELS.sky3}</span>
+            </div>
+            <div className="flex flex-col">
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.sky3.avgUserChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgUserChurnRate)} />
+              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.sky3.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate)} />
+              {latestW?.sky3Churn != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
+                  <span className="text-sm font-semibold tabular-nums">{latestW.sky3Churn}</span>
+                </div>
+              )}
+              {byCategory.sky3.atRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At Risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</span>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Sky Ting TV card */}
+          <Card>
+            <div className="flex items-center gap-2 mb-2">
+              <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+              <span className="text-base font-semibold leading-none tracking-tight">{LABELS.tv}</span>
+            </div>
+            <div className="flex flex-col">
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgUserChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate)} />
+              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate)} />
+              {latestW?.skyTingTvChurn != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
+                  <span className="text-sm font-semibold tabular-nums">{latestW.skyTingTvChurn}</span>
+                </div>
+              )}
+              {byCategory.skyTingTv.atRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At Risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</span>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
       </div>
 
       {/* At-Risk Total */}
@@ -4403,7 +4521,7 @@ function ChurnSection({ churnRates, weekly }: {
         </Card>
       )}
 
-      {/* Monthly churn rate trend chart */}
+      {/* Monthly churn rate trend chart — split Members into Annual + Monthly */}
       {byCategory.member.monthly.length > 1 && (
         <DashboardCard className="@container/card">
           <CardHeader>
@@ -4413,7 +4531,8 @@ function ChurnSection({ churnRates, weekly }: {
           <CardContent>
             <ChartContainer
               config={{
-                member: { label: LABELS.members, color: COLORS.member },
+                annualMember: { label: "Annual Members", color: COLORS.member },
+                monthlyMember: { label: "Monthly Members", color: "#6B9B7A" },
                 sky3: { label: LABELS.sky3, color: COLORS.sky3 },
                 tv: { label: LABELS.tv, color: COLORS.tv },
               } satisfies ChartConfig}
@@ -4423,7 +4542,8 @@ function ChurnSection({ churnRates, weekly }: {
                 accessibilityLayer
                 data={byCategory.member.monthly.map((m, i) => ({
                   month: formatMonthLabel(m.month),
-                  member: m.userChurnRate,
+                  annualMember: m.annualUserChurnRate ?? 0,
+                  monthlyMember: m.eligibleChurnRate ?? m.userChurnRate,
                   sky3: byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
                   tv: byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                 }))}
@@ -4437,7 +4557,8 @@ function ChurnSection({ churnRates, weekly }: {
                   tickFormatter={(v) => `${v}%`}
                   domain={(() => {
                     const allRates = byCategory.member.monthly.map((m, i) => [
-                      m.userChurnRate,
+                      m.annualUserChurnRate ?? 0,
+                      m.eligibleChurnRate ?? m.userChurnRate,
                       byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
                       byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                     ]).flat();
@@ -4448,7 +4569,8 @@ function ChurnSection({ churnRates, weekly }: {
                   })()}
                   ticks={(() => {
                     const allRates = byCategory.member.monthly.map((m, i) => [
-                      m.userChurnRate,
+                      m.annualUserChurnRate ?? 0,
+                      m.eligibleChurnRate ?? m.userChurnRate,
                       byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
                       byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
                     ]).flat();
@@ -4462,7 +4584,8 @@ function ChurnSection({ churnRates, weekly }: {
                 />
                 <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
                 <ChartLegend content={<ChartLegendContent />} />
-                <Line type="monotone" dataKey="member" stroke="var(--color-member)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="annualMember" stroke="var(--color-annualMember)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="monthlyMember" stroke="var(--color-monthlyMember)" strokeWidth={2} dot={false} strokeDasharray="6 3" />
                 <Line type="monotone" dataKey="sky3" stroke="var(--color-sky3)" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="tv" stroke="var(--color-tv)" strokeWidth={2} dot={false} />
               </LineChart>

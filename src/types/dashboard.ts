@@ -329,6 +329,14 @@ export interface CategoryMonthlyChurn {
   monthlyActiveAtStart?: number;
   /** MEMBER-only: churn rate using only monthly (eligible) subscribers as denominator */
   eligibleChurnRate?: number;
+  // MEMBER-only: per-billing-type rates and MRR
+  annualUserChurnRate?: number;
+  annualActiveMrrAtStart?: number;
+  annualCanceledMrr?: number;
+  annualMrrChurnRate?: number;
+  monthlyActiveMrrAtStart?: number;
+  monthlyCanceledMrr?: number;
+  monthlyMrrChurnRate?: number;
 }
 
 /** Churn summary for one auto-renew category */
@@ -340,6 +348,22 @@ export interface CategoryChurnData {
   atRiskCount: number;
   /** MEMBER-only: avg churn rate using only monthly (eligible) subscribers */
   avgEligibleChurnRate?: number;
+  // MEMBER-only: split averages for annual vs monthly cards
+  avgAnnualUserChurnRate?: number;
+  avgAnnualMrrChurnRate?: number;
+  avgMonthlyMrrChurnRate?: number;
+  annualAtRiskCount?: number;
+  monthlyAtRiskCount?: number;
+  /** MEMBER-only: tenure / retention metrics */
+  tenureMetrics?: TenureMetrics;
+}
+
+/** Tenure & retention metrics for a subscriber category */
+export interface TenureMetrics {
+  medianTenure: number;          // months
+  month4RenewalRate: number;     // % of members reaching month 3 who renew at month 4
+  avgPostCliffTenure: number;    // avg total tenure for members surviving past month 3
+  survivalCurve: { month: number; retained: number }[];  // month 0..24+, retained as %
 }
 
 export interface ChurnRateData {
