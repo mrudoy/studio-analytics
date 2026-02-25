@@ -3465,7 +3465,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   const isMobile = useIsMobile();
   const [hoveredWeek, setHoveredWeek] = useState<string | null>(null);
   const [activeSlice, setActiveSlice] = useState<ConversionPoolSlice>("all");
-  const [activeTab, setActiveTab] = useState<string>("complete");
+
 
   const data: ConversionPoolSliceData | null = pool.slices[activeSlice] ?? pool.slices.all ?? null;
   if (!data) return null;
@@ -3488,16 +3488,12 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
   }));
 
   return (
-    <Tabs value={activeTab} onValueChange={setActiveTab}>
     <DashboardCard className="@container/card">
       <CardHeader>
         <div className="flex flex-row items-center justify-between w-full">
           <div>
             <CardTitle>Weekly Non Auto-Renew Customers</CardTitle>
-            <CardDescription>
-              <span className="hidden @[540px]/card:block">Complete weeks and customer breakdown</span>
-              <span className="@[540px]/card:hidden">Weekly data</span>
-            </CardDescription>
+            <CardDescription>Complete weeks{wtd ? " and week-to-date" : ""}</CardDescription>
           </div>
           <Select value={activeSlice} onValueChange={(v) => setActiveSlice(v as ConversionPoolSlice)}>
             <SelectTrigger size="sm" className="h-7 w-auto text-xs font-medium border-border bg-muted text-muted-foreground shadow-none">
@@ -3510,27 +3506,6 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             </SelectContent>
           </Select>
         </div>
-        <CardAction>
-          <ToggleGroup
-            variant="outline"
-            type="single"
-            value={activeTab}
-            onValueChange={(v) => { if (v) setActiveTab(v); }}
-            className="hidden @[540px]/card:flex"
-          >
-            <ToggleGroupItem value="complete">Complete weeks ({displayWeeks.length})</ToggleGroupItem>
-            {wtd && <ToggleGroupItem value="wtd">This week (WTD)</ToggleGroupItem>}
-          </ToggleGroup>
-          <Select value={activeTab} onValueChange={setActiveTab}>
-            <SelectTrigger className="w-44 @[540px]/card:hidden" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="complete" className="rounded-lg">Complete weeks ({displayWeeks.length})</SelectItem>
-              {wtd && <SelectItem value="wtd" className="rounded-lg">This week (WTD)</SelectItem>}
-            </SelectContent>
-          </Select>
-        </CardAction>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -3589,91 +3564,59 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
             <ChartLegend content={<ChartLegendContent />} />
           </RAreaChart>
         </ChartContainer>
+      </CardContent>
 
-        <TabsContent value="complete">
-            {displayWeeks.length > 0 && (
-              <div className="w-full min-w-0 mt-4">
-                <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
-                  <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Week</div>
-                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
-                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
-                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
-                </div>
-                {displayWeeks.map((w, idx) => {
-                  const isHovered = hoveredWeek === w.weekStart;
-                  const isLatest = idx === displayWeeks.length - 1;
-                  return (
-                    <div
-                      key={w.weekStart}
-                      className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6 transition-colors duration-100"
-                      onMouseEnter={() => setHoveredWeek(w.weekStart)}
-                      onMouseLeave={() => setHoveredWeek(null)}
-                      style={{
-                        borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
-                        background: isHovered ? "rgba(107, 91, 123, 0.03)" : "transparent",
-                      }}
-                    >
-                      <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
-                        {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
-                        {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
-                      </div>
-                      <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                        {formatNumber(w.activePool7d)}
-                      </div>
-                      <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                        {formatNumber(w.converts)}
-                      </div>
-                      <div className="py-3 text-right text-[14px] leading-[20px] font-semibold tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                        {w.conversionRate.toFixed(1)}%
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="wtd">
-            {wtd && (
-              <div className="w-full min-w-0 mt-4">
-                <div className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/10">
-                  <div className="py-2 text-left text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px]">Period</div>
-                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Pool</div>
-                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Converts</div>
-                  <div className="py-2 text-right text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground leading-[16px] tabular-nums">Rate</div>
-                </div>
-                <div
-                  className="grid grid-cols-[minmax(160px,1.2fr)_140px_140px_120px] w-full border-b border-neutral-900/6"
+      {/* Table — separated by border-t */}
+      <div className="border-t">
+        <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+          <thead className="bg-muted [&_tr]:border-b">
+            <tr>
+              <th className={`${modThClass} !text-left`}>Week</th>
+              <th className={modThClass}>Pool</th>
+              <th className={modThClass}>Converts</th>
+              <th className={modThClass}>Rate</th>
+            </tr>
+          </thead>
+          <tbody className="[&_tr:last-child]:border-0">
+            {displayWeeks.map((w, idx) => {
+              const isHovered = hoveredWeek === w.weekStart;
+              const isLatest = idx === displayWeeks.length - 1;
+              return (
+                <tr
+                  key={w.weekStart}
+                  className="border-b transition-colors hover:bg-muted/50"
+                  onMouseEnter={() => setHoveredWeek(w.weekStart)}
+                  onMouseLeave={() => setHoveredWeek(null)}
                   style={{
-                    borderLeft: `2px solid ${COLORS.conversionPool}`,
-                    background: "rgba(107, 91, 123, 0.03)",
+                    borderLeft: isHovered ? `2px solid ${COLORS.conversionPool}` : "2px solid transparent",
                   }}
                 >
-                  <div className="py-3 text-left text-[14px] leading-[20px] font-medium text-muted-foreground" style={{ fontFamily: FONT_SANS }}>
-                    <Badge variant="outline">WTD</Badge>{" "}
-                    {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
-                    {wtd.daysLeft > 0 && (
-                      <span className="text-[11px] text-muted-foreground ml-1.5">
-                        ({wtd.daysLeft}d left)
-                      </span>
-                    )}
-                  </div>
-                  <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                    {formatNumber(wtd.activePool7d)}
-                  </div>
-                  <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                    {formatNumber(wtd.converts)}
-                  </div>
-                  <div className="py-3 text-right text-[14px] leading-[20px] font-semibold italic tabular-nums" style={{ fontFamily: FONT_SANS }}>
-                    {wtd.conversionRate.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
+                  <td className={`${modTdClass} !text-left font-medium`}>
+                    {formatWeekRangeLabel(w.weekStart, w.weekEnd)}
+                    {isLatest && <> <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">Latest</span></>}
+                  </td>
+                  <td className={`${modTdClass} font-semibold`}>{formatNumber(w.activePool7d)}</td>
+                  <td className={`${modTdClass} font-semibold`}>{formatNumber(w.converts)}</td>
+                  <td className={`${modTdClass} text-muted-foreground`}>{w.conversionRate.toFixed(1)}%</td>
+                </tr>
+              );
+            })}
+            {/* WTD row — grayed out */}
+            {wtd && (
+              <tr className="border-b bg-muted/50">
+                <td className={`${modTdClass} !text-left font-medium text-muted-foreground`}>
+                  {formatWeekRangeLabel(wtd.weekStart, wtd.weekEnd)}
+                  {" "}<span className="text-[10px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 ml-1">WTD</span>
+                </td>
+                <td className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(wtd.activePool7d)}</td>
+                <td className={`${modTdClass} font-semibold text-muted-foreground`}>{formatNumber(wtd.converts)}</td>
+                <td className={`${modTdClass} text-muted-foreground`}>{wtd.conversionRate.toFixed(1)}%</td>
+              </tr>
             )}
-          </TabsContent>
-      </CardContent>
+          </tbody>
+        </table>
+      </div>
     </DashboardCard>
-    </Tabs>
   );
 }
 
