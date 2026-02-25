@@ -3724,24 +3724,24 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   // Build metric rows
   // Columnar rows: label | count | change # | change %
   // "isNetChange" rows only show label + value (no delta columns)
-  const metrics: { label: string; value: string; priorValue?: string | null; color?: string; isNetChange?: boolean }[] = [];
+  const metrics: { label: string; value: string; priorValue?: string | null; color?: string }[] = [];
 
   if (latestW) {
     const newVal = weeklyKeyNew(latestW);
     const prevNewVal = prevW ? weeklyKeyNew(prevW) : null;
-    const wkLabel = weekLabel(latestW.period);
-    metrics.push({ label: `New ${wkLabel}`, value: `+${newVal}`, priorValue: prevNewVal != null ? `+${prevNewVal}` : null });
+    metrics.push({ label: "New", value: `+${newVal}`, priorValue: prevNewVal != null ? `+${prevNewVal}` : null });
 
     const churnVal = weeklyKeyChurn(latestW);
     const prevChurnVal = prevW ? weeklyKeyChurn(prevW) : null;
-    metrics.push({ label: `Churned ${wkLabel}`, value: `-${churnVal}`, priorValue: prevChurnVal != null ? `-${prevChurnVal}` : null });
+    metrics.push({ label: "Churned", value: `-${churnVal}`, priorValue: prevChurnVal != null ? `-${prevChurnVal}` : null });
 
     const netVal = weeklyKeyNet(latestW);
+    const prevNetVal = prevW ? weeklyKeyNet(prevW) : null;
     metrics.push({
       label: "Net change",
       value: formatDelta(netVal) || "0",
+      priorValue: prevNetVal != null ? (formatDelta(prevNetVal) || "0") : null,
       color: netVal > 0 ? COLORS.success : netVal < 0 ? COLORS.error : undefined,
-      isNetChange: true,
     });
   }
 
@@ -3750,20 +3750,17 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
       label: "User churn rate (avg/mo)",
       value: `${churnData.avgUserChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgUserChurnRate),
-      isNetChange: true,
     });
     metrics.push({
       label: "MRR churn rate (avg/mo)",
       value: `${churnData.avgMrrChurnRate.toFixed(1)}%`,
       color: churnBenchmarkColor(churnData.avgMrrChurnRate),
-      isNetChange: true,
     });
     if (churnData.atRiskCount > 0) {
       metrics.push({
         label: "At risk",
         value: String(churnData.atRiskCount),
         color: COLORS.warning,
-        isNetChange: true,
       });
     }
   }
@@ -3845,7 +3842,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           <thead className="bg-muted [&_tr]:border-b">
             <tr>
               <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
-              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Number</th>
+              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Last Week</th>
               <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Prior Week</th>
             </tr>
           </thead>
@@ -3856,13 +3853,9 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
                   <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
                     {m.value}
                   </td>
-                  {!m.isNetChange ? (
-                    <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">
-                      {m.priorValue ?? ""}
-                    </td>
-                  ) : (
-                    <td />
-                  )}
+                  <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                    {m.priorValue ?? ""}
+                  </td>
                 </tr>
             ))}
           </tbody>
