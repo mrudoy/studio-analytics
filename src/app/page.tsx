@@ -4151,26 +4151,24 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
   return (
     <DashboardCard>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {Icon && <Icon className="size-5" style={{ color: iconColor }} />}
-            <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={downloadAll}
-              title={`Download all ${data.label} as CSV`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <DownloadIcon className="size-4" />
-            </button>
-            <span className="text-sm text-muted-foreground font-medium">{data.totalActive.toLocaleString()} Active</span>
-          </div>
+        <div className="flex items-center gap-2">
+          {Icon && <Icon className="size-5" style={{ color: iconColor }} />}
+          <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
+          <button
+            onClick={downloadAll}
+            title={`Download all ${data.label} as CSV`}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <DownloadIcon className="size-4" />
+          </button>
         </div>
         <CardDescription>
           Median {data.median}/Mo &middot; Mean {data.mean}/Mo &middot; Last 3 Months
           <span className="block text-[10px] text-muted-foreground/50 mt-0.5">Click a segment to download list</span>
         </CardDescription>
+        <CardAction>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{data.totalActive.toLocaleString()}</span>
+        </CardAction>
       </CardHeader>
       <CardContent className="pt-0">
         <Table style={{ fontFamily: FONT_SANS }}>
