@@ -195,13 +195,18 @@ export async function getDropInsByWeek(startDate?: string, endDate?: string): Pr
 /**
  * Get first visits grouped by ISO week with segment breakdown.
  * Segments: introWeek (Intro passes), dropIn (drop-in/5-pack), guest (guest passes), other
+ *
+ * Uses `registrations` table (fresh data with emails) instead of `first_visits`
+ * (which is stale and lacks email/name fields from old HTML scrape).
+ * Filters to non-subscriber registrations to approximate first-visit behavior.
  */
 export async function getFirstVisitsByWeek(startDate?: string, endDate?: string): Promise<WeeklySegmentedCount[]> {
   const pool = getPool();
   let query = `
     SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, pass, COUNT(*) as count
-    FROM first_visits
+    FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
+      AND (subscription = 'false' OR subscription IS NULL)
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -300,8 +305,9 @@ export async function getDropInCountForRange(
 }
 
 /**
- * Count guest/community pass visits in a date range (from first_visits).
+ * Count guest/community pass visits in a date range.
  * Guest passes include GUEST and COMMUNITY passes.
+ * Uses registrations table (non-subscriber only) for fresh data.
  */
 export async function getGuestCountForRange(
   startDate: string,
@@ -310,9 +316,10 @@ export async function getGuestCountForRange(
   const pool = getPool();
   const res = await pool.query(
     `SELECT COUNT(*) AS cnt
-     FROM first_visits
+     FROM registrations
      WHERE attended_at IS NOT NULL AND attended_at != ''
        AND attended_at >= $1 AND attended_at < $2
+       AND (subscription = 'false' OR subscription IS NULL)
        AND (UPPER(pass) LIKE '%GUEST%' OR UPPER(pass) LIKE '%COMMUNITY%')`,
     [startDate, endDate]
   );
@@ -320,7 +327,8 @@ export async function getGuestCountForRange(
 }
 
 /**
- * Count intro week passes used in a date range (from first_visits).
+ * Count intro week passes used in a date range.
+ * Uses registrations table for fresh data (first_visits is stale).
  */
 export async function getIntroWeekCountForRange(
   startDate: string,
@@ -329,9 +337,10 @@ export async function getIntroWeekCountForRange(
   const pool = getPool();
   const res = await pool.query(
     `SELECT COUNT(*) AS cnt
-     FROM first_visits
+     FROM registrations
      WHERE attended_at IS NOT NULL AND attended_at != ''
        AND attended_at >= $1 AND attended_at < $2
+       AND (subscription = 'false' OR subscription IS NULL)
        AND UPPER(pass) LIKE '%INTRO%'`,
     [startDate, endDate]
   );
@@ -483,8 +492,9 @@ function classifySourceRows(
 }
 
 /**
- * Get unique first-time visitors per week (Monday-based weeks).
+ * Get unique non-subscriber visitors per week (Monday-based weeks).
  * Returns COUNT(DISTINCT email) grouped by week start date.
+ * Uses registrations table (non-subscriber) for fresh data.
  */
 export async function getFirstTimeUniqueVisitorsByWeek(
   startDate?: string,
@@ -507,9 +517,10 @@ export async function getFirstTimeUniqueVisitorsByWeek(
   const query = `
     SELECT DATE_TRUNC('week', attended_at::date)::date::text as "weekStart",
            COUNT(DISTINCT email) as "uniqueVisitors"
-    FROM first_visits
+    FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND email IS NOT NULL AND email != ''
+      AND (subscription = 'false' OR subscription IS NULL)
       ${dateFilter}
     GROUP BY "weekStart"
     ORDER BY "weekStart"
@@ -523,8 +534,9 @@ export async function getFirstTimeUniqueVisitorsByWeek(
 }
 
 /**
- * Get source breakdown for first-time visitors (unique people).
+ * Get source breakdown for non-subscriber visitors (unique people).
  * Each person is attributed to one source based on their FIRST visit's pass type.
+ * Uses registrations table for fresh data.
  */
 export async function getFirstTimeSourceBreakdown(
   startDate?: string,
@@ -548,18 +560,19 @@ export async function getFirstTimeSourceBreakdown(
   const query = `
     WITH first_per_email AS (
       SELECT email, MIN(attended_at) as first_at
-      FROM first_visits
+      FROM registrations
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
+        AND (subscription = 'false' OR subscription IS NULL)
         ${dateFilter}
       GROUP BY email
     )
-    SELECT fv.pass, COUNT(*) as cnt
+    SELECT r.pass, COUNT(*) as cnt
     FROM first_per_email fpe
-    JOIN first_visits fv
-      ON fv.email = fpe.email
-      AND fv.attended_at = fpe.first_at
-    GROUP BY fv.pass
+    JOIN registrations r
+      ON r.email = fpe.email
+      AND r.attended_at = fpe.first_at
+    GROUP BY r.pass
   `;
 
   const { rows } = await pool.query(query, params);
@@ -571,7 +584,8 @@ export async function getFirstTimeSourceBreakdown(
 
 /**
  * Get unique INTRO WEEK customers per week (Monday-based weeks).
- * Counts distinct emails from first_visits where pass = 'INTRO WEEK'.
+ * Counts distinct emails from registrations where pass contains 'INTRO'.
+ * Uses registrations table for fresh data (first_visits is stale).
  */
 export async function getIntroWeekCustomersByWeek(
   startDate?: string,
@@ -588,9 +602,10 @@ export async function getIntroWeekCustomersByWeek(
   const query = `
     SELECT DATE_TRUNC('week', attended_at::date)::date::text as "weekStart",
            COUNT(DISTINCT email)::int as "customers"
-    FROM first_visits
+    FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND email IS NOT NULL AND email != ''
+      AND (subscription = 'false' OR subscription IS NULL)
       AND UPPER(pass) LIKE '%INTRO%'
       ${dateFilter}
     GROUP BY "weekStart"

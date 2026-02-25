@@ -8,7 +8,7 @@
  * - Rate limiting via X-Shopify-Shop-Api-Call-Limit header
  */
 
-const API_VERSION = "2024-01";
+const API_VERSION = "2025-01";
 const MAX_PER_PAGE = 250;
 
 /** Pause when we've used this fraction of the rate-limit bucket. */

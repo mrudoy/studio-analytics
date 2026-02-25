@@ -2542,6 +2542,9 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
     ...(data.mrr.unknown > 0 ? [{ label: "Other", value: data.mrr.unknown, color: "#999" }] : []),
   ].filter(s => s.value > 0);
 
+  const now = new Date();
+  const currentMonthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
   return (
     <DashboardCard>
       <CardHeader>
@@ -2549,6 +2552,7 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
         <CardDescription className="text-2xl font-semibold tracking-tight tabular-nums text-foreground">
           {formatCurrency(data.mrr.total)}
         </CardDescription>
+        <p className="text-xs text-muted-foreground">{currentMonthLabel}</p>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col">
@@ -3942,10 +3946,6 @@ function AnnualRevenueCard({ monthlyRevenue, projection }: {
               tickMargin={10}
               axisLine={false}
             />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel formatter={(v) => formatCurrency(v as number)} />}
-            />
             <Bar dataKey="net" fill="var(--color-net)" radius={8}>
               {!isMobile && (
                 <LabelList
@@ -4247,6 +4247,7 @@ function ChurnSection({ churnRates, weekly }: {
 
 function ShopifySyncStatus({ lastSyncAt, onSyncComplete }: { lastSyncAt: string; onSyncComplete: () => void }) {
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [nextRun, setNextRun] = useState<string | null>(null);
 
   // Fetch next scheduled run
@@ -4263,19 +4264,25 @@ function ShopifySyncStatus({ lastSyncAt, onSyncComplete }: { lastSyncAt: string;
 
   async function handleSync() {
     setSyncing(true);
+    setSyncError(null);
     try {
       const res = await fetch("/api/shopify", { method: "POST" });
-      if (!res.ok) throw new Error("Sync failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(body.error || `Sync failed (${res.status})`);
+      }
       onSyncComplete();
-    } catch {
-      // Error is non-fatal, data just won't refresh
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Sync failed";
+      setSyncError(msg);
+      console.error("[shopify-sync]", msg);
     } finally {
       setSyncing(false);
     }
   }
 
   return (
-    <div className="flex items-center gap-3 mt-1 ml-10">
+    <div className="flex items-center gap-3 mt-1 ml-10 flex-wrap">
       <p className="text-sm text-muted-foreground">
         Last synced {formatRelativeTime(lastSyncAt)}
         {nextRun && <> · Next refresh {nextRun}</>}
@@ -4289,6 +4296,12 @@ function ShopifySyncStatus({ lastSyncAt, onSyncComplete }: { lastSyncAt: string;
         <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
         {syncing ? "Syncing..." : "Refresh"}
       </Button>
+      {syncError && (
+        <p className="text-sm text-destructive w-full">
+          <AlertTriangle className="inline size-3.5 mr-1" />
+          {syncError}
+        </p>
+      )}
     </div>
   );
 }
