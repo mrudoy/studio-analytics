@@ -4155,28 +4155,38 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="space-y-2">
-          {data.segments.map((seg) => (
-            <div key={seg.name} className="flex items-center gap-2 text-sm">
-              <div className="w-[130px] shrink-0 flex items-baseline gap-1.5">
-                <span className="text-muted-foreground truncate">{seg.name}</span>
-                <span className="text-[10px] text-muted-foreground/60 tabular-nums">{seg.rangeLabel}</span>
-              </div>
-              <div className="flex-1 h-5 rounded-sm overflow-hidden bg-muted/40">
-                <div
-                  className="h-full rounded-sm transition-all"
-                  style={{
-                    width: `${Math.max((seg.percent / maxPercent) * 100, 2)}%`,
-                    backgroundColor: seg.color,
-                  }}
-                />
-              </div>
-              <span className="w-[80px] text-right tabular-nums text-xs text-muted-foreground">
-                {seg.count.toLocaleString()} ({seg.percent}%)
-              </span>
-            </div>
-          ))}
-        </div>
+        <Table style={{ fontFamily: FONT_SANS }}>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[100px] text-xs">Persona</TableHead>
+              <TableHead className="w-[60px] text-xs">Usage</TableHead>
+              <TableHead className="text-xs">&nbsp;</TableHead>
+              <TableHead className="w-[55px] text-right text-xs">Total</TableHead>
+              <TableHead className="w-[50px] text-right text-xs">%</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.segments.map((seg) => (
+              <TableRow key={seg.name}>
+                <TableCell className="py-1.5 font-medium text-sm">{seg.name}</TableCell>
+                <TableCell className="py-1.5 text-xs text-muted-foreground tabular-nums">{seg.rangeLabel}</TableCell>
+                <TableCell className="py-1.5">
+                  <div className="h-5 rounded-sm overflow-hidden bg-muted/40">
+                    <div
+                      className="h-full rounded-sm transition-all"
+                      style={{
+                        width: `${Math.max((seg.percent / maxPercent) * 100, 2)}%`,
+                        backgroundColor: seg.color,
+                      }}
+                    />
+                  </div>
+                </TableCell>
+                <TableCell className="py-1.5 text-right tabular-nums text-sm">{seg.count.toLocaleString()}</TableCell>
+                <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{seg.percent}%</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
     </DashboardCard>
   );
@@ -4295,8 +4305,8 @@ function ChurnSection({ churnRates, weekly }: {
         {categories.map((cat) => (
           <Card key={cat.key}>
             <div className="flex items-center gap-2 mb-2">
-              <cat.icon className="size-4 shrink-0" style={{ color: cat.color }} />
-              <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">
+              <cat.icon className="size-5 shrink-0" style={{ color: cat.color }} />
+              <span className="text-base font-semibold leading-none tracking-tight">
                 {cat.label}
               </span>
             </div>
@@ -5907,7 +5917,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <HourglassLow className="size-7 shrink-0" style={{ color: SECTION_COLORS.churn }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Churn</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Retention & Churn</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
           </div>
