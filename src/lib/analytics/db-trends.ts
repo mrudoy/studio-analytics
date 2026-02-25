@@ -904,7 +904,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     console.log(`[churn] Sample created_at: "${allRows[0].created_at}" -> "${categorized[0].created_at}"`);
   }
 
-  const ACTIVE_STATES = ["Valid Now", "Paused"];
+  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
   const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
   const CATEGORIES = ["MEMBER", "SKY3", "SKY_TING_TV"] as const;
 
