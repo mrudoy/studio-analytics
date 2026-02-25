@@ -170,6 +170,7 @@ export async function getDropInsByWeek(startDate?: string, endDate?: string): Pr
     FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND (subscription = 'false' OR subscription IS NULL)
+      ${dropInPassFilter()}
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -207,6 +208,7 @@ export async function getFirstVisitsByWeek(startDate?: string, endDate?: string)
     FROM registrations
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND (subscription = 'false' OR subscription IS NULL)
+      ${dropInPassFilter()}
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -298,7 +300,8 @@ export async function getDropInCountForRange(
      FROM registrations
      WHERE attended_at IS NOT NULL AND attended_at != ''
        AND attended_at >= $1 AND attended_at < $2
-       AND (subscription = 'false' OR subscription IS NULL)`,
+       AND (subscription = 'false' OR subscription IS NULL)
+       ${dropInPassFilter()}`,
     [startDate, endDate]
   );
   return Number(res.rows[0].cnt);
@@ -341,7 +344,7 @@ export async function getIntroWeekCountForRange(
      WHERE attended_at IS NOT NULL AND attended_at != ''
        AND attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
-       AND UPPER(pass) LIKE '%INTRO%'`,
+       AND UPPER(pass) LIKE '%INTRO WEEK%'`,
     [startDate, endDate]
   );
   return Number(res.rows[0].cnt);
@@ -361,7 +364,8 @@ export async function getDropInStats(): Promise<AttendanceStats | null> {
   const currentResult = await pool.query(
     `SELECT COUNT(*) as count FROM registrations
      WHERE attended_at >= $1 AND (subscription = 'false' OR subscription IS NULL)
-       AND attended_at IS NOT NULL AND attended_at != ''`,
+       AND attended_at IS NOT NULL AND attended_at != ''
+       ${dropInPassFilter()}`,
     [currentMonthStart]
   );
   const currentCount = Number(currentResult.rows[0].count);
@@ -377,7 +381,8 @@ export async function getDropInStats(): Promise<AttendanceStats | null> {
     `SELECT COUNT(*) as count FROM registrations
      WHERE attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
-       AND attended_at IS NOT NULL AND attended_at != ''`,
+       AND attended_at IS NOT NULL AND attended_at != ''
+       ${dropInPassFilter()}`,
     [prevMonthStart, currentMonthStart]
   );
   const prevCount = Number(prevResult.rows[0].count);
@@ -396,6 +401,7 @@ export async function getDropInStats(): Promise<AttendanceStats | null> {
      FROM registrations
      WHERE attended_at >= $1 AND (subscription = 'false' OR subscription IS NULL)
        AND attended_at IS NOT NULL AND attended_at != ''
+       ${dropInPassFilter()}
      GROUP BY week
      ORDER BY week`,
     [sixWeeksAgoStr]
@@ -521,6 +527,7 @@ export async function getFirstTimeUniqueVisitorsByWeek(
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND email IS NOT NULL AND email != ''
       AND (subscription = 'false' OR subscription IS NULL)
+      ${dropInPassFilter()}
       ${dateFilter}
     GROUP BY "weekStart"
     ORDER BY "weekStart"
@@ -564,6 +571,7 @@ export async function getFirstTimeSourceBreakdown(
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
         AND (subscription = 'false' OR subscription IS NULL)
+        ${dropInPassFilter()}
         ${dateFilter}
       GROUP BY email
     )
@@ -606,7 +614,7 @@ export async function getIntroWeekCustomersByWeek(
     WHERE attended_at IS NOT NULL AND attended_at != ''
       AND email IS NOT NULL AND email != ''
       AND (subscription = 'false' OR subscription IS NULL)
-      AND UPPER(pass) LIKE '%INTRO%'
+      AND UPPER(pass) LIKE '%INTRO WEEK%'
       ${dateFilter}
     GROUP BY "weekStart"
     ORDER BY "weekStart"
@@ -651,6 +659,7 @@ export async function getReturningUniqueVisitorsByWeek(
     WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
       AND r.email IS NOT NULL AND r.email != ''
       AND (r.subscription = 'false' OR r.subscription IS NULL)
+      ${dropInPassFilter("r.pass")}
       AND r.email NOT IN (
         SELECT DISTINCT email FROM first_visits
         WHERE attended_at IS NOT NULL AND attended_at != ''
@@ -701,6 +710,7 @@ export async function getReturningSourceBreakdown(
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         AND r.email NOT IN (
           SELECT DISTINCT email FROM first_visits
           WHERE attended_at IS NOT NULL AND attended_at != ''
@@ -754,6 +764,7 @@ export async function getDropInWeeklyDetail(weeksBack = 16): Promise<DropInWeekD
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
         AND (subscription = 'false' OR subscription IS NULL)
+        ${dropInPassFilter()}
       GROUP BY LOWER(email)
     ),
     drop_in_visits AS (
@@ -763,6 +774,7 @@ export async function getDropInWeeklyDetail(weeksBack = 16): Promise<DropInWeekD
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
         AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date
     )
@@ -808,14 +820,16 @@ export async function getDropInWTD(): Promise<DropInWeekDetailRow & { daysLeft: 
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
         AND (subscription = 'false' OR subscription IS NULL)
+        ${dropInPassFilter()}
       GROUP BY LOWER(email)
     ),
     wtd_visits AS (
       SELECT r.email, r.attended_at::date as visit_date
-      FROM registrations r
+      From registrations r
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
         AND r.attended_at::date <= CURRENT_DATE
     )
@@ -862,6 +876,7 @@ export async function getDropInLastWeekWTD(): Promise<number> {
     WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
       AND r.email IS NOT NULL AND r.email != ''
       AND (r.subscription = 'false' OR r.subscription IS NULL)
+      ${dropInPassFilter("r.pass")}
       AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date
       AND r.attended_at::date <= (CURRENT_DATE - INTERVAL '7 days')::date
   `;
@@ -890,6 +905,7 @@ export async function getDropInFrequencyDistribution(): Promise<{
       WHERE attended_at IS NOT NULL AND attended_at != ''
         AND email IS NOT NULL AND email != ''
         AND (subscription = 'false' OR subscription IS NULL)
+        ${dropInPassFilter()}
         AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
       GROUP BY LOWER(email)
     )
@@ -932,21 +948,26 @@ export interface NewCustomerCohortRow {
 }
 
 // SQL fragment: in-studio intro/drop-in passes only (mirrors isDropInOrIntro).
-// Excludes TV/replay/livestream visitors — this funnel is in-studio only.
-const IN_STUDIO_PASS_FILTER = `
+// Excludes staff, teacher, demo, teacher-training, and TV/replay/livestream visits.
+// Use col param for queries with a table alias (e.g. 'r.pass').
+function dropInPassFilter(col = "pass"): string {
+  return `
   AND (
-    UPPER(pass) LIKE '%DROP-IN%' OR UPPER(pass) LIKE '%DROP IN%' OR UPPER(pass) LIKE '%DROPIN%'
-    OR UPPER(pass) LIKE '%DROPLET%'
-    OR UPPER(pass) LIKE '%INTRO%'
-    OR UPPER(pass) LIKE '%TRIAL%'
-    OR UPPER(pass) LIKE '%FIRST%'
-    OR UPPER(pass) LIKE '%SINGLE CLASS%'
-    OR UPPER(pass) LIKE '%WELLHUB%'
-    OR UPPER(pass) LIKE '%GUEST%'
-    OR UPPER(pass) LIKE '%COMMUNITY DAY%'
-    OR UPPER(pass) LIKE '%POKER CHIP%'
-    OR UPPER(pass) LIKE '%ON RUNNING%'
+    UPPER(${col}) LIKE '%DROP-IN%' OR UPPER(${col}) LIKE '%DROP IN%' OR UPPER(${col}) LIKE '%DROPIN%'
+    OR UPPER(${col}) LIKE '%DROPLET%'
+    OR UPPER(${col}) LIKE '%INTRO WEEK%'
+    OR UPPER(${col}) LIKE '%TRIAL%'
+    OR UPPER(${col}) LIKE '%FIRST%'
+    OR UPPER(${col}) LIKE '%SINGLE CLASS%'
+    OR UPPER(${col}) LIKE '%WELLHUB%'
+    OR UPPER(${col}) LIKE '%GUEST%'
+    OR UPPER(${col}) LIKE '%COMMUNITY DAY%'
+    OR UPPER(${col}) LIKE '%POKER CHIP%'
+    OR UPPER(${col}) LIKE '%ON RUNNING%'
   )`;
+}
+// Backward-compat alias
+const IN_STUDIO_PASS_FILTER = dropInPassFilter();
 
 // SQL fragment: only SKY3 + MEMBER auto-renew plans (excludes SKY TING TV, UNKNOWN).
 const IN_STUDIO_PLAN_FILTER = `
@@ -1089,7 +1110,7 @@ export type PoolSliceKey = "all" | "drop-ins" | "intro-week" | "class-packs" | "
 const POOL_SLICE_FILTERS: Record<PoolSliceKey, string> = {
   "all": "",
   "drop-ins": `AND (UPPER(r.pass) LIKE '%DROP-IN%' OR UPPER(r.pass) LIKE '%DROP IN%' OR UPPER(r.pass) LIKE '%DROPIN%' OR UPPER(r.pass) LIKE '%DROPLET%')`,
-  "intro-week": `AND (UPPER(r.pass) LIKE '%INTRO%' OR UPPER(r.pass) LIKE '%TRIAL%' OR UPPER(r.pass) LIKE '%FIRST%')`,
+  "intro-week": `AND (UPPER(r.pass) LIKE '%INTRO WEEK%' OR UPPER(r.pass) LIKE '%TRIAL%' OR UPPER(r.pass) LIKE '%FIRST%')`,
   "class-packs": `AND (UPPER(r.pass) LIKE '%PACK%' OR UPPER(r.pass) LIKE '%SINGLE CLASS%')`,
   "high-intent": "", // handled via subquery wrapping (≥2 visits in 30 days)
 };
@@ -1110,6 +1131,7 @@ function getHighIntentPoolCTE(baseDateFilter: string): string {
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         ${baseDateFilter}
     ) sub
     WHERE rolling_30d_visits >= 2
@@ -1146,6 +1168,7 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         ${baseDateFilter}
         ${sliceFilter}
       GROUP BY DATE_TRUNC('week', r.attended_at::date)::date
@@ -1180,6 +1203,7 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
         WHERE LOWER(r.email) = f.email
           AND r.attended_at IS NOT NULL AND r.attended_at != ''
           AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
           AND r.attended_at::date < f.first_sub_date
           ${sliceFilter}
       )
@@ -1236,6 +1260,7 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
         WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
           AND r.email IS NOT NULL AND r.email != ''
           AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
           AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
           AND r.attended_at::date <= CURRENT_DATE
       ) sub WHERE rolling >= 2
@@ -1246,6 +1271,7 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
         AND r.attended_at::date <= CURRENT_DATE
         ${sliceFilter}
@@ -1260,6 +1286,7 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
         WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
           AND r.email IS NOT NULL AND r.email != ''
           AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
           AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
           AND r.attended_at::date <= CURRENT_DATE
       ) sub WHERE rolling >= 2
@@ -1270,6 +1297,7 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
       WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
         AND r.email IS NOT NULL AND r.email != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
         AND r.attended_at::date <= CURRENT_DATE
         ${sliceFilter}
@@ -1297,6 +1325,7 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
           WHERE LOWER(r.email) = f.email
             AND r.attended_at IS NOT NULL AND r.attended_at != ''
             AND (r.subscription = 'false' OR r.subscription IS NULL)
+            ${dropInPassFilter("r.pass")}
             AND r.attended_at::date < f.first_sub_date
             ${sliceFilter}
         )
@@ -1370,6 +1399,7 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Pr
       JOIN registrations r ON LOWER(r.email) = f.email
         AND r.attended_at IS NOT NULL AND r.attended_at != ''
         AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
         AND r.attended_at::date < f.first_sub_date
         ${sliceFilter}
       WHERE f.first_sub_date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '12 weeks')::date
@@ -1614,4 +1644,105 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
   }
 
   return { categories, upgradeOpportunities };
+}
+
+// ── Per-Person Usage Detail (for CSV export) ────────────────
+
+export interface UsageDetailRow {
+  email: string;
+  name: string;
+  planName: string;
+  segment: string;
+  totalVisits: number;
+  avgPerMonth: number;
+}
+
+/**
+ * Get per-person usage detail for a given category, optionally filtered to a
+ * single segment. Uses the exact same data sources and bucket logic as
+ * getUsageFrequencyByCategory() above — just returns individual rows instead
+ * of aggregated counts.
+ */
+export async function getUsageDetailByCategory(
+  category: string,
+  segment?: string,
+): Promise<UsageDetailRow[]> {
+  const { getActiveAutoRenews } = await import("./auto-renew-store");
+  const pool = getPool();
+
+  const config = CATEGORY_CONFIG[category];
+  if (!config) return [];
+
+  // 1. Get active subs, filter to this category, deduplicate by email
+  const activeSubs = await getActiveAutoRenews();
+  const personMap = new Map<string, { name: string; planName: string }>();
+  for (const sub of activeSubs) {
+    if (sub.category !== category) continue;
+    const email = sub.customerEmail.toLowerCase();
+    if (!email) continue;
+    if (!personMap.has(email)) {
+      personMap.set(email, { name: sub.customerName, planName: sub.planName });
+    }
+  }
+
+  if (personMap.size === 0) return [];
+
+  // 2. Get visit counts (same query as getUsageFrequencyByCategory)
+  const visitQuery = `
+    SELECT
+      LOWER(email) as email,
+      COUNT(*) as visits
+    FROM registrations
+    WHERE attended_at IS NOT NULL AND attended_at != ''
+      AND email IS NOT NULL AND email != ''
+      AND state IN ('redeemed', 'confirmed')
+      AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+    GROUP BY LOWER(email)
+  `;
+  const { rows: visitRows } = await pool.query(visitQuery);
+  const visitMap = new Map<string, number>();
+  for (const r of visitRows) {
+    visitMap.set(r.email as string, Number(r.visits));
+  }
+
+  const monthsInWindow = 3;
+
+  // 3. Assign each person to their segment
+  const rows: UsageDetailRow[] = [];
+  for (const [email, person] of personMap) {
+    const totalVisits = visitMap.get(email) ?? 0;
+    const avg = totalVisits / monthsInWindow;
+
+    // Find matching segment (same bucket logic as above)
+    let segName = "Unknown";
+    for (const seg of config.segments) {
+      const match = seg.max === 0 ? avg === 0 : (avg > seg.min && avg <= seg.max);
+      if (match) {
+        segName = seg.name;
+        break;
+      }
+    }
+
+    if (segment && segName !== segment) continue;
+
+    rows.push({
+      email,
+      name: person.name,
+      planName: person.planName,
+      segment: segName,
+      totalVisits,
+      avgPerMonth: Math.round(avg * 10) / 10,
+    });
+  }
+
+  // 4. Sort by segment order, then by name within segment
+  const segOrder = new Map(config.segments.map((s, i) => [s.name, i]));
+  rows.sort((a, b) => {
+    const oa = segOrder.get(a.segment) ?? 999;
+    const ob = segOrder.get(b.segment) ?? 999;
+    if (oa !== ob) return oa - ob;
+    return a.name.localeCompare(b.name);
+  });
+
+  return rows;
 }

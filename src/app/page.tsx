@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, Download } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -32,6 +32,7 @@ import {
   CalendarWeek,
   ActivityIcon,
   MountainSun,
+  DownloadIcon,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -893,7 +894,7 @@ function BackupStatusCard() {
                         <td className="px-4 py-2 text-muted-foreground hidden sm:table-cell">{(b.sizeBytes / 1024).toFixed(0)} KB</td>
                         <td className="px-4 py-2 text-right">
                           <a href={b.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">
-                            <Download className="size-3" />
+                            <DownloadIcon className="size-3" />
                             View
                           </a>
                         </td>
@@ -4140,6 +4141,13 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
   const Icon = meta?.icon;
   const iconColor = meta?.color;
 
+  const downloadAll = () => {
+    window.location.href = `/api/usage-export?category=${data.category}`;
+  };
+  const downloadSegment = (segName: string) => {
+    window.location.href = `/api/usage-export?category=${data.category}&segment=${encodeURIComponent(segName)}`;
+  };
+
   return (
     <DashboardCard>
       <CardHeader className="pb-2">
@@ -4148,10 +4156,20 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
             {Icon && <Icon className="size-5" style={{ color: iconColor }} />}
             <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
           </div>
-          <span className="text-sm text-muted-foreground font-medium">{data.totalActive.toLocaleString()} Active</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={downloadAll}
+              title={`Download all ${data.label} as CSV`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <DownloadIcon className="size-4" />
+            </button>
+            <span className="text-sm text-muted-foreground font-medium">{data.totalActive.toLocaleString()} Active</span>
+          </div>
         </div>
         <CardDescription>
           Median {data.median}/Mo &middot; Mean {data.mean}/Mo &middot; Last 3 Months
+          <span className="block text-[10px] text-muted-foreground/50 mt-0.5">Click a segment to download list</span>
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
@@ -4167,7 +4185,12 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
           </TableHeader>
           <TableBody>
             {data.segments.map((seg) => (
-              <TableRow key={seg.name}>
+              <TableRow
+                key={seg.name}
+                onClick={() => downloadSegment(seg.name)}
+                className="cursor-pointer hover:bg-muted/40 transition-colors"
+                title={`Download ${seg.name} ${data.label} as CSV`}
+              >
                 <TableCell className="py-1.5 font-medium text-sm">{seg.name}</TableCell>
                 <TableCell className="py-1.5 text-xs text-muted-foreground tabular-nums">{seg.rangeLabel}</TableCell>
                 <TableCell className="py-1.5">

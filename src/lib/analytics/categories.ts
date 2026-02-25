@@ -134,7 +134,7 @@ export function isDropInOrIntro(passName: string): boolean {
     upper.includes("DROP IN") ||
     upper.includes("DROPIN") ||
     upper.includes("DROPLET") ||
-    upper.includes("INTRO") ||
+    upper.includes("INTRO WEEK") ||
     upper.includes("TRIAL") ||
     upper.includes("FIRST") ||
     upper.includes("SINGLE CLASS") ||
