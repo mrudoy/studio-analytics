@@ -233,6 +233,106 @@ export class GmailClient {
     return downloaded;
   }
 
+  // ── Data Export Email Methods ─────────────────────────────
+
+  /**
+   * Search for Union.fit data export emails (no attachment filter).
+   * The export email contains a download LINK in the body, not an attachment.
+   */
+  async findExportEmails(
+    since: Date
+  ): Promise<Array<{ id: string; subject: string; date: Date }>> {
+    const sinceEpoch = Math.floor(since.getTime() / 1000);
+    const query = `from:union subject:"Data Export Ready" after:${sinceEpoch}`;
+
+    const response = await this.gmail.users.messages.list({
+      userId: "me",
+      q: query,
+      maxResults: 10,
+    });
+
+    const messageIds = response.data.messages || [];
+    if (messageIds.length === 0) return [];
+
+    const emails: Array<{ id: string; subject: string; date: Date }> = [];
+    for (const msg of messageIds) {
+      if (!msg.id) continue;
+
+      const detail = await this.gmail.users.messages.get({
+        userId: "me",
+        id: msg.id,
+        format: "metadata",
+        metadataHeaders: ["Subject", "Date"],
+      });
+
+      const headers = detail.data.payload?.headers || [];
+      const subject =
+        headers.find((h) => h.name?.toLowerCase() === "subject")?.value || "";
+      const dateStr =
+        headers.find((h) => h.name?.toLowerCase() === "date")?.value || "";
+
+      emails.push({
+        id: msg.id,
+        subject,
+        date: dateStr ? new Date(dateStr) : new Date(),
+      });
+    }
+
+    // Sort by date descending (most recent first)
+    emails.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return emails;
+  }
+
+  /**
+   * Get the HTML body of an email message.
+   * Traverses MIME parts to find text/html, falls back to text/plain.
+   */
+  async getMessageBody(messageId: string): Promise<string> {
+    const msg = await this.gmail.users.messages.get({
+      userId: "me",
+      id: messageId,
+      format: "full",
+    });
+
+    return this.extractBody(msg.data.payload);
+  }
+
+  /**
+   * Recursively extract HTML or plain-text body from MIME parts.
+   */
+  private extractBody(
+    part: gmail_v1.Schema$MessagePart | undefined
+  ): string {
+    if (!part) return "";
+
+    // If this part is HTML, decode and return
+    if (part.mimeType === "text/html" && part.body?.data) {
+      return Buffer.from(part.body.data, "base64url").toString("utf8");
+    }
+
+    // Recurse into multipart
+    if (part.parts) {
+      // Prefer text/html over text/plain
+      for (const child of part.parts) {
+        if (child.mimeType === "text/html" && child.body?.data) {
+          return Buffer.from(child.body.data, "base64url").toString("utf8");
+        }
+      }
+      // Try recursing deeper
+      for (const child of part.parts) {
+        const result = this.extractBody(child);
+        if (result) return result;
+      }
+    }
+
+    // Fall back to text/plain
+    if (part.mimeType === "text/plain" && part.body?.data) {
+      return Buffer.from(part.body.data, "base64url").toString("utf8");
+    }
+
+    return "";
+  }
+
   /**
    * Mark an email as read (remove UNREAD label).
    */

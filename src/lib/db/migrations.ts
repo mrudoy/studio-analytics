@@ -159,6 +159,26 @@ const migrations: Migration[] = [
       );
     `,
   },
+  // Union.fit raw export IDs for precise dedup from zip pipeline
+  {
+    name: "006_union_ids_for_zip_pipeline",
+    up: `
+      -- Auto-renews: union_pass_id from passes.csv
+      ALTER TABLE auto_renews ADD COLUMN IF NOT EXISTS union_pass_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ar_union_pass_id
+        ON auto_renews(union_pass_id) WHERE union_pass_id IS NOT NULL;
+
+      -- Orders: union_order_id from orders.csv
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS union_order_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_union_id
+        ON orders(union_order_id) WHERE union_order_id IS NOT NULL;
+
+      -- Registrations: union_registration_id from registrations.csv
+      ALTER TABLE registrations ADD COLUMN IF NOT EXISTS union_registration_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_union_id
+        ON registrations(union_registration_id) WHERE union_registration_id IS NOT NULL;
+    `,
+  },
 ];
 
 /**

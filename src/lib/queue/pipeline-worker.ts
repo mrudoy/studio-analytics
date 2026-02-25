@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "./connection";
 import { loadSettings } from "../crypto/credentials";
 import { runEmailPipeline } from "./email-pipeline";
+import { runZipDownloadPipeline } from "../email/zip-download-pipeline";
 import { runShopifySync } from "../shopify/shopify-sync";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
@@ -54,16 +55,6 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     throw new Error("No Union.fit credentials configured. Go to Settings to configure.");
   }
 
-  // Date range: if explicitly provided in the job, pass it through as an override.
-  // Otherwise, the email-pipeline builds per-report ranges from watermarks automatically.
-  const dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
-    ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
-    : undefined;
-
-  // ── Email pipeline (primary path) ──
-  // All CSV downloads go through: Playwright clicks "Download CSV" button →
-  // Union.fit either downloads directly or emails the CSV → Gmail API picks up emails.
-  // No HTML scraping. Database is the single source of truth.
   if (!settings.robotEmail?.address) {
     throw new Error(
       "Robot email not configured. The pipeline requires email-based CSV delivery. " +
@@ -71,16 +62,49 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     );
   }
 
-  updateProgress(job, "Starting email-based pipeline", 5);
-  console.log(`[pipeline] Email pipeline mode: robot=${settings.robotEmail.address}`);
+  // ── Try zip pipeline first (PRIMARY path) ──
+  // Union.fit sends a daily email with a zip download link containing 33 relational CSVs.
+  // This is faster, more reliable, and doesn't need Playwright (runs on Railway).
+  let result: PipelineResult | null = null;
 
-  const result = await runEmailPipeline({
-    unionEmail: settings.credentials.email,
-    unionPassword: settings.credentials.password,
-    robotEmail: settings.robotEmail.address,
-    dateRange: dateRange || undefined,
-    onProgress: (step, percent, categories) => updateProgress(job, step, percent, categories),
-  });
+  try {
+    updateProgress(job, "Trying zip download pipeline...", 5);
+    console.log(`[pipeline] Attempting zip pipeline: robot=${settings.robotEmail.address}`);
+
+    const zipResult = await runZipDownloadPipeline({
+      robotEmail: settings.robotEmail.address,
+      lookbackHours: 48,
+      onProgress: (step, percent) => updateProgress(job, step, percent),
+    });
+
+    if (zipResult.success) {
+      console.log(`[pipeline] Zip pipeline succeeded in ${zipResult.duration}s`);
+      result = zipResult;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[pipeline] Zip pipeline unavailable, falling back to email pipeline: ${msg}`);
+  }
+
+  // ── Fallback: email pipeline (Playwright + Gmail CSV delivery) ──
+  if (!result) {
+    // Date range: if explicitly provided in the job, pass it through as an override.
+    // Otherwise, the email-pipeline builds per-report ranges from watermarks automatically.
+    const dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
+      ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
+      : undefined;
+
+    updateProgress(job, "Starting email-based pipeline (fallback)", 5);
+    console.log(`[pipeline] Email pipeline fallback: robot=${settings.robotEmail.address}`);
+
+    result = await runEmailPipeline({
+      unionEmail: settings.credentials.email,
+      unionPassword: settings.credentials.password,
+      robotEmail: settings.robotEmail.address,
+      dateRange: dateRange || undefined,
+      onProgress: (step, percent, categories) => updateProgress(job, step, percent, categories),
+    });
+  }
 
   // ── Shopify sync (non-fatal — dashboard still works without it) ──
   if (settings.shopify?.storeName && settings.shopify?.clientId && settings.shopify?.clientSecret) {

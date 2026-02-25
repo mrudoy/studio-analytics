@@ -18,6 +18,8 @@ export interface AutoRenewRow {
   admin?: string;
   currentState?: string;
   currentPlan?: string;
+  /** Union.fit pass ID from raw export (for precise dedup) */
+  unionPassId?: string;
 }
 
 export interface StoredAutoRenew {
@@ -90,8 +92,9 @@ export async function saveAutoRenews(
         `INSERT INTO auto_renews (
           snapshot_id, plan_name, plan_state, plan_price,
           customer_name, customer_email, created_at, order_id, sales_channel,
-          canceled_at, canceled_by, admin, current_state, current_plan
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          canceled_at, canceled_by, admin, current_state, current_plan,
+          union_pass_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT (customer_email, plan_name, created_at)
         DO UPDATE SET
           snapshot_id = EXCLUDED.snapshot_id,
@@ -105,6 +108,7 @@ export async function saveAutoRenews(
           admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
           current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
           current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
+          union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
           imported_at = NOW()`,
         [
           snapshotId,
@@ -121,6 +125,7 @@ export async function saveAutoRenews(
           row.admin || null,
           row.currentState || null,
           row.currentPlan || null,
+          row.unionPassId || null,
         ]
       );
 

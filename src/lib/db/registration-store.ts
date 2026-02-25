@@ -26,6 +26,8 @@ export interface RegistrationRow {
   subscription: string; // "true" or "false"
   revenueState?: string;
   revenue: number;
+  /** Union.fit registration ID from raw export (for precise dedup) */
+  unionRegistrationId?: string;
 }
 
 export interface WeeklyCount {
@@ -79,8 +81,9 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           location_name, video_name, video_id, teacher_name,
           first_name, last_name, email, phone, role,
           registered_at, canceled_at, attended_at,
-          registration_type, state, pass, subscription, revenue_state, revenue
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+          registration_type, state, pass, subscription, revenue_state, revenue,
+          union_registration_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
         ON CONFLICT (email, attended_at) DO UPDATE SET
           event_name = COALESCE(EXCLUDED.event_name, registrations.event_name),
           event_id = COALESCE(EXCLUDED.event_id, registrations.event_id),
@@ -93,14 +96,15 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           role = COALESCE(EXCLUDED.role, registrations.role),
           canceled_at = COALESCE(EXCLUDED.canceled_at, registrations.canceled_at),
           revenue_state = COALESCE(EXCLUDED.revenue_state, registrations.revenue_state),
-          revenue = COALESCE(EXCLUDED.revenue, registrations.revenue)`,
+          revenue = COALESCE(EXCLUDED.revenue, registrations.revenue),
+          union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id)`,
         [
           r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt,
           r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
           r.firstName, r.lastName, r.email, r.phone || null, r.role || null,
           r.registeredAt || null, r.canceledAt || null, r.attendedAt,
           r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
-          r.revenue,
+          r.revenue, r.unionRegistrationId || null,
         ]
       );
     }

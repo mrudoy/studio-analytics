@@ -10,6 +10,8 @@ export interface OrderRow {
   type: string;
   payment: string;
   total: number;
+  /** Union.fit order ID from raw export (for precise dedup) */
+  unionOrderId?: string;
 }
 
 export interface StoredOrder {
@@ -54,11 +56,12 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
     await client.query("BEGIN");
     for (const r of rows) {
       await client.query(
-        `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (code) DO UPDATE SET email = EXCLUDED.email
-           WHERE orders.email IS NULL OR orders.email = ''`,
-        [r.created, r.code, r.customer, r.email, r.type, r.payment, r.total]
+        `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total, union_order_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (code) DO UPDATE SET
+           email = COALESCE(NULLIF(EXCLUDED.email, ''), orders.email),
+           union_order_id = COALESCE(EXCLUDED.union_order_id, orders.union_order_id)`,
+        [r.created, r.code, r.customer, r.email, r.type, r.payment, r.total, r.unionOrderId || null]
       );
     }
     await client.query("COMMIT");
