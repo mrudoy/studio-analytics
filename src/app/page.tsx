@@ -4161,13 +4161,14 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
         <div className="flex items-center gap-2">
           {Icon && <Icon className="size-5" style={{ color: iconColor }} />}
           <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
-          <button
+          <Button
+            variant="outline"
+            size="icon"
             onClick={downloadAll}
             title={`Download all ${data.label} as CSV`}
-            className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <DownloadIcon className="size-4" />
-          </button>
+          </Button>
         </div>
         <CardDescription>
           Median {data.median}/Mo &middot; Mean {data.mean}/Mo &middot; Last 3 Months
