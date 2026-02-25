@@ -18,20 +18,21 @@ export interface InsightInput {
 
 /**
  * Save insights to the database.
- * Uses a simple strategy: delete previous insights from the same detector
- * (same day) and insert fresh ones. This keeps the latest snapshot per detector.
+ * Deletes all previous non-dismissed insights from the same detectors
+ * before inserting fresh ones. This ensures only the latest version per
+ * detector is shown (no duplicates across different days).
  */
 export async function saveInsights(insights: InsightInput[]): Promise<void> {
   if (insights.length === 0) return;
 
   const pool = getPool();
 
-  // Delete today's existing insights from the same detectors, then insert fresh
+  // Delete ALL non-dismissed insights from the same detectors, then insert fresh
   const detectors = [...new Set(insights.map((i) => i.detector))];
   await pool.query(
     `DELETE FROM insights
      WHERE detector = ANY($1)
-       AND detected_at::date = CURRENT_DATE`,
+       AND dismissed = FALSE`,
     [detectors]
   );
 

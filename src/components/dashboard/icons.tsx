@@ -314,3 +314,16 @@ export function BubbleIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Mountain with sun — Retreats section */
+export function MountainSun(props: IconProps) {
+  return (
+    <svg {...iconDefaults(props)}>
+      <path d="M8 21l4-10l4 10" />
+      <path d="M2 21h20" />
+      <path d="M14 15l4 6" />
+      <path d="M10 15l-4 6" />
+      <circle cx="17" cy="7" r="3" />
+    </svg>
+  );
+}

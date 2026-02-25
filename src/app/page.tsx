@@ -31,6 +31,7 @@ import {
   UserStar,
   CalendarWeek,
   ActivityIcon,
+  MountainSun,
 } from "@/components/dashboard/icons";
 import {
   Card as ShadCard,
@@ -2362,6 +2363,176 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
   );
 }
 
+// ─── Retreat Revenue Section ─────────────────────────────────────
+function RetreatRevenueSection({ monthlyRevenue }: {
+  monthlyRevenue: { month: string; gross: number; net: number; retreatGross?: number; retreatNet?: number }[];
+}) {
+  const isMobile = useIsMobile();
+  const nowDate = new Date();
+  const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
+
+  // Build retreat-only monthly data
+  const retreatMonths = monthlyRevenue
+    .filter((m) => (m.retreatGross ?? 0) > 0)
+    .map((m) => ({
+      month: m.month,
+      gross: m.retreatGross ?? 0,
+      net: m.retreatNet ?? 0,
+    }));
+
+  const completedMonths = retreatMonths.filter((m) => m.month < currentMonthKey);
+  const currentMonthEntry = retreatMonths.find((m) => m.month === currentMonthKey);
+
+  // Chart data — last 12 completed months
+  const chartData = completedMonths.slice(-12).map((m) => ({
+    month: formatShortMonth(m.month),
+    gross: m.gross,
+  }));
+
+  // MoM delta
+  const lastTwo = completedMonths.slice(-2);
+  const lastMonth = lastTwo.length >= 1 ? lastTwo[lastTwo.length - 1] : null;
+  const prevMonth = lastTwo.length >= 2 ? lastTwo[0] : null;
+  const momDeltaPct = lastMonth && prevMonth && prevMonth.gross > 0
+    ? Math.round((lastMonth.gross - prevMonth.gross) / prevMonth.gross * 1000) / 10
+    : null;
+
+  // Average monthly retreat revenue (completed months only)
+  const avgMonthly = completedMonths.length > 0
+    ? Math.round(completedMonths.reduce((s, m) => s + m.gross, 0) / completedMonths.length)
+    : 0;
+
+  const retreatChartConfig = {
+    gross: { label: "Retreat Revenue", color: "#B87333" },
+  } satisfies ChartConfig;
+
+  if (retreatMonths.length === 0) {
+    return (
+      <DashboardCard>
+        <CardContent>
+          <NoDataInline label="No retreat revenue data available." />
+        </CardContent>
+      </DashboardCard>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* KPI cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {currentMonthEntry && (
+          <DashboardCard>
+            <CardHeader className="pb-2">
+              <CardDescription>MTD Retreat Revenue</CardDescription>
+              <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(currentMonthEntry.gross)}</CardTitle>
+            </CardHeader>
+            <CardFooter className="text-sm text-muted-foreground">
+              Net: {formatCurrency(currentMonthEntry.net)}
+            </CardFooter>
+          </DashboardCard>
+        )}
+        <DashboardCard>
+          <CardHeader className="pb-2">
+            <CardDescription>Avg Monthly</CardDescription>
+            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(avgMonthly)}</CardTitle>
+          </CardHeader>
+          <CardFooter className="text-sm text-muted-foreground">
+            {completedMonths.length} months of data
+          </CardFooter>
+        </DashboardCard>
+        {lastMonth && (
+          <DashboardCard>
+            <CardHeader className="pb-2">
+              <CardDescription>Last Month</CardDescription>
+              <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(lastMonth.gross)}</CardTitle>
+            </CardHeader>
+            <CardFooter className="text-sm text-muted-foreground">
+              {formatShortMonth(lastMonth.month)}
+              {momDeltaPct != null && ` (${momDeltaPct > 0 ? "+" : ""}${momDeltaPct}% MoM)`}
+            </CardFooter>
+          </DashboardCard>
+        )}
+      </div>
+
+      {/* Monthly chart */}
+      {chartData.length > 1 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Monthly Retreat Revenue</CardTitle>
+            {lastMonth && (
+              <CardDescription>
+                {formatShortMonth(lastMonth.month)}: {formatCurrency(lastMonth.gross)}
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={retreatChartConfig} className="h-[250px] w-full">
+              <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: isMobile ? 8 : 24, right: isMobile ? 8 : 24 }}>
+                <CartesianGrid vertical={false} />
+                <YAxis hide />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  interval={isMobile ? 2 : 0}
+                  fontSize={isMobile ? 11 : 12}
+                />
+                <Bar dataKey="gross" fill="var(--color-gross)" radius={8}>
+                  {!isMobile && (
+                    <LabelList
+                      position="top"
+                      offset={12}
+                      className="fill-foreground"
+                      fontSize={12}
+                      formatter={(v: number) => formatCompactCurrency(v)}
+                    />
+                  )}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </DashboardCard>
+      )}
+
+      {/* Month breakdown table */}
+      {completedMonths.length > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>Month Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+                <thead className="bg-muted [&_tr]:border-b">
+                  <tr>
+                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">Month</th>
+                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Gross</th>
+                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Net</th>
+                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Margin</th>
+                  </tr>
+                </thead>
+                <tbody className="[&_tr:last-child]:border-0">
+                  {completedMonths.slice(-12).reverse().map((m) => (
+                    <tr key={m.month} className="border-b">
+                      <td className="px-4 py-2 align-middle font-medium whitespace-nowrap">{formatShortMonth(m.month)}</td>
+                      <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap">{formatCurrency(m.gross)}</td>
+                      <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap">{formatCurrency(m.net)}</td>
+                      <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                        {m.gross > 0 ? `${Math.round((m.net / m.gross) * 100)}%` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </DashboardCard>
+      )}
+    </div>
+  );
+}
+
 function MonthBreakdownCard({ monthlyRevenue, monthOverMonth }: {
   monthlyRevenue: { month: string; gross: number; net: number }[];
   monthOverMonth?: MonthOverMonthData | null;
@@ -2441,7 +2612,7 @@ const ANNUAL_SEGMENT_COLORS: Record<string, string> = {
   "Other": "#999999",              // gray
 };
 
-const SEGMENT_ORDER = ["In-Studio", "Digital", "Retreats", "Teacher Training", "Spa", "Rentals", "Merch", "Other"];
+const SEGMENT_ORDER = ["In-Studio", "Digital", "Teacher Training", "Spa", "Rentals", "Merch", "Other"];
 
 function AnnualSegmentBreakdownCard({ breakdown }: { breakdown: AnnualRevenueBreakdown[] }) {
   // Only show complete years (exclude current year since it's partial)
@@ -5453,12 +5624,6 @@ function DashboardContent({ activeSection, data, refreshData }: {
                         </div>
                       )}
                     </div>
-                    {retreatGross > 0 && (
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        + Retreat revenue: <span className="font-medium tabular-nums text-foreground/70">{formatCurrency(retreatGross)}</span>
-                        <span className="ml-1 text-xs">(pass-through, ~30% retained)</span>
-                      </div>
-                    )}
                   </CardContent>
                   <CardFooter>
                     <div className="w-full">
@@ -5582,6 +5747,20 @@ function DashboardContent({ activeSection, data, refreshData }: {
               </CardContent>
             </DashboardCard>
           )}
+        </div>
+      )}
+
+      {/* ── REVENUE: RETREATS ── */}
+      {activeSection === "revenue-retreats" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <MountainSun className="size-7 shrink-0" style={{ color: SECTION_COLORS["revenue-retreats"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Retreats</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Retreat revenue (pass-through, excluded from operating totals)</p>
+          </div>
+          <RetreatRevenueSection monthlyRevenue={data.monthlyRevenue || []} />
         </div>
       )}
 

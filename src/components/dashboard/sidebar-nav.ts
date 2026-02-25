@@ -16,6 +16,7 @@ import {
   BuildingIcon,
   BulbIcon,
   ActivityIcon,
+  MountainSun,
 } from "./icons";
 
 export type SectionKey =
@@ -24,6 +25,7 @@ export type SectionKey =
   | "revenue-merch"
   | "revenue-spa"
   | "revenue-rentals"
+  | "revenue-retreats"
   | "growth-auto"
   | "growth-non-auto"
   | "conversion-new"
@@ -50,6 +52,7 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   "revenue-merch": "#4A7C59",
   "revenue-spa":  "#4A7C59",
   "revenue-rentals": "#4A7C59",
+  "revenue-retreats": "#B87333",  // copper
   "growth-auto":  "#5B7FA5",  // steel blue
   "growth-non-auto": "#5B7FA5",
   "conversion-new":  "#B87333",  // copper
@@ -72,6 +75,7 @@ export const NAV_ITEMS: NavItem[] = [
       { key: "revenue-merch", label: "Merch", icon: ShoppingBag },
       { key: "revenue-spa", label: "Spa & Wellness", icon: Droplet },
       { key: "revenue-rentals", label: "Studio Rentals", icon: BuildingIcon },
+      { key: "revenue-retreats", label: "Retreats", icon: MountainSun },
     ],
   },
   {
@@ -106,6 +110,7 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "revenue-merch": ["Revenue", "Merch"],
   "revenue-spa": ["Revenue", "Spa & Wellness"],
   "revenue-rentals": ["Revenue", "Studio Rentals"],
+  "revenue-retreats": ["Revenue", "Retreats"],
   "growth-auto": ["Growth", "Auto-Renews"],
   "growth-non-auto": ["Growth", "Non Auto-Renews"],
   "conversion-new": ["Conversion", "New Customers"],
