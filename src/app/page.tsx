@@ -4616,7 +4616,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                     </Button>
                   )}
                 </div>
-                <p className="text-[11px] text-muted-foreground mb-3">Members within ±1 week of a critical tenure milestone</p>
+                <p className="text-sm text-muted-foreground mb-2">Members within ±1 week of a critical tenure milestone</p>
                 <div className="flex-1 flex flex-col">
                   <Table style={{ fontFamily: FONT_SANS }}>
                     <TableHeader className="bg-muted">
@@ -4702,7 +4702,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                   <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground mb-3">Monthly-billed member churn rate</p>
+              <p className="text-sm text-muted-foreground mb-2">Monthly-billed member churn rate</p>
               <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
                 <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
                   <CartesianGrid vertical={false} />
@@ -4756,7 +4756,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                   </Button>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mb-3">
+              <p className="text-sm text-muted-foreground mb-2">
                 {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
               </p>
 
@@ -4842,7 +4842,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                     </Button>
                   )}
                 </div>
-                <p className="text-[11px] text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
+                <p className="text-sm text-muted-foreground mb-2">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
                 {ars && (
                   <div className="flex-1 flex flex-col">
                     <Table style={{ fontFamily: FONT_SANS }}>
@@ -4897,7 +4897,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
               <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground mb-3">User and MRR churn rates for Sky3 subscribers</p>
+          <p className="text-sm text-muted-foreground mb-2">User and MRR churn rates for Sky3 subscribers</p>
           <div className="flex-1 flex flex-col">
             <Table style={{ fontFamily: FONT_SANS }}>
               <TableHeader className="bg-muted">
@@ -4951,7 +4951,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
               <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground mb-3">User and MRR churn rates for Sky Ting TV subscribers</p>
+          <p className="text-sm text-muted-foreground mb-2">User and MRR churn rates for Sky Ting TV subscribers</p>
           <div className="flex-1 flex flex-col">
             <Table style={{ fontFamily: FONT_SANS }}>
               <TableHeader className="bg-muted">
