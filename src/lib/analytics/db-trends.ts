@@ -33,6 +33,7 @@ import {
   getDropInLastWeekWTD,
   getDropInFrequencyDistribution,
   getIntroWeekCustomersByWeek,
+  getExpiringIntroWeekCustomers,
   getConversionPoolWeekly,
   getConversionPoolWTD,
   getConversionPoolLagStats,
@@ -60,6 +61,7 @@ import type {
   RenewalAlertMember,
   TenureMilestoneMember,
   MemberAlerts,
+  ExpiringIntroWeekData,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -618,6 +620,18 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
+  // ── 6c. Expiring Intro Weeks ────────────────────────────
+  let expiringIntroWeeks: ExpiringIntroWeekData | null = null;
+
+  if (await hasRegistrationData()) {
+    try {
+      const expiringCustomers = await getExpiringIntroWeekCustomers();
+      expiringIntroWeeks = { customers: expiringCustomers };
+    } catch (err) {
+      console.warn("[db-trends] Failed to compute expiring intro weeks:", err);
+    }
+  }
+
   // ── 7. Returning non-members (unique visitors) ─────────
   let returningNonMembers: ReturningNonMemberData | null = null;
 
@@ -858,6 +872,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     newCustomerCohorts,
     conversionPool,
     usage,
+    expiringIntroWeeks,
   };
 }
 

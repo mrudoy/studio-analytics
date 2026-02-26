@@ -131,6 +131,8 @@ import type {
   MemberAlerts,
   AtRiskMember,
   AtRiskByState,
+  ExpiringIntroWeekData,
+  ExpiringIntroCustomer,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -4380,9 +4382,10 @@ function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
 //  CHURN SECTION (extracted from CategoryDetail cards)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function ChurnSection({ churnRates, weekly }: {
+function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
   churnRates?: ChurnRateData | null;
   weekly: TrendRowData[];
+  expiringIntroWeeks?: ExpiringIntroWeekData | null;
 }) {
   if (!churnRates) {
     return (
@@ -4518,7 +4521,7 @@ function ChurnSection({ churnRates, weekly }: {
           const monthlyPct = totalCount > 0 ? Math.round((monthlyCount / totalCount) * 100) : 0;
           return (
             <Card matchHeight>
-              <div className="flex items-center justify-between mb-1 min-h-9">
+              <div className="flex items-start justify-between mb-1 min-h-9">
                 <div className="flex items-center gap-2">
                   <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                   <span className="text-base font-semibold leading-none tracking-tight">Membership Churn</span>
@@ -4583,7 +4586,7 @@ function ChurnSection({ churnRates, weekly }: {
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
               <Card matchHeight>
-                <div className="flex items-center justify-between mb-1 min-h-9">
+                <div className="flex items-start justify-between mb-1 min-h-9">
                   <div className="flex items-center gap-2">
                     <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
@@ -4665,7 +4668,7 @@ function ChurnSection({ churnRates, weekly }: {
             ];
             return (
               <Card matchHeight>
-                <div className="flex items-center justify-between mb-1 min-h-9">
+                <div className="flex items-start justify-between mb-1 min-h-9">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="size-5 shrink-0 text-amber-600" />
                     <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
@@ -4714,12 +4717,80 @@ function ChurnSection({ churnRates, weekly }: {
             );
           })()
         )}
+
+        {/* Expiring Intro Weeks */}
+        {expiringIntroWeeks && expiringIntroWeeks.customers.length > 0 && (
+          (() => {
+            const customers = expiringIntroWeeks.customers;
+            const downloadExpiringCsv = () => {
+              const headers = ["Name", "Email", "Classes Attended"];
+              const rows = customers.map((c: ExpiringIntroCustomer) => [
+                `${c.firstName} ${c.lastName}`.trim(),
+                c.email,
+                String(c.classesAttended),
+              ]);
+              const csv = [headers, ...rows]
+                .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+                .join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "expiring-intro-weeks.csv";
+              a.click();
+              URL.revokeObjectURL(url);
+            };
+            return (
+              <Card matchHeight>
+                <div className="flex items-start justify-between mb-1 min-h-9">
+                  <div className="flex items-center gap-2">
+                    <CalendarWeek className="size-5 shrink-0" style={{ color: COLORS.copper }} />
+                    <span className="text-base font-semibold leading-none tracking-tight">Expiring Intro Weeks</span>
+                  </div>
+                  <Button variant="outline" size="icon" onClick={downloadExpiringCsv} title="Download expiring intro week customers as CSV">
+                    <DownloadIcon className="size-4" />
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-3">Intro week customers whose 7-day trial expires today or tomorrow</p>
+                <div className="flex-1 flex flex-col">
+                  <Table style={{ fontFamily: FONT_SANS }}>
+                    <TableHeader className="bg-muted">
+                      <TableRow>
+                        <TableHead className="text-xs text-muted-foreground">Name</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Classes</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Expires</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {customers.map((c: ExpiringIntroCustomer) => (
+                        <TableRow key={c.email}>
+                          <TableCell className="py-1.5 text-sm">{`${c.firstName} ${c.lastName}`.trim()}</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{c.classesAttended}</TableCell>
+                          <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">
+                            {c.daysUntilExpiry === 0 ? "Today" : "Tomorrow"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t">
+                        <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">
+                          {customers.reduce((sum: number, c: ExpiringIntroCustomer) => sum + c.classesAttended, 0)}
+                        </TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{customers.length}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </Card>
+            );
+          })()
+        )}
       </div>
 
       {/* ── Sky3 + Sky Ting TV side-by-side ────────────────── */}
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 items-stretch">
         <Card matchHeight>
-          <div className="flex items-center justify-between mb-1 min-h-9">
+          <div className="flex items-start justify-between mb-1 min-h-9">
             <div className="flex items-center gap-2">
               <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
               <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
@@ -4765,7 +4836,7 @@ function ChurnSection({ churnRates, weekly }: {
         </Card>
 
         <Card matchHeight>
-          <div className="flex items-center justify-between mb-1 min-h-9">
+          <div className="flex items-start justify-between mb-1 min-h-9">
             <div className="flex items-center gap-2">
               <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
               <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
@@ -6299,7 +6370,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} />
         </>
       )}
 

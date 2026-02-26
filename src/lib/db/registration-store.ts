@@ -632,6 +632,91 @@ export async function getIntroWeekCustomersByWeek(
 }
 
 /**
+ * Get intro week customers whose 7-day trial is expiring within 2 days.
+ *
+ * Logic:
+ * - Intro week start = first attended class date (not purchase date)
+ * - Intro week end = start + 6 days (7-day window)
+ * - "Expiring" = end_date - today is 0 or 1 (today/tomorrow)
+ * - Only looks at intro weeks started in the last 14 days
+ * - Classes attended = count of registrations within the 7-day window
+ */
+export async function getExpiringIntroWeekCustomers(): Promise<{
+  firstName: string;
+  lastName: string;
+  email: string;
+  introStartDate: string;
+  introEndDate: string;
+  classesAttended: number;
+  daysUntilExpiry: number;
+}[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH intro_starts AS (
+      SELECT
+        LOWER(email) as email,
+        MIN(first_name) as first_name,
+        MIN(last_name) as last_name,
+        MIN(attended_at::date) as intro_start
+      FROM registrations
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        AND (subscription = 'false' OR subscription IS NULL)
+        AND UPPER(pass) LIKE '%INTRO WEEK%'
+        AND attended_at::date >= (CURRENT_DATE - INTERVAL '14 days')
+      GROUP BY LOWER(email)
+    ),
+    intro_windows AS (
+      SELECT
+        email,
+        first_name,
+        last_name,
+        intro_start,
+        (intro_start + INTERVAL '6 days')::date as intro_end,
+        ((intro_start + INTERVAL '6 days')::date - CURRENT_DATE)::int as days_until_expiry
+      FROM intro_starts
+    ),
+    class_counts AS (
+      SELECT
+        LOWER(r.email) as email,
+        COUNT(*)::int as classes_attended
+      FROM registrations r
+      JOIN intro_windows iw ON LOWER(r.email) = iw.email
+      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.attended_at::date >= iw.intro_start
+        AND r.attended_at::date <= iw.intro_end
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+      GROUP BY LOWER(r.email)
+    )
+    SELECT
+      iw.first_name as "firstName",
+      iw.last_name as "lastName",
+      iw.email,
+      iw.intro_start::text as "introStartDate",
+      iw.intro_end::text as "introEndDate",
+      COALESCE(cc.classes_attended, 0)::int as "classesAttended",
+      iw.days_until_expiry as "daysUntilExpiry"
+    FROM intro_windows iw
+    LEFT JOIN class_counts cc ON cc.email = iw.email
+    WHERE iw.days_until_expiry >= 0
+      AND iw.days_until_expiry <= 1
+    ORDER BY iw.days_until_expiry ASC, iw.last_name ASC
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    firstName: (r.firstName as string) || "",
+    lastName: (r.lastName as string) || "",
+    email: r.email as string,
+    introStartDate: r.introStartDate as string,
+    introEndDate: r.introEndDate as string,
+    classesAttended: Number(r.classesAttended),
+    daysUntilExpiry: Number(r.daysUntilExpiry),
+  }));
+}
+
+/**
  * Get unique returning non-member visitors per week (Monday-based weeks).
  * Returning = non-subscriber emails that are NOT in the first_visits table for the same window.
  */

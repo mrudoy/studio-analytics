@@ -469,6 +469,23 @@ export interface IntroWeekData {
   last4WeekAvg: number;
 }
 
+// ── Expiring Intro Week types ─────────────────────────────
+
+/** A single intro-week customer whose intro period is expiring soon */
+export interface ExpiringIntroCustomer {
+  firstName: string;
+  lastName: string;
+  email: string;
+  introStartDate: string;   // YYYY-MM-DD (first attended class)
+  introEndDate: string;      // YYYY-MM-DD (startDate + 6 days)
+  classesAttended: number;   // classes attended during the 7-day window
+  daysUntilExpiry: number;   // 0 = expires today, 1 = expires tomorrow
+}
+
+export interface ExpiringIntroWeekData {
+  customers: ExpiringIntroCustomer[];
+}
+
 // ── New Customer types ─────────────────────────────────────
 
 export interface NewCustomerVolumeWeek {
@@ -652,4 +669,5 @@ export interface TrendsData {
   newCustomerCohorts: NewCustomerCohortData | null;
   conversionPool: ConversionPoolModuleData | null;
   usage: UsageData | null;
+  expiringIntroWeeks: ExpiringIntroWeekData | null;
 }
