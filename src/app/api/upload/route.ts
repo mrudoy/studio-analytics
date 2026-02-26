@@ -5,6 +5,7 @@ import { saveFirstVisits, saveRegistrations, type RegistrationRow } from "@/lib/
 import { saveFullCustomers, type FullCustomerRow } from "@/lib/db/customer-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
 import { RevenueCategorySchema, AutoRenewSchema, FullRegistrationSchema, CustomerExportSchema } from "@/lib/parser/schemas";
+import { invalidateStatsCache } from "@/lib/cache/stats-cache";
 import { z } from "zod";
 import { writeFileSync } from "fs";
 import { join } from "path";
@@ -184,6 +185,9 @@ export async function POST(request: Request) {
       }
       warnings.push(...result.warnings);
     }
+
+    // Invalidate stats cache so next dashboard load picks up new data
+    invalidateStatsCache();
 
     return NextResponse.json({
       success: true,

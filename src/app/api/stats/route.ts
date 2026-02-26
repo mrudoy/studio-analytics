@@ -15,12 +15,27 @@ import {
 } from "@/lib/db/shopify-store";
 import { getSpaStats } from "@/lib/db/spa-store";
 import { getPool } from "@/lib/db/database";
+import { getStatsCache, setStatsCache, getStatsCacheAge } from "@/lib/cache/stats-cache";
 import type { RevenueCategory } from "@/types/union-data";
 import type { DashboardStats, DataFreshness, ShopifyStats, ShopifyMerchData, SpaData } from "@/types/dashboard";
 import type { TrendsData } from "@/types/dashboard";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // ── 0. Check in-memory cache ──────────────────────────────
+    const url = new URL(request.url);
+    const noCache = url.searchParams.get("nocache") === "1";
+
+    if (!noCache) {
+      const cached = getStatsCache();
+      if (cached) {
+        const age = getStatsCacheAge();
+        console.log(`[api/stats] Serving from cache (age: ${age}s)`);
+        return NextResponse.json(cached, {
+          headers: { "X-Cache": "HIT", "X-Cache-Age": String(age ?? 0) },
+        });
+      }
+    }
     // ── 1. Load from database ─────────────────────────────────
     let stats: DashboardStats | null = null;
     let trends: TrendsData | null = null;
@@ -468,7 +483,7 @@ export async function GET() {
       stats.annualBreakdown = annualBreakdown;
       stats.rentalRevenue = rentalRevenue;
     }
-    return NextResponse.json({
+    const responseBody = {
       ...(stats || {}),
       trends,
       revenueCategories,
@@ -480,6 +495,13 @@ export async function GET() {
       insights,
       overviewData,
       dataSource: "database",
+    };
+
+    // Store in cache for subsequent requests
+    setStatsCache(responseBody);
+
+    return NextResponse.json(responseBody, {
+      headers: { "X-Cache": "MISS" },
     });
   } catch (error) {
     const message =

@@ -9,6 +9,7 @@ import type { PipelineResult } from "@/types/pipeline";
 import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
+import { invalidateStatsCache } from "../cache/stats-cache";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
  *  70 min to accommodate 60-min email polling + Playwright triggers + analytics. */
@@ -227,6 +228,10 @@ export function startPipelineWorker(): Worker {
 
   w.on("completed", async (job) => {
     console.log(`[worker] Pipeline job ${job.id} completed`);
+
+    // Invalidate /api/stats cache so the next request picks up fresh data
+    invalidateStatsCache();
+
     // Auto-backup after successful pipeline run (local + cloud)
     try {
       const backup = await createBackup();

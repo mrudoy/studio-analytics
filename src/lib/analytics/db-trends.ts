@@ -465,336 +465,10 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
-  // ── 5. Drop-in data (weekly-first module) ─────────────────
-  let dropIns: DropInModuleData | null = null;
+  // ── Sections 5–11 are independent of each other and of sections 1–4.
+  // Run them all in parallel for maximum throughput. ──────────────
 
-  if (await hasRegistrationData()) {
-    try {
-      const [weeklyDetail, wtdRaw, frequencyRaw, lastWeekWTDVisits] = await Promise.all([
-        getDropInWeeklyDetail(16),
-        getDropInWTD(),
-        getDropInFrequencyDistribution(),
-        getDropInLastWeekWTD(),
-      ]);
-
-      if (weeklyDetail.length > 0 || wtdRaw) {
-        const completeWeeks = weeklyDetail.map((w) => ({
-          weekStart: w.weekStart,
-          weekEnd: w.weekEnd,
-          visits: w.visits,
-          uniqueCustomers: w.uniqueCustomers,
-          firstTime: w.firstTime,
-          repeatCustomers: w.repeatCustomers,
-        }));
-
-        const lastCompleteWeek = completeWeeks.length > 0
-          ? completeWeeks[completeWeeks.length - 1]
-          : null;
-
-        // Typical week = average of last 8 complete weeks
-        const last8 = completeWeeks.slice(-8);
-        const typicalWeekVisits = last8.length > 0
-          ? Math.round(last8.reduce((s, w) => s + w.visits, 0) / last8.length)
-          : 0;
-
-        // Trend: avg of last 4 vs prior 4 complete weeks, ±5% threshold
-        const last4 = completeWeeks.slice(-4);
-        const prior4 = completeWeeks.slice(-8, -4);
-        const avgLast4 = last4.length > 0
-          ? last4.reduce((s, w) => s + w.visits, 0) / last4.length
-          : 0;
-        const avgPrior4 = prior4.length > 0
-          ? prior4.reduce((s, w) => s + w.visits, 0) / prior4.length
-          : 0;
-        const trendDeltaPercent = avgPrior4 > 0
-          ? Math.round(((avgLast4 - avgPrior4) / avgPrior4) * 1000) / 10
-          : 0;
-        const trend: "up" | "flat" | "down" =
-          trendDeltaPercent > 5 ? "up" : trendDeltaPercent < -5 ? "down" : "flat";
-
-        // WTD delta: compare WTD visits to last week through the same weekday
-        const wtdVisits = wtdRaw?.visits ?? 0;
-        const wtdDelta = wtdVisits - lastWeekWTDVisits;
-        const wtdDeltaPercent = lastWeekWTDVisits > 0
-          ? Math.round((wtdDelta / lastWeekWTDVisits) * 1000) / 10
-          : 0;
-
-        const wtd = wtdRaw ? {
-          weekStart: wtdRaw.weekStart,
-          weekEnd: wtdRaw.weekEnd,
-          visits: wtdRaw.visits,
-          uniqueCustomers: wtdRaw.uniqueCustomers,
-          firstTime: wtdRaw.firstTime,
-          repeatCustomers: wtdRaw.repeatCustomers,
-          daysLeft: wtdRaw.daysLeft,
-        } : null;
-
-        const frequency = frequencyRaw.totalCustomers > 0 ? {
-          bucket1: frequencyRaw.bucket1,
-          bucket2to4: frequencyRaw.bucket2to4,
-          bucket5to10: frequencyRaw.bucket5to10,
-          bucket11plus: frequencyRaw.bucket11plus,
-          totalCustomers: frequencyRaw.totalCustomers,
-        } : null;
-
-        // Day label: "As of Mon", "As of Tue", etc.
-        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const wtdDayLabel = `As of ${dayNames[new Date().getDay()]}`;
-
-        dropIns = {
-          completeWeeks,
-          wtd,
-          lastCompleteWeek,
-          typicalWeekVisits,
-          trend,
-          trendDeltaPercent,
-          wtdDelta,
-          wtdDeltaPercent,
-          wtdDayLabel,
-          frequency,
-        };
-      }
-    } catch (err) {
-      console.warn("[db-trends] Failed to compute drop-in module data:", err);
-    }
-  }
-
-  // ── 6. First visit data (unique visitors) ──────────────
-  let firstVisits: FirstVisitData | null = null;
-
-  if (await hasFirstVisitData()) {
-    const fiveWeeksAgo = new Date(now);
-    fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
-    const startStr = fiveWeeksAgo.toISOString().split("T")[0];
-
-    const uvWeeks = await getFirstTimeUniqueVisitorsByWeek(startStr);
-    const sourceBreakdown = await getFirstTimeSourceBreakdown(startStr);
-
-    if (uvWeeks.length > 0) {
-      const sortedWeeks = [...uvWeeks].sort((a, b) =>
-        a.weekStart.localeCompare(b.weekStart)
-      );
-      const lastWeek = sortedWeeks[sortedWeeks.length - 1];
-      const completedWeeks = sortedWeeks.slice(0, -1).slice(-4);
-      const zeroSeg = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
-
-      firstVisits = {
-        currentWeekTotal: lastWeek.uniqueVisitors,
-        currentWeekSegments: { ...zeroSeg },
-        completedWeeks: completedWeeks.map((w) => ({
-          week: w.weekStart,
-          uniqueVisitors: w.uniqueVisitors,
-          segments: { ...zeroSeg },
-        })),
-        aggregateSegments: {
-          introWeek: sourceBreakdown.introWeek,
-          dropIn: sourceBreakdown.dropIn,
-          guest: sourceBreakdown.guest,
-          other: sourceBreakdown.other,
-        },
-        otherBreakdownTop5: sourceBreakdown.otherBreakdownTop5,
-      };
-    }
-  }
-
-  // ── 6b. Intro Week data ──────────────────────────────────
-  let introWeekData: import("../../types/dashboard").IntroWeekData | null = null;
-
-  if (await hasFirstVisitData()) {
-    try {
-      const sixWeeksAgo = new Date(now);
-      sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
-      const startStr = sixWeeksAgo.toISOString().split("T")[0];
-
-      const iwWeeks = await getIntroWeekCustomersByWeek(startStr);
-      if (iwWeeks.length > 0) {
-        const sorted = [...iwWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-        const lastWeek = sorted[sorted.length - 1];
-        const completed = sorted.slice(0, -1).slice(-4);
-        const avg = completed.length > 0
-          ? Math.round(completed.reduce((s, w) => s + w.customers, 0) / completed.length)
-          : 0;
-
-        introWeekData = {
-          lastWeek: { weekStart: lastWeek.weekStart, customers: lastWeek.customers },
-          last4Weeks: completed,
-          last4WeekAvg: avg,
-        };
-      }
-    } catch (err) {
-      console.warn("[db-trends] Failed to compute intro week data:", err);
-    }
-  }
-
-  // ── 6c. Expiring Intro Weeks ────────────────────────────
-  let expiringIntroWeeks: ExpiringIntroWeekData | null = null;
-
-  if (await hasRegistrationData()) {
-    try {
-      const expiringCustomers = await getExpiringIntroWeekCustomers();
-      expiringIntroWeeks = { customers: expiringCustomers };
-    } catch (err) {
-      console.warn("[db-trends] Failed to compute expiring intro weeks:", err);
-    }
-  }
-
-  // ── 6d. Intro Week Conversion Funnel ────────────────────
-  let introWeekConversion: import("../../types/dashboard").IntroWeekConversionData | null = null;
-
-  try {
-    const convRows = await getIntroWeekConversionData();
-    if (convRows.length > 0) {
-      const converted = convRows.filter((r) => r.converted).length;
-      const notConverted = convRows.length - converted;
-      introWeekConversion = {
-        totalExpired: convRows.length,
-        converted,
-        notConverted,
-        conversionRate: convRows.length > 0
-          ? Math.round((converted / convRows.length) * 1000) / 10
-          : 0,
-        nonConverters: convRows
-          .filter((r) => !r.converted)
-          .map((r) => ({
-            name: r.name,
-            email: r.email,
-            introStart: r.introStart,
-            introEnd: r.introEnd,
-            classesAttended: r.classesAttended,
-          })),
-      };
-      console.log(
-        `[db-trends] Intro week conversion: ${convRows.length} expired, ` +
-        `${converted} converted (${introWeekConversion.conversionRate}%), ` +
-        `${notConverted} did not convert`
-      );
-    }
-  } catch (err) {
-    console.warn("[db-trends] Failed to compute intro week conversion data:", err);
-  }
-
-  // ── 7. Returning non-members (unique visitors) ─────────
-  let returningNonMembers: ReturningNonMemberData | null = null;
-
-  if (await hasRegistrationData()) {
-    try {
-      const fiveWeeksAgo = new Date(now);
-      fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
-      const startStr = fiveWeeksAgo.toISOString().split("T")[0];
-
-      const uvWeeks = await getReturningUniqueVisitorsByWeek(startStr);
-      const sourceBreakdown = await getReturningSourceBreakdown(startStr);
-
-      if (uvWeeks.length > 0) {
-        const sortedWeeks = [...uvWeeks].sort((a, b) =>
-          a.weekStart.localeCompare(b.weekStart)
-        );
-        const lastWeek = sortedWeeks[sortedWeeks.length - 1];
-        const completedWeeks = sortedWeeks.slice(0, -1).slice(-4);
-        const zeroSeg = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
-
-        returningNonMembers = {
-          currentWeekTotal: lastWeek.uniqueVisitors,
-          currentWeekSegments: { ...zeroSeg },
-          completedWeeks: completedWeeks.map((w) => ({
-            week: w.weekStart,
-            uniqueVisitors: w.uniqueVisitors,
-            segments: { ...zeroSeg },
-          })),
-          aggregateSegments: {
-            introWeek: sourceBreakdown.introWeek,
-            dropIn: sourceBreakdown.dropIn,
-            guest: sourceBreakdown.guest,
-            other: sourceBreakdown.other,
-          },
-          otherBreakdownTop5: sourceBreakdown.otherBreakdownTop5,
-        };
-      }
-    } catch (err) {
-      console.warn("[db-trends] Failed to compute returning non-members:", err);
-    }
-  }
-
-  // ── 8. Churn rates ──────────────────────────────────────────
-  let churnRates: ChurnRateData | null = null;
-  try {
-    churnRates = await computeChurnRates();
-  } catch (err) {
-    console.warn("[db-trends] Failed to compute churn rates:", err);
-  }
-
-  // ── 9. New customer volume & cohort conversion ────────────
-  let newCustomerVolume: NewCustomerVolumeData | null = null;
-  let newCustomerCohorts: NewCustomerCohortData | null = null;
-
-  if (await hasFirstVisitData()) {
-    try {
-      // Volume: weekly new customer counts
-      const volumeWeeks = await getNewCustomerVolumeByWeek();
-      if (volumeWeeks.length > 0) {
-        const sorted = [...volumeWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-        // Last week is current (partial); rest are completed
-        const currentWeek = sorted[sorted.length - 1];
-        const completed = sorted.slice(0, -1).slice(-4); // last 4 completed weeks
-
-        newCustomerVolume = {
-          currentWeekCount: currentWeek.count,
-          completedWeeks: completed.map((w) => ({
-            weekStart: w.weekStart,
-            weekEnd: w.weekEnd,
-            count: w.count,
-          })),
-        };
-      }
-
-      // Cohorts: 3-week conversion tracking
-      const cohortRows = await getNewCustomerCohorts();
-      if (cohortRows.length > 0) {
-        const today = new Date();
-        const todayStr = today.toISOString().split("T")[0];
-
-        // A cohort is "complete" if cohort_start + 20 days < today
-        const completeCohorts = cohortRows.filter((c) => {
-          const start = new Date(c.cohortStart + "T00:00:00");
-          const cutoff = new Date(start);
-          cutoff.setDate(cutoff.getDate() + 20);
-          const cutoffStr = cutoff.toISOString().split("T")[0];
-          return cutoffStr < todayStr;
-        });
-
-        // Avg conversion rate from last 3-5 complete cohorts (null if < 3)
-        let avgConversionRate: number | null = null;
-        const recentComplete = completeCohorts.slice(-5);
-        if (recentComplete.length >= 3) {
-          const totalNew = recentComplete.reduce((s, c) => s + c.newCustomers, 0);
-          const totalConverted = recentComplete.reduce((s, c) => s + c.total3Week, 0);
-          avgConversionRate = totalNew > 0
-            ? Math.round((totalConverted / totalNew) * 1000) / 10
-            : 0;
-        }
-
-        newCustomerCohorts = {
-          cohorts: cohortRows.map((c) => ({
-            cohortStart: c.cohortStart,
-            cohortEnd: c.cohortEnd,
-            newCustomers: c.newCustomers,
-            week1: c.week1,
-            week2: c.week2,
-            week3: c.week3,
-            total3Week: c.total3Week,
-          })),
-          avgConversionRate,
-        };
-      }
-    } catch (err) {
-      console.warn("[db-trends] Failed to compute new customer data:", err);
-    }
-  }
-
-  // ── 10. Conversion Pool: non-auto visitors → in-studio auto-renew ──
-  let conversionPool: ConversionPoolModuleData | null = null;
-
-  // Helper to assemble one slice's data (useTempTable = pre-materialized first_in_studio_sub)
+  // Helper to assemble one conversion pool slice
   async function buildPoolSlice(slice: PoolSliceKey, useTempTable: boolean): Promise<ConversionPoolSliceData | null> {
     const [weeklyRows, wtdRow, lagRow] = await Promise.all([
       getConversionPoolWeekly(16, slice, useTempTable),
@@ -858,41 +532,214 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     return { completeWeeks, wtd, lagStats, lastCompleteWeek, avgPool7d, avgRate };
   }
 
-  if (await hasRegistrationData()) {
-    // Pre-materialize the first_in_studio_sub lookup once instead of
-    // recomputing it in every query (was 15 redundant scans of auto_renews)
+  // Section runners — each is self-contained and returns its result
+  async function runDropIns(): Promise<DropInModuleData | null> {
+    if (!(await hasRegistrationData())) return null;
+    const [weeklyDetail, wtdRaw, frequencyRaw, lastWeekWTDVisits] = await Promise.all([
+      getDropInWeeklyDetail(16), getDropInWTD(), getDropInFrequencyDistribution(), getDropInLastWeekWTD(),
+    ]);
+    if (weeklyDetail.length === 0 && !wtdRaw) return null;
+
+    const completeWeeks = weeklyDetail.map((w) => ({
+      weekStart: w.weekStart, weekEnd: w.weekEnd, visits: w.visits,
+      uniqueCustomers: w.uniqueCustomers, firstTime: w.firstTime, repeatCustomers: w.repeatCustomers,
+    }));
+    const lastCompleteWeek = completeWeeks.length > 0 ? completeWeeks[completeWeeks.length - 1] : null;
+    const last8 = completeWeeks.slice(-8);
+    const typicalWeekVisits = last8.length > 0
+      ? Math.round(last8.reduce((s, w) => s + w.visits, 0) / last8.length) : 0;
+    const last4 = completeWeeks.slice(-4);
+    const prior4 = completeWeeks.slice(-8, -4);
+    const avgLast4 = last4.length > 0 ? last4.reduce((s, w) => s + w.visits, 0) / last4.length : 0;
+    const avgPrior4 = prior4.length > 0 ? prior4.reduce((s, w) => s + w.visits, 0) / prior4.length : 0;
+    const trendDeltaPercent = avgPrior4 > 0 ? Math.round(((avgLast4 - avgPrior4) / avgPrior4) * 1000) / 10 : 0;
+    const trend: "up" | "flat" | "down" = trendDeltaPercent > 5 ? "up" : trendDeltaPercent < -5 ? "down" : "flat";
+    const wtdVisits = wtdRaw?.visits ?? 0;
+    const wtdDelta = wtdVisits - lastWeekWTDVisits;
+    const wtdDeltaPercent = lastWeekWTDVisits > 0 ? Math.round((wtdDelta / lastWeekWTDVisits) * 1000) / 10 : 0;
+    const wtd = wtdRaw ? {
+      weekStart: wtdRaw.weekStart, weekEnd: wtdRaw.weekEnd, visits: wtdRaw.visits,
+      uniqueCustomers: wtdRaw.uniqueCustomers, firstTime: wtdRaw.firstTime,
+      repeatCustomers: wtdRaw.repeatCustomers, daysLeft: wtdRaw.daysLeft,
+    } : null;
+    const frequency = frequencyRaw.totalCustomers > 0 ? {
+      bucket1: frequencyRaw.bucket1, bucket2to4: frequencyRaw.bucket2to4,
+      bucket5to10: frequencyRaw.bucket5to10, bucket11plus: frequencyRaw.bucket11plus,
+      totalCustomers: frequencyRaw.totalCustomers,
+    } : null;
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const wtdDayLabel = `As of ${dayNames[new Date().getDay()]}`;
+    return { completeWeeks, wtd, lastCompleteWeek, typicalWeekVisits, trend, trendDeltaPercent, wtdDelta, wtdDeltaPercent, wtdDayLabel, frequency };
+  }
+
+  async function runFirstVisits(): Promise<FirstVisitData | null> {
+    if (!(await hasFirstVisitData())) return null;
+    const fiveWeeksAgo = new Date(now);
+    fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
+    const startStr = fiveWeeksAgo.toISOString().split("T")[0];
+    const [uvWeeks, sourceBreakdown] = await Promise.all([
+      getFirstTimeUniqueVisitorsByWeek(startStr), getFirstTimeSourceBreakdown(startStr),
+    ]);
+    if (uvWeeks.length === 0) return null;
+    const sortedWeeks = [...uvWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    const lastWeek = sortedWeeks[sortedWeeks.length - 1];
+    const completedWeeks = sortedWeeks.slice(0, -1).slice(-4);
+    const zeroSeg = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
+    return {
+      currentWeekTotal: lastWeek.uniqueVisitors, currentWeekSegments: { ...zeroSeg },
+      completedWeeks: completedWeeks.map((w) => ({ week: w.weekStart, uniqueVisitors: w.uniqueVisitors, segments: { ...zeroSeg } })),
+      aggregateSegments: { introWeek: sourceBreakdown.introWeek, dropIn: sourceBreakdown.dropIn, guest: sourceBreakdown.guest, other: sourceBreakdown.other },
+      otherBreakdownTop5: sourceBreakdown.otherBreakdownTop5,
+    };
+  }
+
+  async function runIntroWeek(): Promise<import("../../types/dashboard").IntroWeekData | null> {
+    if (!(await hasFirstVisitData())) return null;
+    const sixWeeksAgo = new Date(now);
+    sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
+    const startStr = sixWeeksAgo.toISOString().split("T")[0];
+    const iwWeeks = await getIntroWeekCustomersByWeek(startStr);
+    if (iwWeeks.length === 0) return null;
+    const sorted = [...iwWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    const lastWeek = sorted[sorted.length - 1];
+    const completed = sorted.slice(0, -1).slice(-4);
+    const avg = completed.length > 0 ? Math.round(completed.reduce((s, w) => s + w.customers, 0) / completed.length) : 0;
+    return { lastWeek: { weekStart: lastWeek.weekStart, customers: lastWeek.customers }, last4Weeks: completed, last4WeekAvg: avg };
+  }
+
+  async function runExpiringIntroWeeks(): Promise<ExpiringIntroWeekData | null> {
+    if (!(await hasRegistrationData())) return null;
+    const expiringCustomers = await getExpiringIntroWeekCustomers();
+    return { customers: expiringCustomers };
+  }
+
+  async function runIntroWeekConversion(): Promise<import("../../types/dashboard").IntroWeekConversionData | null> {
+    const convRows = await getIntroWeekConversionData();
+    if (convRows.length === 0) return null;
+    const converted = convRows.filter((r) => r.converted).length;
+    const notConverted = convRows.length - converted;
+    return {
+      totalExpired: convRows.length, converted, notConverted,
+      conversionRate: convRows.length > 0 ? Math.round((converted / convRows.length) * 1000) / 10 : 0,
+      nonConverters: convRows.filter((r) => !r.converted).map((r) => ({
+        name: r.name, email: r.email, introStart: r.introStart, introEnd: r.introEnd, classesAttended: r.classesAttended,
+      })),
+    };
+  }
+
+  async function runReturningNonMembers(): Promise<ReturningNonMemberData | null> {
+    if (!(await hasRegistrationData())) return null;
+    const fiveWeeksAgo = new Date(now);
+    fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - 35);
+    const startStr = fiveWeeksAgo.toISOString().split("T")[0];
+    const [uvWeeks, sourceBreakdown] = await Promise.all([
+      getReturningUniqueVisitorsByWeek(startStr), getReturningSourceBreakdown(startStr),
+    ]);
+    if (uvWeeks.length === 0) return null;
+    const sortedWeeks = [...uvWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    const lastWeek = sortedWeeks[sortedWeeks.length - 1];
+    const completedWeeks = sortedWeeks.slice(0, -1).slice(-4);
+    const zeroSeg = { introWeek: 0, dropIn: 0, guest: 0, other: 0 };
+    return {
+      currentWeekTotal: lastWeek.uniqueVisitors, currentWeekSegments: { ...zeroSeg },
+      completedWeeks: completedWeeks.map((w) => ({ week: w.weekStart, uniqueVisitors: w.uniqueVisitors, segments: { ...zeroSeg } })),
+      aggregateSegments: { introWeek: sourceBreakdown.introWeek, dropIn: sourceBreakdown.dropIn, guest: sourceBreakdown.guest, other: sourceBreakdown.other },
+      otherBreakdownTop5: sourceBreakdown.otherBreakdownTop5,
+    };
+  }
+
+  async function runChurnRates(): Promise<ChurnRateData | null> {
+    return computeChurnRates();
+  }
+
+  async function runNewCustomers(): Promise<{ volume: NewCustomerVolumeData | null; cohorts: NewCustomerCohortData | null }> {
+    if (!(await hasFirstVisitData())) return { volume: null, cohorts: null };
+    let volume: NewCustomerVolumeData | null = null;
+    let cohorts: NewCustomerCohortData | null = null;
+
+    const volumeWeeks = await getNewCustomerVolumeByWeek();
+    if (volumeWeeks.length > 0) {
+      const sorted = [...volumeWeeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+      const currentWeek = sorted[sorted.length - 1];
+      const completed = sorted.slice(0, -1).slice(-4);
+      volume = { currentWeekCount: currentWeek.count, completedWeeks: completed.map((w) => ({ weekStart: w.weekStart, weekEnd: w.weekEnd, count: w.count })) };
+    }
+
+    const cohortRows = await getNewCustomerCohorts();
+    if (cohortRows.length > 0) {
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      const completeCohorts = cohortRows.filter((c) => {
+        const start = new Date(c.cohortStart + "T00:00:00");
+        const cutoff = new Date(start);
+        cutoff.setDate(cutoff.getDate() + 20);
+        return cutoff.toISOString().split("T")[0] < todayStr;
+      });
+      let avgConversionRate: number | null = null;
+      const recentComplete = completeCohorts.slice(-5);
+      if (recentComplete.length >= 3) {
+        const totalNew = recentComplete.reduce((s, c) => s + c.newCustomers, 0);
+        const totalConverted = recentComplete.reduce((s, c) => s + c.total3Week, 0);
+        avgConversionRate = totalNew > 0 ? Math.round((totalConverted / totalNew) * 1000) / 10 : 0;
+      }
+      cohorts = {
+        cohorts: cohortRows.map((c) => ({ cohortStart: c.cohortStart, cohortEnd: c.cohortEnd, newCustomers: c.newCustomers, week1: c.week1, week2: c.week2, week3: c.week3, total3Week: c.total3Week })),
+        avgConversionRate,
+      };
+    }
+    return { volume, cohorts };
+  }
+
+  async function runConversionPool(): Promise<ConversionPoolModuleData | null> {
+    if (!(await hasRegistrationData())) return null;
     let cleanupTempTable: (() => Promise<void>) | null = null;
     try {
       cleanupTempTable = await materializeFirstInStudioSub();
       const sliceKeys: ConversionPoolSlice[] = ["all", "drop-ins", "intro-week", "class-packs", "high-intent"];
-      const sliceResults = await Promise.all(
-        sliceKeys.map((k) => buildPoolSlice(k as PoolSliceKey, true))
-      );
-
+      const sliceResults = await Promise.all(sliceKeys.map((k) => buildPoolSlice(k as PoolSliceKey, true)));
       const slices: Partial<Record<ConversionPoolSlice, ConversionPoolSliceData>> = {};
-      sliceKeys.forEach((k, i) => {
-        if (sliceResults[i]) slices[k] = sliceResults[i]!;
-      });
-
-      if (Object.keys(slices).length > 0) {
-        conversionPool = { slices };
-      }
+      sliceKeys.forEach((k, i) => { if (sliceResults[i]) slices[k] = sliceResults[i]!; });
+      return Object.keys(slices).length > 0 ? { slices } : null;
     } catch (err) {
       console.warn("[db-trends] Failed to compute conversion pool data:", err);
+      return null;
     } finally {
       if (cleanupTempTable) await cleanupTempTable();
     }
   }
 
-  // ── 11. Usage frequency segments by plan category ──────────
-  let usage: UsageData | null = null;
-
-  try {
-    usage = await getUsageFrequencyByCategory();
-    if (usage.categories.length === 0) usage = null;
-  } catch (err) {
-    console.warn("[db-trends] Failed to compute usage frequency data:", err);
+  async function runUsage(): Promise<UsageData | null> {
+    const usage = await getUsageFrequencyByCategory();
+    return usage.categories.length > 0 ? usage : null;
   }
+
+  // ── Run all independent sections in parallel ──────────────
+  const [
+    dropIns,
+    firstVisits,
+    introWeekData,
+    expiringIntroWeeks,
+    introWeekConversion,
+    returningNonMembers,
+    churnRates,
+    newCustResult,
+    conversionPool,
+    usage,
+  ] = await Promise.all([
+    runDropIns().catch((err) => { console.warn("[db-trends] drop-ins failed:", err); return null; }),
+    runFirstVisits().catch((err) => { console.warn("[db-trends] first-visits failed:", err); return null; }),
+    runIntroWeek().catch((err) => { console.warn("[db-trends] intro-week failed:", err); return null; }),
+    runExpiringIntroWeeks().catch((err) => { console.warn("[db-trends] expiring-intro failed:", err); return null; }),
+    runIntroWeekConversion().catch((err) => { console.warn("[db-trends] intro-conversion failed:", err); return null; }),
+    runReturningNonMembers().catch((err) => { console.warn("[db-trends] returning-non-members failed:", err); return null; }),
+    runChurnRates().catch((err) => { console.warn("[db-trends] churn-rates failed:", err); return null; }),
+    runNewCustomers().catch((err) => { console.warn("[db-trends] new-customers failed:", err); return { volume: null, cohorts: null }; }),
+    runConversionPool().catch((err) => { console.warn("[db-trends] conversion-pool failed:", err); return null; }),
+    runUsage().catch((err) => { console.warn("[db-trends] usage failed:", err); return null; }),
+  ]);
+
+  const newCustomerVolume = newCustResult.volume;
+  const newCustomerCohorts = newCustResult.cohorts;
 
   const elapsed = Date.now() - _t0;
   console.log(
