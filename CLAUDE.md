@@ -85,6 +85,16 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - `src/components/ui/` — shadcn/ui primitives (Card, Chart, Tabs, Select, Tooltip, Badge, Separator). Do not modify these directly.
 - Do not add new npm dependencies without explicit approval.
 
+## Card Spacing & Typography Rules
+
+- **Uniform gap between ALL cards**: `gap-3` everywhere. Never use different gaps between sections vs within sections.
+- **Cards are 50% width** by default (in `grid-cols-2`), not full-width, unless the content requires it (e.g. wide tables).
+- **Title → subtitle gap**: Zero extra margin. Title row has NO `mb-*` class. The subtitle sits flush below the title.
+- **Subtitle → content gap**: `mb-1` on the subtitle `<p>` tag. Just enough space before the chart/table.
+- **Card descriptions** use `text-sm text-muted-foreground mb-1` — matches Shadcn's CardDescription size (14px), not text-xs (12px).
+- **No Annual Churn card** — data is not useful (mostly 0% with rare spikes). Removed by user request.
+- **October 2025 excluded** from all churn averages — bulk admin cleanup, not real churn.
+
 ## Do NOT
 
 - Remove FONT_SANS inline styles (Tailwind will override fonts)
@@ -93,3 +103,6 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - Create documentation files unless explicitly asked
 - Commit changes without building first (`npm run build`)
 - Do things not explicitly asked for
+- Make cards full-width unless explicitly asked — default is 50% (grid-cols-2)
+- Add mb-1 or other margin to card title rows — titles sit flush against subtitles
+- Use text-xs for card descriptions — always use text-sm
