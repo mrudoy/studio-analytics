@@ -2104,6 +2104,16 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 // ─── Overview Section ─────────────────────────────────────────
 
 function OverviewSection({ data }: { data: OverviewData }) {
+  const isMobile = useIsMobile();
+  const windowMap = {
+    yesterday: data.yesterday,
+    thisWeek: data.thisWeek,
+    lastWeek: data.lastWeek,
+    thisMonth: data.thisMonth,
+    lastMonth: data.lastMonth,
+  };
+  const windowKeys = Object.keys(windowMap) as (keyof typeof windowMap)[];
+  const [activeWindow, setActiveWindow] = useState<keyof typeof windowMap>("thisWeek");
   const windows: TimeWindowMetrics[] = [data.yesterday, data.thisWeek, data.lastWeek, data.thisMonth, data.lastMonth];
   const active = data.currentActive;
 
@@ -2132,10 +2142,98 @@ function OverviewSection({ data }: { data: OverviewData }) {
     { key: "introWeeks", icon: CalendarWeek, label: "Intro Weeks", color: COLORS.copper, getCount: (w) => w.activity.introWeeks },
   ];
 
-  // Shared classes for overview table columns
-  const thData = "text-right text-muted-foreground";
+  // ── Mobile layout: stacked cards + time window selector ──
+  if (isMobile) {
+    const w = windowMap[activeWindow];
+
+    return (
+      <div className="flex flex-col gap-4">
+        {/* Time window selector */}
+        <ToggleGroup
+          type="single"
+          value={activeWindow}
+          onValueChange={(v) => { if (v) setActiveWindow(v as keyof typeof windowMap); }}
+          className="justify-start flex-wrap gap-1"
+        >
+          {windowKeys.map((k) => (
+            <ToggleGroupItem key={k} value={k} className="text-xs px-2.5 py-1 h-7 data-[state=on]:bg-foreground data-[state=on]:text-background">
+              {windowMap[k].label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        <p className="text-[11px] text-muted-foreground -mt-2">{w.sublabel}</p>
+
+        {/* Auto-Renews */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 px-1">
+            <Recycle className="size-4" style={{ color: SECTION_COLORS["growth-auto"] }} />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{LABELS.autoRenews}</span>
+          </div>
+          {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => {
+            const sub = getSub(w);
+            const net = sub.new - sub.churned;
+            const isEmpty = sub.new === 0 && sub.churned === 0;
+            return (
+              <Card key={key}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon size={18} style={{ color }} className="shrink-0" />
+                    <div>
+                      <span className="text-sm font-semibold">{label}</span>
+                      <span className="text-xs text-muted-foreground ml-1.5 tabular-nums">{formatNumber(activeCount)} active</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {isEmpty ? (
+                      <span className="text-muted-foreground/40 text-sm">—</span>
+                    ) : (
+                      <>
+                        <div className={`text-lg font-semibold tabular-nums ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                          {net > 0 ? "+" : ""}{net}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground/50 tabular-nums">
+                          +{sub.new} / -{sub.churned}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Non Auto-Renews */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 px-1">
+            <RecycleOff className="size-4" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Non Auto-Renews</span>
+          </div>
+          {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => {
+            const count = getCount(w);
+            return (
+              <Card key={key}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon size={18} style={{ color }} className="shrink-0" />
+                    <span className="text-sm font-semibold">{label}</span>
+                  </div>
+                  <span className={`text-lg font-semibold tabular-nums ${count === 0 ? "text-muted-foreground/40" : ""}`}>
+                    {count === 0 ? "—" : formatNumber(count)}
+                  </span>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop layout: tables ──
+  const thData = "text-right text-muted-foreground/70 font-normal text-xs";
   const tdData = "text-right tabular-nums";
-  const rowHeight = "h-[50px]"; // consistent row height across both tables
+  const rowHeight = "h-[50px]";
 
   return (
     <div className="flex flex-col gap-4">
@@ -2151,12 +2249,12 @@ function OverviewSection({ data }: { data: OverviewData }) {
           <Table style={{ tableLayout: "fixed", fontFamily: FONT_SANS }}>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[150px] text-muted-foreground">Metric</TableHead>
+                <TableHead className="w-[150px] text-muted-foreground text-xs">Metric</TableHead>
                 <TableHead className={`w-[80px] ${thData}`}>Active</TableHead>
                 {windows.map((w) => (
                   <TableHead key={w.label} className={thData}>
                     <div>{w.label}</div>
-                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
+                    <div className="text-[10px] text-muted-foreground/50">{w.sublabel}</div>
                   </TableHead>
                 ))}
               </TableRow>
@@ -2181,10 +2279,10 @@ function OverviewSection({ data }: { data: OverviewData }) {
                           <span className="text-muted-foreground/40">—</span>
                         ) : (
                           <>
-                            <div className={`font-semibold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                            <div className={`text-base font-semibold ${net > 0 ? "text-emerald-600" : net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
                               {net > 0 ? "+" : ""}{net}
                             </div>
-                            <div className="text-[11px] text-muted-foreground/50 leading-tight">
+                            <div className="text-[11px] text-muted-foreground/40 leading-tight">
                               +{sub.new} / -{sub.churned}
                             </div>
                           </>
@@ -2211,12 +2309,12 @@ function OverviewSection({ data }: { data: OverviewData }) {
           <Table style={{ tableLayout: "fixed", fontFamily: FONT_SANS }}>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[150px] text-muted-foreground">Metric</TableHead>
+                <TableHead className="w-[150px] text-muted-foreground text-xs">Metric</TableHead>
                 <TableHead className="w-[80px]" />
                 {windows.map((w) => (
                   <TableHead key={w.label} className={thData}>
                     <div>{w.label}</div>
-                    <div className="font-normal text-[11px] text-muted-foreground/70">{w.sublabel}</div>
+                    <div className="text-[10px] text-muted-foreground/50">{w.sublabel}</div>
                   </TableHead>
                 ))}
               </TableRow>
@@ -2234,7 +2332,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
                   {windows.map((w) => {
                     const count = getCount(w);
                     return (
-                      <TableCell key={w.label} className={`${tdData} font-semibold`}>
+                      <TableCell key={w.label} className={`${tdData} text-base font-semibold`}>
                         {count === 0 ? (
                           <span className="text-muted-foreground/40">—</span>
                         ) : (
