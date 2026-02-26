@@ -4609,62 +4609,56 @@ function ChurnSection({ churnRates, weekly }: {
 
       </div>
 
-      {/* ── Packs & Digital subsection ────────────────── */}
+      {/* ── Sky3 subsection ────────────────── */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Packs & Digital</h3>
+          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.sky3}</h3>
         </div>
+        <Card>
+          <div className="flex flex-col">
+            <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.sky3.avgUserChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgUserChurnRate)} />
+            <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.sky3.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate)} />
+            {latestW?.sky3Churn != null && (
+              <div className="flex justify-between items-center py-1.5 border-b border-border">
+                <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
+                <span className="text-sm font-semibold tabular-nums">{latestW.sky3Churn}</span>
+              </div>
+            )}
+            {byCategory.sky3.atRiskCount > 0 && (
+              <div className="flex justify-between items-center py-1.5">
+                <span className="text-xs text-muted-foreground">At Risk</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Sky3 card */}
-          <Card>
-            <div className="flex items-center gap-2 mb-2">
-              <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
-              <span className="text-base font-semibold leading-none tracking-tight">{LABELS.sky3}</span>
-            </div>
-            <div className="flex flex-col">
-              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.sky3.avgUserChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgUserChurnRate)} />
-              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.sky3.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate)} />
-              {latestW?.sky3Churn != null && (
-                <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
-                  <span className="text-sm font-semibold tabular-nums">{latestW.sky3Churn}</span>
-                </div>
-              )}
-              {byCategory.sky3.atRiskCount > 0 && (
-                <div className="flex justify-between items-center py-1.5">
-                  <span className="text-xs text-muted-foreground">At Risk</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</span>
-                </div>
-              )}
-            </div>
-          </Card>
-
-          {/* Sky Ting TV card */}
-          <Card>
-            <div className="flex items-center gap-2 mb-2">
-              <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
-              <span className="text-base font-semibold leading-none tracking-tight">{LABELS.tv}</span>
-            </div>
-            <div className="flex flex-col">
-              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgUserChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate)} />
-              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate)} />
-              {latestW?.skyTingTvChurn != null && (
-                <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
-                  <span className="text-sm font-semibold tabular-nums">{latestW.skyTingTvChurn}</span>
-                </div>
-              )}
-              {byCategory.skyTingTv.atRiskCount > 0 && (
-                <div className="flex justify-between items-center py-1.5">
-                  <span className="text-xs text-muted-foreground">At Risk</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</span>
-                </div>
-              )}
-            </div>
-          </Card>
+      {/* ── Sky Ting TV subsection ────────────────── */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <DeviceTv className="size-5" style={{ color: COLORS.tv }} />
+          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.tv}</h3>
         </div>
+        <Card>
+          <div className="flex flex-col">
+            <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgUserChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate)} />
+            <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate)} />
+            {latestW?.skyTingTvChurn != null && (
+              <div className="flex justify-between items-center py-1.5 border-b border-border">
+                <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
+                <span className="text-sm font-semibold tabular-nums">{latestW.skyTingTvChurn}</span>
+              </div>
+            )}
+            {byCategory.skyTingTv.atRiskCount > 0 && (
+              <div className="flex justify-between items-center py-1.5">
+                <span className="text-xs text-muted-foreground">At Risk</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</span>
+              </div>
+            )}
+          </div>
+        </Card>
       </div>
 
       {/* At Risk */}
@@ -4736,78 +4730,6 @@ function ChurnSection({ churnRates, weekly }: {
         })()
       )}
 
-      {/* Monthly churn rate trend chart — split Members into Annual + Monthly */}
-      {byCategory.member.monthly.length > 1 && (
-        <DashboardCard className="@container/card">
-          <CardHeader>
-            <CardTitle>Monthly Churn Rate Trend</CardTitle>
-            <CardDescription>User Churn Rate by Category over Time</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer
-              config={{
-                annualMember: { label: "Annual Members", color: COLORS.member },
-                monthlyMember: { label: "Monthly Members", color: "#6B9B7A" },
-                sky3: { label: LABELS.sky3, color: COLORS.sky3 },
-                tv: { label: LABELS.tv, color: COLORS.tv },
-              } satisfies ChartConfig}
-              className="h-[200px] w-full"
-            >
-              <LineChart
-                accessibilityLayer
-                data={byCategory.member.monthly.map((m, i) => ({
-                  month: formatMonthLabel(m.month),
-                  annualMember: m.annualUserChurnRate ?? 0,
-                  monthlyMember: m.eligibleChurnRate ?? m.userChurnRate,
-                  sky3: byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
-                  tv: byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
-                }))}
-                margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${v}%`}
-                  domain={(() => {
-                    const allRates = byCategory.member.monthly.map((m, i) => [
-                      m.annualUserChurnRate ?? 0,
-                      m.eligibleChurnRate ?? m.userChurnRate,
-                      byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
-                      byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
-                    ]).flat();
-                    const maxRate = Math.max(...allRates, 0);
-                    const step = maxRate <= 15 ? 5 : 10;
-                    const domainMax = Math.ceil(maxRate / step) * step;
-                    return [0, domainMax];
-                  })()}
-                  ticks={(() => {
-                    const allRates = byCategory.member.monthly.map((m, i) => [
-                      m.annualUserChurnRate ?? 0,
-                      m.eligibleChurnRate ?? m.userChurnRate,
-                      byCategory.sky3.monthly[i]?.userChurnRate ?? 0,
-                      byCategory.skyTingTv.monthly[i]?.userChurnRate ?? 0,
-                    ]).flat();
-                    const maxRate = Math.max(...allRates, 0);
-                    const step = maxRate <= 15 ? 5 : 10;
-                    const domainMax = Math.ceil(maxRate / step) * step;
-                    const ticks: number[] = [];
-                    for (let i = 0; i <= domainMax; i += step) ticks.push(i);
-                    return ticks;
-                  })()}
-                />
-                <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Line type="monotone" dataKey="annualMember" stroke="var(--color-annualMember)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="monthlyMember" stroke="var(--color-monthlyMember)" strokeWidth={2} dot={false} strokeDasharray="6 3" />
-                <Line type="monotone" dataKey="sky3" stroke="var(--color-sky3)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="tv" stroke="var(--color-tv)" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ChartContainer>
-          </CardContent>
-        </DashboardCard>
-      )}
     </div>
   );
 }
