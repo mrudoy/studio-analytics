@@ -88,7 +88,7 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 ## Card Spacing & Typography Rules
 
 - **Uniform gap between ALL cards**: `gap-3` everywhere. Never use different gaps between sections vs within sections.
-- **Cards are 50% width** by default (in `grid-cols-2`), not full-width, unless the content requires it (e.g. wide tables).
+- **Cards are 50% width** by default (in `grid-cols-2`), not full-width, unless the content requires it (e.g. wide tables). Always rearrange cards so there is no empty space — if a card would be alone in a row, merge it into an adjacent grid container.
 - **Title → subtitle gap**: Zero extra margin. Title row has NO `mb-*` class. The subtitle sits flush below the title.
 - **Subtitle → content gap**: `mb-1` on the subtitle `<p>` tag. Just enough space before the chart/table.
 - **Card descriptions** use `text-sm text-muted-foreground mb-1` — matches Shadcn's CardDescription size (14px), not text-xs (12px).
