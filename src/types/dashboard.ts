@@ -486,6 +486,24 @@ export interface ExpiringIntroWeekData {
   customers: ExpiringIntroCustomer[];
 }
 
+// ── Intro Week Conversion Funnel types ────────────────────
+
+export interface IntroWeekNonConverter {
+  name: string;
+  email: string;
+  introStart: string;   // YYYY-MM-DD
+  introEnd: string;      // YYYY-MM-DD (start + 7 days)
+  classesAttended: number;
+}
+
+export interface IntroWeekConversionData {
+  totalExpired: number;
+  converted: number;
+  notConverted: number;
+  conversionRate: number;        // converted / totalExpired * 100
+  nonConverters: IntroWeekNonConverter[];
+}
+
 // ── New Customer types ─────────────────────────────────────
 
 export interface NewCustomerVolumeWeek {
@@ -668,6 +686,7 @@ export interface TrendsData {
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
   conversionPool: ConversionPoolModuleData | null;
+  introWeekConversion: IntroWeekConversionData | null;
   usage: UsageData | null;
   expiringIntroWeeks: ExpiringIntroWeekData | null;
 }

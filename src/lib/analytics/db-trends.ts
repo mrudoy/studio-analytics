@@ -38,6 +38,7 @@ import {
   getConversionPoolWTD,
   getConversionPoolLagStats,
   getUsageFrequencyByCategory,
+  getIntroWeekConversionData,
   type PoolSliceKey,
 } from "../db/registration-store";
 import type {
@@ -632,6 +633,41 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
+  // ── 6d. Intro Week Conversion Funnel ────────────────────
+  let introWeekConversion: import("../../types/dashboard").IntroWeekConversionData | null = null;
+
+  try {
+    const convRows = await getIntroWeekConversionData();
+    if (convRows.length > 0) {
+      const converted = convRows.filter((r) => r.converted).length;
+      const notConverted = convRows.length - converted;
+      introWeekConversion = {
+        totalExpired: convRows.length,
+        converted,
+        notConverted,
+        conversionRate: convRows.length > 0
+          ? Math.round((converted / convRows.length) * 1000) / 10
+          : 0,
+        nonConverters: convRows
+          .filter((r) => !r.converted)
+          .map((r) => ({
+            name: r.name,
+            email: r.email,
+            introStart: r.introStart,
+            introEnd: r.introEnd,
+            classesAttended: r.classesAttended,
+          })),
+      };
+      console.log(
+        `[db-trends] Intro week conversion: ${convRows.length} expired, ` +
+        `${converted} converted (${introWeekConversion.conversionRate}%), ` +
+        `${notConverted} did not convert`
+      );
+    }
+  } catch (err) {
+    console.warn("[db-trends] Failed to compute intro week conversion data:", err);
+  }
+
   // ── 7. Returning non-members (unique visitors) ─────────
   let returningNonMembers: ReturningNonMemberData | null = null;
 
@@ -865,6 +901,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     projection,
     dropIns,
     introWeek: introWeekData,
+    introWeekConversion,
     firstVisits,
     returningNonMembers,
     churnRates,

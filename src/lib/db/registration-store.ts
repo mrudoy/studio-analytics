@@ -631,6 +631,141 @@ export async function getIntroWeekCustomersByWeek(
   }));
 }
 
+// ── Active Intro Week customers (for CSV export) ────────────
+
+export interface ActiveIntroWeekRow {
+  name: string;
+  email: string;
+  startDate: string;   // YYYY-MM-DD  (first class registration)
+  endDate: string;     // YYYY-MM-DD  (startDate + 7 days)
+  daysLeft: number;
+  classesAttended: number;
+}
+
+/**
+ * Get all people currently within their 7-day Intro Week window.
+ *
+ * Logic: find each email's first attended_at with INTRO WEEK pass.
+ * Their window is [first_attended, first_attended + 7 days].
+ * If today is within that window (or slightly past), they appear.
+ *
+ * `lookbackDays` controls how far back to search (default 14 = includes
+ * recently expired intro weeks too).
+ */
+export async function getActiveIntroWeekCustomers(
+  lookbackDays = 14,
+): Promise<ActiveIntroWeekRow[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH intro_visits AS (
+      SELECT
+        email,
+        CONCAT(first_name, ' ', last_name) AS name,
+        attended_at::date AS visit_date
+      FROM registrations
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        AND UPPER(pass) LIKE '%INTRO WEEK%'
+        AND state IN ('redeemed', 'confirmed')
+    ),
+    first_visit AS (
+      SELECT
+        email,
+        MIN(name) AS name,
+        MIN(visit_date) AS start_date
+      FROM intro_visits
+      GROUP BY email
+      HAVING MIN(visit_date) >= CURRENT_DATE - $1::int
+    )
+    SELECT
+      fv.name,
+      fv.email,
+      fv.start_date::text AS "startDate",
+      (fv.start_date + INTERVAL '7 days')::date::text AS "endDate",
+      GREATEST(0, (fv.start_date + INTERVAL '7 days')::date - CURRENT_DATE)::int AS "daysLeft",
+      COUNT(iv.visit_date)::int AS "classesAttended"
+    FROM first_visit fv
+    JOIN intro_visits iv ON iv.email = fv.email
+    GROUP BY fv.name, fv.email, fv.start_date
+    ORDER BY fv.start_date DESC, fv.name
+  `;
+
+  const { rows } = await pool.query(query, [lookbackDays]);
+  return rows as ActiveIntroWeekRow[];
+}
+
+// ── Intro Week Conversion Funnel ─────────────────────────────
+
+export interface IntroWeekConversionRow {
+  name: string;
+  email: string;
+  introStart: string;
+  introEnd: string;
+  classesAttended: number;
+  converted: boolean;
+}
+
+/**
+ * Get expired intro week customers from the last 14 days and determine
+ * which ones converted to an in-studio auto-renew subscription.
+ *
+ * "Expired" = their 7-day intro window ended between 0 and 14 days ago.
+ * "Converted" = they have ANY active in-studio auto-renew right now
+ * (plan_state not in Canceled/Invalid/Paused, plan matches IN_STUDIO_PLAN_FILTER).
+ *
+ * Excludes people currently in their intro week (window hasn't ended yet).
+ */
+export async function getIntroWeekConversionData(): Promise<IntroWeekConversionRow[]> {
+  const pool = getPool();
+
+  const query = `
+    WITH intro_visits AS (
+      SELECT
+        LOWER(email) AS email,
+        CONCAT(first_name, ' ', last_name) AS name,
+        attended_at::date AS visit_date
+      FROM registrations
+      WHERE attended_at IS NOT NULL AND attended_at != ''
+        AND email IS NOT NULL AND email != ''
+        AND UPPER(pass) LIKE '%INTRO WEEK%'
+        AND state IN ('redeemed', 'confirmed')
+    ),
+    intro_customers AS (
+      SELECT
+        email,
+        MIN(name) AS name,
+        MIN(visit_date) AS start_date,
+        (MIN(visit_date) + INTERVAL '7 days')::date AS end_date,
+        COUNT(visit_date)::int AS classes_attended
+      FROM intro_visits
+      GROUP BY email
+      -- Expired in the last 14 days: end_date between (today - 14) and today
+      HAVING (MIN(visit_date) + INTERVAL '7 days')::date <= CURRENT_DATE
+        AND (MIN(visit_date) + INTERVAL '7 days')::date >= CURRENT_DATE - 14
+    ),
+    active_instudio AS (
+      SELECT DISTINCT LOWER(customer_email) AS email
+      FROM auto_renews
+      WHERE plan_state NOT IN ('Canceled', 'Invalid', 'Paused')
+        ${IN_STUDIO_PLAN_FILTER}
+    )
+    SELECT
+      ic.name,
+      ic.email,
+      ic.start_date::text AS "introStart",
+      ic.end_date::text AS "introEnd",
+      ic.classes_attended AS "classesAttended",
+      CASE WHEN ais.email IS NOT NULL THEN true ELSE false END AS converted
+    FROM intro_customers ic
+    LEFT JOIN active_instudio ais ON ais.email = ic.email
+    ORDER BY ic.end_date DESC, ic.name
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows as IntroWeekConversionRow[];
+}
+
 /**
  * Get intro week customers whose 7-day trial is expiring within 2 days.
  *
