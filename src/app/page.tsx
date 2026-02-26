@@ -4882,16 +4882,22 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
                     <TableBody>
                       <TableRow>
                         <TableCell className="py-1.5">
-                          <div className="text-sm">High Frequency</div>
-                          <div className="text-[11px] text-muted-foreground">More than 2 classes</div>
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="size-1.5 rounded-full bg-green-500 shrink-0" />
+                            High Frequency
+                          </div>
+                          <div className="text-[11px] text-muted-foreground ml-3">More than 2 classes</div>
                         </TableCell>
                         <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{highFreq.length}</TableCell>
                         <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{highPct}%</TableCell>
                       </TableRow>
                       <TableRow>
                         <TableCell className="py-1.5">
-                          <div className="text-sm">Low Frequency</div>
-                          <div className="text-[11px] text-muted-foreground">2 or fewer classes</div>
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="size-1.5 rounded-full bg-red-500 shrink-0" />
+                            Low Frequency
+                          </div>
+                          <div className="text-[11px] text-muted-foreground ml-3">2 or fewer classes</div>
                         </TableCell>
                         <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{lowFreq.length}</TableCell>
                         <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{lowPct}%</TableCell>
