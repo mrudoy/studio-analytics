@@ -4507,8 +4507,8 @@ function ChurnSection({ churnRates, weekly }: {
 
       </div>
 
-      {/* ── Membership Churn + Milestones + At Risk — 3-up row ────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
+      {/* ── Membership Churn + Milestones + At Risk ────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* Membership Churn */}
         {(() => {
           const annualCount = lastComplete?.annualActiveAtStart ?? 0;
