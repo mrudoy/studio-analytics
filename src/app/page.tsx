@@ -4493,65 +4493,6 @@ function ChurnSection({ churnRates, weekly }: {
               </div>
             </div>
 
-            {/* Tenure milestone summary */}
-            {alerts && (
-              (() => {
-                const cliffMembers = alerts.tenureMilestones.filter((m) => m.milestone.includes("cliff"));
-                const markMembers = alerts.tenureMilestones.filter((m) => m.milestone.includes("mark"));
-                const downloadMilestoneCsv = (members: typeof cliffMembers, filename: string) => {
-                  const headers = ["Name", "Email", "Plan", "Annual/Monthly", "Start Date", "Tenure (months)", "Milestone"];
-                  const rows = members.map((m) => [
-                    m.name, m.email, m.planName, m.isAnnual ? "Annual" : "Monthly",
-                    m.createdAt.slice(0, 10), m.tenureMonths.toFixed(1), m.milestone,
-                  ]);
-                  const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-                  const blob = new Blob([csv], { type: "text/csv" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url; a.download = filename; a.click();
-                  URL.revokeObjectURL(url);
-                };
-                return (cliffMembers.length > 0 || markMembers.length > 0) ? (
-                  <div className="mb-4">
-                    <span className="text-xs font-medium text-muted-foreground mb-2 block">Approaching Milestones</span>
-                    <Table style={{ fontFamily: FONT_SANS }}>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Milestone</TableHead>
-                          <TableHead className="text-xs text-right"># Members</TableHead>
-                          <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {cliffMembers.length > 0 && (
-                          <TableRow>
-                            <TableCell className="py-1.5 text-sm">3-Month Cliff</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length}</TableCell>
-                            <TableCell className="py-1.5 px-0 text-center">
-                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(cliffMembers, "3-month-cliff-members.csv")} title="Download 3-month cliff members as CSV">
-                                <DownloadIcon className="size-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {markMembers.length > 0 && (
-                          <TableRow>
-                            <TableCell className="py-1.5 text-sm">7-Month Mark</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{markMembers.length}</TableCell>
-                            <TableCell className="py-1.5 px-0 text-center">
-                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(markMembers, "7-month-mark-members.csv")} title="Download 7-month mark members as CSV">
-                                <DownloadIcon className="size-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : null;
-              })()
-            )}
-
             {/* Survival curve chart */}
             {tenure.survivalCurve.length > 1 && (
               <ChartContainer
@@ -4600,6 +4541,70 @@ function ChurnSection({ churnRates, weekly }: {
               </ChartContainer>
             )}
           </Card>
+        )}
+
+        {/* Approaching Milestones — own card */}
+        {alerts && (
+          (() => {
+            const cliffMembers = alerts.tenureMilestones.filter((m) => m.milestone.includes("cliff"));
+            const markMembers = alerts.tenureMilestones.filter((m) => m.milestone.includes("mark"));
+            const downloadMilestoneCsv = (members: typeof cliffMembers, filename: string) => {
+              const headers = ["Name", "Email", "Plan", "Annual/Monthly", "Start Date", "Tenure (months)", "Milestone"];
+              const rows = members.map((m) => [
+                m.name, m.email, m.planName, m.isAnnual ? "Annual" : "Monthly",
+                m.createdAt.slice(0, 10), m.tenureMonths.toFixed(1), m.milestone,
+              ]);
+              const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url; a.download = filename; a.click();
+              URL.revokeObjectURL(url);
+            };
+            return (cliffMembers.length > 0 || markMembers.length > 0) ? (
+              <Card>
+                <div className="flex items-center gap-2 mb-1">
+                  <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
+                  <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{cliffMembers.length + markMembers.length}</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-3">Members within ±1 week of a critical tenure milestone</p>
+                <Table style={{ fontFamily: FONT_SANS }}>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Milestone</TableHead>
+                      <TableHead className="text-xs text-right"># Members</TableHead>
+                      <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cliffMembers.length > 0 && (
+                      <TableRow>
+                        <TableCell className="py-1.5 text-sm">3-Month Cliff</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length}</TableCell>
+                        <TableCell className="py-1.5 px-0 text-center">
+                          <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(cliffMembers, "3-month-cliff-members.csv")} title="Download 3-month cliff members as CSV">
+                            <DownloadIcon className="size-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {markMembers.length > 0 && (
+                      <TableRow>
+                        <TableCell className="py-1.5 text-sm">7-Month Mark</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{markMembers.length}</TableCell>
+                        <TableCell className="py-1.5 px-0 text-center">
+                          <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(markMembers, "7-month-mark-members.csv")} title="Download 7-month mark members as CSV">
+                            <DownloadIcon className="size-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </Card>
+            ) : null;
+          })()
         )}
 
       </div>
