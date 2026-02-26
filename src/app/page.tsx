@@ -4486,8 +4486,8 @@ function ChurnSection({ churnRates, weekly }: {
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.avgPostCliffTenure.toFixed(1)} mo</span>
-                <span className="text-xs font-medium text-foreground">Avg Post-Cliff Tenure</span>
-                <span className="text-[11px] text-muted-foreground leading-snug">Members who stay past 3 months average this total membership length</span>
+                <span className="text-xs font-medium text-foreground">Avg Tenure</span>
+                <span className="text-[11px] text-muted-foreground leading-snug">Average total tenure of members who made it past the 3-month cliff</span>
               </div>
             </div>
 
