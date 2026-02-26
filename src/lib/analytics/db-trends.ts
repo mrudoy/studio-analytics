@@ -63,6 +63,8 @@ import type {
   TenureMilestoneMember,
   MemberAlerts,
   ExpiringIntroWeekData,
+  WinBackData,
+  WinBackCustomer,
 } from "@/types/dashboard";
 import { getPool } from "../db/database";
 import { getAllPeriods } from "../db/revenue-store";
@@ -1365,6 +1367,9 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     pendingCancel: buildAtRiskList("Pending Cancel"),
   };
 
+  // ── Win-Back analysis (MEMBER only) ──────────────────────
+  const winBack = computeWinBackData(categorized);
+
   return {
     byCategory: {
       member: catResults.MEMBER,
@@ -1374,10 +1379,138 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     totalAtRisk,
     atRiskByState,
     memberAlerts,
+    winBack,
     // Legacy flat fields
     monthly: legacyMonthly,
     avgMemberRate: catResults.MEMBER.avgUserChurnRate,
     avgSky3Rate: catResults.SKY3.avgUserChurnRate,
     atRisk: totalAtRisk,
+  };
+}
+
+/**
+ * Compute win-back reactivation data for MEMBER category.
+ *
+ * Groups rows by email, detects reactivations (canceled → new subscription),
+ * buckets by days between cancel and return, and identifies current win-back targets.
+ */
+function computeWinBackData(
+  categorized: { plan_name: string; plan_state: string; plan_price: number; canceled_at: string | null; created_at: string | null; category: string; isAnnual: boolean; monthlyRate: number; customer_name: string; customer_email: string }[]
+): WinBackData | null {
+  const memberRows = categorized.filter((r) => r.category === "MEMBER" && r.created_at);
+  if (memberRows.length === 0) return null;
+
+  // Group by lowercase email
+  const byEmail = new Map<string, typeof memberRows>();
+  for (const r of memberRows) {
+    const key = r.customer_email.toLowerCase().trim();
+    if (!key) continue;
+    if (!byEmail.has(key)) byEmail.set(key, []);
+    byEmail.get(key)!.push(r);
+  }
+
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const reactivations: WinBackCustomer[] = [];
+  const targets: WinBackCustomer[] = [];
+  let emailsWithCancellation = 0;
+  const reactivatedEmails = new Set<string>();
+
+  for (const [email, rows] of byEmail) {
+    // Sort by created_at ascending
+    rows.sort((a, b) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime());
+
+    let hasCancellation = false;
+
+    // Detect reactivations: row N canceled, row N+1 created after
+    for (let i = 0; i < rows.length - 1; i++) {
+      if (!rows[i].canceled_at) continue;
+      hasCancellation = true;
+      const cancelMs = new Date(rows[i].canceled_at!).getTime();
+      const nextCreateMs = new Date(rows[i + 1].created_at!).getTime();
+      if (nextCreateMs > cancelMs) {
+        const daysBetween = Math.round((nextCreateMs - cancelMs) / MS_PER_DAY);
+        const oldRate = rows[i].monthlyRate;
+        const newRate = rows[i + 1].monthlyRate;
+        let priceChange: "upgrade" | "downgrade" | "same" = "same";
+        if (newRate > oldRate + 0.01) priceChange = "upgrade";
+        else if (newRate < oldRate - 0.01) priceChange = "downgrade";
+
+        reactivations.push({
+          name: rows[i + 1].customer_name || rows[i].customer_name,
+          email,
+          lastPlanName: rows[i].plan_name,
+          canceledAt: rows[i].canceled_at!,
+          returnedAt: rows[i + 1].created_at!,
+          daysBetween,
+          returnPlanName: rows[i + 1].plan_name,
+          priceChange,
+        });
+        reactivatedEmails.add(email);
+      }
+    }
+
+    // Check last row for cancellation (not followed by reactivation)
+    const lastRow = rows[rows.length - 1];
+    if (lastRow.canceled_at) {
+      hasCancellation = true;
+      const cancelMs = new Date(lastRow.canceled_at).getTime();
+      const daysSinceCancel = Math.round((nowMs - cancelMs) / MS_PER_DAY);
+      // Win-back target: cancelled 30-120 days ago, hasn't returned
+      if (daysSinceCancel >= 30 && daysSinceCancel <= 120) {
+        targets.push({
+          name: lastRow.customer_name,
+          email,
+          lastPlanName: lastRow.plan_name,
+          canceledAt: lastRow.canceled_at,
+          returnedAt: null,
+          daysBetween: null,
+          returnPlanName: null,
+          priceChange: null,
+        });
+      }
+    }
+
+    if (hasCancellation) emailsWithCancellation++;
+  }
+
+  // Bucket reactivations
+  const total = reactivations.length;
+  const within30 = reactivations.filter((r) => r.daysBetween! <= 30).length;
+  const within60 = reactivations.filter((r) => r.daysBetween! > 30 && r.daysBetween! <= 60).length;
+  const within90 = reactivations.filter((r) => r.daysBetween! > 60 && r.daysBetween! <= 90).length;
+  const within120 = reactivations.filter((r) => r.daysBetween! > 90 && r.daysBetween! <= 120).length;
+  const beyond120 = reactivations.filter((r) => r.daysBetween! > 120).length;
+
+  // Price change percentages
+  const upgrades = reactivations.filter((r) => r.priceChange === "upgrade").length;
+  const downgrades = reactivations.filter((r) => r.priceChange === "downgrade").length;
+  const same = reactivations.filter((r) => r.priceChange === "same").length;
+
+  const reactivationRate = emailsWithCancellation > 0
+    ? Math.round((reactivatedEmails.size / emailsWithCancellation) * 1000) / 10
+    : 0;
+
+  // Sort targets by days since cancel ascending (most actionable first)
+  targets.sort((a, b) => {
+    const aDays = Math.round((nowMs - new Date(a.canceledAt).getTime()) / MS_PER_DAY);
+    const bDays = Math.round((nowMs - new Date(b.canceledAt).getTime()) / MS_PER_DAY);
+    return aDays - bDays;
+  });
+
+  return {
+    reactivated: {
+      total,
+      within30,
+      within60,
+      within90,
+      within120,
+      beyond120,
+      upgradePct: total > 0 ? Math.round((upgrades / total) * 1000) / 10 : 0,
+      downgradePct: total > 0 ? Math.round((downgrades / total) * 1000) / 10 : 0,
+      samePct: total > 0 ? Math.round((same / total) * 1000) / 10 : 0,
+    },
+    targets,
+    reactivationRate,
   };
 }

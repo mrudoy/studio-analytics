@@ -413,6 +413,35 @@ export interface AtRiskByState {
   pendingCancel: AtRiskMember[];
 }
 
+/** A churned member who reactivated (or is a current win-back target) */
+export interface WinBackCustomer {
+  name: string;
+  email: string;
+  lastPlanName: string;
+  canceledAt: string;
+  returnedAt: string | null;
+  daysBetween: number | null;
+  returnPlanName: string | null;
+  priceChange: "upgrade" | "downgrade" | "same" | null;
+}
+
+/** Win-back reactivation analysis */
+export interface WinBackData {
+  reactivated: {
+    total: number;
+    within30: number;
+    within60: number;
+    within90: number;
+    within120: number;
+    beyond120: number;
+    upgradePct: number;
+    downgradePct: number;
+    samePct: number;
+  };
+  targets: WinBackCustomer[];
+  reactivationRate: number;
+}
+
 export interface ChurnRateData {
   /** Per-category churn data */
   byCategory: {
@@ -424,6 +453,8 @@ export interface ChurnRateData {
   atRiskByState?: AtRiskByState;
   /** Member-specific alerts: renewals approaching + tenure milestones */
   memberAlerts?: MemberAlerts;
+  /** Win-back reactivation data (MEMBER only) */
+  winBack?: WinBackData | null;
   /** Legacy flat fields (backward compat) */
   monthly: {
     month: string;

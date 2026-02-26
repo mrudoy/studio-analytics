@@ -4729,6 +4729,146 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
           })()
         )}
         </div>
+
+        {/* ── Monthly + Annual Churn bar charts ─────────── */}
+        {(() => {
+          const completedMonths = mem.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+          if (completedMonths.length === 0) return null;
+          const fmtShort = (m: string) => {
+            const [y, mo] = m.split("-");
+            const d = new Date(parseInt(y), parseInt(mo) - 1);
+            return d.toLocaleDateString("en-US", { month: "short" }) + " '" + y.slice(2);
+          };
+          const monthlyChurnData = completedMonths.map((m) => ({ month: fmtShort(m.month), rate: m.eligibleChurnRate ?? 0 }));
+          const annualChurnData = completedMonths.map((m) => ({ month: fmtShort(m.month), rate: m.annualUserChurnRate ?? 0 }));
+          const monthlyConfig = { rate: { label: "Monthly Churn", color: COLORS.member } } satisfies ChartConfig;
+          const annualConfig = { rate: { label: "Annual Churn", color: COLORS.member } } satisfies ChartConfig;
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+              <Card>
+                <div className="flex items-center gap-2 mb-1 min-h-9">
+                  <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                  <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn by Month</span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">Churn rate for monthly-billed members each month</p>
+                <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
+                  <BarChart accessibilityLayer data={monthlyChurnData} margin={{ top: 8, left: 0, right: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} tickFormatter={(v: number) => `${v}%`} />
+                    <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${value}%`} />} />
+                    <Bar dataKey="rate" fill={COLORS.member} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </Card>
+              <Card>
+                <div className="flex items-center gap-2 mb-1 min-h-9">
+                  <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                  <span className="text-base font-semibold leading-none tracking-tight">Annual Churn by Month</span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">Churn rate for annual-billed members each month</p>
+                <ChartContainer config={annualConfig} className="h-[200px] w-full">
+                  <BarChart accessibilityLayer data={annualChurnData} margin={{ top: 8, left: 0, right: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} tickFormatter={(v: number) => `${v}%`} />
+                    <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${value}%`} />} />
+                    <Bar dataKey="rate" fill={COLORS.member} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </Card>
+            </div>
+          );
+        })()}
+
+        {/* ── Win-Back Members card ─────────────────────── */}
+        {churnRates.winBack && churnRates.winBack.reactivated.total > 0 && (() => {
+          const wb = churnRates.winBack!;
+          const r = wb.reactivated;
+          const buckets = [
+            { label: "≤ 30 days", count: r.within30 },
+            { label: "31–60 days", count: r.within60 },
+            { label: "61–90 days", count: r.within90 },
+            { label: "91–120 days", count: r.within120 },
+            { label: "> 120 days", count: r.beyond120 },
+          ];
+
+          const downloadCsv = () => {
+            const header = "Name,Email,Last Plan,Canceled At,Days Since Cancel\n";
+            const nowMs = Date.now();
+            const rows = wb.targets.map((t) => {
+              const days = Math.round((nowMs - new Date(t.canceledAt).getTime()) / (24 * 60 * 60 * 1000));
+              return `"${t.name}","${t.email}","${t.lastPlanName}","${t.canceledAt}",${days}`;
+            }).join("\n");
+            const blob = new Blob([header + rows], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = "winback-targets.csv"; a.click();
+            URL.revokeObjectURL(url);
+          };
+
+          return (
+            <Card>
+              <div className="flex items-start justify-between mb-1 min-h-9">
+                <div className="flex items-center gap-2">
+                  <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                  <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
+                </div>
+                {wb.targets.length > 0 && (
+                  <Button variant="outline" size="icon" onClick={downloadCsv} title="Download win-back targets as CSV">
+                    <DownloadIcon className="size-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
+              </p>
+
+              <div className="flex-1 flex flex-col">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted">
+                      <TableHead className="text-xs py-1.5">Return Window</TableHead>
+                      <TableHead className="text-xs py-1.5 text-right"># Returned</TableHead>
+                      <TableHead className="text-xs py-1.5 text-right">% of Returns</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {buckets.map((b) => (
+                      <TableRow key={b.label}>
+                        <TableCell className="py-1.5 text-sm">{b.label}</TableCell>
+                        <TableCell className="py-1.5 text-sm text-right tabular-nums">{b.count}</TableCell>
+                        <TableCell className="py-1.5 text-sm text-right tabular-nums">
+                          {r.total > 0 ? (b.count / r.total * 100).toFixed(1) : 0}%
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="font-medium border-t-2">
+                      <TableCell className="py-1.5 text-sm">Total</TableCell>
+                      <TableCell className="py-1.5 text-sm text-right tabular-nums">{r.total}</TableCell>
+                      <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">
+                        {wb.reactivationRate}% of churned
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              <p className="text-xs text-muted-foreground mt-3">
+                When they return: {r.upgradePct}% upgrade · {r.downgradePct}% downgrade · {r.samePct}% same plan
+              </p>
+
+              {wb.targets.length > 0 && (
+                <div className="mt-3 rounded-md bg-muted/50 px-3 py-2">
+                  <span className="text-sm">
+                    <span className="font-semibold">{wb.targets.length}</span>{" "}
+                    <span className="text-muted-foreground">members cancelled 30–120 days ago — prime win-back targets</span>
+                  </span>
+                </div>
+              )}
+            </Card>
+          );
+        })()}
       </div>
 
       {/* ── Sky3 ──────────────────────────────────────── */}
