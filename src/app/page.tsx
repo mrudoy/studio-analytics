@@ -3309,7 +3309,7 @@ function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
   );
 }
 
-// ─── Expired Intro Weeks Card (side-by-side bar chart) ──────
+// ─── Expired Intro Weeks Card (vertical bar chart) ──────────
 
 const expiredIntroChartConfig = {
   converted: { label: "Converted", color: COLORS.success },
@@ -3320,8 +3320,8 @@ function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
   const { totalExpired, converted, notConverted, conversionRate } = data;
 
   const chartData = [
-    { name: "Converted", value: converted, fill: COLORS.success },
-    { name: "Did not convert", value: notConverted, fill: `${COLORS.error}99` },
+    { label: "Converted", value: converted, fill: "var(--color-converted)" },
+    { label: "Did not convert", value: notConverted, fill: "var(--color-notConverted)" },
   ];
 
   return (
@@ -3344,41 +3344,32 @@ function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
           )}
         </div>
       </CardHeader>
-
       <CardContent>
-        {/* KPI row */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold tabular-nums">{totalExpired}</div>
-            <div className="text-xs text-muted-foreground">Total expired</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold tabular-nums">{conversionRate}%</div>
-            <div className="text-xs text-muted-foreground">Conversion rate</div>
-          </div>
-        </div>
-
-        {/* Side-by-side bar chart */}
-        {totalExpired > 0 && (
-          <ChartContainer config={expiredIntroChartConfig} className="h-[140px] w-full">
-            <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 24, top: 0, bottom: 0 }}>
-              <YAxis
-                dataKey="name"
-                type="category"
-                tickLine={false}
-                axisLine={false}
-                width={120}
-                tick={{ fontSize: 12, fontFamily: FONT_SANS }}
-              />
-              <XAxis type="number" hide />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={32}>
-                <LabelList dataKey="value" position="right" style={{ fontSize: 13, fontWeight: 600, fontFamily: FONT_SANS }} />
-              </Bar>
-            </BarChart>
-          </ChartContainer>
-        )}
+        <ChartContainer config={expiredIntroChartConfig}>
+          <BarChart accessibilityLayer data={chartData}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="label"
+              tickLine={false}
+              tickMargin={10}
+              axisLine={false}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel />}
+            />
+            <Bar dataKey="value" radius={8} />
+          </BarChart>
+        </ChartContainer>
       </CardContent>
+      <CardFooter className="flex-col items-start gap-2 text-sm">
+        <div className="flex gap-2 leading-none font-medium">
+          {conversionRate}% conversion rate ({totalExpired} total expired)
+        </div>
+        <div className="text-muted-foreground leading-none">
+          Intro week passes that expired in the last 14 days
+        </div>
+      </CardFooter>
     </DashboardCard>
   );
 }
