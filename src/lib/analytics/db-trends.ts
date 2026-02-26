@@ -1034,6 +1034,16 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     console.log(`[churn] Sample created_at: "${allRows[0].created_at}" -> "${categorized[0].created_at}"`);
   }
 
+  // Log plan name breakdown for MEMBER category to verify annual/monthly split
+  const memberRows = categorized.filter((r) => r.category === "MEMBER");
+  const annualMembers = memberRows.filter((r) => r.isAnnual);
+  const monthlyMembers = memberRows.filter((r) => !r.isAnnual);
+  const annualPlanNames = [...new Set(annualMembers.map((r) => r.plan_name))];
+  const monthlyPlanNames = [...new Set(monthlyMembers.map((r) => r.plan_name))];
+  console.log(`[churn] MEMBER split: ${annualMembers.length} annual, ${monthlyMembers.length} monthly (total: ${memberRows.length})`);
+  console.log(`[churn] Annual plan names: ${JSON.stringify(annualPlanNames)}`);
+  console.log(`[churn] Monthly plan names: ${JSON.stringify(monthlyPlanNames)}`);
+
   const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
   const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
   const CATEGORIES = ["MEMBER", "SKY3", "SKY_TING_TV"] as const;
