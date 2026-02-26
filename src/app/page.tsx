@@ -4429,37 +4429,49 @@ function ChurnSection({ churnRates, weekly }: {
         </div>
 
         {/* Member churn by billing type */}
-        <Card>
-          <Table style={{ fontFamily: FONT_SANS }}>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">Membership Type</TableHead>
-                <TableHead className="text-xs text-right">User Churn (Avg/Mo)</TableHead>
-                <TableHead className="text-xs text-right">MRR Churn (Avg/Mo)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell className="py-2 text-sm font-medium">Annual</TableCell>
-                <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined }}>
-                  {mem.avgAnnualUserChurnRate != null ? `${mem.avgAnnualUserChurnRate.toFixed(1)}%` : "–"}
-                </TableCell>
-                <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined }}>
-                  {mem.avgAnnualMrrChurnRate != null ? `${mem.avgAnnualMrrChurnRate.toFixed(1)}%` : "–"}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="py-2 text-sm font-medium">Monthly</TableCell>
-                <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined }}>
-                  {mem.avgEligibleChurnRate != null ? `${mem.avgEligibleChurnRate.toFixed(1)}%` : "–"}
-                </TableCell>
-                <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined }}>
-                  {mem.avgMonthlyMrrChurnRate != null ? `${mem.avgMonthlyMrrChurnRate.toFixed(1)}%` : "–"}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </Card>
+        {(() => {
+          const annualCount = lastComplete?.annualActiveAtStart ?? 0;
+          const monthlyCount = lastComplete?.monthlyActiveAtStart ?? 0;
+          const totalCount = annualCount + monthlyCount;
+          const annualPct = totalCount > 0 ? Math.round((annualCount / totalCount) * 100) : 0;
+          const monthlyPct = totalCount > 0 ? Math.round((monthlyCount / totalCount) * 100) : 0;
+          return (
+            <Card>
+              <Table style={{ fontFamily: FONT_SANS }}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Membership Type</TableHead>
+                    <TableHead className="text-xs text-right">% of Members</TableHead>
+                    <TableHead className="text-xs text-right">User Churn (Avg/Mo)</TableHead>
+                    <TableHead className="text-xs text-right">MRR Churn (Avg/Mo)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="py-2 text-sm font-medium">Monthly</TableCell>
+                    <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{monthlyPct}%</TableCell>
+                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined }}>
+                      {mem.avgEligibleChurnRate != null ? `${mem.avgEligibleChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined }}>
+                      {mem.avgMonthlyMrrChurnRate != null ? `${mem.avgMonthlyMrrChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-2 text-sm font-medium">Annual</TableCell>
+                    <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{annualPct}%</TableCell>
+                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined }}>
+                      {mem.avgAnnualUserChurnRate != null ? `${mem.avgAnnualUserChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined }}>
+                      {mem.avgAnnualMrrChurnRate != null ? `${mem.avgAnnualMrrChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </Card>
+          );
+        })()}
 
         {/* Tenure / Retention metrics */}
         {tenure && (
