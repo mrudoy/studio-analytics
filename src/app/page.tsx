@@ -3309,29 +3309,34 @@ function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
   );
 }
 
-// ─── Intro Week Conversion Funnel Card ──────────────────────
+// ─── Expired Intro Weeks Card (side-by-side bar chart) ──────
 
-function IntroWeekConversionCard({ data }: { data: IntroWeekConversionData }) {
-  const { totalExpired, converted, notConverted, conversionRate, nonConverters } = data;
-  const [showTable, setShowTable] = useState(false);
+const expiredIntroChartConfig = {
+  converted: { label: "Converted", color: COLORS.success },
+  notConverted: { label: "Did not convert", color: COLORS.error },
+} satisfies ChartConfig;
 
-  const downloadNonConvertersCsv = () => {
-    window.location.href = "/api/intro-week-nonconvert-export";
-  };
+function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
+  const { totalExpired, converted, notConverted, conversionRate } = data;
+
+  const chartData = [
+    { name: "Converted", value: converted, fill: COLORS.success },
+    { name: "Did not convert", value: notConverted, fill: `${COLORS.error}99` },
+  ];
 
   return (
-    <DashboardCard>
+    <DashboardCard matchHeight>
       <CardHeader>
         <div className="flex items-center justify-between w-full">
           <div>
-            <CardTitle>Intro Week Conversion</CardTitle>
-            <CardDescription>Expired intro weeks (last 14 days) — did they convert to auto-renew?</CardDescription>
+            <CardTitle>Expired Intro Weeks</CardTitle>
+            <CardDescription>Past 14 days</CardDescription>
           </div>
           {notConverted > 0 && (
             <Button
               variant="outline"
               size="icon"
-              onClick={downloadNonConvertersCsv}
+              onClick={() => { window.location.href = "/api/intro-week-nonconvert-export"; }}
               title="Download non-converters as CSV"
             >
               <DownloadIcon className="size-4" />
@@ -3341,85 +3346,37 @@ function IntroWeekConversionCard({ data }: { data: IntroWeekConversionData }) {
       </CardHeader>
 
       <CardContent>
-        {/* Funnel KPIs */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        {/* KPI row */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="text-center">
             <div className="text-2xl font-bold tabular-nums">{totalExpired}</div>
-            <div className="text-xs text-muted-foreground">Total Expired</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold tabular-nums" style={{ color: COLORS.success }}>{converted}</div>
-            <div className="text-xs text-muted-foreground">Converted</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold tabular-nums" style={{ color: COLORS.error }}>{notConverted}</div>
-            <div className="text-xs text-muted-foreground">Did Not Convert</div>
+            <div className="text-xs text-muted-foreground">Total expired</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold tabular-nums">{conversionRate}%</div>
-            <div className="text-xs text-muted-foreground">Conversion Rate</div>
+            <div className="text-xs text-muted-foreground">Conversion rate</div>
           </div>
         </div>
 
-        {/* Visual bar */}
+        {/* Side-by-side bar chart */}
         {totalExpired > 0 && (
-          <div className="w-full h-3 rounded-full overflow-hidden flex mb-4" style={{ backgroundColor: "rgba(0,0,0,0.06)" }}>
-            <div
-              className="h-full rounded-l-full"
-              style={{
-                width: `${conversionRate}%`,
-                backgroundColor: COLORS.success,
-                minWidth: converted > 0 ? "4px" : "0",
-              }}
-            />
-            <div
-              className="h-full rounded-r-full"
-              style={{
-                width: `${100 - conversionRate}%`,
-                backgroundColor: COLORS.error,
-                opacity: 0.6,
-                minWidth: notConverted > 0 ? "4px" : "0",
-              }}
-            />
-          </div>
-        )}
-
-        {/* Non-converters toggle */}
-        {notConverted > 0 && (
-          <div>
-            <button
-              onClick={() => setShowTable(!showTable)}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-            >
-              {showTable ? "Hide" : "Show"} non-converters ({notConverted})
-              <span className="text-xs">{showTable ? "\u25B2" : "\u25BC"}</span>
-            </button>
-
-            {showTable && (
-              <div className="mt-3 max-h-[300px] overflow-y-auto border rounded-md">
-                <Table style={{ fontFamily: FONT_SANS }}>
-                  <TableHeader className="bg-muted sticky top-0">
-                    <TableRow>
-                      <TableHead className="text-xs text-muted-foreground">Name</TableHead>
-                      <TableHead className="text-xs text-muted-foreground">Email</TableHead>
-                      <TableHead className="text-xs text-muted-foreground text-right">Expired</TableHead>
-                      <TableHead className="text-xs text-muted-foreground text-right">Classes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {nonConverters.map((nc, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="py-1.5 text-sm">{nc.name}</TableCell>
-                        <TableCell className="py-1.5 text-sm text-muted-foreground">{nc.email}</TableCell>
-                        <TableCell className="py-1.5 text-sm text-right tabular-nums">{nc.introEnd}</TableCell>
-                        <TableCell className="py-1.5 text-sm text-right tabular-nums">{nc.classesAttended}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
+          <ChartContainer config={expiredIntroChartConfig} className="h-[140px] w-full">
+            <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 24, top: 0, bottom: 0 }}>
+              <YAxis
+                dataKey="name"
+                type="category"
+                tickLine={false}
+                axisLine={false}
+                width={120}
+                tick={{ fontSize: 12, fontFamily: FONT_SANS }}
+              />
+              <XAxis type="number" hide />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={32}>
+                <LabelList dataKey="value" position="right" style={{ fontSize: 13, fontWeight: 600, fontFamily: FONT_SANS }} />
+              </Bar>
+            </BarChart>
+          </ChartContainer>
         )}
       </CardContent>
     </DashboardCard>
@@ -6475,9 +6432,6 @@ function DashboardContent({ activeSection, data, refreshData }: {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
               <IntroWeekModule introWeek={trends?.introWeek ?? null} />
             </div>
-            {trends?.introWeekConversion && (
-              <IntroWeekConversionCard data={trends.introWeekConversion} />
-            )}
           </div>
         </div>
       )}
@@ -6499,6 +6453,11 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </>
           ) : (
             <NoData label="New Customer data" />
+          )}
+          {trends?.introWeekConversion && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+              <ExpiredIntroWeeksCard data={trends.introWeekConversion} />
+            </div>
           )}
         </div>
       )}
