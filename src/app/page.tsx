@@ -4662,9 +4662,6 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ) : null;
           })()
         )}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Monthly Churn bar chart (50% width) ── */}
         {(() => {
           const completedMonths = mem.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
