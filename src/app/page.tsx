@@ -4582,7 +4582,6 @@ function ChurnSection({ churnRates, weekly }: {
                   <div className="flex items-center gap-2">
                     <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{cliffMembers.length + markMembers.length}</Badge>
                   </div>
                   {alerts.tenureMilestones.length > 0 && (
                     <Button variant="outline" size="icon" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
@@ -4622,6 +4621,11 @@ function ChurnSection({ churnRates, weekly }: {
                         </TableCell>
                       </TableRow>
                     )}
+                    <TableRow className="border-t">
+                      <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length + markMembers.length}</TableCell>
+                      <TableCell className="py-1.5 px-0" />
+                    </TableRow>
                   </TableBody>
                 </Table>
               </Card>
@@ -4658,7 +4662,6 @@ function ChurnSection({ churnRates, weekly }: {
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="size-5 shrink-0 text-amber-600" />
                     <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
                   </div>
                   {allAtRisk.length > 0 && (
                     <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
@@ -4690,6 +4693,11 @@ function ChurnSection({ churnRates, weekly }: {
                           </TableCell>
                         </TableRow>
                       ))}
+                      <TableRow className="border-t">
+                        <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
+                        <TableCell className="py-1.5 px-0" />
+                      </TableRow>
                     </TableBody>
                   </Table>
                 )}
