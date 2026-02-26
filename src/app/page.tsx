@@ -4663,7 +4663,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
         )}
         </div>
 
-        {/* ── Monthly Churn bar chart ─────────────────── */}
+        {/* ── Monthly + Annual Churn bar charts (50/50) ── */}
         {(() => {
           const completedMonths = mem.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
           const currentMonth = mem.monthly.length > 0 ? mem.monthly[mem.monthly.length - 1] : null;
@@ -4673,60 +4673,99 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
             const d = new Date(parseInt(y), parseInt(mo) - 1);
             return d.toLocaleDateString("en-US", { month: "short" }) + " '" + y.slice(2);
           };
-          // Build chart data: completed months + current partial month
-          const chartData = completedMonths.map((m) => ({
+          // Monthly chart data: completed months + current partial month
+          const monthlyData = completedMonths.map((m) => ({
             month: fmtShort(m.month),
             rate: parseFloat((m.eligibleChurnRate ?? 0).toFixed(1)),
             fill: COLORS.member,
           }));
           if (currentMonth) {
-            chartData.push({
+            monthlyData.push({
               month: fmtShort(currentMonth.month),
               rate: parseFloat((currentMonth.eligibleChurnRate ?? 0).toFixed(1)),
-              fill: `${COLORS.member}50`,  // 50% opacity for partial month
+              fill: `${COLORS.member}50`,
             });
           }
-          // Avg of last 6 completed months
+          // Annual chart data
+          const annualData = completedMonths.map((m) => ({
+            month: fmtShort(m.month),
+            rate: parseFloat((m.annualUserChurnRate ?? 0).toFixed(1)),
+            fill: COLORS.member,
+          }));
+          if (currentMonth) {
+            annualData.push({
+              month: fmtShort(currentMonth.month),
+              rate: parseFloat((currentMonth.annualUserChurnRate ?? 0).toFixed(1)),
+              fill: `${COLORS.member}50`,
+            });
+          }
+          // 6-mo averages
           const last6 = completedMonths.slice(-6);
-          const avg6 = last6.length > 0
+          const avgMonthly = last6.length > 0
             ? last6.reduce((s, m) => s + (m.eligibleChurnRate ?? 0), 0) / last6.length
             : 0;
-          const churnConfig = {
-            rate: { label: "Monthly churn", color: COLORS.member },
-          } satisfies ChartConfig;
+          const avgAnnual = last6.length > 0
+            ? last6.reduce((s, m) => s + (m.annualUserChurnRate ?? 0), 0) / last6.length
+            : 0;
+          const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
+          const annualConfig = { rate: { label: "Annual churn", color: COLORS.member } } satisfies ChartConfig;
           return (
-            <Card>
-              <div className="flex items-start justify-between mb-1 min-h-9">
-                <div className="flex items-center gap-2">
-                  <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                  <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+              <Card>
+                <div className="flex items-start justify-between mb-1 min-h-9">
+                  <div className="flex items-center gap-2">
+                    <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                    <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avg6) }}>{avg6.toFixed(1)}%</div>
-                  <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
+                <p className="text-xs text-muted-foreground mb-3">Monthly-billed member churn rate</p>
+                <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
+                  <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                    <Bar dataKey="rate" radius={8}>
+                      <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+                <CardFooter className="flex-col items-start gap-2 text-sm">
+                  <div className="text-muted-foreground leading-none">
+                    Oct 2025 excluded (data anomaly). Current month is partial.
+                  </div>
+                </CardFooter>
+              </Card>
+              <Card>
+                <div className="flex items-start justify-between mb-1 min-h-9">
+                  <div className="flex items-center gap-2">
+                    <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                    <span className="text-base font-semibold leading-none tracking-tight">Annual Churn</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgAnnual) }}>{avgAnnual.toFixed(1)}%</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
+                  </div>
                 </div>
-              </div>
-              <p className="text-xs text-muted-foreground mb-3">Monthly-billed member churn rate</p>
-              <ChartContainer config={churnConfig} className="h-[200px] w-full">
-                <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    tickMargin={10}
-                    axisLine={false}
-                  />
-                  <Bar dataKey="rate" radius={8}>
-                    <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-              <CardFooter className="flex-col items-start gap-2 text-sm">
-                <div className="text-muted-foreground leading-none">
-                  Oct 2025 excluded (data anomaly). Current month is partial.
-                </div>
-              </CardFooter>
-            </Card>
+                <p className="text-xs text-muted-foreground mb-3">Annual-billed member churn rate</p>
+                <ChartContainer config={annualConfig} className="h-[200px] w-full">
+                  <BarChart accessibilityLayer data={annualData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                    <Bar dataKey="rate" radius={8}>
+                      <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+                <CardFooter className="flex-col items-start gap-2 text-sm">
+                  <div className="text-muted-foreground leading-none">
+                    Oct 2025 excluded (data anomaly). Current month is partial.
+                  </div>
+                </CardFooter>
+              </Card>
+            </div>
           );
         })()}
 
