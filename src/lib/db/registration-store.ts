@@ -1332,19 +1332,22 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
  * Pre-materialize the first_in_studio_sub lookup table.
  * This data (email → first sub date) is identical across all 15 conversion pool
  * queries (3 functions × 5 slices) and is the most expensive CTE to compute.
- * By computing it once and storing in a temp table, we avoid 15 redundant scans.
+ * By computing it once and storing in an unlogged table, we avoid 15 redundant scans.
  *
- * Returns a cleanup function to drop the temp table when done.
+ * Uses UNLOGGED table (not TEMP) because pool.query() may use different
+ * connections, and temp tables are per-connection. UNLOGGED tables are visible
+ * across all connections but skip WAL for speed.
+ *
+ * Returns a cleanup function to drop the table when done.
  */
 export async function materializeFirstInStudioSub(): Promise<() => Promise<void>> {
   const pool = getPool();
-  // Use a session-scoped temp table name with random suffix to avoid collisions
-  const tableName = `_tmp_first_in_studio_sub`;
+  const tableName = `_mat_first_in_studio_sub`;
 
   // Drop if exists (from a prior call that didn't clean up), then create + populate
   await pool.query(`DROP TABLE IF EXISTS ${tableName}`);
   await pool.query(`
-    CREATE TEMP TABLE ${tableName} AS
+    CREATE UNLOGGED TABLE ${tableName} AS
     SELECT LOWER(customer_email) as email,
            MIN(created_at::date) as first_sub_date
     FROM auto_renews
@@ -1353,20 +1356,20 @@ export async function materializeFirstInStudioSub(): Promise<() => Promise<void>
       ${IN_STUDIO_PLAN_FILTER}
     GROUP BY LOWER(customer_email)
   `);
-  // Add index on the temp table for fast joins
+  // Add index on the materialized table for fast joins
   await pool.query(`CREATE INDEX ON ${tableName} (email)`);
 
-  console.log(`[registration-store] Materialized first_in_studio_sub temp table`);
+  console.log(`[registration-store] Materialized first_in_studio_sub table`);
   return async () => {
     try { await pool.query(`DROP TABLE IF EXISTS ${tableName}`); } catch { /* ignore */ }
   };
 }
 
 /**
- * SQL fragment that references the pre-materialized temp table instead of
- * recomputing the CTE. Used by conversion pool queries when the temp table exists.
+ * SQL fragment that references the pre-materialized table instead of
+ * recomputing the CTE. Used by conversion pool queries when the table exists.
  */
-export const FIRST_IN_STUDIO_SUB_TABLE = `_tmp_first_in_studio_sub`;
+export const FIRST_IN_STUDIO_SUB_TABLE = `_mat_first_in_studio_sub`;
 
 // Pool slice SQL fragments: filter which non-subscriber visits count
 export type PoolSliceKey = "all" | "drop-ins" | "intro-week" | "class-packs" | "high-intent";
