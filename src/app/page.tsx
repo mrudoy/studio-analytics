@@ -4505,8 +4505,11 @@ function ChurnSection({ churnRates, weekly }: {
           </Card>
         )}
 
-        {/* Member churn by billing type — 50% width */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      </div>
+
+      {/* ── Membership Churn + Milestones + At Risk — 3-up row ────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
+        {/* Membership Churn */}
         {(() => {
           const annualCount = lastComplete?.annualActiveAtStart ?? 0;
           const monthlyCount = lastComplete?.monthlyActiveAtStart ?? 0;
@@ -4514,14 +4517,18 @@ function ChurnSection({ churnRates, weekly }: {
           const annualPct = totalCount > 0 ? Math.round((annualCount / totalCount) * 100) : 0;
           const monthlyPct = totalCount > 0 ? Math.round((monthlyCount / totalCount) * 100) : 0;
           return (
-            <Card>
+            <Card matchHeight>
+              <div className="flex items-center gap-2 mb-3">
+                <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                <span className="text-base font-semibold leading-none tracking-tight">Membership Churn</span>
+              </div>
               <Table style={{ fontFamily: FONT_SANS }}>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs">Membership Type</TableHead>
-                    <TableHead className="text-xs text-right">% of Members</TableHead>
-                    <TableHead className="text-xs text-right">User Churn (Avg/Mo)</TableHead>
-                    <TableHead className="text-xs text-right">MRR Churn (Avg/Mo)</TableHead>
+                    <TableHead className="text-xs">Type</TableHead>
+                    <TableHead className="text-xs text-right">%</TableHead>
+                    <TableHead className="text-xs text-right">User Churn</TableHead>
+                    <TableHead className="text-xs text-right">MRR Churn</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4550,12 +4557,7 @@ function ChurnSection({ churnRates, weekly }: {
             </Card>
           );
         })()}
-        </div>
 
-      </div>
-
-      {/* ── Milestones + At Risk side by side ────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Approaching Milestones */}
         {alerts && (
           (() => {
@@ -4575,11 +4577,13 @@ function ChurnSection({ churnRates, weekly }: {
               URL.revokeObjectURL(url);
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
-              <Card>
-                <div className="flex items-center gap-2 mb-1">
-                  <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
-                  <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{cliffMembers.length + markMembers.length}</Badge>
+              <Card matchHeight>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
+                    <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{cliffMembers.length + markMembers.length}</Badge>
+                  </div>
                   {alerts.tenureMilestones.length > 0 && (
                     <Button variant="outline" size="icon" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
                       <DownloadIcon className="size-4" />
@@ -4649,11 +4653,13 @@ function ChurnSection({ churnRates, weekly }: {
               { label: "Pending Cancel", members: ars?.pendingCancel ?? [], file: "at-risk-pending-cancel.csv" },
             ];
             return (
-              <Card>
-                <div className="flex items-center gap-2 mb-1">
-                  <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                  <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
+              <Card matchHeight>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+                    <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
+                  </div>
                   {allAtRisk.length > 0 && (
                     <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
                       <DownloadIcon className="size-4" />
