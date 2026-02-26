@@ -4576,14 +4576,12 @@ function ChurnSection({ churnRates, weekly }: {
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
               <Card>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
-                    <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{cliffMembers.length + markMembers.length}</Badge>
-                  </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
+                  <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{cliffMembers.length + markMembers.length}</Badge>
                   {alerts.tenureMilestones.length > 0 && (
-                    <Button variant="ghost" size="icon" className="size-7" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
+                    <Button variant="outline" size="icon" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
                       <DownloadIcon className="size-4" />
                     </Button>
                   )}
@@ -4652,14 +4650,12 @@ function ChurnSection({ churnRates, weekly }: {
             ];
             return (
               <Card>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                    <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
-                  </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+                  <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
                   {allAtRisk.length > 0 && (
-                    <Button variant="ghost" size="icon" className="size-7" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
+                    <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
                       <DownloadIcon className="size-4" />
                     </Button>
                   )}

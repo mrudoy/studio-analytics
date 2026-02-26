@@ -366,6 +366,49 @@ All bars use `radius={8}` for rounded corners.
 - Between sub-groups within a section: `gap-4` in flex column
 - Between cards in a grid: `gap-3`
 
+## Download Buttons
+
+### Global Download (Card-Level)
+A card-level "download all" button placed inline with the card title, to the right of the title text and any badges. Uses `variant="outline"` with `size="icon"`.
+
+```tsx
+<div className="flex items-center gap-2 mb-1">
+  <Icon className="size-5 shrink-0" style={{ color: COLORS.category }} />
+  <span className="text-base font-semibold leading-none tracking-tight">Card Title</span>
+  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{count}</Badge>
+  <Button variant="outline" size="icon" onClick={downloadAll} title="Download all as CSV">
+    <DownloadIcon className="size-4" />
+  </Button>
+</div>
+```
+
+**Rules:**
+- Always `variant="outline"` `size="icon"` — never `variant="ghost"` for global downloads
+- Placed **inline** with the title row (same `flex` container), not floated to the right
+- Include a descriptive `title` attribute for hover tooltip
+
+### Row-Level Download (Table Rows)
+Per-row download icons inside tables. Uses `variant="ghost"` `size="icon"` for minimal visual weight.
+
+```tsx
+<TableHead className="w-10 px-0 text-center">
+  <DownloadIcon className="size-3.5 text-muted-foreground inline-block" />
+</TableHead>
+{/* ... per row: */}
+<TableCell className="py-1.5 px-0 text-center">
+  <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={download} title="Download as CSV">
+    <DownloadIcon className="size-3.5" />
+  </Button>
+</TableCell>
+```
+
+**Rules:**
+- Column header: just the icon (`inline-block`), no text
+- Cell: `variant="ghost"` `size="icon"` with `mx-auto` for centering
+- Column width: `w-10 px-0`
+
+---
+
 ## Anti-Patterns (Do Not Use)
 
 - Charts without `<CartesianGrid vertical={false} />` — every chart needs solid horizontal grid lines (no strokeDasharray)
