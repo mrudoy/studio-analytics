@@ -5004,12 +5004,10 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   if (subsection === "intro") {
   return (
     <div className="flex flex-col gap-3">
-        {introWeekConversion && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-            <ExpiredIntroWeeksCard data={introWeekConversion} />
-          </div>
-        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+        {introWeekConversion && (
+            <ExpiredIntroWeeksCard data={introWeekConversion} />
+        )}
         {/* Expiring Intro Weeks */}
         {expiringIntroWeeks && expiringIntroWeeks.customers.length > 0 && (
           (() => {
