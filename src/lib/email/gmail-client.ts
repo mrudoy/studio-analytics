@@ -347,6 +347,19 @@ export class GmailClient {
   }
 
   /**
+   * Archive an email (remove INBOX label). Keeps the email in "All Mail".
+   */
+  async archiveEmail(messageId: string): Promise<void> {
+    await this.gmail.users.messages.modify({
+      userId: "me",
+      id: messageId,
+      requestBody: {
+        removeLabelIds: ["INBOX"],
+      },
+    });
+  }
+
+  /**
    * Poll for report emails, retrying until they arrive or timeout.
    */
   async waitForReportEmails(

@@ -513,6 +513,8 @@ async function runZipImport(
   if (emailId && gmail) {
     try {
       await gmail.markAsRead(emailId);
+      await gmail.archiveEmail(emailId);
+      console.log(`[zip-pipeline] Email ${emailId} marked as read and archived`);
     } catch {
       /* non-critical */
     }
