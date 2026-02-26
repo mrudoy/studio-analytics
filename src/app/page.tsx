@@ -4819,6 +4819,81 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
             </Card>
           );
         })()}
+
+        {/* At Risk */}
+        {churnRates.totalAtRisk > 0 && (
+          (() => {
+            const ars = churnRates.atRiskByState;
+            const allAtRisk = ars ? [...ars.pastDue, ...ars.invalid, ...ars.pendingCancel] : [];
+            const downloadAtRiskCsv = (members: AtRiskMember[], filename: string) => {
+              const headers = ["Name", "Email", "Plan", "Category", "Status", "Start Date", "Tenure (months)"];
+              const rows = members.map((m) => [
+                m.name, m.email, m.planName, m.category, m.planState,
+                m.createdAt ? m.createdAt.slice(0, 10) : "", m.tenureMonths.toFixed(1),
+              ]);
+              const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url; a.download = filename; a.click();
+              URL.revokeObjectURL(url);
+            };
+            const stateRows = [
+              { label: "Past Due", members: ars?.pastDue ?? [], file: "at-risk-past-due.csv" },
+              { label: "Invalid", members: ars?.invalid ?? [], file: "at-risk-invalid.csv" },
+              { label: "Pending Cancel", members: ars?.pendingCancel ?? [], file: "at-risk-pending-cancel.csv" },
+            ];
+            return (
+              <Card matchHeight>
+                <div className="flex items-start justify-between mb-1 min-h-9">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+                    <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                  </div>
+                  {allAtRisk.length > 0 && (
+                    <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
+                {ars && (
+                  <div className="flex-1 flex flex-col">
+                    <Table style={{ fontFamily: FONT_SANS }}>
+                      <TableHeader className="bg-muted">
+                        <TableRow>
+                          <TableHead className="text-xs text-muted-foreground">Status</TableHead>
+                          <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
+                          <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {stateRows.map((sr) => (
+                          <TableRow key={sr.label}>
+                            <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
+                            <TableCell className="py-1.5 px-0 text-center">
+                              {sr.members.length > 0 && (
+                                <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
+                                  <DownloadIcon className="size-3.5" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="border-t">
+                          <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
+                          <TableCell className="py-1.5 px-0" />
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </Card>
+            );
+          })()
+        )}
         </div>
       </div>
 
@@ -4928,88 +5003,13 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
         </Card>
       </div>
 
-      {/* ── Other ───────────────────────────────────── */}
+      {/* ── Intro Week ─────────────────────────────── */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
-          <Eyeglass className="size-5" style={{ color: COLORS.accent }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Other</h3>
+          <CalendarWeek className="size-5" style={{ color: COLORS.copper }} />
+          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Intro Week</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
-        {/* At Risk */}
-        {churnRates.totalAtRisk > 0 && (
-          (() => {
-            const ars = churnRates.atRiskByState;
-            const allAtRisk = ars ? [...ars.pastDue, ...ars.invalid, ...ars.pendingCancel] : [];
-            const downloadAtRiskCsv = (members: AtRiskMember[], filename: string) => {
-              const headers = ["Name", "Email", "Plan", "Category", "Status", "Start Date", "Tenure (months)"];
-              const rows = members.map((m) => [
-                m.name, m.email, m.planName, m.category, m.planState,
-                m.createdAt ? m.createdAt.slice(0, 10) : "", m.tenureMonths.toFixed(1),
-              ]);
-              const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-              const blob = new Blob([csv], { type: "text/csv" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url; a.download = filename; a.click();
-              URL.revokeObjectURL(url);
-            };
-            const stateRows = [
-              { label: "Past Due", members: ars?.pastDue ?? [], file: "at-risk-past-due.csv" },
-              { label: "Invalid", members: ars?.invalid ?? [], file: "at-risk-invalid.csv" },
-              { label: "Pending Cancel", members: ars?.pendingCancel ?? [], file: "at-risk-pending-cancel.csv" },
-            ];
-            return (
-              <Card matchHeight>
-                <div className="flex items-start justify-between mb-1 min-h-9">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                    <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
-                  </div>
-                  {allAtRisk.length > 0 && (
-                    <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
-                  )}
-                </div>
-                <p className="text-[11px] text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
-                {ars && (
-                  <div className="flex-1 flex flex-col">
-                    <Table style={{ fontFamily: FONT_SANS }}>
-                      <TableHeader className="bg-muted">
-                        <TableRow>
-                          <TableHead className="text-xs text-muted-foreground">Status</TableHead>
-                          <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
-                          <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {stateRows.map((sr) => (
-                          <TableRow key={sr.label}>
-                            <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
-                            <TableCell className="py-1.5 px-0 text-center">
-                              {sr.members.length > 0 && (
-                                <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
-                                  <DownloadIcon className="size-3.5" />
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="border-t">
-                          <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
-                          <TableCell className="py-1.5 px-0" />
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </Card>
-            );
-          })()
-        )}
-
         {/* Expiring Intro Weeks */}
         {expiringIntroWeeks && expiringIntroWeeks.customers.length > 0 && (
           (() => {
