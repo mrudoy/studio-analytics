@@ -1408,7 +1408,7 @@ const MOD = {
 function Card({ children, padding, matchHeight = false }: { children: React.ReactNode; padding?: string; matchHeight?: boolean }) {
   return (
     <DashboardCard matchHeight={matchHeight}>
-      <CardContent>
+      <CardContent className={matchHeight ? "flex-1 flex flex-col" : undefined}>
         {children}
       </CardContent>
     </DashboardCard>
@@ -4525,38 +4525,40 @@ function ChurnSection({ churnRates, weekly }: {
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground mb-3">Annual vs. monthly user and MRR churn rates</p>
-              <Table style={{ fontFamily: FONT_SANS }}>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Type</TableHead>
-                    <TableHead className="text-xs text-right">%</TableHead>
-                    <TableHead className="text-xs text-right">User Churn</TableHead>
-                    <TableHead className="text-xs text-right">MRR Churn</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="py-2 text-sm font-medium">Monthly</TableCell>
-                    <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{monthlyPct}%</TableCell>
-                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined }}>
-                      {mem.avgEligibleChurnRate != null ? `${mem.avgEligibleChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined }}>
-                      {mem.avgMonthlyMrrChurnRate != null ? `${mem.avgMonthlyMrrChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-2 text-sm font-medium">Annual</TableCell>
-                    <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{annualPct}%</TableCell>
-                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined }}>
-                      {mem.avgAnnualUserChurnRate != null ? `${mem.avgAnnualUserChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                    <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined }}>
-                      {mem.avgAnnualMrrChurnRate != null ? `${mem.avgAnnualMrrChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+              <div className="flex-1 flex flex-col">
+                <Table style={{ fontFamily: FONT_SANS }}>
+                  <TableHeader className="bg-muted">
+                    <TableRow>
+                      <TableHead className="text-xs text-muted-foreground">Type</TableHead>
+                      <TableHead className="text-xs text-muted-foreground text-right">Distribution</TableHead>
+                      <TableHead className="text-xs text-muted-foreground text-right">User Churn</TableHead>
+                      <TableHead className="text-xs text-muted-foreground text-right">MRR Churn</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="py-2 text-sm font-medium">Monthly</TableCell>
+                      <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{monthlyPct}%</TableCell>
+                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined }}>
+                        {mem.avgEligibleChurnRate != null ? `${mem.avgEligibleChurnRate.toFixed(1)}%` : "–"}
+                      </TableCell>
+                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined }}>
+                        {mem.avgMonthlyMrrChurnRate != null ? `${mem.avgMonthlyMrrChurnRate.toFixed(1)}%` : "–"}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="py-2 text-sm font-medium">Annual</TableCell>
+                      <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{annualPct}%</TableCell>
+                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined }}>
+                        {mem.avgAnnualUserChurnRate != null ? `${mem.avgAnnualUserChurnRate.toFixed(1)}%` : "–"}
+                      </TableCell>
+                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined }}>
+                        {mem.avgAnnualMrrChurnRate != null ? `${mem.avgAnnualMrrChurnRate.toFixed(1)}%` : "–"}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
             </Card>
           );
         })()}
@@ -4593,44 +4595,46 @@ function ChurnSection({ churnRates, weekly }: {
                   )}
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-3">Members within ±1 week of a critical tenure milestone</p>
-                <Table style={{ fontFamily: FONT_SANS }}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Milestone</TableHead>
-                      <TableHead className="text-xs text-right"># Members</TableHead>
-                      <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {cliffMembers.length > 0 && (
+                <div className="flex-1 flex flex-col">
+                  <Table style={{ fontFamily: FONT_SANS }}>
+                    <TableHeader className="bg-muted">
                       <TableRow>
-                        <TableCell className="py-1.5 text-sm">3-Month Cliff</TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length}</TableCell>
-                        <TableCell className="py-1.5 px-0 text-center">
-                          <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(cliffMembers, "3-month-cliff-members.csv")} title="Download 3-month cliff members as CSV">
-                            <DownloadIcon className="size-3.5" />
-                          </Button>
-                        </TableCell>
+                        <TableHead className="text-xs text-muted-foreground">Milestone</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
+                        <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
                       </TableRow>
-                    )}
-                    {markMembers.length > 0 && (
-                      <TableRow>
-                        <TableCell className="py-1.5 text-sm">7-Month Mark</TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{markMembers.length}</TableCell>
-                        <TableCell className="py-1.5 px-0 text-center">
-                          <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(markMembers, "7-month-mark-members.csv")} title="Download 7-month mark members as CSV">
-                            <DownloadIcon className="size-3.5" />
-                          </Button>
-                        </TableCell>
+                    </TableHeader>
+                    <TableBody>
+                      {cliffMembers.length > 0 && (
+                        <TableRow>
+                          <TableCell className="py-1.5 text-sm">3-Month Cliff</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length}</TableCell>
+                          <TableCell className="py-1.5 px-0 text-center">
+                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(cliffMembers, "3-month-cliff-members.csv")} title="Download 3-month cliff members as CSV">
+                              <DownloadIcon className="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {markMembers.length > 0 && (
+                        <TableRow>
+                          <TableCell className="py-1.5 text-sm">7-Month Mark</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{markMembers.length}</TableCell>
+                          <TableCell className="py-1.5 px-0 text-center">
+                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(markMembers, "7-month-mark-members.csv")} title="Download 7-month mark members as CSV">
+                              <DownloadIcon className="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      <TableRow className="border-t">
+                        <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length + markMembers.length}</TableCell>
+                        <TableCell className="py-1.5 px-0" />
                       </TableRow>
-                    )}
-                    <TableRow className="border-t">
-                      <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
-                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length + markMembers.length}</TableCell>
-                      <TableCell className="py-1.5 px-0" />
-                    </TableRow>
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </Card>
             ) : null;
           })()
@@ -4674,35 +4678,37 @@ function ChurnSection({ churnRates, weekly }: {
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
                 {ars && (
-                  <Table style={{ fontFamily: FONT_SANS }}>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Status</TableHead>
-                        <TableHead className="text-xs text-right"># Members</TableHead>
-                        <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {stateRows.map((sr) => (
-                        <TableRow key={sr.label}>
-                          <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
-                          <TableCell className="py-1.5 px-0 text-center">
-                            {sr.members.length > 0 && (
-                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
-                                <DownloadIcon className="size-3.5" />
-                              </Button>
-                            )}
-                          </TableCell>
+                  <div className="flex-1 flex flex-col">
+                    <Table style={{ fontFamily: FONT_SANS }}>
+                      <TableHeader className="bg-muted">
+                        <TableRow>
+                          <TableHead className="text-xs text-muted-foreground">Status</TableHead>
+                          <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
+                          <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
                         </TableRow>
-                      ))}
-                      <TableRow className="border-t">
-                        <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
-                        <TableCell className="py-1.5 px-0" />
-                      </TableRow>
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {stateRows.map((sr) => (
+                          <TableRow key={sr.label}>
+                            <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
+                            <TableCell className="py-1.5 px-0 text-center">
+                              {sr.members.length > 0 && (
+                                <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
+                                  <DownloadIcon className="size-3.5" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="border-t">
+                          <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
+                          <TableCell className="py-1.5 px-0" />
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
                 )}
               </Card>
             );
