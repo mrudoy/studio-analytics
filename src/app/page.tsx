@@ -4587,62 +4587,8 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
         )}
 
 
-        {/* 2-col: Membership Churn + Approaching Milestones */}
+        {/* Approaching Milestones */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
-        {/* Membership Churn */}
-        {(() => {
-          const annualCount = lastComplete?.annualActiveAtStart ?? 0;
-          const monthlyCount = lastComplete?.monthlyActiveAtStart ?? 0;
-          const totalCount = annualCount + monthlyCount;
-          const annualPct = totalCount > 0 ? Math.round((annualCount / totalCount) * 100) : 0;
-          const monthlyPct = totalCount > 0 ? Math.round((monthlyCount / totalCount) * 100) : 0;
-          return (
-            <Card matchHeight>
-              <div className="flex items-start justify-between mb-1 min-h-9">
-                <div className="flex items-center gap-2">
-                  <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                  <span className="text-base font-semibold leading-none tracking-tight">Membership Churn</span>
-                </div>
-              </div>
-              <p className="text-[11px] text-muted-foreground mb-3">Annual vs. monthly user and MRR churn rates</p>
-              <div className="flex-1 flex flex-col">
-                <Table style={{ fontFamily: FONT_SANS }}>
-                  <TableHeader className="bg-muted">
-                    <TableRow>
-                      <TableHead className="text-xs text-muted-foreground">Type</TableHead>
-                      <TableHead className="text-xs text-muted-foreground text-right">Distribution</TableHead>
-                      <TableHead className="text-xs text-muted-foreground text-right">User Churn</TableHead>
-                      <TableHead className="text-xs text-muted-foreground text-right">MRR Churn</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="py-2 text-sm font-medium">Monthly</TableCell>
-                      <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{monthlyPct}%</TableCell>
-                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgEligibleChurnRate != null ? churnBenchmarkColor(mem.avgEligibleChurnRate) : undefined }}>
-                        {mem.avgEligibleChurnRate != null ? `${mem.avgEligibleChurnRate.toFixed(1)}%` : "–"}
-                      </TableCell>
-                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgMonthlyMrrChurnRate != null ? churnBenchmarkColor(mem.avgMonthlyMrrChurnRate) : undefined }}>
-                        {mem.avgMonthlyMrrChurnRate != null ? `${mem.avgMonthlyMrrChurnRate.toFixed(1)}%` : "–"}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="py-2 text-sm font-medium">Annual</TableCell>
-                      <TableCell className="py-2 text-sm text-right tabular-nums text-muted-foreground">{annualPct}%</TableCell>
-                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualUserChurnRate != null ? churnBenchmarkColor(mem.avgAnnualUserChurnRate) : undefined }}>
-                        {mem.avgAnnualUserChurnRate != null ? `${mem.avgAnnualUserChurnRate.toFixed(1)}%` : "–"}
-                      </TableCell>
-                      <TableCell className="py-2 text-sm font-semibold text-right tabular-nums" style={{ color: mem.avgAnnualMrrChurnRate != null ? churnBenchmarkColor(mem.avgAnnualMrrChurnRate) : undefined }}>
-                        {mem.avgAnnualMrrChurnRate != null ? `${mem.avgAnnualMrrChurnRate.toFixed(1)}%` : "–"}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
-          );
-        })()}
-
         {/* Approaching Milestones */}
         {alerts && (
           (() => {
@@ -4721,57 +4667,74 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
         )}
         </div>
 
-        {/* ── Monthly + Annual Churn bar charts ─────────── */}
+        {/* ── Monthly Churn bar chart ─────────────────── */}
         {(() => {
           const completedMonths = mem.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+          const currentMonth = mem.monthly.length > 0 ? mem.monthly[mem.monthly.length - 1] : null;
           if (completedMonths.length === 0) return null;
           const fmtShort = (m: string) => {
             const [y, mo] = m.split("-");
             const d = new Date(parseInt(y), parseInt(mo) - 1);
             return d.toLocaleDateString("en-US", { month: "short" }) + " '" + y.slice(2);
           };
-          const monthlyChurnData = completedMonths.map((m) => ({ month: fmtShort(m.month), rate: m.eligibleChurnRate ?? 0 }));
-          const annualChurnData = completedMonths.map((m) => ({ month: fmtShort(m.month), rate: m.annualUserChurnRate ?? 0 }));
-          const monthlyConfig = { rate: { label: "Monthly Churn", color: COLORS.member } } satisfies ChartConfig;
-          const annualConfig = { rate: { label: "Annual Churn", color: COLORS.member } } satisfies ChartConfig;
+          // Build chart data: completed months + current partial month
+          const chartData = completedMonths.map((m) => ({
+            month: fmtShort(m.month),
+            rate: parseFloat((m.eligibleChurnRate ?? 0).toFixed(1)),
+            fill: COLORS.member,
+          }));
+          if (currentMonth) {
+            chartData.push({
+              month: fmtShort(currentMonth.month),
+              rate: parseFloat((currentMonth.eligibleChurnRate ?? 0).toFixed(1)),
+              fill: `${COLORS.member}50`,  // 50% opacity for partial month
+            });
+          }
+          // Avg of last 6 completed months
+          const last6 = completedMonths.slice(-6);
+          const avg6 = last6.length > 0
+            ? last6.reduce((s, m) => s + (m.eligibleChurnRate ?? 0), 0) / last6.length
+            : 0;
+          const churnConfig = {
+            rate: { label: "Monthly churn", color: COLORS.member },
+          } satisfies ChartConfig;
           return (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
-              <Card>
-                <div className="flex items-center gap-2 mb-1 min-h-9">
+            <Card>
+              <div className="flex items-start justify-between mb-1 min-h-9">
+                <div className="flex items-center gap-2">
                   <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                  <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn by Month</span>
+                  <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3">Churn rate for monthly-billed members each month</p>
-                <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                  <BarChart accessibilityLayer data={monthlyChurnData} margin={{ top: 8, left: 0, right: 0, bottom: 0 }}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} tickFormatter={(v: number) => `${v}%`} />
-                    <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${value}%`} />} />
-                    <Bar dataKey="rate" fill={COLORS.member} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ChartContainer>
-              </Card>
-              <Card>
-                <div className="flex items-center gap-2 mb-1 min-h-9">
-                  <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                  <span className="text-base font-semibold leading-none tracking-tight">Annual Churn by Month</span>
+                <div className="text-right">
+                  <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avg6) }}>{avg6.toFixed(1)}%</div>
+                  <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3">Churn rate for annual-billed members each month</p>
-                <ChartContainer config={annualConfig} className="h-[200px] w-full">
-                  <BarChart accessibilityLayer data={annualChurnData} margin={{ top: 8, left: 0, right: 0, bottom: 0 }}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} tickFormatter={(v: number) => `${v}%`} />
-                    <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${value}%`} />} />
-                    <Bar dataKey="rate" fill={COLORS.member} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ChartContainer>
-              </Card>
-            </div>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">Monthly-billed member churn rate</p>
+              <ChartContainer config={churnConfig} className="h-[200px] w-full">
+                <BarChart accessibilityLayer data={chartData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
+                  />
+                  <Bar dataKey="rate" radius={8}>
+                    <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+              <CardFooter className="flex-col items-start gap-2 text-sm">
+                <div className="text-muted-foreground leading-none">
+                  Oct 2025 excluded (data anomaly). Current month is partial.
+                </div>
+              </CardFooter>
+            </Card>
           );
         })()}
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Win-Back Members card ─────────────────────── */}
         {churnRates.winBack && churnRates.winBack.reactivated.total > 0 && (() => {
           const wb = churnRates.winBack!;
@@ -4860,6 +4823,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
             </Card>
           );
         })()}
+        </div>
       </div>
 
       {/* ── Sky3 ──────────────────────────────────────── */}
