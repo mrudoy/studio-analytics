@@ -37,6 +37,7 @@ import {
   getConversionPoolWeekly,
   getConversionPoolWTD,
   getConversionPoolLagStats,
+  materializeFirstInStudioSub,
   getUsageFrequencyByCategory,
   getIntroWeekConversionData,
   type PoolSliceKey,
@@ -132,6 +133,8 @@ function bucketToTrendRow(period: string, type: string, b: PeriodBucket, prev: P
 // ── Main ────────────────────────────────────────────────────
 
 export async function computeTrendsFromDB(): Promise<TrendsData | null> {
+  const _t0 = Date.now();
+
   if (!(await hasAutoRenewData())) {
     console.log("[db-trends] No auto-renew data — skipping");
     return null;
@@ -791,12 +794,12 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   // ── 10. Conversion Pool: non-auto visitors → in-studio auto-renew ──
   let conversionPool: ConversionPoolModuleData | null = null;
 
-  // Helper to assemble one slice's data
-  async function buildPoolSlice(slice: PoolSliceKey): Promise<ConversionPoolSliceData | null> {
+  // Helper to assemble one slice's data (useTempTable = pre-materialized first_in_studio_sub)
+  async function buildPoolSlice(slice: PoolSliceKey, useTempTable: boolean): Promise<ConversionPoolSliceData | null> {
     const [weeklyRows, wtdRow, lagRow] = await Promise.all([
-      getConversionPoolWeekly(16, slice),
-      getConversionPoolWTD(slice),
-      getConversionPoolLagStats(slice),
+      getConversionPoolWeekly(16, slice, useTempTable),
+      getConversionPoolWTD(slice, useTempTable),
+      getConversionPoolLagStats(slice, useTempTable),
     ]);
 
     if (weeklyRows.length === 0 && !wtdRow) return null;
@@ -856,10 +859,14 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   }
 
   if (await hasRegistrationData()) {
+    // Pre-materialize the first_in_studio_sub lookup once instead of
+    // recomputing it in every query (was 15 redundant scans of auto_renews)
+    let cleanupTempTable: (() => Promise<void>) | null = null;
     try {
+      cleanupTempTable = await materializeFirstInStudioSub();
       const sliceKeys: ConversionPoolSlice[] = ["all", "drop-ins", "intro-week", "class-packs", "high-intent"];
       const sliceResults = await Promise.all(
-        sliceKeys.map((k) => buildPoolSlice(k as PoolSliceKey))
+        sliceKeys.map((k) => buildPoolSlice(k as PoolSliceKey, true))
       );
 
       const slices: Partial<Record<ConversionPoolSlice, ConversionPoolSliceData>> = {};
@@ -872,6 +879,8 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
       }
     } catch (err) {
       console.warn("[db-trends] Failed to compute conversion pool data:", err);
+    } finally {
+      if (cleanupTempTable) await cleanupTempTable();
     }
   }
 
@@ -885,8 +894,9 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     console.warn("[db-trends] Failed to compute usage frequency data:", err);
   }
 
+  const elapsed = Date.now() - _t0;
   console.log(
-    `[db-trends] Computed: ${weekly.length} weekly, ${monthly.length} monthly periods` +
+    `[db-trends] Computed in ${elapsed}ms: ${weekly.length} weekly, ${monthly.length} monthly periods` +
     (dropIns ? `, drop-ins typical=${dropIns.typicalWeekVisits}/wk, trend=${dropIns.trend}` : "") +
     (firstVisits ? `, first visits this week=${firstVisits.currentWeekTotal}` : "") +
     (newCustomerVolume ? `, new customers this week=${newCustomerVolume.currentWeekCount}` : "") +

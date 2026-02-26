@@ -179,6 +179,30 @@ const migrations: Migration[] = [
         ON registrations(union_registration_id) WHERE union_registration_id IS NOT NULL;
     `,
   },
+  // Performance: indexes for conversion pool queries that JOIN registrations × auto_renews
+  {
+    name: "007_conversion_pool_indexes",
+    up: `
+      -- registrations: the main scan target for non-subscriber visits
+      CREATE INDEX IF NOT EXISTS idx_reg_email_lower_attended
+        ON registrations (LOWER(email), attended_at);
+      CREATE INDEX IF NOT EXISTS idx_reg_attended_at
+        ON registrations (attended_at)
+        WHERE attended_at IS NOT NULL AND attended_at != '';
+      CREATE INDEX IF NOT EXISTS idx_reg_subscription
+        ON registrations (subscription);
+
+      -- auto_renews: join target for converter lookups
+      CREATE INDEX IF NOT EXISTS idx_ar_email_lower_created
+        ON auto_renews (LOWER(customer_email), created_at);
+      CREATE INDEX IF NOT EXISTS idx_ar_email_lower
+        ON auto_renews (LOWER(customer_email));
+
+      -- first_visits: used in new customer queries
+      CREATE INDEX IF NOT EXISTS idx_fv_email_lower_attended
+        ON first_visits (LOWER(email), attended_at);
+    `,
+  },
 ];
 
 /**

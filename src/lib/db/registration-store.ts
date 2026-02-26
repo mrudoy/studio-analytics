@@ -1328,6 +1328,46 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
 
 // ── Conversion Pool Queries ──────────────────────────────────
 
+/**
+ * Pre-materialize the first_in_studio_sub lookup table.
+ * This data (email → first sub date) is identical across all 15 conversion pool
+ * queries (3 functions × 5 slices) and is the most expensive CTE to compute.
+ * By computing it once and storing in a temp table, we avoid 15 redundant scans.
+ *
+ * Returns a cleanup function to drop the temp table when done.
+ */
+export async function materializeFirstInStudioSub(): Promise<() => Promise<void>> {
+  const pool = getPool();
+  // Use a session-scoped temp table name with random suffix to avoid collisions
+  const tableName = `_tmp_first_in_studio_sub`;
+
+  // Drop if exists (from a prior call that didn't clean up), then create + populate
+  await pool.query(`DROP TABLE IF EXISTS ${tableName}`);
+  await pool.query(`
+    CREATE TEMP TABLE ${tableName} AS
+    SELECT LOWER(customer_email) as email,
+           MIN(created_at::date) as first_sub_date
+    FROM auto_renews
+    WHERE customer_email IS NOT NULL AND customer_email != ''
+      AND created_at IS NOT NULL AND created_at != ''
+      ${IN_STUDIO_PLAN_FILTER}
+    GROUP BY LOWER(customer_email)
+  `);
+  // Add index on the temp table for fast joins
+  await pool.query(`CREATE INDEX ON ${tableName} (email)`);
+
+  console.log(`[registration-store] Materialized first_in_studio_sub temp table`);
+  return async () => {
+    try { await pool.query(`DROP TABLE IF EXISTS ${tableName}`); } catch { /* ignore */ }
+  };
+}
+
+/**
+ * SQL fragment that references the pre-materialized temp table instead of
+ * recomputing the CTE. Used by conversion pool queries when the temp table exists.
+ */
+export const FIRST_IN_STUDIO_SUB_TABLE = `_tmp_first_in_studio_sub`;
+
 // Pool slice SQL fragments: filter which non-subscriber visits count
 export type PoolSliceKey = "all" | "drop-ins" | "intro-week" | "class-packs" | "high-intent";
 
@@ -1377,7 +1417,7 @@ export interface ConversionPoolWeekRow {
  * Converts = pool members whose FIRST in-studio auto-renew (MEMBER/SKY3) started that week,
  *            AND who had at least one prior non-subscriber visit.
  */
-export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKey = "all"): Promise<ConversionPoolWeekRow[]> {
+export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKey = "all", useTempTable = false): Promise<ConversionPoolWeekRow[]> {
   const pool = getPool();
   const sliceFilter = POOL_SLICE_FILTERS[slice];
   const baseDateFilter = `AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
@@ -1398,6 +1438,18 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
       GROUP BY DATE_TRUNC('week', r.attended_at::date)::date
     )`;
 
+  // When temp table is available, reference it directly instead of recomputing
+  const firstSubCTE = useTempTable
+    ? `first_in_studio_sub AS (SELECT email, first_sub_date FROM ${FIRST_IN_STUDIO_SUB_TABLE})`
+    : `first_in_studio_sub AS (
+      SELECT LOWER(customer_email) as email,
+             MIN(created_at::date) as first_sub_date
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL AND customer_email != ''
+        AND created_at IS NOT NULL AND created_at != ''
+        ${IN_STUDIO_PLAN_FILTER}
+      GROUP BY LOWER(customer_email))`;
+
   const query = `
     WITH week_series AS (
       SELECT generate_series(
@@ -1407,16 +1459,7 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
       )::date as week_start
     ),
     ${poolCTE},
-    -- Each person's first in-studio auto-renew start date
-    first_in_studio_sub AS (
-      SELECT LOWER(customer_email) as email,
-             MIN(created_at::date) as first_sub_date
-      FROM auto_renews
-      WHERE customer_email IS NOT NULL AND customer_email != ''
-        AND created_at IS NOT NULL AND created_at != ''
-        ${IN_STUDIO_PLAN_FILTER}
-      GROUP BY LOWER(customer_email)
-    ),
+    ${firstSubCTE},
     -- Only count converters who had at least one prior non-sub visit
     converters AS (
       SELECT f.email, f.first_sub_date,
@@ -1463,7 +1506,7 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
  * Get conversion pool week-to-date stats for the current partial week.
  * Includes both 7d pool (this week's visitors) and 30d pool (last 30 days).
  */
-export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise<{
+export async function getConversionPoolWTD(slice: PoolSliceKey = "all", useTempTable = false): Promise<{
   weekStart: string;
   weekEnd: string;
   activePool7d: number;
@@ -1527,18 +1570,21 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
         ${sliceFilter}
     )`;
 
-  const query = `
-    WITH ${pool7dCTE},
-    ${pool30dCTE},
-    first_in_studio_sub AS (
+  const firstSubCTE = useTempTable
+    ? `first_in_studio_sub AS (SELECT email, first_sub_date FROM ${FIRST_IN_STUDIO_SUB_TABLE})`
+    : `first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
              MIN(created_at::date) as first_sub_date
       FROM auto_renews
       WHERE customer_email IS NOT NULL AND customer_email != ''
         AND created_at IS NOT NULL AND created_at != ''
         ${IN_STUDIO_PLAN_FILTER}
-      GROUP BY LOWER(customer_email)
-    ),
+      GROUP BY LOWER(customer_email))`;
+
+  const query = `
+    WITH ${pool7dCTE},
+    ${pool30dCTE},
+    ${firstSubCTE},
     wtd_converts AS (
       SELECT COUNT(*) as cnt
       FROM first_in_studio_sub f
@@ -1583,7 +1629,7 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all"): Promise
  * Returns stats for both the current week's converters and a 12-week historical window.
  * Falls back to historical if current week has no converters.
  */
-export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Promise<{
+export async function getConversionPoolLagStats(slice: PoolSliceKey = "all", useTempTable = false): Promise<{
   medianTimeToConvert: number | null;
   avgVisitsBeforeConvert: number | null;
   timeBucket0to30: number;
@@ -1601,16 +1647,19 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all"): Pr
   const pool = getPool();
   const sliceFilter = POOL_SLICE_FILTERS[slice];
 
-  const query = `
-    WITH first_in_studio_sub AS (
+  const firstSubCTE = useTempTable
+    ? `first_in_studio_sub AS (SELECT email, first_sub_date FROM ${FIRST_IN_STUDIO_SUB_TABLE})`
+    : `first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
              MIN(created_at::date) as first_sub_date
       FROM auto_renews
       WHERE customer_email IS NOT NULL AND customer_email != ''
         AND created_at IS NOT NULL AND created_at != ''
         ${IN_STUDIO_PLAN_FILTER}
-      GROUP BY LOWER(customer_email)
-    ),
+      GROUP BY LOWER(customer_email))`;
+
+  const query = `
+    WITH ${firstSubCTE},
     -- All converters who had prior non-sub visits (last 12 complete weeks + current)
     converter_detail AS (
       SELECT f.email,
