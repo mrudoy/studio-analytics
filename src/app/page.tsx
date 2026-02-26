@@ -4722,6 +4722,11 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
         {expiringIntroWeeks && expiringIntroWeeks.customers.length > 0 && (
           (() => {
             const customers = expiringIntroWeeks.customers;
+            const highFreq = customers.filter((c: ExpiringIntroCustomer) => c.classesAttended > 2);
+            const lowFreq = customers.filter((c: ExpiringIntroCustomer) => c.classesAttended <= 2);
+            const total = customers.length;
+            const highPct = total > 0 ? Math.round((highFreq.length / total) * 100) : 0;
+            const lowPct = total > 0 ? Math.round((lowFreq.length / total) * 100) : 0;
             const downloadExpiringCsv = () => {
               const headers = ["Name", "Email", "Classes Attended"];
               const rows = customers.map((c: ExpiringIntroCustomer) => [
@@ -4747,36 +4752,35 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
                     <CalendarWeek className="size-5 shrink-0" style={{ color: COLORS.copper }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Expiring Intro Weeks</span>
                   </div>
-                  <Button variant="outline" size="icon" onClick={downloadExpiringCsv} title="Download expiring intro week customers as CSV">
+                  <Button variant="outline" size="icon" onClick={downloadExpiringCsv} title="Download all expiring intro week customers as CSV">
                     <DownloadIcon className="size-4" />
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground mb-3">Intro week customers whose 7-day trial expires today or tomorrow</p>
+                <p className="text-[11px] text-muted-foreground mb-3">Customers whose intro week ends in 1–2 days, grouped by class attendance. High frequency = more than 2 classes; Low frequency = 2 or fewer.</p>
                 <div className="flex-1 flex flex-col">
                   <Table style={{ fontFamily: FONT_SANS }}>
                     <TableHeader className="bg-muted">
                       <TableRow>
-                        <TableHead className="text-xs text-muted-foreground">Name</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Classes</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Expires</TableHead>
+                        <TableHead className="text-xs text-muted-foreground">Frequency</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right"># People</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">% of Total</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {customers.map((c: ExpiringIntroCustomer) => (
-                        <TableRow key={c.email}>
-                          <TableCell className="py-1.5 text-sm">{`${c.firstName} ${c.lastName}`.trim()}</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{c.classesAttended}</TableCell>
-                          <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">
-                            {c.daysUntilExpiry === 0 ? "Today" : "Tomorrow"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      <TableRow>
+                        <TableCell className="py-1.5 text-sm">High Frequency</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{highFreq.length}</TableCell>
+                        <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{highPct}%</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="py-1.5 text-sm">Low Frequency</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{lowFreq.length}</TableCell>
+                        <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{lowPct}%</TableCell>
+                      </TableRow>
                       <TableRow className="border-t">
                         <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">
-                          {customers.reduce((sum: number, c: ExpiringIntroCustomer) => sum + c.classesAttended, 0)}
-                        </TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{customers.length}</TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{total}</TableCell>
+                        <TableCell className="py-1.5 px-0" />
                       </TableRow>
                     </TableBody>
                   </Table>

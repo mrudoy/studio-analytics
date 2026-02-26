@@ -637,7 +637,7 @@ export async function getIntroWeekCustomersByWeek(
  * Logic:
  * - Intro week start = first attended class date (not purchase date)
  * - Intro week end = start + 6 days (7-day window)
- * - "Expiring" = end_date - today is 0 or 1 (today/tomorrow)
+ * - "Expiring" = end_date - today is 1 or 2 (within 2 days of end, not same day)
  * - Only looks at intro weeks started in the last 14 days
  * - Classes attended = count of registrations within the 7-day window
  */
@@ -699,8 +699,8 @@ export async function getExpiringIntroWeekCustomers(): Promise<{
       iw.days_until_expiry as "daysUntilExpiry"
     FROM intro_windows iw
     LEFT JOIN class_counts cc ON cc.email = iw.email
-    WHERE iw.days_until_expiry >= 0
-      AND iw.days_until_expiry <= 1
+    WHERE iw.days_until_expiry >= 1
+      AND iw.days_until_expiry <= 2
     ORDER BY iw.days_until_expiry ASC, iw.last_name ASC
   `;
 
