@@ -1155,19 +1155,21 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
 
     // Averages (exclude current partial month)
     const completed = monthlyChurn.slice(0, -1);
-    const avgUser = completed.length > 0
-      ? Math.round((completed.reduce((s, r) => s + r.userChurnRate, 0) / completed.length) * 10) / 10
+    // Exclude Oct 2025 bulk admin cleanup from averages (not real churn)
+    const completedFiltered = completed.filter((r) => r.month !== "2025-10");
+    const avgUser = completedFiltered.length > 0
+      ? Math.round((completedFiltered.reduce((s, r) => s + r.userChurnRate, 0) / completedFiltered.length) * 10) / 10
       : 0;
-    const avgMrr = completed.length > 0
-      ? Math.round((completed.reduce((s, r) => s + r.mrrChurnRate, 0) / completed.length) * 10) / 10
+    const avgMrr = completedFiltered.length > 0
+      ? Math.round((completedFiltered.reduce((s, r) => s + r.mrrChurnRate, 0) / completedFiltered.length) * 10) / 10
       : 0;
 
     // At-risk per category (in-memory)
     const atRiskCount = catRows.filter((r) => AT_RISK_STATES.includes(r.plan_state)).length;
 
     // MEMBER-only: average eligible churn rate (monthly subscribers only)
-    const avgEligible = cat === "MEMBER" && completed.length > 0
-      ? Math.round((completed.reduce((s, r) => s + (r.eligibleChurnRate ?? 0), 0) / completed.length) * 10) / 10
+    const avgEligible = cat === "MEMBER" && completedFiltered.length > 0
+      ? Math.round((completedFiltered.reduce((s, r) => s + (r.eligibleChurnRate ?? 0), 0) / completedFiltered.length) * 10) / 10
       : undefined;
 
     const result: typeof catResults[typeof cat] = {
@@ -1180,9 +1182,9 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     };
 
     // MEMBER-only: split averages + at-risk by billing type
-    if (cat === "MEMBER" && completed.length > 0) {
+    if (cat === "MEMBER" && completedFiltered.length > 0) {
       const avg = (key: keyof CategoryMonthlyChurn) =>
-        Math.round((completed.reduce((s, r) => s + ((r[key] as number) ?? 0), 0) / completed.length) * 10) / 10;
+        Math.round((completedFiltered.reduce((s, r) => s + ((r[key] as number) ?? 0), 0) / completedFiltered.length) * 10) / 10;
       result.avgAnnualUserChurnRate = avg("annualUserChurnRate");
       result.avgAnnualMrrChurnRate = avg("annualMrrChurnRate");
       result.avgMonthlyMrrChurnRate = avg("monthlyMrrChurnRate");
