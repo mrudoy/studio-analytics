@@ -139,6 +139,39 @@ All custom icons live in `src/components/dashboard/icons.tsx`. They follow the T
 ### DashboardCard
 Wrapper for all card-style content. Uses shadcn Card with consistent padding.
 
+### Canonical Card Interior Layout
+
+**Every** card that contains a title + table (or title + content) MUST follow this exact structure so that titles, descriptions, and content rows align across sibling cards in a grid:
+
+```tsx
+<Card matchHeight>
+  {/* Row 1 — Title bar: icon + title on left, optional download button on right */}
+  <div className="flex items-center justify-between mb-1">
+    <div className="flex items-center gap-2">
+      <Icon className="size-5 shrink-0" style={{ color: COLORS.category }} />
+      <span className="text-base font-semibold leading-none tracking-tight">Card Title</span>
+    </div>
+    {/* Optional global download button */}
+    <Button variant="outline" size="icon" onClick={download} title="Download all as CSV">
+      <DownloadIcon className="size-4" />
+    </Button>
+  </div>
+
+  {/* Row 2 — Description (REQUIRED — keeps vertical rhythm consistent across cards) */}
+  <p className="text-[11px] text-muted-foreground mb-3">Short description of the card's data</p>
+
+  {/* Row 3 — Table or other content */}
+  <Table style={{ fontFamily: FONT_SANS }}>...</Table>
+</Card>
+```
+
+**Rules:**
+- Title row always uses `justify-between` (even without a download button) for consistent alignment
+- Title row always has `mb-1`
+- Description is **mandatory** — it keeps table headers aligned across sibling cards in the same grid row
+- Description always has `mb-3`
+- Never skip the description or use different margin values — sibling cards will misalign
+
 ### DeltaBadge
 Compact pill showing WoW or MoM change.
 

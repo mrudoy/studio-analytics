@@ -4518,10 +4518,13 @@ function ChurnSection({ churnRates, weekly }: {
           const monthlyPct = totalCount > 0 ? Math.round((monthlyCount / totalCount) * 100) : 0;
           return (
             <Card matchHeight>
-              <div className="flex items-center gap-2 mb-3">
-                <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                <span className="text-base font-semibold leading-none tracking-tight">Membership Churn</span>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                  <span className="text-base font-semibold leading-none tracking-tight">Membership Churn</span>
+                </div>
               </div>
+              <p className="text-[11px] text-muted-foreground mb-3">Annual vs. monthly user and MRR churn rates</p>
               <Table style={{ fontFamily: FONT_SANS }}>
                 <TableHeader>
                   <TableRow>
