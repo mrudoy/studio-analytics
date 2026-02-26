@@ -2150,13 +2150,14 @@ function OverviewSection({ data }: { data: OverviewData }) {
       <div className="flex flex-col gap-4">
         {/* Time window selector */}
         <ToggleGroup
+          variant="outline"
           type="single"
           value={activeWindow}
           onValueChange={(v) => { if (v) setActiveWindow(v as keyof typeof windowMap); }}
-          className="justify-start flex-wrap gap-1"
+          className="justify-start"
         >
           {windowKeys.map((k) => (
-            <ToggleGroupItem key={k} value={k} className="text-xs px-2.5 py-1 h-7 data-[state=on]:bg-foreground data-[state=on]:text-background">
+            <ToggleGroupItem key={k} value={k} aria-label={windowMap[k].label} className="text-xs px-3 h-8">
               {windowMap[k].label}
             </ToggleGroupItem>
           ))}
