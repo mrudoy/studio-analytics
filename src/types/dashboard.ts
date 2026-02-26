@@ -395,6 +395,24 @@ export interface MemberAlerts {
   tenureMilestones: TenureMilestoneMember[];
 }
 
+/** A subscriber in an at-risk plan state */
+export interface AtRiskMember {
+  name: string;
+  email: string;
+  planName: string;
+  category: string;
+  planState: string;
+  createdAt: string;
+  tenureMonths: number;
+}
+
+/** At-risk subscribers grouped by plan state */
+export interface AtRiskByState {
+  pastDue: AtRiskMember[];
+  invalid: AtRiskMember[];
+  pendingCancel: AtRiskMember[];
+}
+
 export interface ChurnRateData {
   /** Per-category churn data */
   byCategory: {
@@ -403,6 +421,7 @@ export interface ChurnRateData {
     skyTingTv: CategoryChurnData;
   };
   totalAtRisk: number;
+  atRiskByState?: AtRiskByState;
   /** Member-specific alerts: renewals approaching + tenure milestones */
   memberAlerts?: MemberAlerts;
   /** Legacy flat fields (backward compat) */

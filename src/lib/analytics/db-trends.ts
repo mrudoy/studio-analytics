@@ -1287,6 +1287,30 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     };
   });
 
+  // ── At-risk by plan state (with member details for downloads) ──
+  const nowMsForAtRisk = Date.now();
+  const MS_PER_MONTH_AR = 30.44 * 24 * 60 * 60 * 1000;
+  const CATEGORY_LABELS: Record<string, string> = { MEMBER: "Members", SKY3: "Sky3", SKY_TING_TV: "Sky Ting TV" };
+  const buildAtRiskList = (state: string) =>
+    categorized
+      .filter((r) => r.plan_state === state)
+      .map((r) => ({
+        name: r.customer_name,
+        email: r.customer_email,
+        planName: r.plan_name,
+        category: CATEGORY_LABELS[r.category] || r.category,
+        planState: r.plan_state,
+        createdAt: r.created_at || "",
+        tenureMonths: r.created_at
+          ? Math.round(((nowMsForAtRisk - new Date(r.created_at).getTime()) / MS_PER_MONTH_AR) * 10) / 10
+          : 0,
+      }));
+  const atRiskByState = {
+    pastDue: buildAtRiskList("Past Due"),
+    invalid: buildAtRiskList("Invalid"),
+    pendingCancel: buildAtRiskList("Pending Cancel"),
+  };
+
   return {
     byCategory: {
       member: catResults.MEMBER,
@@ -1294,6 +1318,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       skyTingTv: catResults.SKY_TING_TV,
     },
     totalAtRisk,
+    atRiskByState,
     memberAlerts,
     // Legacy flat fields
     monthly: legacyMonthly,
