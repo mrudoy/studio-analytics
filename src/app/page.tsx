@@ -4606,7 +4606,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
               <Card matchHeight>
-                <div className="flex items-start justify-between min-h-9">
+                <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
                     <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
@@ -4617,7 +4617,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                     </Button>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground mb-1">Members within ±1 week of a critical tenure milestone</p>
+                <p className="text-sm text-muted-foreground mb-3">Members within ±1 week of a critical tenure milestone</p>
                 <div className="flex-1 flex flex-col">
                   <Table style={{ fontFamily: FONT_SANS }}>
                     <TableHeader className="bg-muted">
@@ -4690,7 +4690,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
               <Card>
-                <div className="flex items-start justify-between min-h-9">
+                <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
                     <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
@@ -4700,7 +4700,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                     <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground mb-1">Monthly-billed member churn rate</p>
+                <p className="text-sm text-muted-foreground mb-3">Monthly-billed member churn rate</p>
                 <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
                   <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} />
@@ -4752,7 +4752,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
 
           return (
             <Card>
-              <div className="flex items-start justify-between min-h-9">
+              <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
                   <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
@@ -4763,7 +4763,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                   </Button>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground mb-1">
+              <p className="text-sm text-muted-foreground mb-3">
                 {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
               </p>
 
@@ -4838,7 +4838,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ];
             return (
               <Card matchHeight>
-                <div className="flex items-start justify-between min-h-9">
+                <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="size-5 shrink-0 text-amber-600" />
                     <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
@@ -4849,7 +4849,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                     </Button>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground mb-1">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
+                <p className="text-sm text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
                 {ars && (
                   <div className="flex-1 flex flex-col">
                     <Table style={{ fontFamily: FONT_SANS }}>
@@ -4898,13 +4898,13 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   return (
     <div className="flex flex-col gap-3">
         <Card>
-          <div className="flex items-start justify-between min-h-9">
+          <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
               <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
               <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground mb-1">User and MRR churn rates for Sky3 subscribers</p>
+          <p className="text-sm text-muted-foreground mb-3">User and MRR churn rates for Sky3 subscribers</p>
           <div className="flex-1 flex flex-col">
             <Table style={{ fontFamily: FONT_SANS }}>
               <TableHeader className="bg-muted">
@@ -4952,13 +4952,13 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   return (
     <div className="flex flex-col gap-3">
         <Card>
-          <div className="flex items-start justify-between min-h-9">
+          <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
               <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
               <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground mb-1">User and MRR churn rates for Sky Ting TV subscribers</p>
+          <p className="text-sm text-muted-foreground mb-3">User and MRR churn rates for Sky Ting TV subscribers</p>
           <div className="flex-1 flex flex-col">
             <Table style={{ fontFamily: FONT_SANS }}>
               <TableHeader className="bg-muted">
@@ -5039,7 +5039,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             };
             return (
               <Card matchHeight>
-                <div className="flex items-start justify-between min-h-9">
+                <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
                     <CalendarWeek className="size-5 shrink-0" style={{ color: COLORS.copper }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Expiring Intro Weeks</span>
