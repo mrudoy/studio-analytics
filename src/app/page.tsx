@@ -4870,8 +4870,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
                     <DownloadIcon className="size-4" />
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground mb-3">Customers whose intro week ends in 1–2 days, grouped by class attendance. High frequency = more than 2 classes; Low frequency = 2 or fewer.</p>
-                <div className="flex-1 flex flex-col">
+                <div className="flex-1 flex flex-col mt-2">
                   <Table style={{ fontFamily: FONT_SANS }}>
                     <TableHeader className="bg-muted">
                       <TableRow>
@@ -4882,12 +4881,18 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
                     </TableHeader>
                     <TableBody>
                       <TableRow>
-                        <TableCell className="py-1.5 text-sm">High Frequency</TableCell>
+                        <TableCell className="py-1.5">
+                          <div className="text-sm">High Frequency</div>
+                          <div className="text-[11px] text-muted-foreground">More than 2 classes</div>
+                        </TableCell>
                         <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{highFreq.length}</TableCell>
                         <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{highPct}%</TableCell>
                       </TableRow>
                       <TableRow>
-                        <TableCell className="py-1.5 text-sm">Low Frequency</TableCell>
+                        <TableCell className="py-1.5">
+                          <div className="text-sm">Low Frequency</div>
+                          <div className="text-[11px] text-muted-foreground">2 or fewer classes</div>
+                        </TableCell>
                         <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{lowFreq.length}</TableCell>
                         <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{lowPct}%</TableCell>
                       </TableRow>
