@@ -4550,7 +4550,11 @@ function ChurnSection({ churnRates, weekly }: {
           </Card>
         )}
 
-        {/* Approaching Milestones — own card */}
+      </div>
+
+      {/* ── Milestones + At Risk side by side ────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Approaching Milestones */}
         {alerts && (
           (() => {
             const cliffMembers = alerts.tenureMilestones.filter((m) => m.milestone.includes("cliff"));
@@ -4614,6 +4618,74 @@ function ChurnSection({ churnRates, weekly }: {
           })()
         )}
 
+        {/* At Risk */}
+        {churnRates.totalAtRisk > 0 && (
+          (() => {
+            const ars = churnRates.atRiskByState;
+            const allAtRisk = ars ? [...ars.pastDue, ...ars.invalid, ...ars.pendingCancel] : [];
+            const downloadAtRiskCsv = (members: AtRiskMember[], filename: string) => {
+              const headers = ["Name", "Email", "Plan", "Category", "Status", "Start Date", "Tenure (months)"];
+              const rows = members.map((m) => [
+                m.name, m.email, m.planName, m.category, m.planState,
+                m.createdAt ? m.createdAt.slice(0, 10) : "", m.tenureMonths.toFixed(1),
+              ]);
+              const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url; a.download = filename; a.click();
+              URL.revokeObjectURL(url);
+            };
+            const stateRows = [
+              { label: "Past Due", members: ars?.pastDue ?? [], file: "at-risk-past-due.csv" },
+              { label: "Invalid", members: ars?.invalid ?? [], file: "at-risk-invalid.csv" },
+              { label: "Pending Cancel", members: ars?.pendingCancel ?? [], file: "at-risk-pending-cancel.csv" },
+            ];
+            return (
+              <Card>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+                    <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
+                  </div>
+                  {allAtRisk.length > 0 && (
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
+                {ars && (
+                  <Table style={{ fontFamily: FONT_SANS }}>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Status</TableHead>
+                        <TableHead className="text-xs text-right"># Members</TableHead>
+                        <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stateRows.map((sr) => (
+                        <TableRow key={sr.label}>
+                          <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
+                          <TableCell className="py-1.5 px-0 text-center">
+                            {sr.members.length > 0 && (
+                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
+                                <DownloadIcon className="size-3.5" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Card>
+            );
+          })()
+        )}
       </div>
 
       {/* ── Sky3 subsection ────────────────── */}
@@ -4667,75 +4739,6 @@ function ChurnSection({ churnRates, weekly }: {
           </div>
         </Card>
       </div>
-
-      {/* At Risk */}
-      {churnRates.totalAtRisk > 0 && (
-        (() => {
-          const ars = churnRates.atRiskByState;
-          const allAtRisk = ars ? [...ars.pastDue, ...ars.invalid, ...ars.pendingCancel] : [];
-          const downloadAtRiskCsv = (members: AtRiskMember[], filename: string) => {
-            const headers = ["Name", "Email", "Plan", "Category", "Status", "Start Date", "Tenure (months)"];
-            const rows = members.map((m) => [
-              m.name, m.email, m.planName, m.category, m.planState,
-              m.createdAt ? m.createdAt.slice(0, 10) : "", m.tenureMonths.toFixed(1),
-            ]);
-            const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-            const blob = new Blob([csv], { type: "text/csv" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url; a.download = filename; a.click();
-            URL.revokeObjectURL(url);
-          };
-          const stateRows = [
-            { label: "Past Due", members: ars?.pastDue ?? [], file: "at-risk-past-due.csv" },
-            { label: "Invalid", members: ars?.invalid ?? [], file: "at-risk-invalid.csv" },
-            { label: "Pending Cancel", members: ars?.pendingCancel ?? [], file: "at-risk-pending-cancel.csv" },
-          ];
-          return (
-            <Card>
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                  <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{churnRates.totalAtRisk}</Badge>
-                </div>
-                {allAtRisk.length > 0 && (
-                  <Button variant="ghost" size="icon" className="size-7" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
-                    <DownloadIcon className="size-4" />
-                  </Button>
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
-              {ars && (
-                <Table style={{ fontFamily: FONT_SANS }}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Status</TableHead>
-                      <TableHead className="text-xs text-right"># Members</TableHead>
-                      <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stateRows.map((sr) => (
-                      <TableRow key={sr.label}>
-                        <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
-                        <TableCell className="py-1.5 px-0 text-center">
-                          {sr.members.length > 0 && (
-                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
-                              <DownloadIcon className="size-3.5" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </Card>
-          );
-        })()
-      )}
 
     </div>
   );
