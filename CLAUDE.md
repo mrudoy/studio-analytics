@@ -89,6 +89,7 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 - **Uniform gap between ALL cards**: `gap-3` everywhere. Never use different gaps between sections vs within sections.
 - **Cards are 50% width** by default (in `grid-cols-2`), not full-width, unless the content requires it (e.g. wide tables). Always rearrange cards so there is no empty space — if a card would be alone in a row, merge it into an adjacent grid container.
+- **Never wrap a single card in its own `grid-cols-2`**. This creates empty space. Instead, group adjacent cards into the same grid container so they fill both columns. Before adding a new card, check whether the nearest existing grid has an odd number of children — if so, add the new card there instead of creating a new grid wrapper.
 - **Title → subtitle gap**: Zero extra margin. Title row has NO `mb-*` class and NO `min-h-*` class. The subtitle sits flush below the title.
 - **Subtitle → content gap**: `mb-3` on the subtitle `<p>` tag. Generous space before the chart/table (matches Shadcn reference).
 - **Card descriptions** use `text-sm text-muted-foreground mb-3` — matches Shadcn's CardDescription size (14px), not text-xs (12px).
@@ -104,5 +105,6 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - Commit changes without building first (`npm run build`)
 - Do things not explicitly asked for
 - Make cards full-width unless explicitly asked — default is 50% (grid-cols-2)
+- Wrap a single card in its own `grid-cols-2` — always group with adjacent cards
 - Add mb-* or min-h-* to card title rows — titles sit flush against subtitles
 - Use text-xs for card descriptions — always use text-sm
