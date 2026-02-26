@@ -22,12 +22,16 @@ import type {
   RawPerformance,
   RawEvent,
   RawLocation,
+  RawPassType,
+  RawRevenueCategoryLookup,
+  RawRefund,
 } from "./zip-schemas";
 
 import type { AutoRenewRow } from "../db/auto-renew-store";
 import type { OrderRow } from "../db/order-store";
 import type { RegistrationRow } from "../db/registration-store";
 import type { CustomerRow } from "../db/customer-store";
+import type { RevenueCategory } from "@/types/union-data";
 
 // ── Extended row types with Union ID fields ─────────────────
 
@@ -51,6 +55,8 @@ export interface RawZipTables {
   events: RawEvent[];
   performances: RawPerformance[];
   locations: RawLocation[];
+  passTypes?: RawPassType[];
+  revenueCategoryLookups?: RawRevenueCategoryLookup[];
 }
 
 // ── State mapping ───────────────────────────────────────────
@@ -75,6 +81,8 @@ export class ZipTransformer {
   private performanceById: Map<string, RawPerformance>;
   private eventById: Map<string, RawEvent>;
   private locationById: Map<string, RawLocation>;
+  private passTypeById: Map<string, RawPassType>;
+  private revenueCategoryById: Map<string, RawRevenueCategoryLookup>;
 
   constructor(tables: RawZipTables) {
     this.membershipById = new Map(tables.memberships.map((m) => [m.id, m]));
@@ -82,6 +90,8 @@ export class ZipTransformer {
     this.performanceById = new Map(tables.performances.map((p) => [p.id, p]));
     this.eventById = new Map(tables.events.map((e) => [e.id, e]));
     this.locationById = new Map(tables.locations.map((l) => [l.id, l]));
+    this.passTypeById = new Map((tables.passTypes ?? []).map((pt) => [pt.id, pt]));
+    this.revenueCategoryById = new Map((tables.revenueCategoryLookups ?? []).map((rc) => [rc.id, rc]));
 
     console.log(
       `[zip-transformer] Loaded lookup maps: ` +
@@ -89,7 +99,9 @@ export class ZipTransformer {
         `${this.passById.size} passes, ` +
         `${this.performanceById.size} performances, ` +
         `${this.eventById.size} events, ` +
-        `${this.locationById.size} locations`
+        `${this.locationById.size} locations, ` +
+        `${this.passTypeById.size} pass types, ` +
+        `${this.revenueCategoryById.size} revenue categories`
     );
   }
 
@@ -278,5 +290,228 @@ export class ZipTransformer {
     );
 
     return rows;
+  }
+
+  // ── Revenue category resolution ─────────────────────────────
+
+  /**
+   * Resolve the revenue category name for an order.
+   * Path A: order.eventId → event.revenueCategoryId → name
+   * Path B: order pass → pass.passTypeId → passType.revenueCategoryId → name
+   */
+  private resolveRevenueCategory(order: RawOrder): string | null {
+    // Path A: via event
+    if (order.eventId) {
+      const event = this.eventById.get(order.eventId);
+      if (event?.revenueCategoryId) {
+        const rc = this.revenueCategoryById.get(event.revenueCategoryId);
+        if (rc?.name) return rc.name;
+      }
+    }
+
+    // Path B: via pass → pass_type
+    const passId = order.subscriptionPassId || order.paidWithPassId;
+    if (passId) {
+      const pass = this.passById.get(passId);
+      if (pass?.passTypeId) {
+        const passType = this.passTypeById.get(pass.passTypeId);
+        if (passType?.revenueCategoryId) {
+          const rc = this.revenueCategoryById.get(passType.revenueCategoryId);
+          if (rc?.name) return rc.name;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract YYYY-MM from an ISO datetime string.
+   * Handles formats like "2024-01-15T10:00:00Z" and "2024-01-15".
+   */
+  private extractMonth(dateStr: string): string | null {
+    const match = dateStr.match(/^(\d{4}-\d{2})/);
+    return match ? match[1] : null;
+  }
+
+  // ── Compute revenue by category from orders + refunds ───────
+
+  /**
+   * Aggregate all orders by (month, revenue category), applying refunds.
+   * Returns a Map keyed by "YYYY-MM" with RevenueCategory[] per month.
+   */
+  computeRevenueByCategory(
+    orders: RawOrder[],
+    refunds: RawRefund[]
+  ): Map<string, RevenueCategory[]> {
+    if (this.revenueCategoryById.size === 0) {
+      console.warn("[zip-transformer] No revenue category lookups — skipping revenue computation");
+      return new Map();
+    }
+
+    // Accumulator: month → category → totals
+    const buckets = new Map<string, Map<string, {
+      revenue: number;
+      unionFees: number;
+      stripeFees: number;
+      otherFees: number;
+      refunded: number;
+      unionFeesRefunded: number;
+    }>>();
+
+    const getOrCreate = (month: string, category: string) => {
+      if (!buckets.has(month)) buckets.set(month, new Map());
+      const monthMap = buckets.get(month)!;
+      if (!monthMap.has(category)) {
+        monthMap.set(category, {
+          revenue: 0, unionFees: 0, stripeFees: 0, otherFees: 0,
+          refunded: 0, unionFeesRefunded: 0,
+        });
+      }
+      return monthMap.get(category)!;
+    };
+
+    // Build order lookup for refund resolution
+    const orderById = new Map<string, RawOrder>();
+    for (const o of orders) orderById.set(o.id, o);
+
+    let categorized = 0;
+    let uncategorized = 0;
+    let skippedState = 0;
+    let skippedNoDate = 0;
+    const sampleUncategorized: string[] = [];
+
+    // ── Process orders ──────────────────────────────────────
+    for (const order of orders) {
+      // Only completed or refunded orders represent real revenue
+      const state = order.state.toLowerCase();
+      if (state !== "completed" && state !== "refunded") {
+        skippedState++;
+        continue;
+      }
+
+      const dateStr = order.completedAt || order.createdAt;
+      const month = dateStr ? this.extractMonth(dateStr) : null;
+      if (!month) {
+        skippedNoDate++;
+        continue;
+      }
+
+      const categoryName = this.resolveRevenueCategory(order);
+      if (!categoryName) {
+        uncategorized++;
+        if (sampleUncategorized.length < 5) sampleUncategorized.push(order.id);
+        // Still count under "Uncategorized"
+        const bucket = getOrCreate(month, "Uncategorized");
+        bucket.revenue += order.total;
+        bucket.unionFees += order.feeUnionTotal;
+        bucket.stripeFees += order.feePaymentTotal;
+        bucket.otherFees += order.feeOutsideTotal;
+        continue;
+      }
+
+      categorized++;
+      const bucket = getOrCreate(month, categoryName);
+      bucket.revenue += order.total;
+      bucket.unionFees += order.feeUnionTotal;
+      bucket.stripeFees += order.feePaymentTotal;
+      bucket.otherFees += order.feeOutsideTotal;
+    }
+
+    // ── Process refunds ─────────────────────────────────────
+    let refundsApplied = 0;
+    let refundsSkipped = 0;
+
+    for (const refund of refunds) {
+      const state = refund.state?.toLowerCase() || "";
+      if (state !== "refunded" && state !== "completed" && state !== "") {
+        refundsSkipped++;
+        continue;
+      }
+
+      const dateStr = refund.createdAt;
+      const month = dateStr ? this.extractMonth(dateStr) : null;
+      if (!month) {
+        refundsSkipped++;
+        continue;
+      }
+
+      // Resolve category: try via refund's own revenueCategoryId, else via order
+      let categoryName: string | null = null;
+      if (refund.revenueCategoryId) {
+        const rc = this.revenueCategoryById.get(refund.revenueCategoryId);
+        if (rc?.name) categoryName = rc.name;
+      }
+      if (!categoryName && refund.orderId) {
+        const order = orderById.get(refund.orderId);
+        if (order) categoryName = this.resolveRevenueCategory(order);
+      }
+
+      if (!categoryName) {
+        refundsSkipped++;
+        continue;
+      }
+
+      // amountRefunded from Union.fit is negative (e.g. "$-199.00")
+      // Store as positive in the `refunded` bucket
+      const refundAmount = Math.abs(refund.amountRefunded);
+      const refundUnionFees = Math.abs(refund.feeUnionTotalRefunded);
+
+      const bucket = getOrCreate(month, categoryName);
+      bucket.refunded += refundAmount;
+      bucket.unionFeesRefunded += refundUnionFees;
+      refundsApplied++;
+    }
+
+    // ── Build output ────────────────────────────────────────
+    const result = new Map<string, RevenueCategory[]>();
+
+    for (const [month, categoryMap] of buckets.entries()) {
+      const categories: RevenueCategory[] = [];
+      for (const [name, totals] of categoryMap.entries()) {
+        const netRevenue =
+          totals.revenue -
+          totals.unionFees -
+          totals.stripeFees -
+          totals.otherFees -
+          totals.refunded +
+          totals.unionFeesRefunded;
+
+        categories.push({
+          revenueCategory: name,
+          revenue: Math.round(totals.revenue * 100) / 100,
+          unionFees: Math.round(totals.unionFees * 100) / 100,
+          stripeFees: Math.round(totals.stripeFees * 100) / 100,
+          otherFees: Math.round(totals.otherFees * 100) / 100,
+          transfers: 0,
+          refunded: Math.round(totals.refunded * 100) / 100,
+          unionFeesRefunded: Math.round(totals.unionFeesRefunded * 100) / 100,
+          netRevenue: Math.round(netRevenue * 100) / 100,
+        });
+      }
+      // Sort by revenue desc
+      categories.sort((a, b) => b.revenue - a.revenue);
+      result.set(month, categories);
+    }
+
+    const uncatPct = orders.length > 0
+      ? ((uncategorized / (categorized + uncategorized)) * 100).toFixed(1)
+      : "0";
+
+    console.log(
+      `[zip-transformer] Revenue categories: ${categorized} orders categorized, ` +
+        `${uncategorized} uncategorized (${uncatPct}%), ` +
+        `${skippedState} skipped (wrong state), ${skippedNoDate} skipped (no date). ` +
+        `${refundsApplied} refunds applied, ${refundsSkipped} refunds skipped. ` +
+        `${result.size} months produced.`
+    );
+
+    if (sampleUncategorized.length > 0) {
+      console.log(
+        `[zip-transformer] Sample uncategorized order IDs: ${sampleUncategorized.join(", ")}`
+      );
+    }
+
+    return result;
   }
 }

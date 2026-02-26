@@ -112,6 +112,20 @@ export async function isLocked(periodStart: string, periodEnd: string): Promise<
   return rows[0]?.locked === 1;
 }
 
+/**
+ * Check if ANY revenue data for a given month is locked.
+ * More robust than isLocked() — catches locked months regardless of period boundaries.
+ */
+export async function isMonthLocked(year: number, month: number): Promise<boolean> {
+  const pool = getPool();
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM revenue_categories WHERE LEFT(period_start, 7) = $1 AND locked = 1 LIMIT 1`,
+    [monthStr]
+  );
+  return rows.length > 0;
+}
+
 export interface StoredRevenueRow {
   category: string;
   revenue: number;

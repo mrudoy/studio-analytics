@@ -149,8 +149,8 @@ export function buildDigestHtml(data: OverviewData): string {
                 </tr>
 
                 ${tierRow("Members", currentActive.member, "member", windows)}
-                ${tierRow("Sky Ting TV", currentActive.skyTingTv, "skyTingTv", windows)}
                 ${tierRow("Sky3", currentActive.sky3, "sky3", windows)}
+                ${tierRow("Sky Ting TV", currentActive.skyTingTv, "skyTingTv", windows)}
                 ${totalRow(currentActive, windows)}
               </table>
             </td>

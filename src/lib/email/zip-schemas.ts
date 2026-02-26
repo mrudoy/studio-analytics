@@ -182,6 +182,7 @@ export const RawEventSchema = z.object({
   id: z.string(),
   name: optStr,
   createdAt: optStr,
+  revenueCategoryId: optStr,
 });
 
 export type RawEvent = z.infer<typeof RawEventSchema>;
@@ -194,3 +195,39 @@ export const RawLocationSchema = z.object({
 });
 
 export type RawLocation = z.infer<typeof RawLocationSchema>;
+
+// ── Pass Types (pass definitions with revenue category FK) ──
+
+export const RawPassTypeSchema = z.object({
+  id: z.string(),
+  name: optStr,
+  revenueCategoryId: optStr,
+  createdAt: optStr,
+});
+
+export type RawPassType = z.infer<typeof RawPassTypeSchema>;
+
+// ── Revenue Categories (lookup: ID → name) ─────────────────
+
+export const RawRevenueCategoryLookupSchema = z.object({
+  id: z.string(),
+  name: optStr,
+});
+
+export type RawRevenueCategoryLookup = z.infer<typeof RawRevenueCategoryLookupSchema>;
+
+// ── Refunds ────────────────────────────────────────────────
+
+export const RawRefundSchema = z.object({
+  id: z.string(),
+  createdAt: optStr,
+  orderId: optStr,
+  revenueCategoryId: optStr,
+  state: optStr,
+  amountRefunded: money,
+  feeUnionTotalRefunded: money,
+  payoutTotal: money,
+  taxTotal: money,
+});
+
+export type RawRefund = z.infer<typeof RawRefundSchema>;

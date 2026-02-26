@@ -27,6 +27,9 @@ import {
   RawPerformanceSchema,
   RawEventSchema,
   RawLocationSchema,
+  RawPassTypeSchema,
+  RawRevenueCategoryLookupSchema,
+  RawRefundSchema,
   type RawMembership,
   type RawPass,
   type RawOrder,
@@ -34,11 +37,15 @@ import {
   type RawPerformance,
   type RawEvent,
   type RawLocation,
+  type RawPassType,
+  type RawRevenueCategoryLookup,
+  type RawRefund,
 } from "./zip-schemas";
 import { saveAutoRenews } from "../db/auto-renew-store";
 import { saveOrders } from "../db/order-store";
 import { saveRegistrations } from "../db/registration-store";
 import { saveCustomers } from "../db/customer-store";
+import { saveRevenueCategories, isMonthLocked } from "../db/revenue-store";
 import { setWatermark } from "../db/watermark-store";
 import { parseCSV } from "../parser/csv-parser";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -290,6 +297,21 @@ async function runZipImport(
     RawLocationSchema,
     "locations"
   );
+  const passTypes = parseTable<RawPassType>(
+    fileMap.get("pass_types"),
+    RawPassTypeSchema,
+    "pass_types"
+  );
+  const revenueCategoryLookups = parseTable<RawRevenueCategoryLookup>(
+    fileMap.get("revenue_categories"),
+    RawRevenueCategoryLookupSchema,
+    "revenue_categories (lookup)"
+  );
+  const refunds = parseTable<RawRefund>(
+    fileMap.get("refunds"),
+    RawRefundSchema,
+    "refunds"
+  );
 
   // ── Build transformer ───────────────────────────────────
   progress("Building lookup maps...", 35);
@@ -300,6 +322,8 @@ async function runZipImport(
     events,
     performances,
     locations,
+    passTypes,
+    revenueCategoryLookups,
   };
   const transformer = new ZipTransformer(tables);
 
@@ -319,9 +343,10 @@ async function runZipImport(
   // ── Transform + save orders (batched) ───────────────────
   progress("Importing orders...", 55);
 
+  let rawOrders: RawOrder[] = [];
   const ordersFile = fileMap.get("orders");
   if (ordersFile) {
-    const rawOrders = parseTable<RawOrder>(
+    rawOrders = parseTable<RawOrder>(
       ordersFile,
       RawOrderSchema,
       "orders"
@@ -387,6 +412,39 @@ async function runZipImport(
     );
   }
 
+  // ── Compute + save revenue by category ──────────────────
+  progress("Computing revenue by category...", 90);
+
+  if (rawOrders.length > 0 && revenueCategoryLookups.length > 0) {
+    const monthlyRevenue = transformer.computeRevenueByCategory(rawOrders, refunds);
+    let totalRevCatsSaved = 0;
+
+    for (const [month, categories] of monthlyRevenue.entries()) {
+      const year = parseInt(month.slice(0, 4));
+      const monthNum = parseInt(month.slice(5, 7));
+
+      // Check if this month is locked (manually uploaded data)
+      const locked = await isMonthLocked(year, monthNum);
+      if (locked) {
+        console.log(`[zip-pipeline] Skipping locked revenue period ${month}`);
+        continue;
+      }
+
+      // Build period: first day to last day of month
+      const periodStart = `${month}-01`;
+      const lastDay = new Date(year, monthNum, 0).getDate();
+      const periodEnd = `${month}-${String(lastDay).padStart(2, "0")}`;
+
+      await saveRevenueCategories(periodStart, periodEnd, categories);
+      totalRevCatsSaved += categories.length;
+    }
+
+    recordCounts.revenueCategories = totalRevCatsSaved;
+    console.log(
+      `[zip-pipeline] Revenue categories saved: ${totalRevCatsSaved} across ${monthlyRevenue.size} months`
+    );
+  }
+
   // ── Mark email as read + set watermark ──────────────────
   progress("Finalizing...", 95);
 
@@ -405,6 +463,7 @@ async function runZipImport(
   if (recordCounts.autoRenews) await setWatermark("autoRenews", now, recordCounts.autoRenews);
   if (recordCounts.registrations) await setWatermark("registrations", now, recordCounts.registrations);
   if (recordCounts.orders) await setWatermark("orders", now, recordCounts.orders);
+  if (recordCounts.revenueCategories) await setWatermark("revenueCategories", now, recordCounts.revenueCategories, "Computed from zip export");
 
   // ── Done ────────────────────────────────────────────────
   const duration = Math.round((Date.now() - startTime) / 1000);
