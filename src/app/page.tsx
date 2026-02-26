@@ -4664,6 +4664,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
         )}
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Monthly Churn bar chart (50% width) ── */}
         {(() => {
           const completedMonths = mem.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
@@ -4691,7 +4692,6 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ? last6.reduce((s, m) => s + (m.eligibleChurnRate ?? 0), 0) / last6.length : 0;
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
               <Card>
                 <div className="flex items-start justify-between min-h-9">
                   <div className="flex items-center gap-2">
@@ -4714,11 +4714,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                   </BarChart>
                 </ChartContainer>
               </Card>
-            </div>
           );
         })()}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Win-Back Members card ─────────────────────── */}
         {churnRates.winBack && churnRates.winBack.reactivated.total > 0 && (() => {
           const wb = churnRates.winBack!;
