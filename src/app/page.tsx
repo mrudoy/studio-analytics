@@ -4715,7 +4715,7 @@ function ChurnSection({ churnRates, weekly }: {
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
-            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.sky3}</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">SKY3 Churn</h3>
           </div>
           <Card matchHeight>
             <div className="flex flex-col">
@@ -4740,7 +4740,7 @@ function ChurnSection({ churnRates, weekly }: {
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <DeviceTv className="size-5" style={{ color: COLORS.tv }} />
-            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.tv}</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Sky Ting TV Churn</h3>
           </div>
           <Card matchHeight>
             <div className="flex flex-col">
