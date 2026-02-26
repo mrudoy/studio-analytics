@@ -4475,7 +4475,7 @@ function ChurnSection({ churnRates, weekly }: {
             </div>
 
             {/* KPI tiles */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
               <div className="flex flex-col gap-0.5">
                 <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.medianTenure.toFixed(1)} mo</span>
                 <span className="text-xs font-medium text-foreground">Median Tenure</span>
