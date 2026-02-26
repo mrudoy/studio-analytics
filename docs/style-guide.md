@@ -360,6 +360,8 @@ All bars use `radius={8}` for rounded corners.
 ### Card Grid
 - Default: `grid gap-3 grid-cols-1 sm:grid-cols-2` for 2-up cards
 - KPI hero: `grid gap-3 grid-cols-1 sm:grid-cols-3` for 3-up
+- Always use `items-stretch` on the grid container so cards in the same row share equal height
+- Use `matchHeight` prop on `<Card>` (applies `h-full`) to ensure cards stretch to fill the grid cell
 
 ### Section Spacing
 - Between sections: handled by sidebar navigation (each section is its own view)
