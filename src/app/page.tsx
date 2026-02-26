@@ -3396,9 +3396,7 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       {/* ── Subsection B: Other pass types ── */}
       <div className="flex flex-col gap-3">
         <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-          <IntroWeekModule introWeek={introWeek} />
-        </div>
+        <IntroWeekModule introWeek={introWeek} />
       </div>
 
       {/* ── Subsection C: Conversion ── */}
@@ -6483,20 +6481,18 @@ function DashboardContent({ activeSection, data, refreshData }: {
           {/* Digital block: Sky Ting TV */}
           <div>
             <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Digital</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.tv}
-                color={COLORS.tv}
-                icon={DeviceTv}
-                count={data.activeSubscribers.skyTingTv}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSkyTingTv}
-                weeklyKeyChurn={(r) => r.skyTingTvChurn}
-                weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
-              />
-            </div>
+            <CategoryDetail
+              title={LABELS.tv}
+              color={COLORS.tv}
+              icon={DeviceTv}
+              count={data.activeSubscribers.skyTingTv}
+              weekly={weekly}
+              monthly={monthly}
+              pacing={pacing}
+              weeklyKeyNew={(r) => r.newSkyTingTv}
+              weeklyKeyChurn={(r) => r.skyTingTvChurn}
+              weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+            />
           </div>
         </div>
       )}
@@ -6519,9 +6515,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
           )}
           <div className="flex flex-col gap-3">
             <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-              <IntroWeekModule introWeek={trends?.introWeek ?? null} />
-            </div>
+            <IntroWeekModule introWeek={trends?.introWeek ?? null} />
           </div>
         </div>
       )}
