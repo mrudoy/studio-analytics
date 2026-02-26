@@ -3317,11 +3317,14 @@ const expiredIntroChartConfig = {
 } satisfies ChartConfig;
 
 function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
-  const { totalExpired, converted, notConverted, conversionRate } = data;
+  const { totalExpired, converted, notConverted } = data;
+
+  const convertedPct = totalExpired > 0 ? Math.round((converted / totalExpired) * 100) : 0;
+  const notConvertedPct = totalExpired > 0 ? Math.round((notConverted / totalExpired) * 100) : 0;
 
   const chartData = [
-    { label: "Converted", value: converted, fill: "var(--color-converted)" },
-    { label: "Did not convert", value: notConverted, fill: "var(--color-notConverted)" },
+    { label: "Converted", value: converted, pct: convertedPct, fill: "var(--color-converted)" },
+    { label: "Did not convert", value: notConverted, pct: notConvertedPct, fill: "var(--color-notConverted)" },
   ];
 
   return (
@@ -3330,7 +3333,7 @@ function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
         <div className="flex items-center justify-between w-full">
           <div>
             <CardTitle>Expired Intro Weeks</CardTitle>
-            <CardDescription>Past 14 days</CardDescription>
+            <CardDescription>Intro week passes that expired in the last 14 days</CardDescription>
           </div>
           {notConverted > 0 && (
             <Button
@@ -3346,7 +3349,7 @@ function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
       </CardHeader>
       <CardContent>
         <ChartContainer config={expiredIntroChartConfig}>
-          <BarChart accessibilityLayer data={chartData}>
+          <BarChart accessibilityLayer data={chartData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} />
             <XAxis
               dataKey="label"
@@ -3354,22 +3357,15 @@ function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
               tickMargin={10}
               axisLine={false}
             />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
-            <Bar dataKey="value" radius={8} />
+            <Bar dataKey="value" radius={8}>
+              <LabelList dataKey="value" position="top" fontSize={12} fontWeight={600} formatter={(v: number) => {
+                const d = chartData.find((c) => c.value === v);
+                return d ? `${d.value} (${d.pct}%)` : `${v}`;
+              }} />
+            </Bar>
           </BarChart>
         </ChartContainer>
       </CardContent>
-      <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 leading-none font-medium">
-          {conversionRate}% conversion rate ({totalExpired} total expired)
-        </div>
-        <div className="text-muted-foreground leading-none">
-          Intro week passes that expired in the last 14 days
-        </div>
-      </CardFooter>
     </DashboardCard>
   );
 }
