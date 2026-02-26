@@ -47,4 +47,6 @@ export interface PipelineJobData {
   triggeredBy: string;
   dateRangeStart?: string;
   dateRangeEnd?: string;
+  /** Direct download URL for the zip export (webhook path — skips Gmail). */
+  downloadUrl?: string;
 }

@@ -66,6 +66,17 @@ export interface ZipPipelineOptions {
 }
 
 /**
+ * Webhook path: run pipeline from a direct download URL
+ * (no Gmail polling needed).
+ */
+export interface ZipWebhookOptions {
+  /** Direct download URL for the zip export */
+  downloadUrl: string;
+  /** Progress callback */
+  onProgress?: ProgressCallback;
+}
+
+/**
  * Alternative: run the pipeline from a local zip directory
  * (for testing without Gmail).
  */
@@ -254,6 +265,57 @@ export async function runZipLocalPipeline(
     `[zip-pipeline] Local files: ${files.length} CSVs from ${csvDir}`
   );
 
+  return runZipImport(fileMap, progress, startTime);
+}
+
+// ── Webhook Pipeline (direct URL, no Gmail) ─────────────────
+
+/**
+ * Run the import from a direct download URL (webhook-triggered).
+ * Skips Gmail entirely — just downloads, extracts, and imports.
+ */
+export async function runZipWebhookPipeline(
+  options: ZipWebhookOptions
+): Promise<PipelineResult> {
+  const startTime = Date.now();
+  const progress = options.onProgress ?? (() => {});
+  const { downloadUrl } = options;
+
+  // ── Download zip ─────────────────────────────────────────
+  progress("Downloading zip from webhook URL...", 10);
+
+  if (!existsSync(DOWNLOADS_DIR)) {
+    mkdirSync(DOWNLOADS_DIR, { recursive: true });
+  }
+
+  console.log(`[zip-pipeline] Webhook download: ${downloadUrl.slice(0, 80)}...`);
+
+  const response = await fetch(downloadUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Zip download failed: ${response.status} ${response.statusText}`
+    );
+  }
+
+  const zipBuffer = Buffer.from(await response.arrayBuffer());
+  const zipPath = join(DOWNLOADS_DIR, `${Date.now()}-webhook-export.zip`);
+  writeFileSync(zipPath, zipBuffer);
+
+  console.log(
+    `[zip-pipeline] Downloaded zip: ${(zipBuffer.length / 1024 / 1024).toFixed(1)} MB → ${zipPath}`
+  );
+
+  // ── Extract CSVs ────────────────────────────────────────
+  progress("Extracting CSVs from zip...", 20);
+
+  const extracted = extractCSVsFromZip(zipPath);
+  const fileMap = mapExtractedFiles(extracted);
+
+  console.log(
+    `[zip-pipeline] Extracted ${extracted.length} files: ${[...fileMap.keys()].join(", ")}`
+  );
+
+  // ── Run transform + save ────────────────────────────────
   return runZipImport(fileMap, progress, startTime);
 }
 

@@ -2,7 +2,7 @@ import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "./connection";
 import { loadSettings } from "../crypto/credentials";
 import { runEmailPipeline } from "./email-pipeline";
-import { runZipDownloadPipeline } from "../email/zip-download-pipeline";
+import { runZipDownloadPipeline, runZipWebhookPipeline } from "../email/zip-download-pipeline";
 import { runShopifySync } from "../shopify/shopify-sync";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
@@ -62,28 +62,52 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     );
   }
 
-  // ── Try zip pipeline first (PRIMARY path) ──
-  // Union.fit sends a daily email with a zip download link containing 33 relational CSVs.
-  // This is faster, more reliable, and doesn't need Playwright (runs on Railway).
+  // ── Try zip pipeline (PRIMARY path) ──
+  // Priority: (1) webhook URL if provided, (2) Gmail polling, (3) Playwright fallback
   let result: PipelineResult | null = null;
 
-  try {
-    updateProgress(job, "Trying zip download pipeline...", 5);
-    console.log(`[pipeline] Attempting zip pipeline: robot=${settings.robotEmail.address}`);
+  // Path A: Direct URL from webhook — no Gmail needed
+  if (job.data.downloadUrl) {
+    try {
+      updateProgress(job, "Downloading zip from webhook...", 5);
+      console.log(`[pipeline] Webhook path: ${job.data.downloadUrl.slice(0, 80)}...`);
 
-    const zipResult = await runZipDownloadPipeline({
-      robotEmail: settings.robotEmail.address,
-      lookbackHours: 48,
-      onProgress: (step, percent) => updateProgress(job, step, percent),
-    });
+      const zipResult = await runZipWebhookPipeline({
+        downloadUrl: job.data.downloadUrl,
+        onProgress: (step, percent) => updateProgress(job, step, percent),
+      });
 
-    if (zipResult.success) {
-      console.log(`[pipeline] Zip pipeline succeeded in ${zipResult.duration}s`);
-      result = zipResult;
+      if (zipResult.success) {
+        console.log(`[pipeline] Webhook pipeline succeeded in ${zipResult.duration}s`);
+        result = zipResult;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[pipeline] Webhook pipeline failed: ${msg}`);
+      // Fall through to Gmail path
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[pipeline] Zip pipeline unavailable, falling back to email pipeline: ${msg}`);
+  }
+
+  // Path B: Gmail polling for zip download link
+  if (!result) {
+    try {
+      updateProgress(job, "Trying zip download pipeline...", 5);
+      console.log(`[pipeline] Attempting zip pipeline: robot=${settings.robotEmail.address}`);
+
+      const zipResult = await runZipDownloadPipeline({
+        robotEmail: settings.robotEmail.address,
+        lookbackHours: 48,
+        onProgress: (step, percent) => updateProgress(job, step, percent),
+      });
+
+      if (zipResult.success) {
+        console.log(`[pipeline] Zip pipeline succeeded in ${zipResult.duration}s`);
+        result = zipResult;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[pipeline] Zip pipeline unavailable, falling back to email pipeline: ${msg}`);
+    }
   }
 
   // ── Fallback: email pipeline (Playwright + Gmail CSV delivery) ──
