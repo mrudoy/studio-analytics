@@ -25,10 +25,12 @@ dotenv.config({ path: path.join(root, ".env.production.local"), override: true }
 import { initDatabase } from "../src/lib/db/database";
 import { closePool } from "../src/lib/db/database";
 import { loadSettings } from "../src/lib/crypto/credentials";
+import { runZipDownloadPipeline } from "../src/lib/email/zip-download-pipeline";
 import { runEmailPipeline } from "../src/lib/queue/email-pipeline";
 import { runShopifySync } from "../src/lib/shopify/shopify-sync";
 import { uploadBackupToGitHub } from "../src/lib/db/backup-cloud";
 import { getWatermark, buildDateRangeForReport } from "../src/lib/db/watermark-store";
+import { sendDigestEmail } from "../src/lib/email/email-sender";
 
 const PIPELINE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -104,33 +106,70 @@ async function main() {
   log(`Union.fit: ${settings.credentials.email}`);
   log(`Robot email: ${settings.robotEmail.address}`);
 
-  // 3. Build date range from watermarks
-  const dateRange = await buildDateRange();
+  // 3. Try zip pipeline first (PRIMARY), fall back to email pipeline
+  let result: Awaited<ReturnType<typeof runZipDownloadPipeline>> | null = null;
 
-  // 4. Run email pipeline (Playwright + Gmail + parse + save)
-  log("Starting email pipeline...");
-  const pipelinePromise = runEmailPipeline({
-    unionEmail: settings.credentials.email,
-    unionPassword: settings.credentials.password,
-    robotEmail: settings.robotEmail.address,
-    dateRange,
-    emailTimeoutMs: 1_500_000, // 25 min — Union.fit emails can be very slow
-    onProgress: (step, percent) => {
-      log(`  ${percent}% — ${step}`);
-    },
-  });
+  // Path A: Zip download pipeline (Gmail → extract URL → download zip → import)
+  try {
+    log("Trying zip download pipeline...");
+    const zipResult = await runZipDownloadPipeline({
+      robotEmail: settings.robotEmail.address,
+      lookbackHours: 48,
+      onProgress: (step, percent) => {
+        log(`  ${percent}% — ${step}`);
+      },
+    });
 
-  // Race against timeout
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Pipeline timed out after 20 minutes")), PIPELINE_TIMEOUT_MS)
-  );
+    if (zipResult.success) {
+      log(`Zip pipeline succeeded in ${zipResult.duration}s`);
+      result = zipResult;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`Zip pipeline unavailable: ${msg}`);
+    log("Falling back to email pipeline (Playwright)...");
+  }
 
-  const result = await Promise.race([pipelinePromise, timeoutPromise]);
+  // Path B: Email pipeline fallback (Playwright + Gmail CSV delivery)
+  if (!result) {
+    const dateRange = await buildDateRange();
+    log("Starting email pipeline...");
+
+    const pipelinePromise = runEmailPipeline({
+      unionEmail: settings.credentials.email,
+      unionPassword: settings.credentials.password,
+      robotEmail: settings.robotEmail.address,
+      dateRange,
+      emailTimeoutMs: 1_500_000, // 25 min
+      onProgress: (step, percent) => {
+        log(`  ${percent}% — ${step}`);
+      },
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Pipeline timed out after 30 minutes")), PIPELINE_TIMEOUT_MS)
+    );
+
+    result = await Promise.race([pipelinePromise, timeoutPromise]);
+  }
+
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   log(`Pipeline complete in ${elapsed}s`);
   log(`Result: ${JSON.stringify(result)}`);
 
-  // 5. Shopify sync (non-fatal)
+  // 5. Send daily digest email (non-fatal)
+  try {
+    const emailResult = await sendDigestEmail();
+    if (emailResult.sent > 0) {
+      log(`Digest email sent to ${emailResult.sent} recipients`);
+    } else if (emailResult.skipped) {
+      log(`Digest email skipped: ${emailResult.skipped}`);
+    }
+  } catch (err) {
+    log(`Digest email failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+  }
+
+  // 7. Shopify sync (non-fatal)
   if (settings.shopify?.storeName && settings.shopify?.clientId && settings.shopify?.clientSecret) {
     try {
       log("Starting Shopify sync...");
@@ -150,7 +189,7 @@ async function main() {
     log("Shopify not configured, skipping sync");
   }
 
-  // 6. Cloud backup (non-fatal)
+  // 8. Cloud backup (non-fatal)
   if (process.env.GITHUB_TOKEN) {
     try {
       log("Uploading cloud backup...");
