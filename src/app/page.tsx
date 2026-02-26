@@ -2126,8 +2126,8 @@ function OverviewSection({ data }: { data: OverviewData }) {
     getSub: (w: TimeWindowMetrics) => { new: number; churned: number };
   }[] = [
     { key: "member", icon: ArrowBadgeDown, label: LABELS.members, color: COLORS.member, activeCount: active.member, getSub: (w) => w.subscriptions.member },
-    { key: "tv", icon: DeviceTv, label: LABELS.tv, color: COLORS.tv, activeCount: active.skyTingTv, getSub: (w) => w.subscriptions.skyTingTv },
     { key: "sky3", icon: BrandSky, label: LABELS.sky3, color: COLORS.sky3, activeCount: active.sky3, getSub: (w) => w.subscriptions.sky3 },
+    { key: "tv", icon: DeviceTv, label: LABELS.tv, color: COLORS.tv, activeCount: active.skyTingTv, getSub: (w) => w.subscriptions.skyTingTv },
   ];
 
   const nonAutoRows: {
