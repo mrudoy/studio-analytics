@@ -4707,56 +4707,57 @@ function ChurnSection({ churnRates, weekly }: {
         )}
       </div>
 
-      {/* ── Sky3 subsection ────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.sky3}</h3>
-        </div>
-        <Card>
-          <div className="flex flex-col">
-            <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.sky3.avgUserChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgUserChurnRate)} />
-            <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.sky3.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate)} />
-            {latestW?.sky3Churn != null && (
-              <div className="flex justify-between items-center py-1.5 border-b border-border">
-                <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
-                <span className="text-sm font-semibold tabular-nums">{latestW.sky3Churn}</span>
-              </div>
-            )}
-            {byCategory.sky3.atRiskCount > 0 && (
-              <div className="flex justify-between items-center py-1.5">
-                <span className="text-xs text-muted-foreground">At Risk</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</span>
-              </div>
-            )}
+      {/* ── Sky3 + Sky Ting TV side-by-side ────────────────── */}
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 items-stretch">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
+            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.sky3}</h3>
           </div>
-        </Card>
-      </div>
+          <Card matchHeight>
+            <div className="flex flex-col">
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.sky3.avgUserChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgUserChurnRate)} />
+              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.sky3.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate)} />
+              {latestW?.sky3Churn != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
+                  <span className="text-sm font-semibold tabular-nums">{latestW.sky3Churn}</span>
+                </div>
+              )}
+              {byCategory.sky3.atRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At Risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</span>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
 
-      {/* ── Sky Ting TV subsection ────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <DeviceTv className="size-5" style={{ color: COLORS.tv }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.tv}</h3>
-        </div>
-        <Card>
-          <div className="flex flex-col">
-            <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgUserChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate)} />
-            <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate)} />
-            {latestW?.skyTingTvChurn != null && (
-              <div className="flex justify-between items-center py-1.5 border-b border-border">
-                <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
-                <span className="text-sm font-semibold tabular-nums">{latestW.skyTingTvChurn}</span>
-              </div>
-            )}
-            {byCategory.skyTingTv.atRiskCount > 0 && (
-              <div className="flex justify-between items-center py-1.5">
-                <span className="text-xs text-muted-foreground">At Risk</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</span>
-              </div>
-            )}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <DeviceTv className="size-5" style={{ color: COLORS.tv }} />
+            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">{LABELS.tv}</h3>
           </div>
-        </Card>
+          <Card matchHeight>
+            <div className="flex flex-col">
+              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgUserChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate)} />
+              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate)} />
+              {latestW?.skyTingTvChurn != null && (
+                <div className="flex justify-between items-center py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
+                  <span className="text-sm font-semibold tabular-nums">{latestW.skyTingTvChurn}</span>
+                </div>
+              )}
+              {byCategory.skyTingTv.atRiskCount > 0 && (
+                <div className="flex justify-between items-center py-1.5">
+                  <span className="text-xs text-muted-foreground">At Risk</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</span>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
       </div>
 
     </div>
