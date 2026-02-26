@@ -146,7 +146,8 @@ Wrapper for all card-style content. Uses shadcn Card with consistent padding.
 ```tsx
 <Card matchHeight>
   {/* Row 1 — Title bar: icon + title on left, optional download button on right */}
-  <div className="flex items-center justify-between mb-1">
+  {/* min-h-9 locks the row to 36px so cards with/without a download button stay aligned */}
+  <div className="flex items-center justify-between mb-1 min-h-9">
     <div className="flex items-center gap-2">
       <Icon className="size-5 shrink-0" style={{ color: COLORS.category }} />
       <span className="text-base font-semibold leading-none tracking-tight">Card Title</span>
@@ -167,7 +168,7 @@ Wrapper for all card-style content. Uses shadcn Card with consistent padding.
 
 **Rules:**
 - Title row always uses `justify-between` (even without a download button) for consistent alignment
-- Title row always has `mb-1`
+- Title row always has `mb-1 min-h-9` — the `min-h-9` (36px) matches `Button size="icon"` height so cards with and without a download button have identical title row heights
 - Description is **mandatory** — it keeps table headers aligned across sibling cards in the same grid row
 - Description always has `mb-3`
 - Never skip the description or use different margin values — sibling cards will misalign

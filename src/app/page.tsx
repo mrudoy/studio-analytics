@@ -4518,7 +4518,7 @@ function ChurnSection({ churnRates, weekly }: {
           const monthlyPct = totalCount > 0 ? Math.round((monthlyCount / totalCount) * 100) : 0;
           return (
             <Card matchHeight>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1 min-h-9">
                 <div className="flex items-center gap-2">
                   <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                   <span className="text-base font-semibold leading-none tracking-tight">Membership Churn</span>
@@ -4581,7 +4581,7 @@ function ChurnSection({ churnRates, weekly }: {
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
               <Card matchHeight>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1 min-h-9">
                   <div className="flex items-center gap-2">
                     <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
@@ -4661,7 +4661,7 @@ function ChurnSection({ churnRates, weekly }: {
             ];
             return (
               <Card matchHeight>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1 min-h-9">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="size-5 shrink-0 text-amber-600" />
                     <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
