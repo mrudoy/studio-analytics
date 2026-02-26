@@ -4718,55 +4718,97 @@ function ChurnSection({ churnRates, weekly }: {
 
       {/* ── Sky3 + Sky Ting TV side-by-side ────────────────── */}
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 items-stretch">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
-            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">SKY3 Churn</h3>
-          </div>
-          <Card matchHeight>
-            <div className="flex flex-col">
-              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.sky3.avgUserChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgUserChurnRate)} />
-              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.sky3.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate)} />
-              {latestW?.sky3Churn != null && (
-                <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
-                  <span className="text-sm font-semibold tabular-nums">{latestW.sky3Churn}</span>
-                </div>
-              )}
-              {byCategory.sky3.atRiskCount > 0 && (
-                <div className="flex justify-between items-center py-1.5">
-                  <span className="text-xs text-muted-foreground">At Risk</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</span>
-                </div>
-              )}
+        <Card matchHeight>
+          <div className="flex items-center justify-between mb-1 min-h-9">
+            <div className="flex items-center gap-2">
+              <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+              <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
             </div>
-          </Card>
-        </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-3">User and MRR churn rates for Sky3 subscribers</p>
+          <div className="flex-1 flex flex-col">
+            <Table style={{ fontFamily: FONT_SANS }}>
+              <TableHeader className="bg-muted">
+                <TableRow>
+                  <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
+                  <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
+                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgUserChurnRate) : undefined }}>
+                    {byCategory.sky3.avgUserChurnRate != null ? `${byCategory.sky3.avgUserChurnRate.toFixed(1)}%` : "–"}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
+                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate) : undefined }}>
+                    {byCategory.sky3.avgMrrChurnRate != null ? `${byCategory.sky3.avgMrrChurnRate.toFixed(1)}%` : "–"}
+                  </TableCell>
+                </TableRow>
+                {latestW?.sky3Churn != null && (
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.sky3Churn}</TableCell>
+                  </TableRow>
+                )}
+                {byCategory.sky3.atRiskCount > 0 && (
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">At Risk</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <DeviceTv className="size-5" style={{ color: COLORS.tv }} />
-            <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Sky Ting TV Churn</h3>
-          </div>
-          <Card matchHeight>
-            <div className="flex flex-col">
-              <MetricRow label="User Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgUserChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate)} />
-              <MetricRow label="MRR Churn Rate (Avg/Mo)" value={byCategory.skyTingTv.avgMrrChurnRate} color={churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate)} />
-              {latestW?.skyTingTvChurn != null && (
-                <div className="flex justify-between items-center py-1.5 border-b border-border">
-                  <span className="text-xs text-muted-foreground">Churned {weekLabel(latestW.period)}</span>
-                  <span className="text-sm font-semibold tabular-nums">{latestW.skyTingTvChurn}</span>
-                </div>
-              )}
-              {byCategory.skyTingTv.atRiskCount > 0 && (
-                <div className="flex justify-between items-center py-1.5">
-                  <span className="text-xs text-muted-foreground">At Risk</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</span>
-                </div>
-              )}
+        <Card matchHeight>
+          <div className="flex items-center justify-between mb-1 min-h-9">
+            <div className="flex items-center gap-2">
+              <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
             </div>
-          </Card>
-        </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-3">User and MRR churn rates for Sky Ting TV subscribers</p>
+          <div className="flex-1 flex flex-col">
+            <Table style={{ fontFamily: FONT_SANS }}>
+              <TableHeader className="bg-muted">
+                <TableRow>
+                  <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
+                  <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
+                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate) : undefined }}>
+                    {byCategory.skyTingTv.avgUserChurnRate != null ? `${byCategory.skyTingTv.avgUserChurnRate.toFixed(1)}%` : "–"}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
+                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate) : undefined }}>
+                    {byCategory.skyTingTv.avgMrrChurnRate != null ? `${byCategory.skyTingTv.avgMrrChurnRate.toFixed(1)}%` : "–"}
+                  </TableCell>
+                </TableRow>
+                {latestW?.skyTingTvChurn != null && (
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.skyTingTvChurn}</TableCell>
+                  </TableRow>
+                )}
+                {byCategory.skyTingTv.atRiskCount > 0 && (
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">At Risk</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
       </div>
 
     </div>
