@@ -17,6 +17,10 @@ import {
   BulbIcon,
   ActivityIcon,
   MountainSun,
+  ArrowBadgeDown,
+  BrandSky,
+  DeviceTv,
+  CalendarWeek,
 } from "./icons";
 
 export type SectionKey =
@@ -30,7 +34,10 @@ export type SectionKey =
   | "growth-non-auto"
   | "conversion-new"
   | "conversion-pool"
-  | "churn"
+  | "churn-members"
+  | "churn-sky3"
+  | "churn-tv"
+  | "churn-intro"
   | "usage"
   | "insights"
   | "data";
@@ -57,7 +64,10 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   "growth-non-auto": "#5B7FA5",
   "conversion-new":  "#B87333",  // copper
   "conversion-pool": "#B87333",
-  churn:          "#A04040",  // muted red
+  "churn-members": "#A04040",  // muted red
+  "churn-sky3":   "#A04040",
+  "churn-tv":     "#A04040",
+  "churn-intro":  "#A04040",
   usage:          "#7C6B8A",  // muted purple
   insights:       "#D4A030",  // amber/gold
   data:           "#6B5B73",  // dusty purple
@@ -98,7 +108,18 @@ export const NAV_ITEMS: NavItem[] = [
       { key: "conversion-pool", label: "Non Auto-Renew Customers", icon: UsersGroup },
     ],
   },
-  { key: "churn", label: "Retention & Churn", icon: HourglassLow, color: SECTION_COLORS.churn },
+  {
+    key: "churn-members",
+    label: "Retention & Churn",
+    icon: HourglassLow,
+    color: SECTION_COLORS["churn-members"],
+    children: [
+      { key: "churn-members", label: "Members", icon: ArrowBadgeDown },
+      { key: "churn-sky3", label: "Sky3", icon: BrandSky },
+      { key: "churn-tv", label: "Sky Ting TV", icon: DeviceTv },
+      { key: "churn-intro", label: "Intro Week", icon: CalendarWeek },
+    ],
+  },
   { key: "usage", label: "Usage", icon: ActivityIcon, color: SECTION_COLORS.usage },
   { key: "insights", label: "Insights", icon: BulbIcon, color: SECTION_COLORS.insights },
   { key: "data", label: "Data", icon: Database, color: SECTION_COLORS.data },
@@ -115,7 +136,10 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "growth-non-auto": ["Growth", "Non Auto-Renews"],
   "conversion-new": ["Conversion", "New Customers"],
   "conversion-pool": ["Conversion", "Non Auto-Renew Customers"],
-  churn: ["Retention & Churn"],
+  "churn-members": ["Retention & Churn", "Members"],
+  "churn-sky3": ["Retention & Churn", "Sky3"],
+  "churn-tv": ["Retention & Churn", "Sky Ting TV"],
+  "churn-intro": ["Retention & Churn", "Intro Week"],
   usage: ["Usage"],
   insights: ["Insights"],
   data: ["Data"],

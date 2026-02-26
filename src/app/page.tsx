@@ -4456,12 +4456,15 @@ function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
 //  CHURN SECTION (extracted from CategoryDetail cards)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
+type ChurnSubsection = "members" | "sky3" | "tv" | "intro";
+
+function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
   churnRates?: ChurnRateData | null;
   weekly: TrendRowData[];
   expiringIntroWeeks?: ExpiringIntroWeekData | null;
+  subsection: ChurnSubsection;
 }) {
-  if (!churnRates) {
+  if (!churnRates && subsection !== "intro") {
     return (
       <div className="flex flex-col gap-4">
         <NoData label="Churn data" />
@@ -4469,16 +4472,16 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
     );
   }
 
-  const { byCategory } = churnRates;
+  const byCategory = churnRates?.byCategory;
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
 
-  const mem = byCategory.member;
-  const tenure = mem.tenureMetrics;
-  const alerts = churnRates.memberAlerts;
+  const mem = byCategory?.member;
+  const tenure = mem?.tenureMetrics;
+  const alerts = churnRates?.memberAlerts;
 
   // Last completed month for raw counts
-  const lastComplete = mem.monthly.length >= 2 ? mem.monthly[mem.monthly.length - 2] : null;
+  const lastComplete = mem && mem.monthly.length >= 2 ? mem.monthly[mem.monthly.length - 2] : null;
 
   /** Reusable churn metric row */
   function MetricRow({ label, value, color, suffix = "%", context }: { label: string; value: number | undefined; color?: string; suffix?: string; context?: string }) {
@@ -4496,14 +4499,11 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
     );
   }
 
+  // ── Members ──
+  if (subsection === "members") {
+  if (!churnRates || !mem) return <NoData label="Member churn data" />;
   return (
     <div className="flex flex-col gap-3">
-      {/* ── Members subsection ────────────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <ArrowBadgeDown className="size-5" style={{ color: COLORS.member }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Members</h3>
-        </div>
 
         {/* Tenure / Retention metrics — first card */}
         {tenure && (
@@ -4934,14 +4934,15 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
           })()
         )}
         </div>
-      </div>
+    </div>
+  );
+  }
 
-      {/* ── Sky3 ──────────────────────────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <BrandSky className="size-5" style={{ color: COLORS.sky3 }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Sky3</h3>
-        </div>
+  // ── Sky3 ──
+  if (subsection === "sky3") {
+  if (!churnRates || !byCategory) return <NoData label="Sky3 churn data" />;
+  return (
+    <div className="flex flex-col gap-3">
         <Card>
           <div className="flex items-start justify-between mb-1 min-h-9">
             <div className="flex items-center gap-2">
@@ -4987,14 +4988,15 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
             </Table>
           </div>
         </Card>
-      </div>
+    </div>
+  );
+  }
 
-      {/* ── Sky Ting TV ─────────────────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <DeviceTv className="size-5" style={{ color: COLORS.tv }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Sky Ting TV</h3>
-        </div>
+  // ── Sky Ting TV ──
+  if (subsection === "tv") {
+  if (!churnRates || !byCategory) return <NoData label="Sky Ting TV churn data" />;
+  return (
+    <div className="flex flex-col gap-3">
         <Card>
           <div className="flex items-start justify-between mb-1 min-h-9">
             <div className="flex items-center gap-2">
@@ -5040,14 +5042,14 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
             </Table>
           </div>
         </Card>
-      </div>
+    </div>
+  );
+  }
 
-      {/* ── Intro Week ─────────────────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <CalendarWeek className="size-5" style={{ color: COLORS.copper }} />
-          <h3 className="text-sm font-semibold text-muted-foreground tracking-tight uppercase">Intro Week</h3>
-        </div>
+  // ── Intro Week ──
+  if (subsection === "intro") {
+  return (
+    <div className="flex flex-col gap-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* Expiring Intro Weeks */}
         {expiringIntroWeeks && expiringIntroWeeks.customers.length > 0 && (
@@ -5132,10 +5134,11 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks }: {
           })()
         )}
         </div>
-      </div>
-
     </div>
   );
+  }
+
+  return null;
 }
 
 // ─── Shopify Sync Status ──────────────────────────────────────
@@ -6617,17 +6620,59 @@ function DashboardContent({ activeSection, data, refreshData }: {
         </div>
       )}
 
-      {/* ── CHURN ── */}
-      {activeSection === "churn" && (
+      {/* ── CHURN: MEMBERS ── */}
+      {activeSection === "churn-members" && (
         <>
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <HourglassLow className="size-7 shrink-0" style={{ color: SECTION_COLORS.churn }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Retention & Churn</h1>
+              <ArrowBadgeDown className="size-7 shrink-0" style={{ color: SECTION_COLORS["churn-members"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Members</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Retention metrics, churn trends, milestones, and at-risk members</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="members" />
+        </>
+      )}
+
+      {/* ── CHURN: SKY3 ── */}
+      {activeSection === "churn-sky3" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <BrandSky className="size-7 shrink-0" style={{ color: SECTION_COLORS["churn-sky3"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Sky3</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">User and MRR churn rates for Sky3 subscribers</p>
+          </div>
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="sky3" />
+        </>
+      )}
+
+      {/* ── CHURN: SKY TING TV ── */}
+      {activeSection === "churn-tv" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <DeviceTv className="size-7 shrink-0" style={{ color: SECTION_COLORS["churn-tv"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Sky Ting TV</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">User and MRR churn rates for Sky Ting TV subscribers</p>
+          </div>
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="tv" />
+        </>
+      )}
+
+      {/* ── CHURN: INTRO WEEK ── */}
+      {activeSection === "churn-intro" && (
+        <>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <CalendarWeek className="size-7 shrink-0" style={{ color: SECTION_COLORS["churn-intro"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Intro Week</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Expiring intro week passes and conversion tracking</p>
+          </div>
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="intro" />
         </>
       )}
 
