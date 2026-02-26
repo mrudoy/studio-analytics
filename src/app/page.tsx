@@ -4458,10 +4458,11 @@ function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
 
 type ChurnSubsection = "members" | "sky3" | "tv" | "intro";
 
-function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
+function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConversion, subsection }: {
   churnRates?: ChurnRateData | null;
   weekly: TrendRowData[];
   expiringIntroWeeks?: ExpiringIntroWeekData | null;
+  introWeekConversion?: IntroWeekConversionData | null;
   subsection: ChurnSubsection;
 }) {
   if (!churnRates && subsection !== "intro") {
@@ -4721,25 +4722,35 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
         {churnRates.winBack && churnRates.winBack.reactivated.total > 0 && (() => {
           const wb = churnRates.winBack!;
           const r = wb.reactivated;
-          const buckets = [
-            { label: "≤ 30 days", count: r.within30 },
-            { label: "31–60 days", count: r.within60 },
-            { label: "61–90 days", count: r.within90 },
-            { label: "91–120 days", count: r.within120 },
-            { label: "> 120 days", count: r.beyond120 },
-          ];
+          const nowMs = Date.now();
+          const MS_DAY = 24 * 60 * 60 * 1000;
 
-          const downloadCsv = () => {
+          // Bucket current targets by days since cancel
+          const targetsByBucket = (minDays: number, maxDays: number | null) =>
+            wb.targets.filter((t) => {
+              const days = Math.round((nowMs - new Date(t.canceledAt).getTime()) / MS_DAY);
+              return maxDays != null ? days >= minDays && days <= maxDays : days > minDays;
+            });
+
+          const buckets = [
+            { label: "≤ 30 days", hist: r.within30, today: targetsByBucket(0, 30) },
+            { label: "31–60 days", hist: r.within60, today: targetsByBucket(31, 60) },
+            { label: "61–90 days", hist: r.within90, today: targetsByBucket(61, 90) },
+            { label: "91–120 days", hist: r.within120, today: targetsByBucket(91, 120) },
+            { label: "> 120 days", hist: r.beyond120, today: targetsByBucket(121, null) },
+          ];
+          const totalToday = buckets.reduce((s, b) => s + b.today.length, 0);
+
+          const downloadBucketCsv = (members: typeof wb.targets, filename: string) => {
             const header = "Name,Email,Last Plan,Canceled At,Days Since Cancel\n";
-            const nowMs = Date.now();
-            const rows = wb.targets.map((t) => {
-              const days = Math.round((nowMs - new Date(t.canceledAt).getTime()) / (24 * 60 * 60 * 1000));
+            const rows = members.map((t) => {
+              const days = Math.round((nowMs - new Date(t.canceledAt).getTime()) / MS_DAY);
               return `"${t.name}","${t.email}","${t.lastPlanName}","${t.canceledAt}",${days}`;
             }).join("\n");
             const blob = new Blob([header + rows], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
-            a.href = url; a.download = "winback-targets.csv"; a.click();
+            a.href = url; a.download = filename; a.click();
             URL.revokeObjectURL(url);
           };
 
@@ -4750,8 +4761,8 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                   <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
                   <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
                 </div>
-                {wb.targets.length > 0 && (
-                  <Button variant="outline" size="icon" onClick={downloadCsv} title="Download win-back targets as CSV">
+                {totalToday > 0 && (
+                  <Button variant="outline" size="icon" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
                     <DownloadIcon className="size-4" />
                   </Button>
                 )}
@@ -4767,15 +4778,25 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                       <TableHead className="text-xs py-1.5">Return Window</TableHead>
                       <TableHead className="text-xs py-1.5 text-right"># Returned</TableHead>
                       <TableHead className="text-xs py-1.5 text-right">% of Returns</TableHead>
+                      <TableHead className="text-xs py-1.5 text-right"># Today</TableHead>
+                      <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {buckets.map((b) => (
                       <TableRow key={b.label}>
                         <TableCell className="py-1.5 text-sm">{b.label}</TableCell>
-                        <TableCell className="py-1.5 text-sm text-right tabular-nums">{b.count}</TableCell>
+                        <TableCell className="py-1.5 text-sm text-right tabular-nums">{b.hist}</TableCell>
                         <TableCell className="py-1.5 text-sm text-right tabular-nums">
-                          {r.total > 0 ? (b.count / r.total * 100).toFixed(1) : 0}%
+                          {r.total > 0 ? (b.hist / r.total * 100).toFixed(1) : 0}%
+                        </TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{b.today.length}</TableCell>
+                        <TableCell className="py-1.5 px-0 text-center">
+                          {b.today.length > 0 && (
+                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadBucketCsv(b.today, `winback-${b.label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.csv`)} title={`Download ${b.label} targets as CSV`}>
+                              <DownloadIcon className="size-3.5" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -4785,6 +4806,8 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
                       <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">
                         {wb.reactivationRate}% of churned
                       </TableCell>
+                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{totalToday}</TableCell>
+                      <TableCell className="py-1.5 px-0" />
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -4793,15 +4816,6 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
               <p className="text-xs text-muted-foreground mt-3">
                 When they return: {r.upgradePct}% upgrade · {r.downgradePct}% downgrade · {r.samePct}% same plan
               </p>
-
-              {wb.targets.length > 0 && (
-                <div className="mt-3 rounded-md bg-muted/50 px-3 py-2">
-                  <span className="text-sm">
-                    <span className="font-semibold">{wb.targets.length}</span>{" "}
-                    <span className="text-muted-foreground">members cancelled 30–120 days ago — prime win-back targets</span>
-                  </span>
-                </div>
-              )}
             </Card>
           );
         })()}
@@ -4997,6 +5011,11 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, subsection }: {
   if (subsection === "intro") {
   return (
     <div className="flex flex-col gap-3">
+        {introWeekConversion && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
+            <ExpiredIntroWeeksCard data={introWeekConversion} />
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* Expiring Intro Weeks */}
         {expiringIntroWeeks && expiringIntroWeeks.customers.length > 0 && (
@@ -6534,11 +6553,6 @@ function DashboardContent({ activeSection, data, refreshData }: {
           ) : (
             <NoData label="New Customer data" />
           )}
-          {trends?.introWeekConversion && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ alignItems: "stretch" }}>
-              <ExpiredIntroWeeksCard data={trends.introWeekConversion} />
-            </div>
-          )}
         </div>
       )}
 
@@ -6619,7 +6633,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Expiring intro week passes and conversion tracking</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="intro" />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} introWeekConversion={trends?.introWeekConversion} subsection="intro" />
         </>
       )}
 

@@ -1456,8 +1456,8 @@ function computeWinBackData(
       hasCancellation = true;
       const cancelMs = new Date(lastRow.canceled_at).getTime();
       const daysSinceCancel = Math.round((nowMs - cancelMs) / MS_PER_DAY);
-      // Win-back target: cancelled 30-120 days ago, hasn't returned
-      if (daysSinceCancel >= 30 && daysSinceCancel <= 120) {
+      // Win-back target: any churned member who hasn't returned
+      if (daysSinceCancel > 0) {
         targets.push({
           name: lastRow.customer_name,
           email,
