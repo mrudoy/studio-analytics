@@ -30,6 +30,7 @@ export async function GET() {
         hasResendKey: !!(settings?.emailDigest?.resendApiKey || process.env.RESEND_API_KEY),
         fromAddress: settings?.emailDigest?.fromAddress || null,
       },
+      hasUnionApiKey: !!(settings?.unionApiKey || process.env.UNION_API_KEY),
     });
   } catch {
     return NextResponse.json({ hasCredentials: false });
@@ -78,6 +79,11 @@ export async function PUT(request: Request) {
         clientId: body.shopifyClientId,
         clientSecret: body.shopifyClientSecret,
       };
+    }
+
+    // Union Data Exporter API key
+    if (body.unionApiKey) {
+      updated.unionApiKey = body.unionApiKey;
     }
 
     // Email digest config

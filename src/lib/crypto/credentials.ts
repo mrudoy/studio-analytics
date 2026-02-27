@@ -63,6 +63,8 @@ export interface AppSettings {
   schedule?: ScheduleConfig;
   shopify?: ShopifyConfig;
   emailDigest?: EmailDigestConfig;
+  /** Union Data Exporter API key — enables direct API polling for exports */
+  unionApiKey?: string;
 }
 
 export function encryptSettings(settings: AppSettings): string {
@@ -129,11 +131,12 @@ function loadSettingsFromEnv(): AppSettings | null {
       }
     : undefined;
 
-  // Return settings if we have at least Union credentials or Shopify config
+  const unionApiKey = process.env.UNION_API_KEY || undefined;
+
+  // Return settings if we have at least one useful config
   if (!email || !password) {
-    // No Union creds — still return partial settings if Shopify is configured
-    if (!shopify && !emailDigest) return null;
-    return { shopify, emailDigest };
+    if (!shopify && !emailDigest && !unionApiKey) return null;
+    return { shopify, emailDigest, unionApiKey };
   }
 
   return {
@@ -152,6 +155,7 @@ function loadSettingsFromEnv(): AppSettings | null {
       : undefined,
     shopify,
     emailDigest,
+    unionApiKey,
   };
 }
 

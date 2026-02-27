@@ -10,6 +10,7 @@ import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 import { invalidateStatsCache } from "../cache/stats-cache";
+import { fetchLatestExport, markExportProcessed } from "../union-api/fetch-export";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
  *  70 min to accommodate 60-min email polling + Playwright triggers + analytics. */
@@ -52,14 +53,13 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   // Step 1: Load credentials
   updateProgress(job, "Loading credentials", 5);
   const settings = loadSettings();
-  if (!settings?.credentials) {
-    throw new Error("No Union.fit credentials configured. Go to Settings to configure.");
-  }
+  const hasApiKey = !!(settings?.unionApiKey);
+  const hasWebhookUrl = !!job.data.downloadUrl;
+  const hasEmailCreds = !!(settings?.credentials && settings?.robotEmail?.address);
 
-  if (!settings.robotEmail?.address) {
+  if (!hasApiKey && !hasWebhookUrl && !hasEmailCreds) {
     throw new Error(
-      "Robot email not configured. The pipeline requires email-based CSV delivery. " +
-      "Go to Settings to configure the robot email address."
+      "No data source configured. Set a Union API key, webhook URL, or Union.fit credentials + robot email in Settings."
     );
   }
 
@@ -89,14 +89,48 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     }
   }
 
+  // Path A2: Union Data Exporter API — fetch latest export URL directly
+  if (!result && hasApiKey) {
+    try {
+      updateProgress(job, "Checking Union Data Exporter API...", 5);
+      console.log("[pipeline] Trying Union Data Exporter API");
+
+      const exportInfo = await fetchLatestExport(settings!.unionApiKey!);
+      if (exportInfo) {
+        updateProgress(job, "Downloading zip from API export...", 8);
+        console.log(`[pipeline] API export: ${exportInfo.downloadUrl.slice(0, 80)}...`);
+
+        const zipResult = await runZipWebhookPipeline({
+          downloadUrl: exportInfo.downloadUrl,
+          onProgress: (step, percent) => updateProgress(job, step, percent),
+        });
+
+        if (zipResult.success) {
+          console.log(`[pipeline] API export pipeline succeeded in ${zipResult.duration}s`);
+          const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
+            (a, b) => a + (typeof b === "number" ? b : 0), 0
+          );
+          await markExportProcessed(exportInfo.createdAt, totalRecords);
+          result = zipResult;
+        }
+      } else {
+        console.log("[pipeline] No new API export available");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[pipeline] API export fetch failed: ${msg}`);
+      // Fall through to Gmail path
+    }
+  }
+
   // Path B: Gmail polling for zip download link
-  if (!result) {
+  if (!result && hasEmailCreds) {
     try {
       updateProgress(job, "Trying zip download pipeline...", 5);
-      console.log(`[pipeline] Attempting zip pipeline: robot=${settings.robotEmail.address}`);
+      console.log(`[pipeline] Attempting zip pipeline: robot=${settings!.robotEmail!.address}`);
 
       const zipResult = await runZipDownloadPipeline({
-        robotEmail: settings.robotEmail.address,
+        robotEmail: settings!.robotEmail!.address,
         lookbackHours: 48,
         onProgress: (step, percent) => updateProgress(job, step, percent),
       });
@@ -112,7 +146,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   }
 
   // ── Fallback: email pipeline (Playwright + Gmail CSV delivery) ──
-  if (!result) {
+  if (!result && hasEmailCreds) {
     // Date range: if explicitly provided in the job, pass it through as an override.
     // Otherwise, the email-pipeline builds per-report ranges from watermarks automatically.
     const dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
@@ -120,19 +154,19 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
       : undefined;
 
     updateProgress(job, "Starting email-based pipeline (fallback)", 5);
-    console.log(`[pipeline] Email pipeline fallback: robot=${settings.robotEmail.address}`);
+    console.log(`[pipeline] Email pipeline fallback: robot=${settings!.robotEmail!.address}`);
 
     result = await runEmailPipeline({
-      unionEmail: settings.credentials.email,
-      unionPassword: settings.credentials.password,
-      robotEmail: settings.robotEmail.address,
+      unionEmail: settings!.credentials!.email,
+      unionPassword: settings!.credentials!.password,
+      robotEmail: settings!.robotEmail!.address,
       dateRange: dateRange || undefined,
       onProgress: (step, percent, categories) => updateProgress(job, step, percent, categories),
     });
   }
 
   // ── Shopify sync (non-fatal — dashboard still works without it) ──
-  if (settings.shopify?.storeName && settings.shopify?.clientId && settings.shopify?.clientSecret) {
+  if (settings?.shopify?.storeName && settings?.shopify?.clientId && settings?.shopify?.clientSecret) {
     try {
       updateProgress(job, "Syncing Shopify data", 85);
       const shopifyResult = await runShopifySync({
@@ -152,6 +186,13 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
 
   // Cleanup temp files
   cleanupDownloads();
+
+  if (!result) {
+    throw new Error(
+      "Pipeline could not fetch data from any source. " +
+      "Check your Union API key, webhook configuration, or email credentials in Settings."
+    );
+  }
 
   return result;
 }

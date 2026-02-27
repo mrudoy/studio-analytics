@@ -72,6 +72,8 @@ export default function SettingsPage() {
     testStatus: "idle",
     testMessage: "",
   });
+  const [unionApiKey, setUnionApiKey] = useState("");
+  const [hasUnionApiKey, setHasUnionApiKey] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -79,6 +81,7 @@ export default function SettingsPage() {
       .then((data) => {
         setCurrentEmail(data.email || null);
         setCurrentRobotEmail(data.robotEmail || null);
+        setHasUnionApiKey(data.hasUnionApiKey ?? false);
         if (data.emailDigest) {
           setDigest((d) => ({
             ...d,
@@ -133,6 +136,10 @@ export default function SettingsPage() {
         body.robotEmail = settings.robotEmail;
       }
 
+      if (unionApiKey) {
+        body.unionApiKey = unionApiKey;
+      }
+
       // Always include email digest config so enabled/disabled state persists
       body.emailDigest = {
         enabled: digest.enabled,
@@ -164,6 +171,8 @@ export default function SettingsPage() {
       const refreshData = await refreshRes.json();
       setCurrentEmail(refreshData.email || null);
       setCurrentRobotEmail(refreshData.robotEmail || null);
+      setHasUnionApiKey(refreshData.hasUnionApiKey ?? false);
+      setUnionApiKey(""); // clear after save — stored server-side
       if (refreshData.emailDigest) {
         setDigest((d) => ({
           ...d,
@@ -623,6 +632,50 @@ export default function SettingsPage() {
                   {schedule.message}
                 </span>
               )}
+            </div>
+          </div>
+
+          <hr style={{ borderColor: "var(--st-border)" }} />
+
+          {/* Data Exporter API */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl" style={{ color: "var(--st-text-primary)" }}>
+                Data Exporter API
+              </h2>
+              <span
+                className="text-xs font-medium px-2.5 py-1 rounded-full"
+                style={{
+                  backgroundColor: hasUnionApiKey ? "rgba(22, 163, 74, 0.1)" : "rgba(107, 114, 128, 0.1)",
+                  color: hasUnionApiKey ? "#16a34a" : "#6b7280",
+                }}
+              >
+                {hasUnionApiKey ? "Configured" : "Not configured"}
+              </span>
+            </div>
+            <p className="text-sm" style={{ color: "var(--st-text-secondary)" }}>
+              Automatically fetch the latest data export from Union.fit using their API.
+              When configured, the pipeline will poll for new exports before falling back to email-based delivery.
+            </p>
+            <div>
+              <label
+                className="block text-sm font-medium mb-1.5"
+                style={{ color: "var(--st-text-secondary)" }}
+              >
+                Union API Key
+              </label>
+              <input
+                type="password"
+                value={unionApiKey}
+                onChange={(e) => setUnionApiKey(e.target.value)}
+                className={inputFocusClass}
+                style={{ ...inputStyle, outlineColor: "var(--st-accent)" }}
+                placeholder={hasUnionApiKey ? "Key configured (enter new to replace)" : "Enter your API key"}
+              />
+              <p className="text-xs mt-1" style={{ color: "var(--st-text-secondary)" }}>
+                Get your API key from Union.fit → Reports → Data Exporters → API.
+                Or set <code style={{ fontSize: "0.75rem" }}>UNION_API_KEY</code> env var on Railway.
+              </p>
             </div>
           </div>
 
