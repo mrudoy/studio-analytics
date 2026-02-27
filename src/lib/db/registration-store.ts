@@ -2049,16 +2049,27 @@ export interface AttendanceDropMember {
   visitsPrior2Wk: number;
   visits8Wk: number;
   avgWeekly: number;
+  /** 1 = Code Red (100% drop), 2 = Critical (75%+), 3 = Warning (50%+) */
+  segment: 1 | 2 | 3;
+  /** Negative percentage, e.g. -100, -83, -67 */
+  dropPct: number;
 }
 
 export interface AttendanceDropData {
   members: AttendanceDropMember[];
   totalFlagged: number;
+  codeRedCount: number;
+  criticalCount: number;
+  warningCount: number;
 }
 
 /**
- * Find active monthly members whose attendance dropped sharply:
- * 3+ visits in weeks 3-4 ago AND ≤1 visit in the last 2 weeks.
+ * Find active monthly members whose attendance dropped sharply.
+ * Three mutually exclusive tiers:
+ *   Segment 1 — CODE RED:  100% drop (zero visits last 2 weeks)
+ *   Segment 2 — CRITICAL:  75%+ drop
+ *   Segment 3 — WARNING:   50-74% drop
+ * Only evaluates members with 3+ visits in prior 2 weeks.
  */
 export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
   const pool = getPool();
@@ -2066,7 +2077,7 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
   const { rows } = await pool.query(`
     WITH active AS (
       SELECT DISTINCT ON (customer_email)
-        customer_email as email, customer_name as name, plan_name, created_at
+        customer_email AS email, customer_name AS name, plan_name, created_at
       FROM auto_renews
       WHERE plan_state NOT IN ('Canceled','Invalid')
         AND plan_name NOT ILIKE '%sky3%'
@@ -2074,30 +2085,43 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
         AND plan_name NOT ILIKE '%annual%'
       ORDER BY customer_email, created_at DESC
     ),
-    recent AS (
+    visit_counts AS (
       SELECT a.email, a.name, a.plan_name, a.created_at,
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 13) THEN 1 END) as visits_last_2wk,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 13) THEN 1 END)::int AS visits_last_2wk,
         COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 27)
-                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 13) THEN 1 END) as visits_prior_2wk,
-        COUNT(r.id) as visits_8wk
+                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 13) THEN 1 END)::int AS visits_prior_2wk,
+        COUNT(r.id)::int AS visits_8wk
       FROM active a
       LEFT JOIN registrations r ON r.email = a.email
         AND r.state IN ('redeemed','confirmed')
         AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
         AND LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 55)
       GROUP BY a.email, a.name, a.plan_name, a.created_at
+    ),
+    segmented AS (
+      SELECT *,
+        ROUND(visits_8wk::numeric / 8, 1) AS avg_weekly,
+        ROUND(((visits_last_2wk - visits_prior_2wk)::numeric / visits_prior_2wk) * 100, 0) AS drop_pct,
+        CASE
+          WHEN created_at ~ '^\\d{4}-' THEN
+            ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
+          ELSE NULL
+        END AS tenure_months,
+        CASE
+          WHEN visits_last_2wk = 0 THEN 1
+          WHEN ((visits_prior_2wk - visits_last_2wk)::numeric / visits_prior_2wk) >= 0.75 THEN 2
+          WHEN ((visits_prior_2wk - visits_last_2wk)::numeric / visits_prior_2wk) >= 0.50 THEN 3
+          ELSE NULL
+        END AS segment
+      FROM visit_counts
+      WHERE visits_prior_2wk >= 3
     )
-    SELECT email, name, plan_name, COALESCE(created_at,'') as created_at,
-      visits_last_2wk::int, visits_prior_2wk::int, visits_8wk::int,
-      ROUND(visits_8wk::numeric / 8, 1) as avg_weekly,
-      CASE
-        WHEN created_at ~ '^\\d{4}-' THEN
-          ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
-        ELSE NULL
-      END as tenure_months
-    FROM recent
-    WHERE visits_prior_2wk >= 3 AND visits_last_2wk <= 1
-    ORDER BY (visits_prior_2wk - visits_last_2wk) DESC
+    SELECT email, name, plan_name, COALESCE(created_at,'') AS created_at,
+      visits_last_2wk, visits_prior_2wk, visits_8wk,
+      avg_weekly, drop_pct, tenure_months, segment
+    FROM segmented
+    WHERE segment IS NOT NULL
+    ORDER BY segment ASC, visits_prior_2wk DESC
   `);
 
   const members: AttendanceDropMember[] = rows.map((r) => ({
@@ -2110,7 +2134,13 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
     visitsPrior2Wk: r.visits_prior_2wk,
     visits8Wk: r.visits_8wk,
     avgWeekly: parseFloat(r.avg_weekly),
+    segment: r.segment as 1 | 2 | 3,
+    dropPct: parseInt(r.drop_pct),
   }));
 
-  return { members, totalFlagged: members.length };
+  const codeRedCount = members.filter((m) => m.segment === 1).length;
+  const criticalCount = members.filter((m) => m.segment === 2).length;
+  const warningCount = members.filter((m) => m.segment === 3).length;
+
+  return { members, totalFlagged: members.length, codeRedCount, criticalCount, warningCount };
 }

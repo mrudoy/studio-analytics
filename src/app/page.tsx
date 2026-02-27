@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, TrendingDown } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, TrendingDown, ChevronDown } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -4723,92 +4723,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Churn Reduction Opportunities</h3>
 
           {/* ── Attendance Drop Alert ── */}
-          {churnRates.attendanceDrops && churnRates.attendanceDrops.totalFlagged > 0 && (() => {
-            const drops = churnRates.attendanceDrops!;
-            const downloadDropCsv = () => {
-              const headers = ["Name", "Email", "Plan", "Tenure (mo)", "Drop %", "Visits Last 2 Wks", "Visits Prior 2 Wks", "Visits 8 Wks", "Avg Weekly"];
-              const rows = drops.members.map((m: AttendanceDropMember) => {
-                const dropPct = m.visitsPrior2Wk > 0
-                  ? Math.round(((m.visitsLast2Wk - m.visitsPrior2Wk) / m.visitsPrior2Wk) * 100)
-                  : 0;
-                return [
-                  m.name, m.email, m.planName, String(m.tenureMonths), `${dropPct}%`,
-                  String(m.visitsLast2Wk), String(m.visitsPrior2Wk), String(m.visits8Wk), String(m.avgWeekly),
-                ];
-              });
-              const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-              const blob = new Blob([csv], { type: "text/csv" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url; a.download = "attendance-drop-alerts.csv"; a.click();
-              URL.revokeObjectURL(url);
-            };
-            return (
-              <Card>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
-                      <span className="text-base font-semibold leading-none tracking-tight">Attendance Drop Alert</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      Members whose visits dropped sharply — 3+ visits in prior 2 weeks, ≤1 in last 2 weeks
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{drops.totalFlagged}</span>
-                    <Button variant="outline" size="icon" className="shrink-0" onClick={downloadDropCsv} title="Download attendance drop list as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex-1 flex flex-col">
-                  <Table style={{ fontFamily: FONT_SANS }}>
-                    <TableHeader className="bg-muted">
-                      <TableRow>
-                        <TableHead className="text-xs text-muted-foreground">Name</TableHead>
-                        <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Tenure</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Prior 2 wks</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Last 2 wks</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Drop</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {drops.members.slice(0, 10).map((m: AttendanceDropMember) => {
-                        const dropPct = m.visitsPrior2Wk > 0
-                          ? Math.round(((m.visitsLast2Wk - m.visitsPrior2Wk) / m.visitsPrior2Wk) * 100)
-                          : 0;
-                        const tenureLabel = m.tenureMonths < 1 ? "<1 mo"
-                          : m.tenureMonths < 12 ? `${Math.round(m.tenureMonths)} mo`
-                          : `${(m.tenureMonths / 12).toFixed(1)} yr`;
-                        // Red zone: months 1-3 (churn cliff)
-                        const tenureColor = m.tenureMonths <= 3 ? COLORS.error
-                          : m.tenureMonths <= 6 ? COLORS.warning
-                          : undefined;
-                        return (
-                          <TableRow key={m.email}>
-                            <TableCell className="py-1.5 text-sm">{m.name}</TableCell>
-                            <TableCell className="py-1.5 text-sm text-muted-foreground">{m.planName}</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={tenureColor ? { color: tenureColor } : undefined}>{tenureLabel}</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{m.visitsPrior2Wk}</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.error }}>{m.visitsLast2Wk}</TableCell>
-                            <TableCell className="py-1.5 text-sm font-bold text-right tabular-nums" style={{ color: COLORS.error }}>{dropPct}%</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                  {drops.totalFlagged > 10 && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Showing top 10 of {drops.totalFlagged} — download CSV for full list
-                    </p>
-                  )}
-                </div>
-              </Card>
-            );
-          })()}
+          {churnRates.attendanceDrops && churnRates.attendanceDrops.totalFlagged > 0 && (
+            <AttendanceDropCard drops={churnRates.attendanceDrops!} />
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Approaching Milestones ── */}
@@ -5420,6 +5337,118 @@ function UnionSyncStatus({ lastUpdated, onSyncComplete }: { lastUpdated: string 
         </p>
       )}
     </div>
+  );
+}
+
+// ─── Attendance Drop Alert Card ───────────────────────────────
+
+const SEGMENT_CONFIG = {
+  1: { label: "CODE RED: 100% Drop", sublabel: "Immediate Intervention", color: "#991B1B", bgColor: "#FEE2E2", borderColor: "#FECACA" },
+  2: { label: "CRITICAL RISK: 75%+ Drop", sublabel: "High Flight Risk", color: "#9A3412", bgColor: "#FFEDD5", borderColor: "#FED7AA" },
+  3: { label: "WARNING: 50%+ Drop", sublabel: "Fading Attendance", color: "#854D0E", bgColor: "#FEF9C3", borderColor: "#FDE68A" },
+} as const;
+
+function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[]; totalFlagged: number; codeRedCount: number; criticalCount: number; warningCount: number } }) {
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: false });
+
+  const downloadDropCsv = () => {
+    const headers = ["Segment", "Name", "Email", "Plan", "Tenure (mo)", "Drop %", "Prior 2 Wks", "Last 2 Wks", "8 Wk Avg/wk"];
+    const segLabels = { 1: "CODE RED", 2: "CRITICAL", 3: "WARNING" } as const;
+    const rows = drops.members.map((m: AttendanceDropMember) => [
+      segLabels[m.segment], m.name, m.email, m.planName, String(m.tenureMonths),
+      `${m.dropPct}%`, String(m.visitsPrior2Wk), String(m.visitsLast2Wk), String(m.avgWeekly),
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "attendance-drop-alerts.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggle = (seg: number) => setExpanded((prev) => ({ ...prev, [seg]: !prev[seg] }));
+
+  const renderSegment = (segment: 1 | 2 | 3, members: AttendanceDropMember[]) => {
+    if (members.length === 0) return null;
+    const config = SEGMENT_CONFIG[segment];
+    const isOpen = expanded[segment];
+    return (
+      <div key={segment} className="rounded-lg border overflow-hidden" style={{ borderColor: config.borderColor }}>
+        <button
+          onClick={() => toggle(segment)}
+          className="w-full flex items-center justify-between px-3 py-2 text-left"
+          style={{ backgroundColor: config.bgColor }}
+        >
+          <div className="flex items-center gap-2">
+            <ChevronDown className={`size-4 shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} style={{ color: config.color }} />
+            <span className="text-sm font-bold" style={{ color: config.color }}>{config.label}</span>
+            <span className="text-xs" style={{ color: config.color, opacity: 0.7 }}>{config.sublabel}</span>
+          </div>
+          <span className="text-sm font-bold tabular-nums" style={{ color: config.color }}>{members.length}</span>
+        </button>
+        {isOpen && (
+          <Table style={{ fontFamily: FONT_SANS }}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs text-muted-foreground">Name</TableHead>
+                <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
+                <TableHead className="text-xs text-muted-foreground text-right">Tenure</TableHead>
+                <TableHead className="text-xs text-muted-foreground text-right">Drop</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.map((m) => {
+                const tenureLabel = m.tenureMonths < 1 ? "<1 mo"
+                  : m.tenureMonths < 12 ? `${Math.round(m.tenureMonths)} mo`
+                  : `${(m.tenureMonths / 12).toFixed(1)} yr`;
+                const tenureColor = m.tenureMonths <= 3 ? COLORS.error
+                  : m.tenureMonths <= 6 ? COLORS.warning : undefined;
+                return (
+                  <TableRow key={m.email}>
+                    <TableCell className="py-1.5 text-sm">{m.name}</TableCell>
+                    <TableCell className="py-1.5 text-sm text-muted-foreground">{m.planName}</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={tenureColor ? { color: tenureColor } : undefined}>{tenureLabel}</TableCell>
+                    <TableCell className="py-1.5 text-sm font-bold text-right tabular-nums" style={{ color: config.color }}>{m.dropPct}%</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    );
+  };
+
+  const codeRed = drops.members.filter((m) => m.segment === 1);
+  const critical = drops.members.filter((m) => m.segment === 2);
+  const warning = drops.members.filter((m) => m.segment === 3);
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
+            <span className="text-base font-semibold leading-none tracking-tight">Attendance Drop Alert</span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Active members with 3+ prior visits whose attendance dropped 50%+
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{drops.totalFlagged}</span>
+          <Button variant="outline" size="icon" className="shrink-0" onClick={downloadDropCsv} title="Download all alerts as CSV">
+            <DownloadIcon className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {renderSegment(1, codeRed)}
+        {renderSegment(2, critical)}
+        {renderSegment(3, warning)}
+      </div>
+    </Card>
   );
 }
 

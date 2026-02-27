@@ -447,15 +447,23 @@ export interface AttendanceDropMember {
   name: string;
   planName: string;
   createdAt: string;
+  tenureMonths: number;
   visitsLast2Wk: number;
   visitsPrior2Wk: number;
   visits8Wk: number;
   avgWeekly: number;
+  /** 1 = Code Red (100% drop), 2 = Critical (75%+), 3 = Warning (50%+) */
+  segment: 1 | 2 | 3;
+  /** Negative percentage, e.g. -100, -83, -67 */
+  dropPct: number;
 }
 
 export interface AttendanceDropAlertData {
   members: AttendanceDropMember[];
   totalFlagged: number;
+  codeRedCount: number;
+  criticalCount: number;
+  warningCount: number;
 }
 
 export interface ChurnRateData {
