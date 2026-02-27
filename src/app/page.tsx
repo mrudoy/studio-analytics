@@ -5362,6 +5362,67 @@ function ShopifySyncStatus({ lastSyncAt, onSyncComplete }: { lastSyncAt: string;
   );
 }
 
+// ─── Union Sync Status ───────────────────────────────────────
+
+function UnionSyncStatus({ lastUpdated, onSyncComplete }: { lastUpdated: string | null; onSyncComplete: () => void }) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncStep, setSyncStep] = useState("");
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncStep("Starting...");
+    try {
+      const res = await fetch("/api/pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (res.status === 409) { setSyncStep("Already running..."); return; }
+      if (!res.ok) throw new Error("Failed to start pipeline");
+      const { jobId } = await res.json();
+      const es = new EventSource(`/api/status?jobId=${jobId}`);
+      es.addEventListener("progress", (e) => {
+        const d = JSON.parse(e.data);
+        setSyncStep(d.step || "Processing...");
+      });
+      es.addEventListener("complete", () => { es.close(); setSyncing(false); setSyncStep(""); onSyncComplete(); });
+      es.addEventListener("error", (e) => {
+        try { setSyncError(JSON.parse((e as MessageEvent).data).message || "Sync failed"); } catch { setSyncError("Sync failed"); }
+        es.close(); setSyncing(false); setSyncStep("");
+        setTimeout(() => setSyncError(null), 8000);
+      });
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Sync failed");
+      setSyncing(false);
+      setSyncStep("");
+      setTimeout(() => setSyncError(null), 5000);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 mt-1 ml-10 flex-wrap">
+      {lastUpdated && (
+        <p className="text-sm text-muted-foreground">
+          Last synced {formatRelativeTime(lastUpdated)}
+        </p>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleSync}
+        disabled={syncing}
+      >
+        <RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+        {syncing ? (syncStep || "Syncing...") : "Refresh Union Data"}
+      </Button>
+      {syncError && (
+        <p className="text-sm text-destructive w-full">
+          <AlertTriangle className="inline size-3.5 mr-1" />
+          {syncError}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Merch Revenue Tab (Shopify data) ─────────────────────────
 
 function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastSyncAt?: string | null }) {
@@ -6411,7 +6472,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
               <Eyeglass className="size-7 shrink-0" style={{ color: SECTION_COLORS.overview }} />
               <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Key performance metrics at a glance</p>
+            <UnionSyncStatus lastUpdated={data.lastUpdated} onSyncComplete={refreshData} />
           </div>
           {data.overviewData ? (
             <OverviewSection data={data.overviewData} />
