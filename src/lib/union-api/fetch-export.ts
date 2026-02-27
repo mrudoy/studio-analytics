@@ -18,9 +18,9 @@ export interface FetchExportResult {
 }
 
 /**
- * Call the Union Data Exporter API and return the latest export's
- * download URL — but only if it's newer than what we've already processed.
- * Returns null if no new export is available.
+ * Call the Union Data Exporter API and return the latest export's download URL.
+ * Always returns the latest export regardless of whether we've seen it before —
+ * the DB upserts handle deduplication on insert.
  */
 export async function fetchLatestExport(apiKey: string): Promise<FetchExportResult | null> {
   const response = await fetch(UNION_API_URL, {
@@ -42,14 +42,7 @@ export async function fetchLatestExport(apiKey: string): Promise<FetchExportResu
   // API returns newest first
   const latest = exporters[0];
 
-  // Dedup: check watermark
-  const watermark = await getWatermark(WATERMARK_KEY);
-  if (watermark?.highWaterDate && watermark.highWaterDate >= latest.created_at) {
-    console.log(`[union-api] Already processed export from ${latest.created_at}`);
-    return null;
-  }
-
-  console.log(`[union-api] New export found: created_at=${latest.created_at}, org=${latest.org}`);
+  console.log(`[union-api] Fetching export: created_at=${latest.created_at}, org=${latest.org}`);
   return {
     downloadUrl: latest.download_url,
     createdAt: latest.created_at,
