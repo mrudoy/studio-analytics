@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, TrendingDown, ChevronDown } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, TrendingDown } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -56,6 +56,7 @@ import {
   XAxis,
   YAxis,
   ReferenceLine,
+  Cell,
 } from "recharts";
 import {
   ChartContainer,
@@ -5342,14 +5343,10 @@ function UnionSyncStatus({ lastUpdated, onSyncComplete }: { lastUpdated: string 
 
 // ─── Attendance Drop Alert Card ───────────────────────────────
 
-const SEGMENT_CONFIG = {
-  1: { label: "CODE RED: 100% Drop", sublabel: "Immediate Intervention", color: "#991B1B", bgColor: "#FEE2E2", borderColor: "#FECACA" },
-  2: { label: "CRITICAL RISK: 75%+ Drop", sublabel: "High Flight Risk", color: "#9A3412", bgColor: "#FFEDD5", borderColor: "#FED7AA" },
-  3: { label: "WARNING: 50%+ Drop", sublabel: "Fading Attendance", color: "#854D0E", bgColor: "#FEF9C3", borderColor: "#FDE68A" },
-} as const;
+const DROP_TIER_COLORS = { 1: "#991B1B", 2: "#9A3412", 3: "#854D0E" } as const;
 
 function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[]; totalFlagged: number; codeRedCount: number; criticalCount: number; warningCount: number } }) {
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: false });
+  const isMobile = useIsMobile();
 
   const downloadDropCsv = () => {
     const headers = ["Segment", "Name", "Email", "Plan", "Tenure (mo)", "Drop %", "Prior 2 Wks", "Last 2 Wks", "8 Wk Avg/wk"];
@@ -5366,62 +5363,25 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
     URL.revokeObjectURL(url);
   };
 
-  const toggle = (seg: number) => setExpanded((prev) => ({ ...prev, [seg]: !prev[seg] }));
+  const chartData = [
+    { label: "Code Red", definition: "100% drop", count: drops.codeRedCount, fill: DROP_TIER_COLORS[1] },
+    { label: "Critical", definition: "75%+ drop", count: drops.criticalCount, fill: DROP_TIER_COLORS[2] },
+    { label: "Warning", definition: "50–74% drop", count: drops.warningCount, fill: DROP_TIER_COLORS[3] },
+  ];
 
-  const renderSegment = (segment: 1 | 2 | 3, members: AttendanceDropMember[]) => {
-    if (members.length === 0) return null;
-    const config = SEGMENT_CONFIG[segment];
-    const isOpen = expanded[segment];
+  const dropChartConfig = {
+    count: { label: "Members" },
+  } satisfies ChartConfig;
+
+  const CustomXTick = ({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => {
+    const item = chartData.find((d) => d.label === payload.value);
     return (
-      <div key={segment} className="rounded-lg border overflow-hidden" style={{ borderColor: config.borderColor }}>
-        <button
-          onClick={() => toggle(segment)}
-          className="w-full flex items-center justify-between px-3 py-2 text-left"
-          style={{ backgroundColor: config.bgColor }}
-        >
-          <div className="flex items-center gap-2">
-            <ChevronDown className={`size-4 shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} style={{ color: config.color }} />
-            <span className="text-sm font-bold" style={{ color: config.color }}>{config.label}</span>
-            <span className="text-xs" style={{ color: config.color, opacity: 0.7 }}>{config.sublabel}</span>
-          </div>
-          <span className="text-sm font-bold tabular-nums" style={{ color: config.color }}>{members.length}</span>
-        </button>
-        {isOpen && (
-          <Table style={{ fontFamily: FONT_SANS }}>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs text-muted-foreground">Name</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
-                <TableHead className="text-xs text-muted-foreground text-right">Tenure</TableHead>
-                <TableHead className="text-xs text-muted-foreground text-right">Drop</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((m) => {
-                const tenureLabel = m.tenureMonths < 1 ? "<1 mo"
-                  : m.tenureMonths < 12 ? `${Math.round(m.tenureMonths)} mo`
-                  : `${(m.tenureMonths / 12).toFixed(1)} yr`;
-                const tenureColor = m.tenureMonths <= 3 ? COLORS.error
-                  : m.tenureMonths <= 6 ? COLORS.warning : undefined;
-                return (
-                  <TableRow key={m.email}>
-                    <TableCell className="py-1.5 text-sm">{m.name}</TableCell>
-                    <TableCell className="py-1.5 text-sm text-muted-foreground">{m.planName}</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={tenureColor ? { color: tenureColor } : undefined}>{tenureLabel}</TableCell>
-                    <TableCell className="py-1.5 text-sm font-bold text-right tabular-nums" style={{ color: config.color }}>{m.dropPct}%</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="middle" dy={12} fontSize={13} fontWeight={700} fill="currentColor">{payload.value}</text>
+        <text textAnchor="middle" dy={28} fontSize={11} fill="#9CA3AF">{item?.definition ?? ""}</text>
+      </g>
     );
   };
-
-  const codeRed = drops.members.filter((m) => m.segment === 1);
-  const critical = drops.members.filter((m) => m.segment === 2);
-  const warning = drops.members.filter((m) => m.segment === 3);
 
   return (
     <Card>
@@ -5432,7 +5392,7 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
             <span className="text-base font-semibold leading-none tracking-tight">Attendance Drop Alert</span>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Active members with 3+ prior visits whose attendance dropped 50%+
+            Attendance drops vs. prior 2-week period
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -5443,10 +5403,20 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 px-6">
-        {renderSegment(1, codeRed)}
-        {renderSegment(2, critical)}
-        {renderSegment(3, warning)}
+      <div className="px-6">
+        <ChartContainer config={dropChartConfig} className="h-[220px] w-full">
+          <BarChart accessibilityLayer data={chartData} margin={{ top: 28, left: 0, right: 0, bottom: 16 }}>
+            <CartesianGrid vertical={false} />
+            <YAxis hide />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={CustomXTick as never} tickMargin={4} />
+            <Bar dataKey="count" radius={8}>
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={entry.fill} />
+              ))}
+              <LabelList position="top" offset={12} fontSize={14} fontWeight={700} className="fill-foreground" />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
       </div>
     </Card>
   );
