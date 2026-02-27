@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ChevronRight, Settings, FileText } from "lucide-react";
 import { BubbleIcon } from "./icons";
 import {
@@ -25,6 +26,66 @@ import {
 import { SkyTingSwirl, SkyTingWordmark } from "./sky-ting-logo";
 import { NAV_ITEMS, type SectionKey } from "./sidebar-nav";
 
+interface DataFreshness {
+  overall?: string;
+  unionAutoRenews?: string;
+  shopifySync?: string;
+  isPartial?: boolean;
+}
+
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return iso;
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function DataFreshnessLine() {
+  const [freshness, setFreshness] = useState<DataFreshness | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function fetchFreshness() {
+      try {
+        const res = await fetch("/api/stats");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (mounted && data.dataFreshness) {
+          setFreshness(data.dataFreshness);
+        }
+      } catch {
+        // Silently ignore — sidebar still works without freshness
+      }
+    }
+    fetchFreshness();
+    // Refresh every 60s so the "Xm ago" stays current
+    const interval = setInterval(fetchFreshness, 60_000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+
+  if (!freshness?.overall) return null;
+
+  return (
+    <div className="px-4 pb-1 group-data-[collapsible=icon]:hidden">
+      <p className="text-[10px] leading-relaxed text-muted-foreground/70">
+        Updated {formatRelativeTime(freshness.overall)}
+        {freshness.isPartial ? " (partial)" : ""}
+        {" · "}
+        Union {freshness.unionAutoRenews ? formatRelativeTime(freshness.unionAutoRenews) : "—"}
+        {" · "}
+        Shopify {freshness.shopifySync ? formatRelativeTime(freshness.shopifySync) : "—"}
+      </p>
+    </div>
+  );
+}
+
 interface AppSidebarProps {
   activeSection: SectionKey;
   onSectionChange: (key: SectionKey) => void;
@@ -39,6 +100,7 @@ export function AppSidebar({ activeSection, onSectionChange, variant = "inset" }
           <SkyTingSwirl size={26} />
           <SkyTingWordmark className="group-data-[collapsible=icon]:hidden" />
         </div>
+        <DataFreshnessLine />
       </SidebarHeader>
 
       <SidebarContent>

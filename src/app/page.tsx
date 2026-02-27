@@ -6209,18 +6209,6 @@ function DashboardContent({ activeSection, data, refreshData }: {
               <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Key performance metrics at a glance</p>
-            {data.dataFreshness?.overall && (
-              <p className="text-xs text-muted-foreground mt-1 ml-10">
-                Data updated {formatRelativeTime(data.dataFreshness.overall)}
-                {data.dataFreshness.isPartial ? " (partial)" : ""}
-                {" · "}
-                <span className="text-muted-foreground/70">
-                  Union.fit: {data.dataFreshness.unionAutoRenews ? formatRelativeTime(data.dataFreshness.unionAutoRenews) : "—"}
-                  {" · "}
-                  Shopify: {data.dataFreshness.shopifySync ? formatRelativeTime(data.dataFreshness.shopifySync) : "—"}
-                </span>
-              </p>
-            )}
           </div>
           {data.overviewData ? (
             <OverviewSection data={data.overviewData} />
