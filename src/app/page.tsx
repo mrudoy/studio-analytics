@@ -5349,11 +5349,17 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
   const isMobile = useIsMobile();
 
   const downloadDropCsv = () => {
-    const headers = ["Segment", "Name", "Email", "Plan", "Tenure (mo)", "Drop %", "Prior 2 Wks", "Last 2 Wks", "8 Wk Avg/wk"];
+    const headers = [
+      "Segment", "Name", "Email", "Plan", "Member Since", "Tenure (months)",
+      "Avg Visits/Wk (8 wk)", "Visits — Prior 2 Wks", "Visits — Last 2 Wks", "Drop %",
+    ];
     const segLabels = { 1: "CODE RED", 2: "CRITICAL", 3: "WARNING" } as const;
     const rows = drops.members.map((m: AttendanceDropMember) => [
-      segLabels[m.segment], m.name, m.email, m.planName, String(m.tenureMonths),
-      `${m.dropPct}%`, String(m.visitsPrior2Wk), String(m.visitsLast2Wk), String(m.avgWeekly),
+      segLabels[m.segment], m.name, m.email, m.planName,
+      m.createdAt ? m.createdAt.slice(0, 10) : "",
+      String(m.tenureMonths),
+      String(m.avgWeekly), String(m.visitsPrior2Wk), String(m.visitsLast2Wk),
+      `${m.dropPct}%`,
     ]);
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
