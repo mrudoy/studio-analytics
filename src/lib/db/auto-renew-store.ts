@@ -191,10 +191,12 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 
 /**
  * Get all active auto-renews.
- * Union.fit "Active" = Valid Now + Pending Cancel + Past Due + In Trial.
- * Excludes: 'Canceled', 'Invalid', 'Paused'
- * Paused members are excluded because they are not attending classes
- * and inflate the dormant count in usage metrics.
+ * Union.fit "Active" = Valid Now + Pending Cancel + Past Due + In Trial + Paused.
+ * Excludes only: 'Canceled', 'Invalid'
+ *
+ * Paused members are included because Union.fit counts them as active subscribers
+ * (they still have an active commitment and will resume). Excluding them caused
+ * the dashboard to under-count members vs Union's own reports (~380 vs ~424).
  */
 export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
   const pool = getPool();
@@ -202,7 +204,7 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
-     WHERE plan_state NOT IN ('Canceled', 'Invalid', 'Paused')
+     WHERE plan_state NOT IN ('Canceled', 'Invalid')
      ORDER BY plan_name`
   );
 
