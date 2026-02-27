@@ -2022,3 +2022,76 @@ export async function getUsageDetailByCategory(
 
   return rows;
 }
+
+// ── Attendance Drop Alerts ─────────────────────────────────────
+// Members whose attendance dropped significantly in the last 2 weeks
+// vs. the prior 2 weeks. Catches disengagement before they cancel.
+
+export interface AttendanceDropMember {
+  email: string;
+  name: string;
+  planName: string;
+  createdAt: string;
+  visitsLast2Wk: number;
+  visitsPrior2Wk: number;
+  visits8Wk: number;
+  avgWeekly: number;
+}
+
+export interface AttendanceDropData {
+  members: AttendanceDropMember[];
+  totalFlagged: number;
+}
+
+/**
+ * Find active monthly members whose attendance dropped sharply:
+ * 3+ visits in weeks 3-4 ago AND ≤1 visit in the last 2 weeks.
+ */
+export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
+  const pool = getPool();
+
+  const { rows } = await pool.query(`
+    WITH active AS (
+      SELECT DISTINCT ON (customer_email)
+        customer_email as email, customer_name as name, plan_name, created_at
+      FROM auto_renews
+      WHERE plan_state NOT IN ('Canceled','Invalid')
+        AND plan_name NOT ILIKE '%sky3%'
+        AND plan_name NOT ILIKE '%tv%'
+        AND plan_name NOT ILIKE '%annual%'
+      ORDER BY customer_email, created_at DESC
+    ),
+    recent AS (
+      SELECT a.email, a.name, a.plan_name, a.created_at,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 13) THEN 1 END) as visits_last_2wk,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 27)
+                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 13) THEN 1 END) as visits_prior_2wk,
+        COUNT(r.id) as visits_8wk
+      FROM active a
+      LEFT JOIN registrations r ON r.email = a.email
+        AND r.state IN ('redeemed','confirmed')
+        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+        AND LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 55)
+      GROUP BY a.email, a.name, a.plan_name, a.created_at
+    )
+    SELECT email, name, plan_name, COALESCE(created_at,'') as created_at,
+      visits_last_2wk::int, visits_prior_2wk::int, visits_8wk::int,
+      ROUND(visits_8wk::numeric / 8, 1) as avg_weekly
+    FROM recent
+    WHERE visits_prior_2wk >= 3 AND visits_last_2wk <= 1
+    ORDER BY (visits_prior_2wk - visits_last_2wk) DESC
+  `);
+
+  const members: AttendanceDropMember[] = rows.map((r) => ({
+    email: r.email,
+    name: r.name,
+    planName: r.plan_name,
+    createdAt: r.created_at,
+    visitsLast2Wk: r.visits_last_2wk,
+    visitsPrior2Wk: r.visits_prior_2wk,
+    visits8Wk: r.visits_8wk,
+    avgWeekly: parseFloat(r.avg_weekly),
+  }));
+
+  return { members, totalFlagged: members.length };
+}

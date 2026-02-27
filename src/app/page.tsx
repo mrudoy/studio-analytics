@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Fragment, Children } from "react";
-import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload } from "lucide-react";
+import { Ticket, Tag, ArrowRightLeft, AlertTriangle, RefreshCw, CloudUpload, TrendingDown } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { SkyTingSwirl, SkyTingLogo } from "@/components/dashboard/sky-ting-logo";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
@@ -131,6 +131,8 @@ import type {
   MemberAlerts,
   AtRiskMember,
   AtRiskByState,
+  AttendanceDropMember,
+  AttendanceDropAlertData,
   ExpiringIntroWeekData,
   ExpiringIntroCustomer,
   IntroWeekConversionData,
@@ -4719,6 +4721,76 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
         {/* ═══ Section 3: Churn Reduction Opportunities ═══ */}
         <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Churn Reduction Opportunities</h3>
+
+          {/* ── Attendance Drop Alert ── */}
+          {churnRates.attendanceDrops && churnRates.attendanceDrops.totalFlagged > 0 && (() => {
+            const drops = churnRates.attendanceDrops!;
+            const downloadDropCsv = () => {
+              const headers = ["Name", "Email", "Plan", "Visits Last 2 Wks", "Visits Prior 2 Wks", "Visits 8 Wks", "Avg Weekly"];
+              const rows = drops.members.map((m: AttendanceDropMember) => [
+                m.name, m.email, m.planName,
+                String(m.visitsLast2Wk), String(m.visitsPrior2Wk), String(m.visits8Wk), String(m.avgWeekly),
+              ]);
+              const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url; a.download = "attendance-drop-alerts.csv"; a.click();
+              URL.revokeObjectURL(url);
+            };
+            return (
+              <Card>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
+                      <span className="text-base font-semibold leading-none tracking-tight">Attendance Drop Alert</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Members whose visits dropped sharply — 3+ visits in prior 2 weeks, ≤1 in last 2 weeks
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{drops.totalFlagged}</span>
+                    <Button variant="outline" size="icon" className="shrink-0" onClick={downloadDropCsv} title="Download attendance drop list as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex-1 flex flex-col">
+                  <Table style={{ fontFamily: FONT_SANS }}>
+                    <TableHeader className="bg-muted">
+                      <TableRow>
+                        <TableHead className="text-xs text-muted-foreground">Name</TableHead>
+                        <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Prior 2 wks</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Last 2 wks</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Avg/wk</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {drops.members.slice(0, 10).map((m: AttendanceDropMember) => (
+                        <TableRow key={m.email}>
+                          <TableCell className="py-1.5 text-sm">{m.name}</TableCell>
+                          <TableCell className="py-1.5 text-sm text-muted-foreground">{m.planName}</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{m.visitsPrior2Wk}</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.error }}>{m.visitsLast2Wk}</TableCell>
+                          <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{m.avgWeekly}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {drops.totalFlagged > 10 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Showing top 10 of {drops.totalFlagged} — download CSV for full list
+                    </p>
+                  )}
+                </div>
+              </Card>
+            );
+          })()}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Approaching Milestones ── */}
         {alerts && (

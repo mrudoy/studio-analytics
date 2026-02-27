@@ -40,6 +40,7 @@ import {
   materializeFirstInStudioSub,
   getUsageFrequencyByCategory,
   getIntroWeekConversionData,
+  getAttendanceDropAlerts,
   type PoolSliceKey,
 } from "../db/registration-store";
 import type {
@@ -725,6 +726,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     newCustResult,
     conversionPool,
     usage,
+    attendanceDrops,
   ] = await Promise.all([
     runDropIns().catch((err) => { console.warn("[db-trends] drop-ins failed:", err); return null; }),
     runFirstVisits().catch((err) => { console.warn("[db-trends] first-visits failed:", err); return null; }),
@@ -736,6 +738,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     runNewCustomers().catch((err) => { console.warn("[db-trends] new-customers failed:", err); return { volume: null, cohorts: null }; }),
     runConversionPool().catch((err) => { console.warn("[db-trends] conversion-pool failed:", err); return null; }),
     runUsage().catch((err) => { console.warn("[db-trends] usage failed:", err); return null; }),
+    getAttendanceDropAlerts().catch((err) => { console.warn("[db-trends] attendance-drops failed:", err); return null; }),
   ]);
 
   const newCustomerVolume = newCustResult.volume;
@@ -752,6 +755,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     (conversionPool?.slices?.all ? `, conversion pool=${conversionPool.slices.all.avgPool7d} avg pool, ${conversionPool.slices.all.avgRate.toFixed(2)}% avg rate` : "") +
     (usage ? `, usage: ${usage.categories.map(c => `${c.label}=${c.totalActive}`).join(", ")}` : "")
   );
+
+  // Inject attendance drops into churnRates so the dashboard can access them
+  if (churnRates && attendanceDrops) {
+    churnRates.attendanceDrops = attendanceDrops;
+  }
 
   return {
     weekly,

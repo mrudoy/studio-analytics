@@ -442,6 +442,22 @@ export interface WinBackData {
   reactivationRate: number;
 }
 
+export interface AttendanceDropMember {
+  email: string;
+  name: string;
+  planName: string;
+  createdAt: string;
+  visitsLast2Wk: number;
+  visitsPrior2Wk: number;
+  visits8Wk: number;
+  avgWeekly: number;
+}
+
+export interface AttendanceDropAlertData {
+  members: AttendanceDropMember[];
+  totalFlagged: number;
+}
+
 export interface ChurnRateData {
   /** Per-category churn data */
   byCategory: {
@@ -455,6 +471,8 @@ export interface ChurnRateData {
   memberAlerts?: MemberAlerts;
   /** Win-back reactivation data (MEMBER only) */
   winBack?: WinBackData | null;
+  /** Attendance drop alerts — members whose visit frequency dropped sharply */
+  attendanceDrops?: AttendanceDropAlertData | null;
   /** Legacy flat fields (backward compat) */
   monthly: {
     month: string;
