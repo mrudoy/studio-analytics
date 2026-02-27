@@ -88,13 +88,24 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 ## Card Spacing & Typography Rules
 
 - **Uniform gap between ALL cards**: `gap-3` everywhere. Never use different gaps between sections vs within sections.
-- **Cards are 50% width** by default (in `grid-cols-2`), not full-width, unless the content requires it (e.g. wide tables). Always rearrange cards so there is no empty space — if a card would be alone in a row, merge it into an adjacent grid container.
-- **Never wrap a single card in its own `grid-cols-2`**. This creates empty space. Instead, group adjacent cards into the same grid container so they fill both columns. Before adding a new card, check whether the nearest existing grid has an odd number of children — if so, add the new card there instead of creating a new grid wrapper.
+- **Cards are 50% width** by default (in `grid-cols-2`), not full-width, unless the content requires it (e.g. wide tables).
+- **Orphan card rule**: A single card alone in a 2-column grid (50% width) is OK **only if it's the last card in the section**. If a single card is followed by more cards in the same section, it must be full width — no dead space in the middle of a layout. In other words: `[1 card] [2 cards]` within the same section is wrong; `[2 cards] [1 card]` is fine.
+- Before adding a new card, check whether the nearest existing grid has an odd number of children — if so, add the new card there instead of creating a new grid wrapper.
 - **Title → subtitle gap**: Zero extra margin. Title row has NO `mb-*` class and NO `min-h-*` class. The subtitle sits flush below the title.
 - **Subtitle → content gap**: `mb-3` on the subtitle `<p>` tag. Generous space before the chart/table (matches Shadcn reference).
 - **Card descriptions** use `text-sm text-muted-foreground mb-3` — matches Shadcn's CardDescription size (14px), not text-xs (12px).
 - **No Annual Churn card** — data is not useful (mostly 0% with rare spikes). Removed by user request.
 - **October 2025 excluded** from all churn averages — bulk admin cleanup, not real churn.
+
+## API & Performance
+
+- `/api/stats` — main dashboard endpoint, returns all data as JSON
+- **In-memory cache**: Full response is cached in `globalThis` with 15-min TTL (`src/lib/cache/stats-cache.ts`). Cache is invalidated on pipeline completion and manual uploads.
+- `?nocache=1` query param bypasses the cache (forces fresh DB queries).
+- Response includes `X-Cache: HIT/MISS` and `X-Cache-Age` headers.
+- `computeTrendsFromDB()` runs sections 5-11 in parallel via `Promise.all` (each section is independent).
+- Conversion pool queries use an UNLOGGED materialized table (`_mat_first_in_studio_sub`) to avoid 15 redundant CTE scans.
+- Migration 007 adds 6 indexes on hot join columns for conversion pool performance.
 
 ## Do NOT
 
@@ -105,6 +116,6 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - Commit changes without building first (`npm run build`)
 - Do things not explicitly asked for
 - Make cards full-width unless explicitly asked — default is 50% (grid-cols-2)
-- Wrap a single card in its own `grid-cols-2` — always group with adjacent cards
+- Put a single card at 50% width in the middle of a section with more cards below it — orphans are only OK as the last card
 - Add mb-* or min-h-* to card title rows — titles sit flush against subtitles
 - Use text-xs for card descriptions — always use text-sm
