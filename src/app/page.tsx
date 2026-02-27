@@ -3402,20 +3402,20 @@ function NonAutoRenewSection({ dropIns, introWeek, newCustomerVolume, newCustome
       {/* ── Subsection A: Drop-ins ── */}
       {dropIns && (
         <div className="flex flex-col gap-3">
-          <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
           <DropInsSubsection dropIns={dropIns} />
         </div>
       )}
 
       {/* ── Subsection B: Other pass types ── */}
       <div className="flex flex-col gap-3">
-        <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
+        <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
         <IntroWeekModule introWeek={introWeek} />
       </div>
 
       {/* ── Subsection C: Conversion ── */}
       <div className="flex flex-col gap-3">
-        <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Conversion</h3>
+        <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Conversion</h3>
         {(newCustomerVolume || newCustomerCohorts) && (
           <p className="text-[15px] font-semibold text-muted-foreground">New Customers</p>
         )}
@@ -4520,7 +4520,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
 
         {/* ═══ Section 1: Churn Data ═══ */}
         <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Churn Data</h3>
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Churn Data</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
           {/* ── Weekly Churn bar chart (left) ── */}
         {(() => {
@@ -4634,7 +4634,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
 
         {/* ═══ Section 2: Historical Trends ═══ */}
         <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historical Trends</h3>
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Historical Trends</h3>
           {tenure && (
             <DashboardCard>
               <CardHeader>
@@ -4720,7 +4720,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
 
         {/* ═══ Section 3: Churn Reduction Opportunities ═══ */}
         <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Churn Reduction Opportunities</h3>
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Churn Reduction Opportunities</h3>
 
           {/* ── Attendance Drop Alert ── */}
           {churnRates.attendanceDrops && churnRates.attendanceDrops.totalFlagged > 0 && (
@@ -5425,7 +5425,7 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
 
   return (
     <Card>
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between px-6">
         <div>
           <div className="flex items-center gap-2">
             <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
@@ -5443,7 +5443,7 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 px-6">
         {renderSegment(1, codeRed)}
         {renderSegment(2, critical)}
         {renderSegment(3, warning)}
@@ -6726,7 +6726,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
           </div>
           {/* Movement block: Members + Sky3 (in-studio plans) */}
           <div>
-            <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">In-Studio Plans</h3>
+            <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">In-Studio Plans</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.members}
@@ -6761,7 +6761,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
 
           {/* Digital block: Sky Ting TV */}
           <div>
-            <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Digital</h3>
+            <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Digital</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CategoryDetail
                 title={LABELS.tv}
@@ -6792,12 +6792,12 @@ function DashboardContent({ activeSection, data, refreshData }: {
           </div>
           {trends?.dropIns && (
             <div className="flex flex-col gap-3">
-              <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
+              <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
               <DropInsSubsection dropIns={trends.dropIns} />
             </div>
           )}
           <div className="flex flex-col gap-3">
-            <h3 className="text-[15px] font-semibold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
+            <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
             <IntroWeekModule introWeek={trends?.introWeek ?? null} />
           </div>
         </div>
