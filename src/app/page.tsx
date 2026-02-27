@@ -4726,11 +4726,16 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           {churnRates.attendanceDrops && churnRates.attendanceDrops.totalFlagged > 0 && (() => {
             const drops = churnRates.attendanceDrops!;
             const downloadDropCsv = () => {
-              const headers = ["Name", "Email", "Plan", "Visits Last 2 Wks", "Visits Prior 2 Wks", "Visits 8 Wks", "Avg Weekly"];
-              const rows = drops.members.map((m: AttendanceDropMember) => [
-                m.name, m.email, m.planName,
-                String(m.visitsLast2Wk), String(m.visitsPrior2Wk), String(m.visits8Wk), String(m.avgWeekly),
-              ]);
+              const headers = ["Name", "Email", "Plan", "Tenure (mo)", "Drop %", "Visits Last 2 Wks", "Visits Prior 2 Wks", "Visits 8 Wks", "Avg Weekly"];
+              const rows = drops.members.map((m: AttendanceDropMember) => {
+                const dropPct = m.visitsPrior2Wk > 0
+                  ? Math.round(((m.visitsLast2Wk - m.visitsPrior2Wk) / m.visitsPrior2Wk) * 100)
+                  : 0;
+                return [
+                  m.name, m.email, m.planName, String(m.tenureMonths), `${dropPct}%`,
+                  String(m.visitsLast2Wk), String(m.visitsPrior2Wk), String(m.visits8Wk), String(m.avgWeekly),
+                ];
+              });
               const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
               const blob = new Blob([csv], { type: "text/csv" });
               const url = URL.createObjectURL(blob);
@@ -4764,21 +4769,35 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                       <TableRow>
                         <TableHead className="text-xs text-muted-foreground">Name</TableHead>
                         <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Tenure</TableHead>
                         <TableHead className="text-xs text-muted-foreground text-right">Prior 2 wks</TableHead>
                         <TableHead className="text-xs text-muted-foreground text-right">Last 2 wks</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right">Avg/wk</TableHead>
+                        <TableHead className="text-xs text-muted-foreground text-right">Drop</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {drops.members.slice(0, 10).map((m: AttendanceDropMember) => (
-                        <TableRow key={m.email}>
-                          <TableCell className="py-1.5 text-sm">{m.name}</TableCell>
-                          <TableCell className="py-1.5 text-sm text-muted-foreground">{m.planName}</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{m.visitsPrior2Wk}</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.error }}>{m.visitsLast2Wk}</TableCell>
-                          <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">{m.avgWeekly}</TableCell>
-                        </TableRow>
-                      ))}
+                      {drops.members.slice(0, 10).map((m: AttendanceDropMember) => {
+                        const dropPct = m.visitsPrior2Wk > 0
+                          ? Math.round(((m.visitsLast2Wk - m.visitsPrior2Wk) / m.visitsPrior2Wk) * 100)
+                          : 0;
+                        const tenureLabel = m.tenureMonths < 1 ? "<1 mo"
+                          : m.tenureMonths < 12 ? `${Math.round(m.tenureMonths)} mo`
+                          : `${(m.tenureMonths / 12).toFixed(1)} yr`;
+                        // Red zone: months 1-3 (churn cliff)
+                        const tenureColor = m.tenureMonths <= 3 ? COLORS.error
+                          : m.tenureMonths <= 6 ? COLORS.warning
+                          : undefined;
+                        return (
+                          <TableRow key={m.email}>
+                            <TableCell className="py-1.5 text-sm">{m.name}</TableCell>
+                            <TableCell className="py-1.5 text-sm text-muted-foreground">{m.planName}</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={tenureColor ? { color: tenureColor } : undefined}>{tenureLabel}</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{m.visitsPrior2Wk}</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.error }}>{m.visitsLast2Wk}</TableCell>
+                            <TableCell className="py-1.5 text-sm font-bold text-right tabular-nums" style={{ color: COLORS.error }}>{dropPct}%</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                   {drops.totalFlagged > 10 && (

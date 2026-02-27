@@ -75,6 +75,18 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
   try {
     await client.query("BEGIN");
     for (const r of rows) {
+      // If this row has a union_registration_id, remove any stale row that has the
+      // same ID but a different (email, attended_at) — this happens when Union
+      // updates a member's email or attendance timestamp. Without this, the unique
+      // index idx_reg_union_id blocks the insert.
+      if (r.unionRegistrationId) {
+        await client.query(
+          `DELETE FROM registrations
+           WHERE union_registration_id = $1
+             AND NOT (email = $2 AND attended_at = $3)`,
+          [r.unionRegistrationId, r.email, r.attendedAt]
+        );
+      }
       await client.query(
         `INSERT INTO registrations (
           event_name, event_id, performance_id, performance_starts_at,
@@ -2032,6 +2044,7 @@ export interface AttendanceDropMember {
   name: string;
   planName: string;
   createdAt: string;
+  tenureMonths: number;
   visitsLast2Wk: number;
   visitsPrior2Wk: number;
   visits8Wk: number;
@@ -2076,7 +2089,12 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
     )
     SELECT email, name, plan_name, COALESCE(created_at,'') as created_at,
       visits_last_2wk::int, visits_prior_2wk::int, visits_8wk::int,
-      ROUND(visits_8wk::numeric / 8, 1) as avg_weekly
+      ROUND(visits_8wk::numeric / 8, 1) as avg_weekly,
+      CASE
+        WHEN created_at ~ '^\\d{4}-' THEN
+          ROUND(EXTRACT(EPOCH FROM (CURRENT_DATE - LEFT(created_at,10)::date)) / (30.44 * 86400), 1)
+        ELSE NULL
+      END as tenure_months
     FROM recent
     WHERE visits_prior_2wk >= 3 AND visits_last_2wk <= 1
     ORDER BY (visits_prior_2wk - visits_last_2wk) DESC
@@ -2087,6 +2105,7 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
     name: r.name,
     planName: r.plan_name,
     createdAt: r.created_at,
+    tenureMonths: r.tenure_months != null ? parseFloat(r.tenure_months) : 0,
     visitsLast2Wk: r.visits_last_2wk,
     visitsPrior2Wk: r.visits_prior_2wk,
     visits8Wk: r.visits_8wk,
