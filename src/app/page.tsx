@@ -4531,20 +4531,20 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.member } } satisfies ChartConfig;
           return (
               <Card>
-                <div>
-                  <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
                     <div className="flex items-center gap-2">
                       <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                       <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
-                      <div className="text-xs text-muted-foreground leading-tight">
-                        avg / week
-                      </div>
+                    <p className="text-sm text-muted-foreground mt-0.5">Members who churned per week</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
+                    <div className="text-xs text-muted-foreground leading-tight">
+                      avg / week
                     </div>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5">Members who churned per week</p>
                 </div>
                 <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
                   <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
@@ -4586,18 +4586,18 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
               <Card>
-                <div>
-                  <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
                     <div className="flex items-center gap-2">
                       <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                       <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
-                      <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
-                    </div>
+                    <p className="text-sm text-muted-foreground mt-0.5">Monthly-billed member churn rate</p>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5">Monthly-billed member churn rate</p>
+                  <div className="text-right">
+                    <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
+                    <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                  </div>
                 </div>
                 <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
                   <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
@@ -4718,19 +4718,19 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
               <Card matchHeight>
-                <div>
-                  <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
                     <div className="flex items-center gap-2">
                       <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
                       <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
                     </div>
-                    {alerts.tenureMilestones.length > 0 && (
-                      <Button variant="outline" size="icon" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
-                        <DownloadIcon className="size-4" />
-                      </Button>
-                    )}
+                    <p className="text-sm text-muted-foreground mt-0.5">Members within ±1 week of a critical tenure milestone</p>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5">Members within ±1 week of a critical tenure milestone</p>
+                  {alerts.tenureMilestones.length > 0 && (
+                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  )}
                 </div>
                 <div className="flex-1 flex flex-col">
                   <Table style={{ fontFamily: FONT_SANS }}>
@@ -4815,21 +4815,21 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
 
           return (
             <Card>
-              <div>
-                <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between">
+                <div>
                   <div className="flex items-center gap-2">
                     <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
                     <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
                   </div>
-                  {totalToday > 0 && (
-                    <Button variant="outline" size="icon" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
-                  )}
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
+                  </p>
                 </div>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
-                </p>
+                {totalToday > 0 && (
+                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
+                    <DownloadIcon className="size-4" />
+                  </Button>
+                )}
               </div>
 
               <div className="flex-1 flex flex-col">
@@ -4903,19 +4903,19 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ];
             return (
               <Card matchHeight>
-                <div>
-                  <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="size-5 shrink-0 text-amber-600" />
                       <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
                     </div>
-                    {allAtRisk.length > 0 && (
-                      <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
-                        <DownloadIcon className="size-4" />
-                      </Button>
-                    )}
+                    <p className="text-sm text-muted-foreground mt-0.5">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
+                  {allAtRisk.length > 0 && (
+                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  )}
                 </div>
                 {ars && (
                   <div className="flex-1 flex flex-col">
@@ -4967,11 +4967,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
     <div className="flex flex-col gap-3">
         <Card>
           <div>
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
-                <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
-              </div>
+            <div className="flex items-center gap-2">
+              <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+              <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">User and MRR churn rates for Sky3 subscribers</p>
           </div>
@@ -5023,11 +5021,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
     <div className="flex flex-col gap-3">
         <Card>
           <div>
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
-                <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
-              </div>
+            <div className="flex items-center gap-2">
+              <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+              <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">User and MRR churn rates for Sky Ting TV subscribers</p>
           </div>
