@@ -4,6 +4,7 @@ import { ShopifyClient } from "@/lib/shopify/shopify-client";
 import { runShopifySync } from "@/lib/shopify/shopify-sync";
 import { getShopifyStats } from "@/lib/db/shopify-store";
 import { uploadBackupToGitHub } from "@/lib/db/backup-cloud";
+import { invalidateStatsCache } from "@/lib/cache/stats-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,7 @@ export async function POST() {
       console.warn("[api/shopify] Cloud backup failed (non-fatal):", backupErr instanceof Error ? backupErr.message : backupErr);
     }
 
+    invalidateStatsCache();
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Shopify sync failed";
