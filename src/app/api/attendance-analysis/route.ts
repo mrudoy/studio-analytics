@@ -13,14 +13,14 @@ export async function GET() {
              COUNT(DISTINCT email) as unique_emails,
              MIN(attended_at) as earliest,
              MAX(attended_at) as latest
-      FROM registrations WHERE state IN ('redeemed','confirmed') AND attended_at IS NOT NULL AND attended_at != ''
+      FROM registrations WHERE state IN ('redeemed','confirmed') AND attended_at ~ '^\d{4}-\d{2}-\d{2}'
     `);
 
     // Check attended_at format with a sample
     const { rows: sampleDates } = await pool.query(`
       SELECT attended_at, COUNT(*) as cnt
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
+      WHERE attended_at ~ '^\d{4}-\d{2}-\d{2}'
       GROUP BY attended_at
       ORDER BY attended_at DESC
       LIMIT 5
@@ -44,8 +44,7 @@ export async function GET() {
                LEFT(canceled_at, 10)::date as cancel_date
         FROM auto_renews
         WHERE plan_state = 'Canceled'
-          AND canceled_at IS NOT NULL AND canceled_at != ''
-          AND LENGTH(canceled_at) >= 10
+          AND canceled_at ~ '^\d{4}-\d{2}-\d{2}'
           AND plan_name NOT ILIKE '%sky3%'
           AND plan_name NOT ILIKE '%tv%'
           AND plan_name NOT ILIKE '%annual%'
@@ -66,8 +65,7 @@ export async function GET() {
         FROM churned c
         JOIN registrations r ON r.email = c.email
           AND r.state IN ('redeemed','confirmed')
-          AND r.attended_at IS NOT NULL AND r.attended_at != ''
-          AND LENGTH(r.attended_at) >= 10
+          AND r.attended_at ~ '^\d{4}-\d{2}-\d{2}'
           AND LEFT(r.attended_at, 10)::date BETWEEN (c.cancel_date - 56) AND c.cancel_date
       )
       SELECT week_bucket,
@@ -105,8 +103,7 @@ export async function GET() {
         FROM active a
         JOIN registrations r ON r.email = a.email
           AND r.state IN ('redeemed','confirmed')
-          AND r.attended_at IS NOT NULL AND r.attended_at != ''
-          AND LENGTH(r.attended_at) >= 10
+          AND r.attended_at ~ '^\d{4}-\d{2}-\d{2}'
           AND LEFT(r.attended_at, 10)::date >= (CURRENT_DATE - 56)
       )
       SELECT week_bucket,
@@ -125,7 +122,7 @@ export async function GET() {
         SELECT customer_email as email, LEFT(canceled_at, 10)::date as cancel_date
         FROM auto_renews
         WHERE plan_state = 'Canceled'
-          AND canceled_at IS NOT NULL AND canceled_at != '' AND LENGTH(canceled_at) >= 10
+          AND canceled_at ~ '^\d{4}-\d{2}-\d{2}'
           AND plan_name NOT ILIKE '%sky3%'
           AND plan_name NOT ILIKE '%tv%'
           AND plan_name NOT ILIKE '%annual%'
