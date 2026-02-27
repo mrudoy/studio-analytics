@@ -2880,37 +2880,43 @@ function FirstVisitsCard({ firstVisits }: { firstVisits: FirstVisitData }) {
   const aggTotal = agg.introWeek + agg.dropIn + agg.guest + agg.other;
 
   return (
-    <Card>
-      <div className="flex items-baseline justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS.teal, opacity: 0.85 }} />
-          <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.firstVisits}</span>
-        </div>
-        <span className="text-4xl font-semibold tracking-tight tabular-nums">
-          {formatNumber(firstVisits.currentWeekTotal)}
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-1.5">this week</span>
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground mb-1">Last 5 weeks by source</p>
-      <div className="flex flex-col gap-1">
-        {segments.map((seg) => {
-          const count = agg[seg] || 0;
-          if (count === 0 && aggTotal === 0) return null;
-          return (
-            <div key={seg} className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEGMENT_COLORS[seg] }} />
-                <span className="text-sm text-muted-foreground">{SEGMENT_LABELS[seg]}</span>
-              </div>
-              <span className="text-sm font-semibold tabular-nums">
-                {formatNumber(count)}
-                {aggTotal > 0 && <span className="font-normal text-xs text-muted-foreground ml-1">{Math.round((count / aggTotal) * 100)}%</span>}
-              </span>
+    <DashboardCard>
+      <CardHeader>
+        <div className="flex items-baseline justify-between">
+          <CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS.teal, opacity: 0.85 }} />
+              <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.firstVisits}</span>
             </div>
-          );
-        })}
-      </div>
-    </Card>
+          </CardTitle>
+          <span className="text-4xl font-semibold tracking-tight tabular-nums">
+            {formatNumber(firstVisits.currentWeekTotal)}
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-1.5">this week</span>
+          </span>
+        </div>
+        <CardDescription>Last 5 weeks by source</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-1">
+          {segments.map((seg) => {
+            const count = agg[seg] || 0;
+            if (count === 0 && aggTotal === 0) return null;
+            return (
+              <div key={seg} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEGMENT_COLORS[seg] }} />
+                  <span className="text-sm text-muted-foreground">{SEGMENT_LABELS[seg]}</span>
+                </div>
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatNumber(count)}
+                  {aggTotal > 0 && <span className="font-normal text-xs text-muted-foreground ml-1">{Math.round((count / aggTotal) * 100)}%</span>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </DashboardCard>
   );
 }
 
@@ -2939,33 +2945,39 @@ function ReturningNonMembersCard({ returningNonMembers }: { returningNonMembers:
   const rnmAggTotal = aggDisplay.dropIn + aggDisplay.guest + aggDisplay.other;
 
   return (
-    <Card>
-      <div className="flex items-baseline justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS.copper, opacity: 0.85 }} />
-          <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.returningNonMembers}</span>
-        </div>
-        <span className="text-4xl font-semibold tracking-tight tabular-nums">
-          {formatNumber(returningNonMembers.currentWeekTotal)}
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-1.5">this week</span>
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground mb-1">Last 5 weeks by source</p>
-      <div className="flex flex-col gap-1">
-        {rnmSegments.map((seg) => (
-          <div key={seg} className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
-              <span className="text-sm text-muted-foreground">{RNM_SEGMENT_LABELS[seg]}</span>
+    <DashboardCard>
+      <CardHeader>
+        <div className="flex items-baseline justify-between">
+          <CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS.copper, opacity: 0.85 }} />
+              <span className="text-sm leading-none font-medium text-muted-foreground uppercase tracking-wide">{LABELS.returningNonMembers}</span>
             </div>
-            <span className="text-sm font-semibold tabular-nums">
-              {formatNumber(aggDisplay[seg] || 0)}
-              {rnmAggTotal > 0 && <span className="font-normal text-xs text-muted-foreground ml-1">{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
-            </span>
-          </div>
-        ))}
-      </div>
-    </Card>
+          </CardTitle>
+          <span className="text-4xl font-semibold tracking-tight tabular-nums">
+            {formatNumber(returningNonMembers.currentWeekTotal)}
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-1.5">this week</span>
+          </span>
+        </div>
+        <CardDescription>Last 5 weeks by source</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-1">
+          {rnmSegments.map((seg) => (
+            <div key={seg} className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RNM_SEGMENT_COLORS[seg] }} />
+                <span className="text-sm text-muted-foreground">{RNM_SEGMENT_LABELS[seg]}</span>
+              </div>
+              <span className="text-sm font-semibold tabular-nums">
+                {formatNumber(aggDisplay[seg] || 0)}
+                {rnmAggTotal > 0 && <span className="font-normal text-xs text-muted-foreground ml-1">{Math.round(((aggDisplay[seg] || 0) / rnmAggTotal) * 100)}%</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </DashboardCard>
   );
 }
 
@@ -4585,30 +4597,34 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ? last6.reduce((s, m) => s + (m.eligibleChurnRate ?? 0), 0) / last6.length : 0;
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
-              <Card>
-                <div className="flex items-start justify-between">
-                  <div>
+              <DashboardCard>
+                <CardHeader>
+                  <CardTitle>
                     <div className="flex items-center gap-2">
                       <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                      <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
+                      Monthly Churn
                     </div>
-                    <p className="text-sm text-muted-foreground mt-0.5">Monthly-billed member churn rate</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
-                    <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
-                  </div>
-                </div>
-                <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                  <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
-                    <Bar dataKey="rate" radius={8}>
-                      <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
-                    </Bar>
-                  </BarChart>
-                </ChartContainer>
-              </Card>
+                  </CardTitle>
+                  <CardDescription>Monthly-billed member churn rate</CardDescription>
+                  <CardAction>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
+                      <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                    </div>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
+                    <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                      <Bar dataKey="rate" radius={8}>
+                        <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </DashboardCard>
           );
         })()}
           </div>
@@ -4618,11 +4634,16 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
         <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historical Trends</h3>
           {tenure && (
-            <Card>
-              <div className="flex items-center gap-2">
-                <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                <span className="text-base font-semibold leading-none tracking-tight">Member Retention</span>
-              </div>
+            <DashboardCard>
+              <CardHeader>
+                <CardTitle>
+                  <div className="flex items-center gap-2">
+                    <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                    Member Retention
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
 
               {/* KPI tiles */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -4690,7 +4711,8 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                   </RAreaChart>
                 </ChartContainer>
               )}
-            </Card>
+              </CardContent>
+            </DashboardCard>
           )}
         </div>
 
@@ -4717,62 +4739,66 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               URL.revokeObjectURL(url);
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
-              <Card matchHeight>
-                <div className="flex items-start justify-between">
-                  <div>
+              <DashboardCard matchHeight>
+                <CardHeader>
+                  <CardTitle>
                     <div className="flex items-center gap-2">
                       <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
-                      <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
+                      Approaching Milestones
                     </div>
-                    <p className="text-sm text-muted-foreground mt-0.5">Members within ±1 week of a critical tenure milestone</p>
-                  </div>
+                  </CardTitle>
+                  <CardDescription>Members within ±1 week of a critical tenure milestone</CardDescription>
                   {alerts.tenureMilestones.length > 0 && (
-                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
+                    <CardAction>
+                      <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
+                        <DownloadIcon className="size-4" />
+                      </Button>
+                    </CardAction>
                   )}
-                </div>
-                <div className="flex-1 flex flex-col">
-                  <Table style={{ fontFamily: FONT_SANS }}>
-                    <TableHeader className="bg-muted">
-                      <TableRow>
-                        <TableHead className="text-xs text-muted-foreground">Milestone</TableHead>
-                        <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
-                        <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {cliffMembers.length > 0 && (
+                </CardHeader>
+                <CardContent>
+                  <div className="flex-1 flex flex-col">
+                    <Table style={{ fontFamily: FONT_SANS }}>
+                      <TableHeader className="bg-muted">
                         <TableRow>
-                          <TableCell className="py-1.5 text-sm">3-Month Cliff</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length}</TableCell>
-                          <TableCell className="py-1.5 px-0 text-center">
-                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(cliffMembers, "3-month-cliff-members.csv")} title="Download 3-month cliff members as CSV">
-                              <DownloadIcon className="size-3.5" />
-                            </Button>
-                          </TableCell>
+                          <TableHead className="text-xs text-muted-foreground">Milestone</TableHead>
+                          <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
+                          <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
                         </TableRow>
-                      )}
-                      {markMembers.length > 0 && (
-                        <TableRow>
-                          <TableCell className="py-1.5 text-sm">7-Month Mark</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{markMembers.length}</TableCell>
-                          <TableCell className="py-1.5 px-0 text-center">
-                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(markMembers, "7-month-mark-members.csv")} title="Download 7-month mark members as CSV">
-                              <DownloadIcon className="size-3.5" />
-                            </Button>
-                          </TableCell>
+                      </TableHeader>
+                      <TableBody>
+                        {cliffMembers.length > 0 && (
+                          <TableRow>
+                            <TableCell className="py-1.5 text-sm">3-Month Cliff</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length}</TableCell>
+                            <TableCell className="py-1.5 px-0 text-center">
+                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(cliffMembers, "3-month-cliff-members.csv")} title="Download 3-month cliff members as CSV">
+                                <DownloadIcon className="size-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {markMembers.length > 0 && (
+                          <TableRow>
+                            <TableCell className="py-1.5 text-sm">7-Month Mark</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{markMembers.length}</TableCell>
+                            <TableCell className="py-1.5 px-0 text-center">
+                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadMilestoneCsv(markMembers, "7-month-mark-members.csv")} title="Download 7-month mark members as CSV">
+                                <DownloadIcon className="size-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        <TableRow className="border-t">
+                          <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length + markMembers.length}</TableCell>
+                          <TableCell className="py-1.5 px-0" />
                         </TableRow>
-                      )}
-                      <TableRow className="border-t">
-                        <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{cliffMembers.length + markMembers.length}</TableCell>
-                        <TableCell className="py-1.5 px-0" />
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-              </Card>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </DashboardCard>
             ) : null;
           })()
         )}
@@ -4814,67 +4840,71 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           };
 
           return (
-            <Card>
-              <div className="flex items-start justify-between">
-                <div>
+            <DashboardCard>
+              <CardHeader>
+                <CardTitle>
                   <div className="flex items-center gap-2">
                     <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                    <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
+                    Win-Back Members
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
-                  </p>
-                </div>
+                </CardTitle>
+                <CardDescription>
+                  {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
+                </CardDescription>
                 {totalToday > 0 && (
-                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
-                    <DownloadIcon className="size-4" />
-                  </Button>
+                  <CardAction>
+                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  </CardAction>
                 )}
-              </div>
-
-              <div className="flex-1 flex flex-col">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted">
-                      <TableHead className="text-xs py-1.5">Return Window</TableHead>
-                      <TableHead className="text-xs py-1.5 text-right">Avg % of Returns (Historical)</TableHead>
-                      <TableHead className="text-xs py-1.5 text-right"># Today</TableHead>
-                      <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {buckets.map((b) => (
-                      <TableRow key={b.label}>
-                        <TableCell className="py-1.5 text-sm">{b.label}</TableCell>
-                        <TableCell className="py-1.5 text-sm text-right tabular-nums">
-                          {r.total > 0 ? (b.hist / r.total * 100).toFixed(1) : 0}%
-                        </TableCell>
-                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{b.today.length}</TableCell>
-                        <TableCell className="py-1.5 px-0 text-center">
-                          {b.today.length > 0 && (
-                            <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadBucketCsv(b.today, `winback-${b.label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.csv`)} title={`Download ${b.label} targets as CSV`}>
-                              <DownloadIcon className="size-3.5" />
-                            </Button>
-                          )}
-                        </TableCell>
+              </CardHeader>
+              <CardContent>
+                <div className="flex-1 flex flex-col">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted">
+                        <TableHead className="text-xs py-1.5">Return Window</TableHead>
+                        <TableHead className="text-xs py-1.5 text-right">Avg % of Returns (Historical)</TableHead>
+                        <TableHead className="text-xs py-1.5 text-right"># Today</TableHead>
+                        <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
                       </TableRow>
-                    ))}
-                    <TableRow className="font-medium border-t-2">
-                      <TableCell className="py-1.5 text-sm">Total</TableCell>
-                      <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">
-                        {wb.reactivationRate}% of churned
-                      </TableCell>
-                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{totalToday}</TableCell>
-                      <TableCell className="py-1.5 px-0" />
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-
-              <p className="text-xs text-muted-foreground mt-3">
-                When they return: {r.upgradePct}% upgrade · {r.downgradePct}% downgrade · {r.samePct}% same plan
-              </p>
-            </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {buckets.map((b) => (
+                        <TableRow key={b.label}>
+                          <TableCell className="py-1.5 text-sm">{b.label}</TableCell>
+                          <TableCell className="py-1.5 text-sm text-right tabular-nums">
+                            {r.total > 0 ? (b.hist / r.total * 100).toFixed(1) : 0}%
+                          </TableCell>
+                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{b.today.length}</TableCell>
+                          <TableCell className="py-1.5 px-0 text-center">
+                            {b.today.length > 0 && (
+                              <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadBucketCsv(b.today, `winback-${b.label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.csv`)} title={`Download ${b.label} targets as CSV`}>
+                                <DownloadIcon className="size-3.5" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="font-medium border-t-2">
+                        <TableCell className="py-1.5 text-sm">Total</TableCell>
+                        <TableCell className="py-1.5 text-sm text-right tabular-nums text-muted-foreground">
+                          {wb.reactivationRate}% of churned
+                        </TableCell>
+                        <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{totalToday}</TableCell>
+                        <TableCell className="py-1.5 px-0" />
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <p className="text-xs text-muted-foreground">
+                  When they return: {r.upgradePct}% upgrade · {r.downgradePct}% downgrade · {r.samePct}% same plan
+                </p>
+              </CardFooter>
+            </DashboardCard>
           );
         })()}
 
@@ -4902,55 +4932,59 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               { label: "Pending Cancel", members: ars?.pendingCancel ?? [], file: "at-risk-pending-cancel.csv" },
             ];
             return (
-              <Card matchHeight>
-                <div className="flex items-start justify-between">
-                  <div>
+              <DashboardCard matchHeight>
+                <CardHeader>
+                  <CardTitle>
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                      <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                      At Risk
                     </div>
-                    <p className="text-sm text-muted-foreground mt-0.5">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
-                  </div>
+                  </CardTitle>
+                  <CardDescription>Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</CardDescription>
                   {allAtRisk.length > 0 && (
-                    <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
+                    <CardAction>
+                      <Button variant="outline" size="icon" className="shrink-0" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
+                        <DownloadIcon className="size-4" />
+                      </Button>
+                    </CardAction>
                   )}
-                </div>
-                {ars && (
-                  <div className="flex-1 flex flex-col">
-                    <Table style={{ fontFamily: FONT_SANS }}>
-                      <TableHeader className="bg-muted">
-                        <TableRow>
-                          <TableHead className="text-xs text-muted-foreground">Status</TableHead>
-                          <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
-                          <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {stateRows.map((sr) => (
-                          <TableRow key={sr.label}>
-                            <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
-                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
-                            <TableCell className="py-1.5 px-0 text-center">
-                              {sr.members.length > 0 && (
-                                <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
-                                  <DownloadIcon className="size-3.5" />
-                                </Button>
-                              )}
-                            </TableCell>
+                </CardHeader>
+                <CardContent>
+                  {ars && (
+                    <div className="flex-1 flex flex-col">
+                      <Table style={{ fontFamily: FONT_SANS }}>
+                        <TableHeader className="bg-muted">
+                          <TableRow>
+                            <TableHead className="text-xs text-muted-foreground">Status</TableHead>
+                            <TableHead className="text-xs text-muted-foreground text-right"># Members</TableHead>
+                            <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
                           </TableRow>
-                        ))}
-                        <TableRow className="border-t">
-                          <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
-                          <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
-                          <TableCell className="py-1.5 px-0" />
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </Card>
+                        </TableHeader>
+                        <TableBody>
+                          {stateRows.map((sr) => (
+                            <TableRow key={sr.label}>
+                              <TableCell className="py-1.5 text-sm">{sr.label}</TableCell>
+                              <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{sr.members.length}</TableCell>
+                              <TableCell className="py-1.5 px-0 text-center">
+                                {sr.members.length > 0 && (
+                                  <Button variant="ghost" size="icon" className="size-7 mx-auto" onClick={() => downloadAtRiskCsv(sr.members, sr.file)} title={`Download ${sr.label} as CSV`}>
+                                    <DownloadIcon className="size-3.5" />
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="border-t">
+                            <TableCell className="py-1.5 text-sm font-semibold">Total</TableCell>
+                            <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{churnRates.totalAtRisk}</TableCell>
+                            <TableCell className="py-1.5 px-0" />
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </DashboardCard>
             );
           })()
         )}
@@ -4965,51 +4999,55 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   if (!churnRates || !byCategory) return <NoData label="Sky3 churn data" />;
   return (
     <div className="flex flex-col gap-3">
-        <Card>
-          <div>
-            <div className="flex items-center gap-2">
-              <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
-              <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+                SKY3 Churn
+              </div>
+            </CardTitle>
+            <CardDescription>User and MRR churn rates for Sky3 subscribers</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex-1 flex flex-col">
+              <Table style={{ fontFamily: FONT_SANS }}>
+                <TableHeader className="bg-muted">
+                  <TableRow>
+                    <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
+                    <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgUserChurnRate) : undefined }}>
+                      {byCategory.sky3.avgUserChurnRate != null ? `${byCategory.sky3.avgUserChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate) : undefined }}>
+                      {byCategory.sky3.avgMrrChurnRate != null ? `${byCategory.sky3.avgMrrChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                  </TableRow>
+                  {latestW?.sky3Churn != null && (
+                    <TableRow>
+                      <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
+                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.sky3Churn}</TableCell>
+                    </TableRow>
+                  )}
+                  {byCategory.sky3.atRiskCount > 0 && (
+                    <TableRow>
+                      <TableCell className="py-1.5 text-sm">At Risk</TableCell>
+                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">User and MRR churn rates for Sky3 subscribers</p>
-          </div>
-          <div className="flex-1 flex flex-col">
-            <Table style={{ fontFamily: FONT_SANS }}>
-              <TableHeader className="bg-muted">
-                <TableRow>
-                  <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
-                  <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
-                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgUserChurnRate) : undefined }}>
-                    {byCategory.sky3.avgUserChurnRate != null ? `${byCategory.sky3.avgUserChurnRate.toFixed(1)}%` : "–"}
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
-                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate) : undefined }}>
-                    {byCategory.sky3.avgMrrChurnRate != null ? `${byCategory.sky3.avgMrrChurnRate.toFixed(1)}%` : "–"}
-                  </TableCell>
-                </TableRow>
-                {latestW?.sky3Churn != null && (
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.sky3Churn}</TableCell>
-                  </TableRow>
-                )}
-                {byCategory.sky3.atRiskCount > 0 && (
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">At Risk</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
+          </CardContent>
+        </DashboardCard>
     </div>
   );
   }
@@ -5019,51 +5057,55 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   if (!churnRates || !byCategory) return <NoData label="Sky Ting TV churn data" />;
   return (
     <div className="flex flex-col gap-3">
-        <Card>
-          <div>
-            <div className="flex items-center gap-2">
-              <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
-              <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
+        <DashboardCard>
+          <CardHeader>
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+                Sky Ting TV Churn
+              </div>
+            </CardTitle>
+            <CardDescription>User and MRR churn rates for Sky Ting TV subscribers</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex-1 flex flex-col">
+              <Table style={{ fontFamily: FONT_SANS }}>
+                <TableHeader className="bg-muted">
+                  <TableRow>
+                    <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
+                    <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate) : undefined }}>
+                      {byCategory.skyTingTv.avgUserChurnRate != null ? `${byCategory.skyTingTv.avgUserChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
+                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate) : undefined }}>
+                      {byCategory.skyTingTv.avgMrrChurnRate != null ? `${byCategory.skyTingTv.avgMrrChurnRate.toFixed(1)}%` : "–"}
+                    </TableCell>
+                  </TableRow>
+                  {latestW?.skyTingTvChurn != null && (
+                    <TableRow>
+                      <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
+                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.skyTingTvChurn}</TableCell>
+                    </TableRow>
+                  )}
+                  {byCategory.skyTingTv.atRiskCount > 0 && (
+                    <TableRow>
+                      <TableCell className="py-1.5 text-sm">At Risk</TableCell>
+                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">User and MRR churn rates for Sky Ting TV subscribers</p>
-          </div>
-          <div className="flex-1 flex flex-col">
-            <Table style={{ fontFamily: FONT_SANS }}>
-              <TableHeader className="bg-muted">
-                <TableRow>
-                  <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
-                  <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
-                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate) : undefined }}>
-                    {byCategory.skyTingTv.avgUserChurnRate != null ? `${byCategory.skyTingTv.avgUserChurnRate.toFixed(1)}%` : "–"}
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
-                  <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate) : undefined }}>
-                    {byCategory.skyTingTv.avgMrrChurnRate != null ? `${byCategory.skyTingTv.avgMrrChurnRate.toFixed(1)}%` : "–"}
-                  </TableCell>
-                </TableRow>
-                {latestW?.skyTingTvChurn != null && (
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.skyTingTvChurn}</TableCell>
-                  </TableRow>
-                )}
-                {byCategory.skyTingTv.atRiskCount > 0 && (
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">At Risk</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
+          </CardContent>
+        </DashboardCard>
     </div>
   );
   }
