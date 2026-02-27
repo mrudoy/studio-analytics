@@ -156,9 +156,18 @@ export function buildDigestHtml(data: OverviewData): string {
             </td>
           </tr>
 
+          <!-- CTA Button -->
+          <tr>
+            <td style="padding:24px 24px 12px;text-align:center;">
+              <a href="https://considerate-perfection-staging.up.railway.app" target="_blank" style="display:inline-block;padding:12px 32px;background-color:#111827;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">
+                See Dashboard
+              </a>
+            </td>
+          </tr>
+
           <!-- Footer -->
           <tr>
-            <td style="padding:16px 24px;border-top:1px solid #e5e7eb;">
+            <td style="padding:12px 24px 16px;border-top:none;">
               <div style="font-size:11px;color:#9ca3af;text-align:center;">
                 Sky Ting Analytics — sent automatically after data refresh
               </div>
