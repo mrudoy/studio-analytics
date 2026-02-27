@@ -4502,88 +4502,13 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   if (subsection === "members") {
   if (!churnRates || !mem) return <NoData label="Member churn data" />;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-6">
 
-        {/* Tenure / Retention metrics — first card */}
-        {tenure && (
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.member }} />
-              <span className="text-base font-semibold leading-none tracking-tight">Member Retention</span>
-            </div>
-
-            {/* KPI tiles */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.medianTenure.toFixed(1)} mo</span>
-                <span className="text-xs font-medium text-foreground">Median Tenure</span>
-                <span className="text-[11px] text-muted-foreground leading-snug">Half of all members stay longer than this, half leave sooner</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-2xl font-semibold tabular-nums tracking-tight" style={{ color: tenure.month4RenewalRate >= 70 ? COLORS.success : COLORS.warning }}>{tenure.month4RenewalRate.toFixed(1)}%</span>
-                <span className="text-xs font-medium text-foreground">Month-4 Renewal Rate</span>
-                <span className="text-[11px] text-muted-foreground leading-snug">After the 3-month minimum, this % of members choose to continue</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.avgPostCliffTenure.toFixed(1)} mo</span>
-                <span className="text-xs font-medium text-foreground">Avg Tenure</span>
-                <span className="text-[11px] text-muted-foreground leading-snug">Average total tenure of members who made it past the 3-month cliff</span>
-              </div>
-            </div>
-
-            {/* Survival curve chart */}
-            {tenure.survivalCurve.length > 1 && (
-              <ChartContainer
-                config={{
-                  retained: { label: "Members Retained", color: COLORS.member },
-                } satisfies ChartConfig}
-                className="h-[240px] w-full"
-              >
-                <RAreaChart
-                  accessibilityLayer
-                  data={tenure.survivalCurve}
-                  margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
-                >
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    tickFormatter={(v) => `Mo ${v}`}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v) => `${v}%`}
-                    domain={[0, 100]}
-                    ticks={[0, 25, 50, 75, 100]}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
-                  <defs>
-                    <linearGradient id="survivalGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS.member} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={COLORS.member} stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="stepAfter"
-                    dataKey="retained"
-                    stroke={COLORS.member}
-                    strokeWidth={2}
-                    fill="url(#survivalGradient)"
-                  />
-                  {/* Cliff reference line at month 3 */}
-                  <ReferenceLine x={3} stroke={COLORS.warning} strokeDasharray="4 4" label={{ value: "3-mo cliff", position: "top", fontSize: 10, fill: COLORS.warning }} />
-                </RAreaChart>
-              </ChartContainer>
-            )}
-          </Card>
-        )}
-
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
-        {/* ── Weekly Churn bar chart (left) ── */}
+        {/* ═══ Section 1: Churn Data ═══ */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Churn Data</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+          {/* ── Weekly Churn bar chart (left) ── */}
         {(() => {
           const completedWeeks = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
           const currentWeek = weekly.length > 1 ? weekly[weekly.length - 1] : null;
@@ -4601,24 +4526,26 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               fill: `${COLORS.member}50`,
             });
           }
-          const latestChurn = last4[last4.length - 1].memberChurn;
-          const prevChurn = last4.length >= 2 ? last4[last4.length - 2].memberChurn : null;
+          const weeklyAvg = last4.length > 0
+            ? (last4.reduce((s, w) => s + w.memberChurn, 0) / last4.length) : 0;
           const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.member } } satisfies ChartConfig;
           return (
               <Card>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                    <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{latestChurn}</div>
-                    <div className="text-[10px] text-muted-foreground leading-tight">
-                      last week{prevChurn != null ? ` (${prevChurn > latestChurn ? "↓" : prevChurn < latestChurn ? "↑" : "="} from ${prevChurn})` : ""}
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                      <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
+                      <div className="text-xs text-muted-foreground leading-tight">
+                        avg / week
+                      </div>
                     </div>
                   </div>
+                  <p className="text-sm text-muted-foreground mt-0.5">Members who churned per week</p>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3">Members who churned per week</p>
                 <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
                   <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} />
@@ -4659,17 +4586,19 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
               <Card>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                    <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                      <span className="text-base font-semibold leading-none tracking-tight">Monthly Churn</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
+                      <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
-                    <div className="text-[10px] text-muted-foreground leading-tight">6-mo avg</div>
-                  </div>
+                  <p className="text-sm text-muted-foreground mt-0.5">Monthly-billed member churn rate</p>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3">Monthly-billed member churn rate</p>
                 <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
                   <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} />
@@ -4682,7 +4611,93 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               </Card>
           );
         })()}
+          </div>
+        </div>
 
+        {/* ═══ Section 2: Historical Trends ═══ */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historical Trends</h3>
+          {tenure && (
+            <Card>
+              <div className="flex items-center gap-2">
+                <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                <span className="text-base font-semibold leading-none tracking-tight">Member Retention</span>
+              </div>
+
+              {/* KPI tiles */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.medianTenure.toFixed(1)} mo</span>
+                  <span className="text-xs font-medium text-foreground">Median Tenure</span>
+                  <span className="text-[11px] text-muted-foreground leading-snug">Half of all members stay longer than this, half leave sooner</span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-2xl font-semibold tabular-nums tracking-tight" style={{ color: tenure.month4RenewalRate >= 70 ? COLORS.success : COLORS.warning }}>{tenure.month4RenewalRate.toFixed(1)}%</span>
+                  <span className="text-xs font-medium text-foreground">Month-4 Renewal Rate</span>
+                  <span className="text-[11px] text-muted-foreground leading-snug">After the 3-month minimum, this % of members choose to continue</span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-2xl font-semibold tabular-nums tracking-tight">{tenure.avgPostCliffTenure.toFixed(1)} mo</span>
+                  <span className="text-xs font-medium text-foreground">Avg Tenure</span>
+                  <span className="text-[11px] text-muted-foreground leading-snug">Average total tenure of members who made it past the 3-month cliff</span>
+                </div>
+              </div>
+
+              {/* Survival curve chart */}
+              {tenure.survivalCurve.length > 1 && (
+                <ChartContainer
+                  config={{
+                    retained: { label: "Members Retained", color: COLORS.member },
+                  } satisfies ChartConfig}
+                  className="h-[240px] w-full"
+                >
+                  <RAreaChart
+                    accessibilityLayer
+                    data={tenure.survivalCurve}
+                    margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={(v) => `Mo ${v}`}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v) => `${v}%`}
+                      domain={[0, 100]}
+                      ticks={[0, 25, 50, 75, 100]}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
+                    <defs>
+                      <linearGradient id="survivalGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={COLORS.member} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={COLORS.member} stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="stepAfter"
+                      dataKey="retained"
+                      stroke={COLORS.member}
+                      strokeWidth={2}
+                      fill="url(#survivalGradient)"
+                    />
+                    {/* Cliff reference line at month 3 */}
+                    <ReferenceLine x={3} stroke={COLORS.warning} strokeDasharray="4 4" label={{ value: "3-mo cliff", position: "top", fontSize: 10, fill: COLORS.warning }} />
+                  </RAreaChart>
+                </ChartContainer>
+              )}
+            </Card>
+          )}
+        </div>
+
+        {/* ═══ Section 3: Churn Reduction Opportunities ═══ */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Churn Reduction Opportunities</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Approaching Milestones ── */}
         {alerts && (
           (() => {
@@ -4703,18 +4718,20 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             };
             return (cliffMembers.length > 0 || markMembers.length > 0) ? (
               <Card matchHeight>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
-                    <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <HourglassLow className="size-5 shrink-0" style={{ color: COLORS.warning }} />
+                      <span className="text-base font-semibold leading-none tracking-tight">Approaching Milestones</span>
+                    </div>
+                    {alerts.tenureMilestones.length > 0 && (
+                      <Button variant="outline" size="icon" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
+                        <DownloadIcon className="size-4" />
+                      </Button>
+                    )}
                   </div>
-                  {alerts.tenureMilestones.length > 0 && (
-                    <Button variant="outline" size="icon" onClick={() => downloadMilestoneCsv(alerts.tenureMilestones, "all-milestone-members.csv")} title="Download all milestone members as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
-                  )}
+                  <p className="text-sm text-muted-foreground mt-0.5">Members within ±1 week of a critical tenure milestone</p>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3">Members within ±1 week of a critical tenure milestone</p>
                 <div className="flex-1 flex flex-col">
                   <Table style={{ fontFamily: FONT_SANS }}>
                     <TableHeader className="bg-muted">
@@ -4798,20 +4815,22 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
 
           return (
             <Card>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                  <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
+              <div>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                    <span className="text-base font-semibold leading-none tracking-tight">Win-Back Members</span>
+                  </div>
+                  {totalToday > 0 && (
+                    <Button variant="outline" size="icon" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
+                      <DownloadIcon className="size-4" />
+                    </Button>
+                  )}
                 </div>
-                {totalToday > 0 && (
-                  <Button variant="outline" size="icon" onClick={() => downloadBucketCsv(wb.targets, "winback-all-targets.csv")} title="Download all win-back targets as CSV">
-                    <DownloadIcon className="size-4" />
-                  </Button>
-                )}
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                {wb.reactivationRate}% of churned members eventually reactivate — here&apos;s when they come back
-              </p>
 
               <div className="flex-1 flex flex-col">
                 <Table>
@@ -4884,18 +4903,20 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ];
             return (
               <Card matchHeight>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                    <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+                      <span className="text-base font-semibold leading-none tracking-tight">At Risk</span>
+                    </div>
+                    {allAtRisk.length > 0 && (
+                      <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
+                        <DownloadIcon className="size-4" />
+                      </Button>
+                    )}
                   </div>
-                  {allAtRisk.length > 0 && (
-                    <Button variant="outline" size="icon" onClick={() => downloadAtRiskCsv(allAtRisk, "all-at-risk.csv")} title="Download all at-risk subscribers as CSV">
-                      <DownloadIcon className="size-4" />
-                    </Button>
-                  )}
+                  <p className="text-sm text-muted-foreground mt-0.5">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
                 </div>
-                <p className="text-sm text-muted-foreground mb-3">Auto-renew customers across all categories whose plan is past due, invalid, or pending cancel</p>
                 {ars && (
                   <div className="flex-1 flex flex-col">
                     <Table style={{ fontFamily: FONT_SANS }}>
@@ -4933,6 +4954,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             );
           })()
         )}
+          </div>
         </div>
     </div>
   );
@@ -4944,13 +4966,15 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   return (
     <div className="flex flex-col gap-3">
         <Card>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
-              <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
+          <div>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+                <span className="text-base font-semibold leading-none tracking-tight">SKY3 Churn</span>
+              </div>
             </div>
+            <p className="text-sm text-muted-foreground mt-0.5">User and MRR churn rates for Sky3 subscribers</p>
           </div>
-          <p className="text-sm text-muted-foreground mb-3">User and MRR churn rates for Sky3 subscribers</p>
           <div className="flex-1 flex flex-col">
             <Table style={{ fontFamily: FONT_SANS }}>
               <TableHeader className="bg-muted">
@@ -4998,13 +5022,15 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   return (
     <div className="flex flex-col gap-3">
         <Card>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
-              <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
+          <div>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+                <span className="text-base font-semibold leading-none tracking-tight">Sky Ting TV Churn</span>
+              </div>
             </div>
+            <p className="text-sm text-muted-foreground mt-0.5">User and MRR churn rates for Sky Ting TV subscribers</p>
           </div>
-          <p className="text-sm text-muted-foreground mb-3">User and MRR churn rates for Sky Ting TV subscribers</p>
           <div className="flex-1 flex flex-col">
             <Table style={{ fontFamily: FONT_SANS }}>
               <TableHeader className="bg-muted">
