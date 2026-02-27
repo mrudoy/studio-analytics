@@ -2092,7 +2092,7 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
       ROUND(visits_8wk::numeric / 8, 1) as avg_weekly,
       CASE
         WHEN created_at ~ '^\\d{4}-' THEN
-          ROUND(EXTRACT(EPOCH FROM (CURRENT_DATE - LEFT(created_at,10)::date)) / (30.44 * 86400), 1)
+          ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
         ELSE NULL
       END as tenure_months
     FROM recent
