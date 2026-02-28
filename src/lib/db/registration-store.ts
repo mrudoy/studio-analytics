@@ -2259,3 +2259,54 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
   return { members, totalFlagged: members.length, dormantCount, fadingCount, underUsingCount };
 }
 
+// ── TEMPORARY: Pre-Sky3 behavior analysis ───────────────────────────
+// For each churned Sky3 subscriber, how were they using the studio
+// BEFORE they subscribed to Sky3? Were they drop-in regulars, new
+// students, or sporadic visitors?
+export async function getSky3PreSubscribeBehavior() {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    WITH canceled_sky3 AS (
+      SELECT DISTINCT ON (customer_email)
+        LOWER(customer_email) AS email, customer_name AS name, plan_name,
+        created_at, canceled_at,
+        ROUND((LEFT(canceled_at,10)::date - LEFT(created_at,10)::date) / 30.44, 1) AS tenure_months
+      FROM auto_renews
+      WHERE canceled_at IS NOT NULL AND canceled_at::text > ''
+        AND created_at IS NOT NULL
+        AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%sky5%'
+             OR plan_name ILIKE '%5 pack%' OR plan_name ILIKE '%5-pack%'
+             OR plan_name ILIKE '%skyhigh%')
+        AND LEFT(canceled_at,10)::date >= (CURRENT_DATE - INTERVAL '6 months')
+      ORDER BY customer_email, canceled_at DESC
+    ),
+    pre_sub_visits AS (
+      SELECT c.email, c.name, c.plan_name, c.created_at, c.canceled_at, c.tenure_months,
+        -- visits in 90 days BEFORE subscribe date
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (LEFT(c.created_at,10)::date - 90)
+                   AND LEFT(r.attended_at,10)::date < LEFT(c.created_at,10)::date THEN 1 END)::int AS visits_90d_before_sub,
+        -- visits in 30 days BEFORE subscribe date
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (LEFT(c.created_at,10)::date - 30)
+                   AND LEFT(r.attended_at,10)::date < LEFT(c.created_at,10)::date THEN 1 END)::int AS visits_30d_before_sub,
+        -- ANY visit before subscribe (ever)
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date < LEFT(c.created_at,10)::date THEN 1 END)::int AS visits_ever_before_sub,
+        -- First-ever visit date
+        MIN(CASE WHEN r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT(r.attended_at,10)::date END) AS first_ever_visit,
+        -- visits DURING subscription
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= LEFT(c.created_at,10)::date
+                   AND LEFT(r.attended_at,10)::date < LEFT(c.canceled_at,10)::date THEN 1 END)::int AS visits_during_sub
+      FROM canceled_sky3 c
+      LEFT JOIN registrations r ON LOWER(r.email) = c.email
+        AND r.state IN ('redeemed','confirmed')
+        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+      GROUP BY c.email, c.name, c.plan_name, c.created_at, c.canceled_at, c.tenure_months
+    )
+    SELECT *,
+      CASE WHEN first_ever_visit IS NOT NULL AND created_at ~ '^\\d{4}-'
+           THEN (LEFT(created_at,10)::date - first_ever_visit)
+           ELSE NULL END AS days_as_customer_before_sub
+    FROM pre_sub_visits
+    ORDER BY canceled_at DESC
+  `);
+  return rows;
+}
