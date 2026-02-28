@@ -5390,26 +5390,27 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
   };
 
   return (
-    <Card>
-      <div className="flex items-start justify-between px-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
-            <span className="text-base font-semibold leading-none tracking-tight">Attendance Drop Alert</span>
+    <DashboardCard>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
+              <CardTitle>Attendance Drop Alert</CardTitle>
+            </div>
+            <CardDescription>Attendance drops vs. prior 2-week period</CardDescription>
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Attendance drops vs. prior 2-week period
-          </p>
+          <CardAction>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{drops.totalFlagged}</span>
+              <Button variant="outline" size="icon" className="shrink-0" onClick={downloadDropCsv} title="Download all alerts as CSV">
+                <DownloadIcon className="size-4" />
+              </Button>
+            </div>
+          </CardAction>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{drops.totalFlagged}</span>
-          <Button variant="outline" size="icon" className="shrink-0" onClick={downloadDropCsv} title="Download all alerts as CSV">
-            <DownloadIcon className="size-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="px-6">
+      </CardHeader>
+      <CardContent>
         <ChartContainer config={dropChartConfig} className="h-[220px] w-full">
           <BarChart accessibilityLayer data={chartData} margin={{ top: 28, left: 0, right: 0, bottom: 16 }}>
             <CartesianGrid vertical={false} />
@@ -5423,8 +5424,8 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
             </Bar>
           </BarChart>
         </ChartContainer>
-      </div>
-    </Card>
+      </CardContent>
+    </DashboardCard>
   );
 }
 
