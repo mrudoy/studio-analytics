@@ -293,14 +293,21 @@ export function startPipelineWorker(): Worker {
       console.warn(`[worker] Post-pipeline backup failed:`, err instanceof Error ? err.message : err);
     }
 
-    // Send daily digest email (non-fatal — pipeline still succeeds without it)
+    // Send daily digest email — once per day only (non-fatal)
     try {
-      const { sendDigestEmail } = await import("../email/email-sender");
-      const emailResult = await sendDigestEmail();
-      if (emailResult.sent > 0) {
-        console.log(`[worker] Digest email sent to ${emailResult.sent} recipients`);
-      } else if (emailResult.skipped) {
-        console.log(`[worker] Digest email skipped: ${emailResult.skipped}`);
+      const todayET = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
+      const lastEmailDate = (globalThis as Record<string, unknown>).__lastDigestDate as string | undefined;
+      if (lastEmailDate === todayET) {
+        console.log(`[worker] Digest email already sent today (${todayET}). Skipping.`);
+      } else {
+        const { sendDigestEmail } = await import("../email/email-sender");
+        const emailResult = await sendDigestEmail();
+        if (emailResult.sent > 0) {
+          (globalThis as Record<string, unknown>).__lastDigestDate = todayET;
+          console.log(`[worker] Digest email sent to ${emailResult.sent} recipients`);
+        } else if (emailResult.skipped) {
+          console.log(`[worker] Digest email skipped: ${emailResult.skipped}`);
+        }
       }
     } catch (emailErr) {
       console.warn(`[worker] Digest email failed (non-fatal):`, emailErr instanceof Error ? emailErr.message : emailErr);
