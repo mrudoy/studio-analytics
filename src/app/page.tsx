@@ -2534,7 +2534,7 @@ function RetreatRevenueSection({ monthlyRevenue }: {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {currentMonthEntry && (
           <DashboardCard>
-            <CardHeader className="pb-2">
+            <CardHeader>
               <CardDescription>MTD Retreat Revenue</CardDescription>
               <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(currentMonthEntry.gross)}</CardTitle>
             </CardHeader>
@@ -2544,7 +2544,7 @@ function RetreatRevenueSection({ monthlyRevenue }: {
           </DashboardCard>
         )}
         <DashboardCard>
-          <CardHeader className="pb-2">
+          <CardHeader>
             <CardDescription>Avg Monthly</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(avgMonthly)}</CardTitle>
           </CardHeader>
@@ -2554,7 +2554,7 @@ function RetreatRevenueSection({ monthlyRevenue }: {
         </DashboardCard>
         {lastMonth && (
           <DashboardCard>
-            <CardHeader className="pb-2">
+            <CardHeader>
               <CardDescription>Last Month</CardDescription>
               <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(lastMonth.gross)}</CardTitle>
             </CardHeader>
@@ -3035,7 +3035,7 @@ function NewCustomerKPICards({ volume, cohorts }: {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <DashboardCard>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardDescription>New Customers</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums">
             {currentCohortCount != null ? formatNumber(currentCohortCount) : "\u2014"}
@@ -3047,7 +3047,7 @@ function NewCustomerKPICards({ volume, cohorts }: {
       </DashboardCard>
 
       <DashboardCard>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardDescription className="flex items-center gap-1">
             3-Week Conv. Rate
             {convTooltip && <InfoTooltip tooltip={convTooltip} />}
@@ -3062,7 +3062,7 @@ function NewCustomerKPICards({ volume, cohorts }: {
       </DashboardCard>
 
       <DashboardCard>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardDescription className="flex items-center gap-1">
             Expected Converts
             {projTooltip && <InfoTooltip tooltip={projTooltip} />}
@@ -3650,7 +3650,7 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <DashboardCard>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardDescription>Total Customers</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums">
             {formatNumber(heroPool)}
@@ -3662,7 +3662,7 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
       </DashboardCard>
 
       <DashboardCard>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardDescription className="flex items-center gap-1">
             3-Week Conv. Rate
             <InfoTooltip tooltip="Converts / Active pool (7d). 3-week window." />
@@ -3677,7 +3677,7 @@ function ConversionPoolKPICards({ pool }: { pool: ConversionPoolModuleData }) {
       </DashboardCard>
 
       <DashboardCard>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardDescription className="flex items-center gap-1">
             Converts
             <InfoTooltip tooltip="Pool members who started their first in-studio auto-renew this week." />
@@ -4351,7 +4351,7 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
 
   return (
     <DashboardCard>
-      <CardHeader className="pb-2">
+      <CardHeader>
         <div className="flex items-center gap-2">
           {Icon && <Icon className="size-5" style={{ color: iconColor }} />}
           <CardTitle className="text-base font-semibold">{data.label}</CardTitle>
@@ -4547,32 +4547,36 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             ? (last4.reduce((s, w) => s + w.memberChurn, 0) / last4.length) : 0;
           const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.member } } satisfies ChartConfig;
           return (
-              <Card>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
-                      <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
+              <DashboardCard>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
+                        <CardTitle>Weekly Churn</CardTitle>
+                      </div>
+                      <CardDescription>Members who churned per week</CardDescription>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-0.5">Members who churned per week</p>
+                    <CardAction>
+                      <div className="text-right">
+                        <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
+                        <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                      </div>
+                    </CardAction>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
-                    <div className="text-xs text-muted-foreground leading-tight">
-                      avg / week
-                    </div>
-                  </div>
-                </div>
-                <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
-                  <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
-                    <Bar dataKey="churn" radius={8}>
-                      <LabelList dataKey="churn" position="top" fontSize={11} fontWeight={600} />
-                    </Bar>
-                  </BarChart>
-                </ChartContainer>
-              </Card>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
+                    <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
+                      <Bar dataKey="churn" radius={8}>
+                        <LabelList dataKey="churn" position="top" fontSize={11} fontWeight={600} />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </DashboardCard>
           );
         })()}
         {/* ── Monthly Churn bar chart (right) ── */}
