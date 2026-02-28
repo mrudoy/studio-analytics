@@ -2259,3 +2259,43 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
   return { members, totalFlagged: members.length, dormantCount, fadingCount, underUsingCount };
 }
 
+// ── TEMPORARY: Sky3 usage frequency deep-dive ───────────────────────
+// How many classes/month are active Sky3 subscribers actually using?
+export async function getSky3UsageDeepDive() {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    WITH active_sky3 AS (
+      SELECT DISTINCT ON (customer_email)
+        LOWER(customer_email) AS email, customer_name AS name, plan_name, created_at
+      FROM auto_renews
+      WHERE plan_state NOT IN ('Canceled','Invalid')
+        AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%sky5%'
+             OR plan_name ILIKE '%5 pack%' OR plan_name ILIKE '%5-pack%'
+             OR plan_name ILIKE '%skyhigh%')
+        AND created_at IS NOT NULL AND created_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+      ORDER BY customer_email, created_at DESC
+    ),
+    visit_data AS (
+      SELECT a.email, a.name, a.plan_name, a.created_at,
+        ROUND((CURRENT_DATE - LEFT(a.created_at,10)::date) / 30.44, 1) AS tenure_months,
+        -- visits per month window
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 29) THEN 1 END)::int AS visits_last_30d,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 59)
+                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 29) THEN 1 END)::int AS visits_month2,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89)
+                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 59) THEN 1 END)::int AS visits_month3,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89) THEN 1 END)::int AS visits_90d
+      FROM active_sky3 a
+      LEFT JOIN registrations r ON LOWER(r.email) = a.email
+        AND r.state IN ('redeemed','confirmed')
+        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+        AND LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89)
+      GROUP BY a.email, a.name, a.plan_name, a.created_at
+    )
+    SELECT *,
+      ROUND(visits_90d::numeric / GREATEST(LEAST(tenure_months, 3), 1), 1) AS avg_per_month
+    FROM visit_data
+    ORDER BY avg_per_month DESC
+  `);
+  return rows;
+}
