@@ -134,6 +134,8 @@ import type {
   AtRiskByState,
   AttendanceDropMember,
   AttendanceDropAlertData,
+  Sky3RiskMember,
+  Sky3EngagementRiskData,
   ExpiringIntroWeekData,
   ExpiringIntroCustomer,
   IntroWeekConversionData,
@@ -5006,57 +5008,188 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   // ── Sky3 ──
   if (subsection === "sky3") {
   if (!churnRates || !byCategory) return <NoData label="Sky3 churn data" />;
+  const sky3 = byCategory.sky3;
   return (
-    <div className="flex flex-col gap-3">
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>
-              <div className="flex items-center gap-2">
-                <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
-                SKY3 Churn
-              </div>
-            </CardTitle>
-            <CardDescription>User and MRR churn rates for Sky3 subscribers</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex-1 flex flex-col">
-              <Table style={{ fontFamily: FONT_SANS }}>
-                <TableHeader className="bg-muted">
-                  <TableRow>
-                    <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
-                    <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgUserChurnRate) : undefined }}>
-                      {byCategory.sky3.avgUserChurnRate != null ? `${byCategory.sky3.avgUserChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.sky3.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.sky3.avgMrrChurnRate) : undefined }}>
-                      {byCategory.sky3.avgMrrChurnRate != null ? `${byCategory.sky3.avgMrrChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                  </TableRow>
-                  {latestW?.sky3Churn != null && (
-                    <TableRow>
-                      <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
-                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.sky3Churn}</TableCell>
-                    </TableRow>
-                  )}
-                  {byCategory.sky3.atRiskCount > 0 && (
-                    <TableRow>
-                      <TableCell className="py-1.5 text-sm">At Risk</TableCell>
-                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.sky3.atRiskCount}</TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </DashboardCard>
+    <div className="flex flex-col gap-6">
+
+        {/* ═══ Section 1: Churn Data ═══ */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Churn Data</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+          {/* ── Weekly Churn bar chart (left) ── */}
+          {(() => {
+            const completedWeeks = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+            const currentWeek = weekly.length > 1 ? weekly[weekly.length - 1] : null;
+            const last4 = completedWeeks.slice(-4);
+            if (last4.length === 0) return null;
+            const weeklyChurnData = last4.map((w) => ({
+              week: formatWeekShort(w.period),
+              churn: w.sky3Churn,
+              fill: COLORS.sky3,
+            }));
+            if (currentWeek) {
+              weeklyChurnData.push({
+                week: formatWeekShort(currentWeek.period),
+                churn: currentWeek.sky3Churn,
+                fill: `${COLORS.sky3}50`,
+              });
+            }
+            const weeklyAvg = last4.length > 0
+              ? (last4.reduce((s, w) => s + w.sky3Churn, 0) / last4.length) : 0;
+            const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.sky3 } } satisfies ChartConfig;
+            return (
+                <Card>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Recycle className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+                        <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-0.5">Sky3 subscribers who churned per week</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
+                      <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                    </div>
+                  </div>
+                  <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
+                    <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
+                      <Bar dataKey="churn" radius={8}>
+                        <LabelList dataKey="churn" position="top" fontSize={11} fontWeight={600} />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                </Card>
+            );
+          })()}
+          {/* ── Monthly Churn rate bar chart (right) ── */}
+          {(() => {
+            const completedMonths = sky3.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+            const currentMonth = sky3.monthly.length > 0 ? sky3.monthly[sky3.monthly.length - 1] : null;
+            if (completedMonths.length === 0) return null;
+            const fmtShort = (m: string) => {
+              const [y, mo] = m.split("-");
+              const d = new Date(parseInt(y), parseInt(mo) - 1);
+              return d.toLocaleDateString("en-US", { month: "short" }) + " '" + y.slice(2);
+            };
+            const monthlyData = completedMonths.map((m) => ({
+              month: fmtShort(m.month),
+              rate: parseFloat(m.userChurnRate.toFixed(1)),
+              fill: COLORS.sky3,
+            }));
+            if (currentMonth) {
+              monthlyData.push({
+                month: fmtShort(currentMonth.month),
+                rate: parseFloat(currentMonth.userChurnRate.toFixed(1)),
+                fill: `${COLORS.sky3}50`,
+              });
+            }
+            const last6 = completedMonths.slice(-6);
+            const avgMonthly = last6.length > 0
+              ? last6.reduce((s, m) => s + m.userChurnRate, 0) / last6.length : 0;
+            const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.sky3 } } satisfies ChartConfig;
+            return (
+                <DashboardCard>
+                  <CardHeader>
+                    <CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Recycle className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+                        Monthly Churn
+                      </div>
+                    </CardTitle>
+                    <CardDescription>Sky3 subscriber churn rate</CardDescription>
+                    <CardAction>
+                      <div className="text-right">
+                        <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
+                        <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                      </div>
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
+                      <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                        <Bar dataKey="rate" radius={8}>
+                          <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                        </Bar>
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </DashboardCard>
+            );
+          })()}
+          </div>
+        </div>
+
+        {/* ═══ Section 2: Historical Trends ═══ */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Historical Trends</h3>
+          {(() => {
+            const trendMonths = sky3.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+            if (trendMonths.length < 2) return null;
+            const fmtShort = (m: string) => {
+              const [y, mo] = m.split("-");
+              const d = new Date(parseInt(y), parseInt(mo) - 1);
+              return d.toLocaleDateString("en-US", { month: "short" }) + " '" + y.slice(2);
+            };
+            const trendData = trendMonths.map((m) => ({
+              month: fmtShort(m.month),
+              rate: parseFloat(m.userChurnRate.toFixed(1)),
+            }));
+            const trendConfig = {
+              rate: { label: "Churn Rate", color: COLORS.sky3 },
+            } satisfies ChartConfig;
+            return (
+              <DashboardCard>
+                <CardHeader>
+                  <CardTitle>
+                    <div className="flex items-center gap-2">
+                      <BrandSky className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+                      Sky3 Churn Trend
+                    </div>
+                  </CardTitle>
+                  <CardDescription>Monthly user churn rate over time (excl. Oct 2025 cleanup)</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={trendConfig} className="h-[240px] w-full">
+                    <RAreaChart accessibilityLayer data={trendData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                      <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                      <ChartTooltip content={<ChartTooltipContent formatter={(v) => `${(v as number).toFixed(1)}%`} />} />
+                      <defs>
+                        <linearGradient id="sky3ChurnGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={COLORS.sky3} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={COLORS.sky3} stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <Area
+                        type="monotone"
+                        dataKey="rate"
+                        stroke={COLORS.sky3}
+                        strokeWidth={2}
+                        fill="url(#sky3ChurnGradient)"
+                      />
+                    </RAreaChart>
+                  </ChartContainer>
+                </CardContent>
+              </DashboardCard>
+            );
+          })()}
+        </div>
+
+        {/* ═══ Section 3: Churn Reduction Opportunities ═══ */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Churn Reduction Opportunities</h3>
+
+          {/* ── Sky3 Engagement Risk Alert ── */}
+          {churnRates.sky3EngagementRisk && churnRates.sky3EngagementRisk.totalFlagged > 0 && (
+            <Sky3EngagementRiskCard risk={churnRates.sky3EngagementRisk} />
+          )}
+        </div>
     </div>
   );
   }
@@ -5421,6 +5554,92 @@ function AttendanceDropCard({ drops }: { drops: { members: AttendanceDropMember[
                 <Cell key={i} fill={entry.fill} />
               ))}
               <LabelList position="top" offset={12} fontSize={14} fontWeight={700} className="fill-foreground" />
+            </Bar>
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Sky3 Engagement Risk Card ──────────────────────────────
+
+const SKY3_RISK_COLORS = { 1: "#991B1B", 2: "#9A3412", 3: "#854D0E" } as const;
+
+function Sky3EngagementRiskCard({ risk }: { risk: Sky3EngagementRiskData }) {
+  const isMobile = useIsMobile();
+
+  const downloadRiskCsv = () => {
+    const headers = [
+      "Segment", "Name", "Email", "Plan", "Member Since", "Tenure (months)",
+      "Visits — Last 30d", "Visits — Prior 30d", "Visits — 90d", "Avg/Mo",
+    ];
+    const segLabels = { 1: "DORMANT", 2: "FADING", 3: "UNDER-USING" } as const;
+    const rows = risk.members.map((m: Sky3RiskMember) => [
+      segLabels[m.segment], m.name, m.email, m.planName,
+      m.createdAt ? m.createdAt.slice(0, 10) : "",
+      String(m.tenureMonths),
+      String(m.visitsLast30d), String(m.visitsPrior30d), String(m.visits90d),
+      String(m.avgPerMonth),
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "sky3-engagement-risk.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const chartData = [
+    { label: "Dormant", definition: "0 visits / 90 days", count: risk.dormantCount, fill: SKY3_RISK_COLORS[1] },
+    { label: "Fading", definition: "Stopped last 30 days", count: risk.fadingCount, fill: SKY3_RISK_COLORS[2] },
+    { label: "Under-Using", definition: "<1 visit/month", count: risk.underUsingCount, fill: SKY3_RISK_COLORS[3] },
+  ];
+
+  const riskChartConfig = {
+    count: { label: "Subscribers" },
+  } satisfies ChartConfig;
+
+  const CustomXTick = ({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => {
+    const item = chartData.find((d) => d.label === payload.value);
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="middle" dy={12} fontSize={13} fontWeight={700} fill="currentColor">{payload.value}</text>
+        <text textAnchor="middle" dy={28} fontSize={11} fill="#9CA3AF">{item?.definition ?? ""}</text>
+      </g>
+    );
+  };
+
+  return (
+    <DashboardCard>
+      <CardHeader>
+        <CardTitle>
+          <div className="flex items-center gap-2">
+            <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
+            Sky3 Engagement Risk
+          </div>
+        </CardTitle>
+        <CardDescription>Active Sky3 subscribers showing disengagement signals</CardDescription>
+        <CardAction>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{risk.totalFlagged}</span>
+            <Button variant="outline" size="icon" className="shrink-0" onClick={downloadRiskCsv} title="Download all alerts as CSV">
+              <DownloadIcon className="size-4" />
+            </Button>
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={riskChartConfig} className="h-[220px] w-full">
+          <BarChart accessibilityLayer data={chartData} margin={{ top: 28, left: 0, right: 0, bottom: 16 }}>
+            <CartesianGrid vertical={false} />
+            <YAxis hide />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={CustomXTick as never} tickMargin={4} />
+            <Bar dataKey="count" radius={8}>
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={entry.fill} />
+              ))}
+              {!isMobile && <LabelList position="top" offset={12} fontSize={14} fontWeight={700} className="fill-foreground" />}
             </Bar>
           </BarChart>
         </ChartContainer>

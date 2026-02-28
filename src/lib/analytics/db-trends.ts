@@ -41,6 +41,7 @@ import {
   getUsageFrequencyByCategory,
   getIntroWeekConversionData,
   getAttendanceDropAlerts,
+  getSky3EngagementRisk,
   type PoolSliceKey,
 } from "../db/registration-store";
 import type {
@@ -727,6 +728,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     conversionPool,
     usage,
     attendanceDrops,
+    sky3EngagementRisk,
   ] = await Promise.all([
     runDropIns().catch((err) => { console.warn("[db-trends] drop-ins failed:", err); return null; }),
     runFirstVisits().catch((err) => { console.warn("[db-trends] first-visits failed:", err); return null; }),
@@ -739,6 +741,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     runConversionPool().catch((err) => { console.warn("[db-trends] conversion-pool failed:", err); return null; }),
     runUsage().catch((err) => { console.warn("[db-trends] usage failed:", err); return null; }),
     getAttendanceDropAlerts().catch((err) => { console.warn("[db-trends] attendance-drops failed:", err); return null; }),
+    getSky3EngagementRisk().catch((err) => { console.warn("[db-trends] sky3-engagement-risk failed:", err); return null; }),
   ]);
 
   const newCustomerVolume = newCustResult.volume;
@@ -756,9 +759,12 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     (usage ? `, usage: ${usage.categories.map(c => `${c.label}=${c.totalActive}`).join(", ")}` : "")
   );
 
-  // Inject attendance drops into churnRates so the dashboard can access them
+  // Inject attendance drops + Sky3 engagement risk into churnRates
   if (churnRates && attendanceDrops) {
     churnRates.attendanceDrops = attendanceDrops;
+  }
+  if (churnRates && sky3EngagementRisk) {
+    churnRates.sky3EngagementRisk = sky3EngagementRisk;
   }
 
   return {

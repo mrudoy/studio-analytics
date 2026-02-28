@@ -2144,3 +2144,118 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
 
   return { members, totalFlagged: members.length, codeRedCount, criticalCount, warningCount };
 }
+
+// ── Sky3 Engagement Risk Alert ───────────────────────────────
+// Active Sky3 subscribers showing disengagement signals.
+// Analysis showed 22% of Sky3 churners were disengaged at cancel time,
+// making these the most actionable intervention targets.
+
+export interface Sky3RiskMember {
+  email: string;
+  name: string;
+  planName: string;
+  createdAt: string;
+  tenureMonths: number;
+  visitsLast30d: number;
+  visitsPrior30d: number;
+  visits90d: number;
+  avgPerMonth: number;
+  /** 1 = Dormant, 2 = Fading, 3 = Under-Using */
+  segment: 1 | 2 | 3;
+}
+
+export interface Sky3EngagementRiskData {
+  members: Sky3RiskMember[];
+  totalFlagged: number;
+  dormantCount: number;
+  fadingCount: number;
+  underUsingCount: number;
+}
+
+/**
+ * Find active Sky3 subscribers at engagement risk.
+ * Three tiers based on visit patterns in the last 90 days:
+ *   Tier 1 — DORMANT:     0 visits in last 90 days
+ *   Tier 2 — FADING:      Had visits 31-90 days ago but 0 in last 30 days
+ *   Tier 3 — UNDER-USING: <1 visit/month average (not dormant or fading)
+ */
+export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
+  const pool = getPool();
+
+  const { rows } = await pool.query(`
+    WITH active_sky3 AS (
+      SELECT DISTINCT ON (customer_email)
+        LOWER(customer_email) AS email, customer_name AS name, plan_name, created_at
+      FROM auto_renews
+      WHERE plan_state NOT IN ('Canceled','Invalid')
+        AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%sky5%'
+             OR plan_name ILIKE '%5 pack%' OR plan_name ILIKE '%5-pack%'
+             OR plan_name ILIKE '%skyhigh%')
+      ORDER BY customer_email, created_at DESC
+    ),
+    visit_counts AS (
+      SELECT a.email, a.name, a.plan_name, a.created_at,
+        -- visits in last 30 days
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 29) THEN 1 END)::int AS visits_last_30d,
+        -- visits 31-60 days ago
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 59)
+                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 29) THEN 1 END)::int AS visits_prior_30d,
+        -- visits 61-90 days ago
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89)
+                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 59) THEN 1 END)::int AS visits_61_90d,
+        -- total visits in 90 days
+        COUNT(r.id)::int AS visits_90d
+      FROM active_sky3 a
+      LEFT JOIN registrations r ON LOWER(r.email) = a.email
+        AND r.state IN ('redeemed','confirmed')
+        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+        AND LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89)
+      GROUP BY a.email, a.name, a.plan_name, a.created_at
+    ),
+    segmented AS (
+      SELECT *,
+        ROUND(visits_90d::numeric / 3, 1) AS avg_per_month,
+        CASE
+          WHEN created_at IS NOT NULL AND created_at ~ '^\\d{4}-' THEN
+            ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
+          ELSE NULL
+        END AS tenure_months,
+        CASE
+          -- Tier 1: Dormant — 0 visits in entire 90 day window
+          WHEN visits_90d = 0 THEN 1
+          -- Tier 2: Fading — had visits 31-90d ago but 0 in last 30 days
+          WHEN visits_last_30d = 0 AND (visits_prior_30d > 0 OR visits_61_90d > 0) THEN 2
+          -- Tier 3: Under-using — <1 visit/month average but not dormant/fading
+          WHEN visits_90d > 0 AND (visits_90d::numeric / 3) < 1 THEN 3
+          ELSE NULL
+        END AS segment
+      FROM visit_counts
+    )
+    SELECT email, name, plan_name, COALESCE(created_at,'') AS created_at,
+      visits_last_30d, visits_prior_30d, visits_90d,
+      avg_per_month, tenure_months, segment
+    FROM segmented
+    WHERE segment IS NOT NULL
+    ORDER BY segment ASC, visits_90d ASC
+  `);
+
+  const members: Sky3RiskMember[] = rows.map((r) => ({
+    email: r.email,
+    name: r.name,
+    planName: r.plan_name,
+    createdAt: r.created_at,
+    tenureMonths: r.tenure_months != null ? parseFloat(r.tenure_months) : 0,
+    visitsLast30d: r.visits_last_30d,
+    visitsPrior30d: r.visits_prior_30d,
+    visits90d: r.visits_90d,
+    avgPerMonth: parseFloat(r.avg_per_month),
+    segment: r.segment as 1 | 2 | 3,
+  }));
+
+  const dormantCount = members.filter((m) => m.segment === 1).length;
+  const fadingCount = members.filter((m) => m.segment === 2).length;
+  const underUsingCount = members.filter((m) => m.segment === 3).length;
+
+  return { members, totalFlagged: members.length, dormantCount, fadingCount, underUsingCount };
+}
+

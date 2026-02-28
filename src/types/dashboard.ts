@@ -466,6 +466,28 @@ export interface AttendanceDropAlertData {
   warningCount: number;
 }
 
+export interface Sky3RiskMember {
+  email: string;
+  name: string;
+  planName: string;
+  createdAt: string;
+  tenureMonths: number;
+  visitsLast30d: number;
+  visitsPrior30d: number;
+  visits90d: number;
+  avgPerMonth: number;
+  /** 1 = Dormant, 2 = Fading, 3 = Under-Using */
+  segment: 1 | 2 | 3;
+}
+
+export interface Sky3EngagementRiskData {
+  members: Sky3RiskMember[];
+  totalFlagged: number;
+  dormantCount: number;
+  fadingCount: number;
+  underUsingCount: number;
+}
+
 export interface ChurnRateData {
   /** Per-category churn data */
   byCategory: {
@@ -481,6 +503,8 @@ export interface ChurnRateData {
   winBack?: WinBackData | null;
   /** Attendance drop alerts — members whose visit frequency dropped sharply */
   attendanceDrops?: AttendanceDropAlertData | null;
+  /** Sky3 engagement risk — active Sky3 subscribers showing disengagement signals */
+  sky3EngagementRisk?: Sky3EngagementRiskData | null;
   /** Legacy flat fields (backward compat) */
   monthly: {
     month: string;
