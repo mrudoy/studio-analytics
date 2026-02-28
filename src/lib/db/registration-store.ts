@@ -2234,7 +2234,8 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
           -- Tier 2: Under-Using — only 1 visit (paying $95/class, worse than $39 drop-in)
           WHEN visits_last_30d = 1 THEN 2
           -- Tier 3: New & Declining — tenure ≤ 3 months AND last 30d < prior 30d
-          WHEN tenure_months IS NOT NULL AND tenure_months <= 3
+          WHEN created_at IS NOT NULL AND created_at ~ '^\\d{4}-'
+               AND ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1) <= 3
                AND visits_prior_30d > 0
                AND visits_last_30d < visits_prior_30d THEN 3
           ELSE NULL
