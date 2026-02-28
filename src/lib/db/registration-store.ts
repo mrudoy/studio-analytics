@@ -2145,10 +2145,15 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
   return { members, totalFlagged: members.length, codeRedCount, criticalCount, warningCount };
 }
 
-// ── Sky3 Engagement Risk Alert ───────────────────────────────
-// Active Sky3 subscribers showing disengagement signals.
-// Analysis showed 22% of Sky3 churners were disengaged at cancel time,
-// making these the most actionable intervention targets.
+// ── Sky3 Under-Utilization Alert ────────────────────────────────────
+// Data-driven churn risk tiers based on analysis of 329 churned Sky3
+// subscribers:
+//   • 76.8% of active subscribers pay MORE per class than the $39 drop-in
+//   • 58% of churners leave in months 1-3 after a usage drop from month 1
+//   • Month 1 avg 2.3 visits → 1.5 by month 2 (the "quit check" inflection)
+//
+// Tiers focus on utilization (not just engagement) because that's the
+// signal most correlated with the cost-benefit check that triggers cancel.
 
 export interface Sky3RiskMember {
   email: string;
@@ -2160,24 +2165,28 @@ export interface Sky3RiskMember {
   visitsPrior30d: number;
   visits90d: number;
   avgPerMonth: number;
-  /** 1 = Dormant, 2 = Fading, 3 = Under-Using */
+  effectiveCostPerClass: number | null;
+  /** 1 = Not Attending, 2 = Under-Using, 3 = New & Declining */
   segment: 1 | 2 | 3;
 }
 
 export interface Sky3EngagementRiskData {
   members: Sky3RiskMember[];
   totalFlagged: number;
-  dormantCount: number;
-  fadingCount: number;
+  notAttendingCount: number;
   underUsingCount: number;
+  newDecliningCount: number;
 }
 
 /**
- * Find active Sky3 subscribers at engagement risk.
- * Three tiers based on visit patterns in the last 90 days:
- *   Tier 1 — DORMANT:     0 visits in last 90 days
- *   Tier 2 — FADING:      Had visits 31-90 days ago but 0 in last 30 days
- *   Tier 3 — UNDER-USING: <1 visit/month average (not dormant or fading)
+ * Find active Sky3 subscribers at churn risk based on under-utilization.
+ *
+ * Three tiers (30-day billing-cycle aligned):
+ *   Tier 1 — NOT ATTENDING:   0 visits in the last 30 days
+ *   Tier 2 — UNDER-USING:     1 visit in last 30 days (paying $95/class > $39 drop-in)
+ *   Tier 3 — NEW & DECLINING: Tenure ≤ 3 months AND last-30d visits < prior-30d visits
+ *
+ * A subscriber can only appear in ONE tier (highest severity wins).
  */
 export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
   const pool = getPool();
@@ -2195,14 +2204,11 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
     ),
     visit_counts AS (
       SELECT a.email, a.name, a.plan_name, a.created_at,
-        -- visits in last 30 days
+        -- visits in last 30 days (current billing cycle)
         COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 29) THEN 1 END)::int AS visits_last_30d,
-        -- visits 31-60 days ago
+        -- visits 31-60 days ago (prior billing cycle)
         COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 59)
                    AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 29) THEN 1 END)::int AS visits_prior_30d,
-        -- visits 61-90 days ago
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89)
-                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 59) THEN 1 END)::int AS visits_61_90d,
         -- total visits in 90 days
         COUNT(r.id)::int AS visits_90d
       FROM active_sky3 a
@@ -2220,23 +2226,27 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
             ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
           ELSE NULL
         END AS tenure_months,
+        -- Effective cost per class this month ($95 / visits)
+        CASE WHEN visits_last_30d > 0 THEN ROUND(95.0 / visits_last_30d, 2) ELSE NULL END AS eff_cost,
         CASE
-          -- Tier 1: Dormant — 0 visits in entire 90 day window
-          WHEN visits_90d = 0 THEN 1
-          -- Tier 2: Fading — had visits 31-90d ago but 0 in last 30 days
-          WHEN visits_last_30d = 0 AND (visits_prior_30d > 0 OR visits_61_90d > 0) THEN 2
-          -- Tier 3: Under-using — <1 visit/month average but not dormant/fading
-          WHEN visits_90d > 0 AND (visits_90d::numeric / 3) < 1 THEN 3
+          -- Tier 1: Not Attending — 0 visits in last 30 days
+          WHEN visits_last_30d = 0 THEN 1
+          -- Tier 2: Under-Using — only 1 visit (paying $95/class, worse than $39 drop-in)
+          WHEN visits_last_30d = 1 THEN 2
+          -- Tier 3: New & Declining — tenure ≤ 3 months AND last 30d < prior 30d
+          WHEN tenure_months IS NOT NULL AND tenure_months <= 3
+               AND visits_prior_30d > 0
+               AND visits_last_30d < visits_prior_30d THEN 3
           ELSE NULL
         END AS segment
       FROM visit_counts
     )
     SELECT email, name, plan_name, COALESCE(created_at,'') AS created_at,
       visits_last_30d, visits_prior_30d, visits_90d,
-      avg_per_month, tenure_months, segment
+      avg_per_month, tenure_months, eff_cost, segment
     FROM segmented
     WHERE segment IS NOT NULL
-    ORDER BY segment ASC, visits_90d ASC
+    ORDER BY segment ASC, visits_last_30d ASC, visits_90d ASC
   `);
 
   const members: Sky3RiskMember[] = rows.map((r) => ({
@@ -2249,13 +2259,14 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
     visitsPrior30d: r.visits_prior_30d,
     visits90d: r.visits_90d,
     avgPerMonth: parseFloat(r.avg_per_month),
+    effectiveCostPerClass: r.eff_cost != null ? parseFloat(r.eff_cost) : null,
     segment: r.segment as 1 | 2 | 3,
   }));
 
-  const dormantCount = members.filter((m) => m.segment === 1).length;
-  const fadingCount = members.filter((m) => m.segment === 2).length;
-  const underUsingCount = members.filter((m) => m.segment === 3).length;
+  const notAttendingCount = members.filter((m) => m.segment === 1).length;
+  const underUsingCount = members.filter((m) => m.segment === 2).length;
+  const newDecliningCount = members.filter((m) => m.segment === 3).length;
 
-  return { members, totalFlagged: members.length, dormantCount, fadingCount, underUsingCount };
+  return { members, totalFlagged: members.length, notAttendingCount, underUsingCount, newDecliningCount };
 }
 

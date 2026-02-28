@@ -5575,29 +5575,31 @@ function Sky3EngagementRiskCard({ risk }: { risk: Sky3EngagementRiskData }) {
 
   const downloadRiskCsv = () => {
     const headers = [
-      "Segment", "Name", "Email", "Plan", "Member Since", "Tenure (months)",
+      "Tier", "Name", "Email", "Plan", "Member Since", "Tenure (months)",
       "Visits — Last 30d", "Visits — Prior 30d", "Visits — 90d", "Avg/Mo",
+      "Effective $/Class",
     ];
-    const segLabels = { 1: "DORMANT", 2: "FADING", 3: "UNDER-USING" } as const;
+    const segLabels = { 1: "NOT ATTENDING", 2: "UNDER-USING", 3: "NEW & DECLINING" } as const;
     const rows = risk.members.map((m: Sky3RiskMember) => [
       segLabels[m.segment], m.name, m.email, m.planName,
       m.createdAt ? m.createdAt.slice(0, 10) : "",
       String(m.tenureMonths),
       String(m.visitsLast30d), String(m.visitsPrior30d), String(m.visits90d),
       String(m.avgPerMonth),
+      m.effectiveCostPerClass != null ? `$${m.effectiveCostPerClass.toFixed(2)}` : "N/A",
     ]);
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "sky3-engagement-risk.csv"; a.click();
+    a.href = url; a.download = "sky3-under-utilization-alert.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 
   const chartData = [
-    { label: "Dormant", definition: "0 visits / 90 days", count: risk.dormantCount, fill: SKY3_RISK_COLORS[1] },
-    { label: "Fading", definition: "Stopped last 30 days", count: risk.fadingCount, fill: SKY3_RISK_COLORS[2] },
-    { label: "Under-Using", definition: "<1 visit/month", count: risk.underUsingCount, fill: SKY3_RISK_COLORS[3] },
+    { label: "Not Attending", definition: "0 visits this month", count: risk.notAttendingCount, fill: SKY3_RISK_COLORS[1] },
+    { label: "Under-Using", definition: "1 visit ($95/class)", count: risk.underUsingCount, fill: SKY3_RISK_COLORS[2] },
+    { label: "New & Declining", definition: "≤3 mo, usage dropping", count: risk.newDecliningCount, fill: SKY3_RISK_COLORS[3] },
   ];
 
   const riskChartConfig = {
@@ -5620,10 +5622,10 @@ function Sky3EngagementRiskCard({ risk }: { risk: Sky3EngagementRiskData }) {
         <CardTitle>
           <div className="flex items-center gap-2">
             <TrendingDown className="size-5 shrink-0" style={{ color: COLORS.error }} />
-            Sky3 Engagement Risk
+            Sky3 Under-Utilization Alert
           </div>
         </CardTitle>
-        <CardDescription>Active Sky3 subscribers showing disengagement signals</CardDescription>
+        <CardDescription>Subscribers paying more per class than $39 drop-in — highest churn signal</CardDescription>
         <CardAction>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{risk.totalFlagged}</span>

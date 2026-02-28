@@ -476,16 +476,17 @@ export interface Sky3RiskMember {
   visitsPrior30d: number;
   visits90d: number;
   avgPerMonth: number;
-  /** 1 = Dormant, 2 = Fading, 3 = Under-Using */
+  effectiveCostPerClass: number | null;
+  /** 1 = Not Attending, 2 = Under-Using, 3 = New & Declining */
   segment: 1 | 2 | 3;
 }
 
 export interface Sky3EngagementRiskData {
   members: Sky3RiskMember[];
   totalFlagged: number;
-  dormantCount: number;
-  fadingCount: number;
+  notAttendingCount: number;
   underUsingCount: number;
+  newDecliningCount: number;
 }
 
 export interface ChurnRateData {
