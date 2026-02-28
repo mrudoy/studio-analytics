@@ -2272,8 +2272,8 @@ export async function getSky3PreSubscribeBehavior() {
         created_at, canceled_at,
         ROUND((LEFT(canceled_at,10)::date - LEFT(created_at,10)::date) / 30.44, 1) AS tenure_months
       FROM auto_renews
-      WHERE canceled_at IS NOT NULL AND canceled_at::text > ''
-        AND created_at IS NOT NULL
+      WHERE canceled_at IS NOT NULL AND canceled_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+        AND created_at IS NOT NULL AND created_at ~ '^\\d{4}-\\d{2}-\\d{2}'
         AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%sky5%'
              OR plan_name ILIKE '%5 pack%' OR plan_name ILIKE '%5-pack%'
              OR plan_name ILIKE '%skyhigh%')
