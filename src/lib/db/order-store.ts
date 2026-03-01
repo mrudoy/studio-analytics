@@ -55,6 +55,14 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
   try {
     await client.query("BEGIN");
     for (const r of rows) {
+      // If union_order_id is provided, remove any stale row with the same ID but
+      // a different code — prevents idx_orders_union_id constraint violation.
+      if (r.unionOrderId) {
+        await client.query(
+          `DELETE FROM orders WHERE union_order_id = $1 AND code != $2`,
+          [r.unionOrderId, r.code]
+        );
+      }
       await client.query(
         `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total, union_order_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
