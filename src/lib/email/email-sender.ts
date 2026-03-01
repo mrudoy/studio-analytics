@@ -41,10 +41,12 @@ export async function sendDigestEmail(): Promise<DigestResult> {
   const data = await getOverviewData();
   const html = buildDigestHtml(data);
 
-  // Format today's date for subject line (no year)
+  // Format today's date for subject line
   const today = new Date().toLocaleDateString("en-US", {
-    month: "short",
+    weekday: "long",
+    month: "long",
     day: "numeric",
+    year: "numeric",
     timeZone: "America/New_York",
   });
 
