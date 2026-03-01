@@ -133,10 +133,18 @@ function loadSettingsFromEnv(): AppSettings | null {
 
   const unionApiKey = process.env.UNION_API_KEY || undefined;
 
+  const schedule: ScheduleConfig | undefined = process.env.SCHEDULE_CRON
+    ? {
+        enabled: true,
+        cronPattern: process.env.SCHEDULE_CRON,
+        timezone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
+      }
+    : undefined;
+
   // Return settings if we have at least one useful config
   if (!email || !password) {
-    if (!shopify && !emailDigest && !unionApiKey) return null;
-    return { shopify, emailDigest, unionApiKey };
+    if (!shopify && !emailDigest && !unionApiKey && !schedule) return null;
+    return { shopify, emailDigest, unionApiKey, schedule };
   }
 
   return {
@@ -146,13 +154,7 @@ function loadSettingsFromEnv(): AppSettings | null {
       : undefined,
     analyticsSpreadsheetId: process.env.ANALYTICS_SPREADSHEET_ID,
     rawDataSpreadsheetId: process.env.RAW_DATA_SPREADSHEET_ID,
-    schedule: process.env.SCHEDULE_CRON
-      ? {
-          enabled: true,
-          cronPattern: process.env.SCHEDULE_CRON,
-          timezone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
-        }
-      : undefined,
+    schedule,
     shopify,
     emailDigest,
     unionApiKey,
