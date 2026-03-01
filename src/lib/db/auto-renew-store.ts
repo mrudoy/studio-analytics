@@ -106,20 +106,17 @@ export async function saveAutoRenews(
         row.unionPassId || null,
       ];
 
-      const updateSet = `
-          snapshot_id = EXCLUDED.snapshot_id,
-          plan_state = EXCLUDED.plan_state,
-          plan_price = EXCLUDED.plan_price,
-          customer_name = EXCLUDED.customer_name,
-          customer_email = EXCLUDED.customer_email,
-          order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
-          sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
-          canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
-          canceled_by = COALESCE(EXCLUDED.canceled_by, auto_renews.canceled_by),
-          admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
-          current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
-          current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
-          union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
+      const setCols = `
+          snapshot_id = $1, plan_name = $2, plan_state = $3, plan_price = $4,
+          customer_name = $5, customer_email = $6, created_at = $7,
+          order_id = COALESCE($8, auto_renews.order_id),
+          sales_channel = COALESCE($9, auto_renews.sales_channel),
+          canceled_at = COALESCE($10, auto_renews.canceled_at),
+          canceled_by = COALESCE($11, auto_renews.canceled_by),
+          admin = COALESCE($12, auto_renews.admin),
+          current_state = COALESCE($13, auto_renews.current_state),
+          current_plan = COALESCE($14, auto_renews.current_plan),
+          union_pass_id = COALESCE($15, auto_renews.union_pass_id),
           imported_at = NOW()`;
 
       const insertCols = `
@@ -131,22 +128,57 @@ export async function saveAutoRenews(
       let result;
 
       if (row.unionPassId) {
-        // Zip import path: union_pass_id is the authoritative key from Union.fit.
-        // Use it as conflict target — handles cases where email/plan_name changed.
-        result = await client.query(
-          `INSERT INTO auto_renews (${insertCols})
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           ON CONFLICT (union_pass_id) WHERE union_pass_id IS NOT NULL
-           DO UPDATE SET ${updateSet}`,
+        // Zip import: union_pass_id is the authoritative key.
+        // Step 1: Try UPDATE by union_pass_id (handles email/plan changes).
+        const upd = await client.query(
+          `UPDATE auto_renews SET ${setCols} WHERE union_pass_id = $15`,
           values
         );
+        if ((upd.rowCount ?? 0) > 0) {
+          result = upd;
+        } else {
+          // Step 2: No existing row by pass ID — upsert by business key.
+          result = await client.query(
+            `INSERT INTO auto_renews (${insertCols})
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             ON CONFLICT (customer_email, plan_name, created_at)
+             DO UPDATE SET
+               snapshot_id = EXCLUDED.snapshot_id,
+               plan_state = EXCLUDED.plan_state,
+               plan_price = EXCLUDED.plan_price,
+               customer_name = EXCLUDED.customer_name,
+               order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
+               sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
+               canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
+               canceled_by = COALESCE(EXCLUDED.canceled_by, auto_renews.canceled_by),
+               admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
+               current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
+               current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
+               union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
+               imported_at = NOW()`,
+            values
+          );
+        }
       } else {
         // CSV/scrape import path: no union_pass_id, dedup by business key.
         result = await client.query(
           `INSERT INTO auto_renews (${insertCols})
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            ON CONFLICT (customer_email, plan_name, created_at)
-           DO UPDATE SET ${updateSet}`,
+           DO UPDATE SET
+             snapshot_id = EXCLUDED.snapshot_id,
+             plan_state = EXCLUDED.plan_state,
+             plan_price = EXCLUDED.plan_price,
+             customer_name = EXCLUDED.customer_name,
+             order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
+             sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
+             canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
+             canceled_by = COALESCE(EXCLUDED.canceled_by, auto_renews.canceled_by),
+             admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
+             current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
+             current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
+             union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
+             imported_at = NOW()`,
           values
         );
       }
