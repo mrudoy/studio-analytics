@@ -88,19 +88,30 @@ export async function saveAutoRenews(
       // Skip rows without email — they can't be deduped
       if (!row.customerEmail) continue;
 
-      const result = await client.query(
-        `INSERT INTO auto_renews (
-          snapshot_id, plan_name, plan_state, plan_price,
-          customer_name, customer_email, created_at, order_id, sales_channel,
-          canceled_at, canceled_by, admin, current_state, current_plan,
-          union_pass_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        ON CONFLICT (customer_email, plan_name, created_at)
-        DO UPDATE SET
+      const values = [
+        snapshotId,
+        row.planName,
+        row.planState,
+        row.planPrice,
+        row.customerName,
+        row.customerEmail,
+        row.createdAt,
+        row.orderId || null,
+        row.salesChannel || null,
+        row.canceledAt || null,
+        row.canceledBy || null,
+        row.admin || null,
+        row.currentState || null,
+        row.currentPlan || null,
+        row.unionPassId || null,
+      ];
+
+      const updateSet = `
           snapshot_id = EXCLUDED.snapshot_id,
           plan_state = EXCLUDED.plan_state,
           plan_price = EXCLUDED.plan_price,
           customer_name = EXCLUDED.customer_name,
+          customer_email = EXCLUDED.customer_email,
           order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
           sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
           canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
@@ -109,31 +120,38 @@ export async function saveAutoRenews(
           current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
           current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
           union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
-          imported_at = NOW()`,
-        [
-          snapshotId,
-          row.planName,
-          row.planState,
-          row.planPrice,
-          row.customerName,
-          row.customerEmail,
-          row.createdAt,
-          row.orderId || null,
-          row.salesChannel || null,
-          row.canceledAt || null,
-          row.canceledBy || null,
-          row.admin || null,
-          row.currentState || null,
-          row.currentPlan || null,
-          row.unionPassId || null,
-        ]
-      );
+          imported_at = NOW()`;
 
-      // xmax = 0 means the row was inserted (not updated)
-      // This is a PostgreSQL-specific way to tell INSERT from UPDATE in an UPSERT
+      const insertCols = `
+          snapshot_id, plan_name, plan_state, plan_price,
+          customer_name, customer_email, created_at, order_id, sales_channel,
+          canceled_at, canceled_by, admin, current_state, current_plan,
+          union_pass_id`;
+
+      let result;
+
+      if (row.unionPassId) {
+        // Zip import path: union_pass_id is the authoritative key from Union.fit.
+        // Use it as conflict target — handles cases where email/plan_name changed.
+        result = await client.query(
+          `INSERT INTO auto_renews (${insertCols})
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT (union_pass_id) WHERE union_pass_id IS NOT NULL
+           DO UPDATE SET ${updateSet}`,
+          values
+        );
+      } else {
+        // CSV/scrape import path: no union_pass_id, dedup by business key.
+        result = await client.query(
+          `INSERT INTO auto_renews (${insertCols})
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT (customer_email, plan_name, created_at)
+           DO UPDATE SET ${updateSet}`,
+          values
+        );
+      }
+
       if (result.rowCount === 1) {
-        // We can't easily distinguish insert vs update without a RETURNING trick,
-        // but we can count total affected rows
         inserted++;
       }
     }
