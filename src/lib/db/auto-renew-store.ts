@@ -390,21 +390,32 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
 
   const counts = await getActiveCounts();
 
-  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+  // Deduplicate MRR by email per category — keep highest monthlyRate per person
+  const mrrByEmail: Record<string, Map<string, number>> = {
+    member: new Map(),
+    sky3: new Map(),
+    skyTingTv: new Map(),
+    unknown: new Map(),
+  };
 
   for (const ar of active) {
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
-    mrr[key] += ar.monthlyRate;
+    const email = ar.customerEmail.toLowerCase();
+    const existing = mrrByEmail[key].get(email) ?? 0;
+    if (ar.monthlyRate > existing) {
+      mrrByEmail[key].set(email, ar.monthlyRate);
+    }
   }
 
-  // Round MRR values
-  mrr.member = Math.round(mrr.member * 100) / 100;
-  mrr.sky3 = Math.round(mrr.sky3 * 100) / 100;
-  mrr.skyTingTv = Math.round(mrr.skyTingTv * 100) / 100;
-  mrr.unknown = Math.round(mrr.unknown * 100) / 100;
+  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+  for (const [cat, emailMap] of Object.entries(mrrByEmail)) {
+    let total = 0;
+    for (const rate of emailMap.values()) total += rate;
+    mrr[cat as keyof typeof mrr] = Math.round(total * 100) / 100;
+  }
 
   const totalMRR = mrr.member + mrr.sky3 + mrr.skyTingTv + mrr.unknown;
 
