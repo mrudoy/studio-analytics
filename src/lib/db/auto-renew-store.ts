@@ -312,8 +312,10 @@ export async function getActiveCounts(): Promise<ActiveCounts> {
  * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
  *
- * Active counts use getActiveCounts() — unique people, not subscription rows.
- * MRR sums all subscription rows (a person with 2 plans contributes 2x MRR).
+ * Both active counts AND MRR are deduplicated by email per category.
+ * If a person has multiple active subscription rows in the same category
+ * (e.g. plan upgrade without canceling old row), we keep only the
+ * highest monthly rate to avoid inflating MRR.
  */
 export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   const active = await getActiveAutoRenews();
@@ -321,14 +323,32 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
 
   const counts = await getActiveCounts();
 
-  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+  // Deduplicate MRR: keep highest monthlyRate per email per category
+  const mrrByEmail: Record<string, Map<string, number>> = {
+    member: new Map(),
+    sky3: new Map(),
+    skyTingTv: new Map(),
+    unknown: new Map(),
+  };
 
   for (const ar of active) {
+    const email = ar.customerEmail.toLowerCase();
+    if (!email) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
-    mrr[key] += ar.monthlyRate;
+    const existing = mrrByEmail[key].get(email) ?? 0;
+    if (ar.monthlyRate > existing) {
+      mrrByEmail[key].set(email, ar.monthlyRate);
+    }
+  }
+
+  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+  for (const key of ["member", "sky3", "skyTingTv", "unknown"] as const) {
+    for (const rate of mrrByEmail[key].values()) {
+      mrr[key] += rate;
+    }
   }
 
   // Round MRR values
