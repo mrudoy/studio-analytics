@@ -159,41 +159,73 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   const weeklyBuckets = new Map<string, PeriodBucket>();
   const monthlyBuckets = new Map<string, PeriodBucket>();
 
-  // Bucket new subscriptions
-  for (const sub of newSubs) {
-    const date = parseDate(sub.createdAt);
-    if (!date) continue;
-    const cat = sub.category;
-    const wk = getWeekKey(date);
-    const mo = getMonthKey(date);
-    const wB = getOrCreate(weeklyBuckets, wk);
-    const mB = getOrCreate(monthlyBuckets, mo);
-
-    if (cat === "MEMBER") { wB.newMembers++; mB.newMembers++; }
-    else if (cat === "SKY3") { wB.newSky3++; mB.newSky3++; }
-    else if (cat === "SKY_TING_TV") { wB.newSkyTingTv++; mB.newSkyTingTv++; }
-
-    // Revenue added (monthly rate for MRR tracking)
-    wB.revenueAdded += sub.monthlyRate;
-    mB.revenueAdded += sub.monthlyRate;
+  // Bucket new subscriptions — deduplicate by email per period per category
+  // (Same person with multiple subscription rows should only count once per period)
+  {
+    const wkDedup = new Map<string, { sub: (typeof newSubs)[0]; wk: string }>();
+    const moDedup = new Map<string, { sub: (typeof newSubs)[0]; mo: string }>();
+    for (const sub of newSubs) {
+      const date = parseDate(sub.createdAt);
+      if (!date) continue;
+      const email = sub.customerEmail?.toLowerCase() || "";
+      if (!email) continue;
+      const wk = getWeekKey(date);
+      const mo = getMonthKey(date);
+      const wkKey = `${wk}\0${sub.category}\0${email}`;
+      const moKey = `${mo}\0${sub.category}\0${email}`;
+      const wkEx = wkDedup.get(wkKey);
+      if (!wkEx || sub.monthlyRate > wkEx.sub.monthlyRate) wkDedup.set(wkKey, { sub, wk });
+      const moEx = moDedup.get(moKey);
+      if (!moEx || sub.monthlyRate > moEx.sub.monthlyRate) moDedup.set(moKey, { sub, mo });
+    }
+    for (const { sub, wk } of wkDedup.values()) {
+      const wB = getOrCreate(weeklyBuckets, wk);
+      if (sub.category === "MEMBER") wB.newMembers++;
+      else if (sub.category === "SKY3") wB.newSky3++;
+      else if (sub.category === "SKY_TING_TV") wB.newSkyTingTv++;
+      wB.revenueAdded += sub.monthlyRate;
+    }
+    for (const { sub, mo } of moDedup.values()) {
+      const mB = getOrCreate(monthlyBuckets, mo);
+      if (sub.category === "MEMBER") mB.newMembers++;
+      else if (sub.category === "SKY3") mB.newSky3++;
+      else if (sub.category === "SKY_TING_TV") mB.newSkyTingTv++;
+      mB.revenueAdded += sub.monthlyRate;
+    }
   }
 
-  // Bucket canceled subscriptions
-  for (const sub of canceledSubs) {
-    const date = sub.canceledAt ? parseDate(sub.canceledAt) : null;
-    if (!date) continue;
-    const cat = sub.category;
-    const wk = getWeekKey(date);
-    const mo = getMonthKey(date);
-    const wB = getOrCreate(weeklyBuckets, wk);
-    const mB = getOrCreate(monthlyBuckets, mo);
-
-    if (cat === "MEMBER") { wB.memberChurn++; mB.memberChurn++; }
-    else if (cat === "SKY3") { wB.sky3Churn++; mB.sky3Churn++; }
-    else if (cat === "SKY_TING_TV") { wB.skyTingTvChurn++; mB.skyTingTvChurn++; }
-
-    wB.revenueLost += sub.monthlyRate;
-    mB.revenueLost += sub.monthlyRate;
+  // Bucket canceled subscriptions — deduplicate by email per period per category
+  {
+    const wkDedup = new Map<string, { sub: (typeof canceledSubs)[0]; wk: string }>();
+    const moDedup = new Map<string, { sub: (typeof canceledSubs)[0]; mo: string }>();
+    for (const sub of canceledSubs) {
+      const date = sub.canceledAt ? parseDate(sub.canceledAt) : null;
+      if (!date) continue;
+      const email = sub.customerEmail?.toLowerCase() || "";
+      if (!email) continue;
+      const wk = getWeekKey(date);
+      const mo = getMonthKey(date);
+      const wkKey = `${wk}\0${sub.category}\0${email}`;
+      const moKey = `${mo}\0${sub.category}\0${email}`;
+      const wkEx = wkDedup.get(wkKey);
+      if (!wkEx || sub.monthlyRate > wkEx.sub.monthlyRate) wkDedup.set(wkKey, { sub, wk });
+      const moEx = moDedup.get(moKey);
+      if (!moEx || sub.monthlyRate > moEx.sub.monthlyRate) moDedup.set(moKey, { sub, mo });
+    }
+    for (const { sub, wk } of wkDedup.values()) {
+      const wB = getOrCreate(weeklyBuckets, wk);
+      if (sub.category === "MEMBER") wB.memberChurn++;
+      else if (sub.category === "SKY3") wB.sky3Churn++;
+      else if (sub.category === "SKY_TING_TV") wB.skyTingTvChurn++;
+      wB.revenueLost += sub.monthlyRate;
+    }
+    for (const { sub, mo } of moDedup.values()) {
+      const mB = getOrCreate(monthlyBuckets, mo);
+      if (sub.category === "MEMBER") mB.memberChurn++;
+      else if (sub.category === "SKY3") mB.sky3Churn++;
+      else if (sub.category === "SKY_TING_TV") mB.skyTingTvChurn++;
+      mB.revenueLost += sub.monthlyRate;
+    }
   }
 
   // ── 2. Convert to sorted arrays ──────────────────────────
@@ -248,22 +280,44 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     const currentMonth = now.getMonth(); // 0-indexed
     const completedMonthKeys = allMonthKeys.filter((k) => k < currentMonthKey);
 
-    // Compute per-month MRR changes
+    // Compute per-month MRR changes — deduplicate by email per month
     const monthlyMrrGained = new Map<string, number>();
     const monthlyMrrLost = new Map<string, number>();
 
-    for (const sub of newSubs) {
-      const date = parseDate(sub.createdAt);
-      if (!date) continue;
-      const mo = getMonthKey(date);
-      monthlyMrrGained.set(mo, (monthlyMrrGained.get(mo) || 0) + sub.monthlyRate);
-    }
+    {
+      // Keep highest monthlyRate per email per month for gained MRR
+      const gainedByMoEmail = new Map<string, number>();
+      for (const sub of newSubs) {
+        const date = parseDate(sub.createdAt);
+        if (!date) continue;
+        const email = sub.customerEmail?.toLowerCase() || "";
+        if (!email) continue;
+        const mo = getMonthKey(date);
+        const key = `${mo}\0${email}`;
+        const existing = gainedByMoEmail.get(key) ?? 0;
+        if (sub.monthlyRate > existing) gainedByMoEmail.set(key, sub.monthlyRate);
+      }
+      for (const [key, rate] of gainedByMoEmail) {
+        const mo = key.split("\0")[0];
+        monthlyMrrGained.set(mo, (monthlyMrrGained.get(mo) || 0) + rate);
+      }
 
-    for (const sub of canceledSubs) {
-      const date = sub.canceledAt ? parseDate(sub.canceledAt) : null;
-      if (!date) continue;
-      const mo = getMonthKey(date);
-      monthlyMrrLost.set(mo, (monthlyMrrLost.get(mo) || 0) + sub.monthlyRate);
+      // Keep highest monthlyRate per email per month for lost MRR
+      const lostByMoEmail = new Map<string, number>();
+      for (const sub of canceledSubs) {
+        const date = sub.canceledAt ? parseDate(sub.canceledAt) : null;
+        if (!date) continue;
+        const email = sub.customerEmail?.toLowerCase() || "";
+        if (!email) continue;
+        const mo = getMonthKey(date);
+        const key = `${mo}\0${email}`;
+        const existing = lostByMoEmail.get(key) ?? 0;
+        if (sub.monthlyRate > existing) lostByMoEmail.set(key, sub.monthlyRate);
+      }
+      for (const [key, rate] of lostByMoEmail) {
+        const mo = key.split("\0")[0];
+        monthlyMrrLost.set(mo, (monthlyMrrLost.get(mo) || 0) + rate);
+      }
     }
 
     // Reconstruct MRR series
@@ -838,10 +892,17 @@ function computeMemberAlerts(
   const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000;
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-  // Only active MEMBER subscribers with created_at
-  const activeMembers = allRows.filter(
-    (r) => r.category === "MEMBER" && r.created_at && activeStates.includes(r.plan_state)
-  );
+  // Only active MEMBER subscribers with created_at — deduplicate by email
+  // (keep most recent created_at per person)
+  const activeMemberMap = new Map<string, (typeof allRows)[0]>();
+  for (const r of allRows) {
+    if (r.category !== "MEMBER" || !r.created_at || !activeStates.includes(r.plan_state)) continue;
+    const email = r.customer_email?.toLowerCase() || "";
+    if (!email) continue;
+    const existing = activeMemberMap.get(email);
+    if (!existing || r.created_at > existing.created_at!) activeMemberMap.set(email, r);
+  }
+  const activeMembers = Array.from(activeMemberMap.values());
 
   // ── Renewal approaching (within 7 days) ──
   const renewalApproaching: RenewalAlertMember[] = [];
@@ -997,59 +1058,71 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
 
       // Active at start of month: created before month start AND
       // (still active OR canceled on/after month start)
-      const activeAtStart = catRows.filter((r) => {
-        if (!r.created_at || r.created_at >= monthStart) return false;
-        if (ACTIVE_STATES.includes(r.plan_state)) return true;
-        if (r.canceled_at && r.canceled_at >= monthStart) return true;
-        return false;
-      });
+      // *** Deduplicate by email: keep highest monthlyRate per person ***
+      const activeByEmail = new Map<string, (typeof catRows)[0]>();
+      for (const r of catRows) {
+        if (!r.created_at || r.created_at >= monthStart) continue;
+        if (!ACTIVE_STATES.includes(r.plan_state) && !(r.canceled_at && r.canceled_at >= monthStart)) continue;
+        const email = r.customer_email?.toLowerCase() || "";
+        if (!email) continue;
+        const existing = activeByEmail.get(email);
+        if (!existing || r.monthlyRate > existing.monthlyRate) activeByEmail.set(email, r);
+      }
 
-      const activeMrrAtStart = activeAtStart.reduce((s, r) => s + r.monthlyRate, 0);
+      const activeAtStartCount = activeByEmail.size;
+      const activeMrrAtStart = Array.from(activeByEmail.values()).reduce((s, r) => s + r.monthlyRate, 0);
 
-      // Canceled during this month
-      const canceledInMonth = catRows.filter((r) =>
-        r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd
-      );
+      // Canceled during this month — deduplicate by email
+      const canceledByEmail = new Map<string, (typeof catRows)[0]>();
+      for (const r of catRows) {
+        if (!(r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd)) continue;
+        const email = r.customer_email?.toLowerCase() || "";
+        if (!email) continue;
+        const existing = canceledByEmail.get(email);
+        if (!existing || r.monthlyRate > existing.monthlyRate) canceledByEmail.set(email, r);
+      }
 
-      const canceledMrr = canceledInMonth.reduce((s, r) => s + r.monthlyRate, 0);
+      const canceledCount = canceledByEmail.size;
+      const canceledMrr = Array.from(canceledByEmail.values()).reduce((s, r) => s + r.monthlyRate, 0);
 
       const entry: CategoryMonthlyChurn = {
         month,
-        userChurnRate: activeAtStart.length > 0
-          ? Math.round((canceledInMonth.length / activeAtStart.length) * 1000) / 10
+        userChurnRate: activeAtStartCount > 0
+          ? Math.round((canceledCount / activeAtStartCount) * 1000) / 10
           : 0,
         mrrChurnRate: activeMrrAtStart > 0
           ? Math.round((canceledMrr / activeMrrAtStart) * 1000) / 10
           : 0,
-        activeAtStart: activeAtStart.length,
+        activeAtStart: activeAtStartCount,
         activeMrrAtStart: Math.round(activeMrrAtStart * 100) / 100,
-        canceledCount: canceledInMonth.length,
+        canceledCount,
         canceledMrr: Math.round(canceledMrr * 100) / 100,
       };
 
       // MEMBER-only: annual vs monthly breakdown + eligible churn rate
       if (cat === "MEMBER") {
-        const annualActive = activeAtStart.filter((r) => r.isAnnual);
-        const monthlyActive = activeAtStart.filter((r) => !r.isAnnual);
-        const annualCanceled = canceledInMonth.filter((r) => r.isAnnual);
-        const monthlyCanceled = canceledInMonth.filter((r) => !r.isAnnual);
-        entry.annualActiveAtStart = annualActive.length;
-        entry.annualCanceledCount = annualCanceled.length;
-        entry.monthlyActiveAtStart = monthlyActive.length;
-        entry.monthlyCanceledCount = monthlyCanceled.length;
-        // Eligible churn: only monthly subscribers can churn month-to-month
-        entry.eligibleChurnRate = monthlyActive.length > 0
-          ? Math.round((monthlyCanceled.length / monthlyActive.length) * 1000) / 10
+        let annualActiveCount = 0, monthlyActiveCount = 0;
+        let annualActiveMrr = 0, monthlyActiveMrr = 0;
+        for (const r of activeByEmail.values()) {
+          if (r.isAnnual) { annualActiveCount++; annualActiveMrr += r.monthlyRate; }
+          else { monthlyActiveCount++; monthlyActiveMrr += r.monthlyRate; }
+        }
+        let annualCanceledCount = 0, monthlyCanceledCount = 0;
+        let annualCanceledMrr = 0, monthlyCanceledMrr = 0;
+        for (const r of canceledByEmail.values()) {
+          if (r.isAnnual) { annualCanceledCount++; annualCanceledMrr += r.monthlyRate; }
+          else { monthlyCanceledCount++; monthlyCanceledMrr += r.monthlyRate; }
+        }
+        entry.annualActiveAtStart = annualActiveCount;
+        entry.annualCanceledCount = annualCanceledCount;
+        entry.monthlyActiveAtStart = monthlyActiveCount;
+        entry.monthlyCanceledCount = monthlyCanceledCount;
+        entry.eligibleChurnRate = monthlyActiveCount > 0
+          ? Math.round((monthlyCanceledCount / monthlyActiveCount) * 1000) / 10
           : 0;
-        // Annual user churn rate
-        entry.annualUserChurnRate = annualActive.length > 0
-          ? Math.round((annualCanceled.length / annualActive.length) * 1000) / 10
+        entry.annualUserChurnRate = annualActiveCount > 0
+          ? Math.round((annualCanceledCount / annualActiveCount) * 1000) / 10
           : 0;
-        // Per-billing MRR split
-        const annualActiveMrr = annualActive.reduce((s, r) => s + r.monthlyRate, 0);
-        const annualCanceledMrr = annualCanceled.reduce((s, r) => s + r.monthlyRate, 0);
-        const monthlyActiveMrr = monthlyActive.reduce((s, r) => s + r.monthlyRate, 0);
-        const monthlyCanceledMrr = monthlyCanceled.reduce((s, r) => s + r.monthlyRate, 0);
         entry.annualActiveMrrAtStart = Math.round(annualActiveMrr * 100) / 100;
         entry.annualCanceledMrr = Math.round(annualCanceledMrr * 100) / 100;
         entry.annualMrrChurnRate = annualActiveMrr > 0
@@ -1074,8 +1147,15 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       ? Math.round((completedFiltered.reduce((s, r) => s + r.mrrChurnRate, 0) / completedFiltered.length) * 10) / 10
       : 0;
 
-    // At-risk per category (in-memory)
-    const atRiskCount = catRows.filter((r) => AT_RISK_STATES.includes(r.plan_state)).length;
+    // At-risk per category — deduplicate by email
+    const atRiskEmails = new Set<string>();
+    for (const r of catRows) {
+      if (AT_RISK_STATES.includes(r.plan_state)) {
+        const email = r.customer_email?.toLowerCase() || "";
+        if (email) atRiskEmails.add(email);
+      }
+    }
+    const atRiskCount = atRiskEmails.size;
 
     // MEMBER-only: average eligible churn rate (monthly subscribers only)
     const avgEligible = cat === "MEMBER" && completedFiltered.length > 0
@@ -1098,24 +1178,53 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       result.avgAnnualUserChurnRate = avg("annualUserChurnRate");
       result.avgAnnualMrrChurnRate = avg("annualMrrChurnRate");
       result.avgMonthlyMrrChurnRate = avg("monthlyMrrChurnRate");
-      result.annualAtRiskCount = catRows.filter((r) => r.isAnnual && AT_RISK_STATES.includes(r.plan_state)).length;
-      result.monthlyAtRiskCount = catRows.filter((r) => !r.isAnnual && AT_RISK_STATES.includes(r.plan_state)).length;
+      // At-risk by billing type — deduplicate by email
+      const annualAtRiskEmails = new Set<string>();
+      const monthlyAtRiskEmails = new Set<string>();
+      for (const r of catRows) {
+        if (AT_RISK_STATES.includes(r.plan_state)) {
+          const email = r.customer_email?.toLowerCase() || "";
+          if (!email) continue;
+          if (r.isAnnual) annualAtRiskEmails.add(email);
+          else monthlyAtRiskEmails.add(email);
+        }
+      }
+      result.annualAtRiskCount = annualAtRiskEmails.size;
+      result.monthlyAtRiskCount = monthlyAtRiskEmails.size;
 
       // ── Tenure / retention metrics (MEMBER only) ────────────
-      const tenureRows = catRows.filter((r) => r.created_at);
-      if (tenureRows.length > 0) {
+      // Deduplicate by email: use earliest created_at, latest canceled_at
+      // If any row is still active, treat person as active (censored)
+      const tenureByEmail = new Map<string, { created_at: string; canceled_at: string | null; isActive: boolean }>();
+      for (const r of catRows) {
+        if (!r.created_at) continue;
+        const email = r.customer_email?.toLowerCase() || "";
+        if (!email) continue;
+        const existing = tenureByEmail.get(email);
+        const isActive = !r.canceled_at;
+        if (!existing) {
+          tenureByEmail.set(email, { created_at: r.created_at, canceled_at: r.canceled_at, isActive });
+        } else {
+          if (r.created_at < existing.created_at) existing.created_at = r.created_at;
+          if (isActive) existing.isActive = true;
+          if (r.canceled_at && (!existing.canceled_at || r.canceled_at > existing.canceled_at)) {
+            existing.canceled_at = r.canceled_at;
+          }
+        }
+      }
+      if (tenureByEmail.size > 0) {
         const nowMs = Date.now();
         const CLIFF_MONTHS = 3; // 3-month minimum commitment
         const MAX_CURVE_MONTHS = 24;
 
-        // Compute tenure in months for each subscriber
-        const tenures = tenureRows.map((r) => {
-          const createdMs = new Date(r.created_at!).getTime();
-          const endMs = r.canceled_at ? new Date(r.canceled_at).getTime() : nowMs;
+        // Compute tenure in months for each unique subscriber
+        const tenures = Array.from(tenureByEmail.values()).map((r) => {
+          const createdMs = new Date(r.created_at).getTime();
+          const endMs = r.isActive ? nowMs : (r.canceled_at ? new Date(r.canceled_at).getTime() : nowMs);
           const months = Math.max(0, (endMs - createdMs) / (30.44 * 24 * 60 * 60 * 1000));
           return {
             tenure: months,
-            isCensored: !r.canceled_at, // still active = censored
+            isCensored: r.isActive,
           };
         });
 
@@ -1218,9 +1327,16 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   const nowMsForAtRisk = Date.now();
   const MS_PER_MONTH_AR = 30.44 * 24 * 60 * 60 * 1000;
   const CATEGORY_LABELS: Record<string, string> = { MEMBER: "Members", SKY3: "Sky3", SKY_TING_TV: "Sky Ting TV" };
-  const buildAtRiskList = (state: string) =>
-    categorized
-      .filter((r) => r.plan_state === state)
+  const buildAtRiskList = (state: string) => {
+    const seen = new Set<string>();
+    return categorized
+      .filter((r) => {
+        if (r.plan_state !== state) return false;
+        const email = r.customer_email?.toLowerCase() || "";
+        if (!email || seen.has(email)) return false;
+        seen.add(email);
+        return true;
+      })
       .map((r) => ({
         name: r.customer_name,
         email: r.customer_email,
@@ -1232,6 +1348,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
           ? Math.round(((nowMsForAtRisk - new Date(r.created_at).getTime()) / MS_PER_MONTH_AR) * 10) / 10
           : 0,
       }));
+  };
   const atRiskByState = {
     pastDue: buildAtRiskList("Past Due"),
     invalid: buildAtRiskList("Invalid"),

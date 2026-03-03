@@ -93,13 +93,16 @@ function getLastMonth() {
 // ── Aggregation ──────────────────────────────────────────
 
 function countByCategory(rows: StoredAutoRenew[]): Record<"MEMBER" | "SKY3" | "SKY_TING_TV", number> {
-  const counts = { MEMBER: 0, SKY3: 0, SKY_TING_TV: 0 };
+  // Deduplicate by email per category — same person with multiple subscription rows counts once
+  const seen = { MEMBER: new Set<string>(), SKY3: new Set<string>(), SKY_TING_TV: new Set<string>() };
   for (const r of rows) {
-    if (r.category === "MEMBER") counts.MEMBER++;
-    else if (r.category === "SKY3") counts.SKY3++;
-    else if (r.category === "SKY_TING_TV") counts.SKY_TING_TV++;
+    const email = r.customerEmail?.toLowerCase() || "";
+    if (!email) continue;
+    if (r.category === "MEMBER") seen.MEMBER.add(email);
+    else if (r.category === "SKY3") seen.SKY3.add(email);
+    else if (r.category === "SKY_TING_TV") seen.SKY_TING_TV.add(email);
   }
-  return counts;
+  return { MEMBER: seen.MEMBER.size, SKY3: seen.SKY3.size, SKY_TING_TV: seen.SKY_TING_TV.size };
 }
 
 async function computeWindow(
