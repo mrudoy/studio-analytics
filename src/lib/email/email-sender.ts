@@ -8,6 +8,7 @@
 import { Resend } from "resend";
 import { loadSettings } from "../crypto/credentials";
 import { getOverviewData } from "../db/overview-store";
+import { getPool } from "../db/database";
 import { buildDigestHtml } from "./digest-template";
 
 export interface DigestResult {
@@ -18,6 +19,10 @@ export interface DigestResult {
 /**
  * Send the auto-renew digest email to all configured recipients.
  * Returns silently if digest is disabled, paused, or missing config.
+ *
+ * Includes an atomic once-per-day guard: uses a DB watermark row so that
+ * no matter how many callers invoke this function (Railway worker, local
+ * cron, staging env, etc.), only ONE email is sent per calendar day (ET).
  */
 export async function sendDigestEmail(): Promise<DigestResult> {
   const settings = loadSettings();
@@ -37,7 +42,30 @@ export async function sendDigestEmail(): Promise<DigestResult> {
     return { sent: 0, skipped: "No Resend API key configured" };
   }
 
-  // Fetch fresh overview data
+  // ── Once-per-day atomic claim ──────────────────────────────────
+  // Uses INSERT ... ON CONFLICT with a WHERE guard on today's date.
+  // Only ONE caller per day gets rowCount=1; all others get 0.
+  const todayET = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  }); // YYYY-MM-DD
+  const pool = getPool();
+  const { rowCount } = await pool.query(
+    `INSERT INTO fetch_watermarks (report_type, last_fetched_at, high_water_date, record_count, notes)
+     VALUES ('digestEmail', NOW(), $1, 0, 'claimed')
+     ON CONFLICT (report_type) DO UPDATE SET
+       last_fetched_at = NOW(),
+       high_water_date = EXCLUDED.high_water_date,
+       record_count = 0,
+       notes = 'claimed'
+     WHERE fetch_watermarks.high_water_date IS DISTINCT FROM $1`,
+    [todayET],
+  );
+
+  if (!rowCount || rowCount === 0) {
+    return { sent: 0, skipped: `Already sent today (${todayET})` };
+  }
+
+  // We won the atomic claim — build and send the email
   const data = await getOverviewData();
   const html = buildDigestHtml(data);
 
@@ -63,6 +91,12 @@ export async function sendDigestEmail(): Promise<DigestResult> {
   if (error) {
     throw new Error(`Resend error: ${error.message}`);
   }
+
+  // Update watermark with actual send count
+  await pool.query(
+    `UPDATE fetch_watermarks SET record_count = $1, notes = $2 WHERE report_type = 'digestEmail'`,
+    [digest.recipients.length, `Sent to ${digest.recipients.length} recipients`],
+  );
 
   return { sent: digest.recipients.length, skipped: "" };
 }
