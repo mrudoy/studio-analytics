@@ -4029,12 +4029,12 @@ function DashboardContent({ activeSection, data }: {
       )}
 
       {/* ── CHURN ── */}
-      {activeSection === "churn" && (
+      {(activeSection === "churn-members" || activeSection === "churn-sky3" || activeSection === "churn-tv" || activeSection === "churn-intro") && (
         <>
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <HourglassLow className="size-7 shrink-0" style={{ color: SECTION_COLORS.churn }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Churn</h1>
+              <HourglassLow className="size-7 shrink-0" style={{ color: SECTION_COLORS["churn-members"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Retention &amp; Churn</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Cancellation rates, at-risk subscribers, and churn trends by plan type</p>
           </div>
