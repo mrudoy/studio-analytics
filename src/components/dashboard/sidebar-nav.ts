@@ -5,6 +5,7 @@ import {
   ChartBarPopular,
   Recycle,
   RecycleOff,
+  Ticket,
   ArrowFork,
   HourglassLow,
   UserPlus,
@@ -30,8 +31,11 @@ export type SectionKey =
   | "revenue-spa"
   | "revenue-rentals"
   | "revenue-retreats"
-  | "growth-auto"
-  | "growth-non-auto"
+  | "growth-members"
+  | "growth-sky3"
+  | "growth-tv"
+  | "growth-dropins"
+  | "growth-intro"
   | "conversion-new"
   | "conversion-pool"
   | "churn-members"
@@ -60,8 +64,11 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   "revenue-spa":  "#4A7C59",
   "revenue-rentals": "#4A7C59",
   "revenue-retreats": "#B87333",  // copper
-  "growth-auto":  "#5B7FA5",  // steel blue
-  "growth-non-auto": "#5B7FA5",
+  "growth-members": "#5B7FA5",  // steel blue
+  "growth-sky3":    "#5B7FA5",
+  "growth-tv":      "#5B7FA5",
+  "growth-dropins": "#5B7FA5",
+  "growth-intro":   "#5B7FA5",
   "conversion-new":  "#B87333",  // copper
   "conversion-pool": "#B87333",
   "churn-members": "#A04040",  // muted red
@@ -89,13 +96,16 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    key: "growth-auto",
+    key: "growth-members",
     label: "Growth",
     icon: ChartBarPopular,
-    color: SECTION_COLORS["growth-auto"],
+    color: SECTION_COLORS["growth-members"],
     children: [
-      { key: "growth-auto", label: "Auto-Renews", icon: Recycle },
-      { key: "growth-non-auto", label: "Non Auto-Renews", icon: RecycleOff },
+      { key: "growth-members", label: "Members", icon: ArrowBadgeDown },
+      { key: "growth-sky3", label: "Sky3", icon: BrandSky },
+      { key: "growth-tv", label: "Sky Ting TV", icon: DeviceTv },
+      { key: "growth-dropins", label: "Drop-Ins", icon: Ticket },
+      { key: "growth-intro", label: "Intro Week", icon: CalendarWeek },
     ],
   },
   {
@@ -132,8 +142,11 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "revenue-spa": ["Revenue", "Spa & Wellness"],
   "revenue-rentals": ["Revenue", "Studio Rentals"],
   "revenue-retreats": ["Revenue", "Retreats"],
-  "growth-auto": ["Growth", "Auto-Renews"],
-  "growth-non-auto": ["Growth", "Non Auto-Renews"],
+  "growth-members": ["Growth", "Members"],
+  "growth-sky3": ["Growth", "Sky3"],
+  "growth-tv": ["Growth", "Sky Ting TV"],
+  "growth-dropins": ["Growth", "Drop-Ins"],
+  "growth-intro": ["Growth", "Intro Week"],
   "conversion-new": ["Conversion", "New Customers"],
   "conversion-pool": ["Conversion", "Non Auto-Renew Customers"],
   "churn-members": ["Retention & Churn", "Members"],

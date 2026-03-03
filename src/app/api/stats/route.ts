@@ -12,6 +12,7 @@ import {
   getShopifyCustomerBreakdown,
   getShopifyAnnualRevenue,
   getShopifyCategoryBreakdown,
+  getShopifyDailySales,
 } from "@/lib/db/shopify-store";
 import { getSpaStats } from "@/lib/db/spa-store";
 import { getPool } from "@/lib/db/database";
@@ -19,6 +20,11 @@ import { getStatsCache, setStatsCache, getStatsCacheAge } from "@/lib/cache/stat
 import type { RevenueCategory } from "@/types/union-data";
 import type { DashboardStats, DataFreshness, ShopifyStats, ShopifyMerchData, SpaData } from "@/types/dashboard";
 import type { TrendsData } from "@/types/dashboard";
+
+/** Safely await a promise, returning null on failure */
+async function safe<T>(p: Promise<T>): Promise<T | null> {
+  try { return await p; } catch { return null; }
+}
 
 export async function GET(request: Request) {
   try {
@@ -36,27 +42,85 @@ export async function GET(request: Request) {
         });
       }
     }
-    // ── 1. Load from database ─────────────────────────────────
-    let stats: DashboardStats | null = null;
-    let trends: TrendsData | null = null;
 
-    try {
-      stats = await computeStatsFromDB();
-      if (stats) {
-        console.log("[api/stats] Loaded stats from database");
-      }
-    } catch (err) {
-      console.warn("[api/stats] Database stats failed:", err);
-    }
+    const t0 = Date.now();
 
-    try {
-      trends = await computeTrendsFromDB();
-      if (trends) {
-        console.log("[api/stats] Loaded trends from database");
-      }
-    } catch (err) {
-      console.warn("[api/stats] Database trends failed:", err);
-    }
+    // ══════════════════════════════════════════════════════════════
+    // PHASE 1: Fire ALL independent DB queries in parallel
+    // ══════════════════════════════════════════════════════════════
+    const pool = getPool();
+
+    const [
+      statsResult,
+      trendsResult,
+      latestPeriodResult,
+      monthlyRevenueResult,
+      shopifyResult,
+      spaResult,
+      rentalResult,
+      annualBreakdownResult,
+      freshnessResult,
+      insightsResult,
+      overviewResult,
+      unionRentalResult,
+    ] = await Promise.all([
+      // 1. Core stats
+      safe(computeStatsFromDB()),
+      // 2. Trends (the heaviest — many sub-queries, but internally parallelized)
+      safe(computeTrendsFromDB()),
+      // 3. Latest revenue period
+      safe(getLatestPeriod()),
+      // 4. Monthly revenue + retreat
+      safe(Promise.all([getAllMonthlyRevenue(), getMonthlyRetreatRevenue()])),
+      // 5. All 9 Shopify queries
+      safe(Promise.all([
+        getShopifyStats(),
+        getShopifyMTDRevenue(),
+        getShopifyRevenueSummary(),
+        getShopifyTopProducts(10),
+        getShopifyRepeatCustomerRate(),
+        getShopifyCustomerBreakdown(),
+        getShopifyAnnualRevenue(),
+        getShopifyCategoryBreakdown(),
+        getShopifyDailySales(30),
+      ])),
+      // 6. Spa
+      safe(getSpaStats()),
+      // 7. Rentals
+      safe(Promise.all([getMonthlyRentalRevenue(), getAnnualRentalRevenue()])),
+      // 8. Annual breakdown
+      safe(getAnnualRevenueBreakdown()),
+      // 9. Data freshness (4 MAX queries)
+      safe(Promise.all([
+        pool.query("SELECT MAX(imported_at) AS ts FROM auto_renews").catch(() => ({ rows: [{ ts: null }] })),
+        pool.query("SELECT MAX(imported_at) AS ts FROM registrations").catch(() => ({ rows: [{ ts: null }] })),
+        pool.query("SELECT MAX(synced_at) AS ts FROM shopify_orders").catch(() => ({ rows: [{ ts: null }] })),
+        pool.query("SELECT MAX(ran_at) AS ts FROM pipeline_runs").catch(() => ({ rows: [{ ts: null }] })),
+      ])),
+      // 10. Insights
+      safe(import("@/lib/db/insights-store").then((m) => m.getRecentInsights(20))),
+      // 11. Overview
+      safe(import("@/lib/db/overview-store").then((m) => m.getOverviewData())),
+      // 12. Union rental dedup query (needed for rental merge)
+      safe(pool.query(`
+        SELECT LEFT(period_start, 7) AS month,
+               SUM(revenue) AS gross, SUM(net_revenue) AS net
+        FROM revenue_categories
+        WHERE (category ~* 'rental|teacher\\s*rental|studio\\s*rental')
+          AND LEFT(period_start, 7) = LEFT(period_end, 7)
+        GROUP BY LEFT(period_start, 7)
+      `)),
+    ]);
+
+    const t1 = Date.now();
+    console.log(`[api/stats] Phase 1 (parallel queries): ${t1 - t0}ms`);
+
+    // ══════════════════════════════════════════════════════════════
+    // PHASE 2: Assemble results (in-memory only, no DB calls)
+    // ══════════════════════════════════════════════════════════════
+
+    const stats: DashboardStats | null = statsResult;
+    const trends: TrendsData | null = trendsResult;
 
     if (!stats) {
       return NextResponse.json(
@@ -65,12 +129,11 @@ export async function GET(request: Request) {
       );
     }
 
-    // ── 2. Revenue categories from database ───────────────────
+    // ── Revenue categories ──
     let revenueCategories = null;
-    try {
-      const latestPeriod = await getLatestPeriod();
-      if (latestPeriod) {
-        const rows = await getRevenueForPeriod(latestPeriod.periodStart, latestPeriod.periodEnd);
+    if (latestPeriodResult) {
+      try {
+        const rows = await getRevenueForPeriod(latestPeriodResult.periodStart, latestPeriodResult.periodEnd);
         if (rows.length > 0) {
           const asRevenueCategory: RevenueCategory[] = rows.map((r) => ({
             revenueCategory: r.category,
@@ -84,105 +147,71 @@ export async function GET(request: Request) {
             netRevenue: r.netRevenue,
           }));
           revenueCategories = {
-            periodStart: latestPeriod.periodStart,
-            periodEnd: latestPeriod.periodEnd,
+            periodStart: latestPeriodResult.periodStart,
+            periodEnd: latestPeriodResult.periodEnd,
             ...analyzeRevenueCategories(asRevenueCategory),
           };
         }
+      } catch (dbErr) {
+        console.warn("[api/stats] Failed to load revenue categories:", dbErr);
       }
-    } catch (dbErr) {
-      console.warn("[api/stats] Failed to load revenue categories from database:", dbErr);
     }
 
-    // ── 3. Patch prior year revenue if missing from projection ──
+    // ── Patch prior year revenue if missing from projection ──
     if (trends?.projection && !trends.projection.priorYearActualRevenue && revenueCategories) {
       const priorYear = trends.projection.year - 1;
       const start = revenueCategories.periodStart || "";
-      const end = revenueCategories.periodEnd || "";
       if (start.startsWith(String(priorYear)) && revenueCategories.totalNetRevenue > 0) {
-        const s = new Date(start + "T00:00:00");
-        const e = new Date(end + "T00:00:00");
-        const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
-        const actualRev = months >= 11
-          ? Math.round(revenueCategories.totalNetRevenue)
-          : Math.round(revenueCategories.totalNetRevenue);
+        const retreatCat = revenueCategories.categories?.find(
+          (c: { category: string }) => c.category === "Retreats"
+        );
+        const retreatNetRev = retreatCat?.netRevenue ?? 0;
+        const actualRev = Math.round(revenueCategories.totalNetRevenue - retreatNetRev);
         trends.projection.priorYearActualRevenue = actualRev;
         if (!trends.projection.priorYearRevenue || trends.projection.priorYearRevenue < actualRev) {
           trends.projection.priorYearRevenue = actualRev;
         }
-        console.log(`[api/stats] Patched priorYearActualRevenue=$${actualRev} from revenueCategories`);
       }
     }
 
-    // ── 4. Month-over-month YoY comparison ──────────────────
-    // NOTE: Built after monthlyRevenue + deduplication (section 5/6) so both
-    // the month breakdown card and YoY use the same adjusted numbers.
-    // Placeholder — computed below after deduplication.
-    let monthOverMonth = null;
-
-    // ── 5. Monthly revenue timeline ──────────────────────────
+    // ── Build monthly revenue timeline ──
     let monthlyRevenue: { month: string; gross: number; net: number; retreatGross?: number; retreatNet?: number }[] = [];
-    try {
-      const [allMonthly, retreatByMonth] = await Promise.all([
-        getAllMonthlyRevenue(),
-        getMonthlyRetreatRevenue(),
-      ]);
+    if (monthlyRevenueResult) {
+      const [allMonthly, retreatByMonth] = monthlyRevenueResult;
       monthlyRevenue = allMonthly.map((m) => {
         const mKey = m.periodStart.slice(0, 7);
         const retreat = retreatByMonth.get(mKey);
+        const retreatGross = retreat ? Math.round(retreat.gross * 100) / 100 : 0;
+        const retreatNet = retreat ? Math.round(retreat.net * 100) / 100 : 0;
         return {
           month: mKey,
-          gross: Math.round(m.totalRevenue * 100) / 100,
-          net: Math.round(m.totalNetRevenue * 100) / 100,
-          retreatGross: retreat ? Math.round(retreat.gross * 100) / 100 : 0,
-          retreatNet: retreat ? Math.round(retreat.net * 100) / 100 : 0,
+          gross: Math.round(m.totalRevenue * 100) / 100 - retreatGross,
+          net: Math.round(m.totalNetRevenue * 100) / 100 - retreatNet,
+          retreatGross,
+          retreatNet,
         };
       });
 
-      // Override currentMonthRevenue with actual monthly data if available
-      if (stats && monthlyRevenue.length > 0) {
-        const now = new Date();
-        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-        const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+      // Patch current/previous month on stats
+      const now = new Date();
+      const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
-        const currentEntry = monthlyRevenue.find((m) => m.month === currentMonthKey);
-        const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
-
-        if (currentEntry) {
-          stats.currentMonthRevenue = currentEntry.net;
-        }
-        if (prevEntry) {
-          stats.previousMonthRevenue = prevEntry.net;
-        }
-      }
-
-      console.log(`[api/stats] Monthly revenue timeline: ${monthlyRevenue.length} months`);
-    } catch (err) {
-      console.warn("[api/stats] Failed to load monthly revenue timeline:", err);
+      const currentEntry = monthlyRevenue.find((m) => m.month === currentMonthKey);
+      const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
+      if (currentEntry) stats.currentMonthRevenue = currentEntry.net;
+      if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
     }
 
-    // ── 6. Shopify stats + merch data ────────────────────────
+    // ── Shopify stats + merch ──
     let shopify: ShopifyStats | null = null;
     let shopifyMerch: ShopifyMerchData | null = null;
-    try {
-      const [shopifyStats, mtd, revSummary, topProducts, repeatData, customerBreakdown, annualRevenue, categoryBreakdown] = await Promise.all([
-        getShopifyStats(),
-        getShopifyMTDRevenue(),
-        getShopifyRevenueSummary(),
-        getShopifyTopProducts(10),
-        getShopifyRepeatCustomerRate(),
-        getShopifyCustomerBreakdown(),
-        getShopifyAnnualRevenue(),
-        getShopifyCategoryBreakdown(),
-      ]);
-
+    if (shopifyResult) {
+      const [shopifyStats, mtd, revSummary, topProducts, repeatData, customerBreakdown, annualRevenue, categoryBreakdown, dailySales] = shopifyResult;
       shopify = shopifyStats;
 
       if (shopifyStats && shopifyStats.totalOrders > 0) {
-        console.log(`[api/stats] Shopify: ${shopifyStats.totalOrders} orders, $${shopifyStats.totalRevenue} revenue`);
-
-        // Compute average monthly revenue from completed months only
         const now = new Date();
         const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         const completedMonths = revSummary.filter((m) => m.month < currentMonthKey);
@@ -201,58 +230,100 @@ export async function GET(request: Request) {
           customerBreakdown: customerBreakdown.total.orders > 0 ? customerBreakdown : null,
           annualRevenue,
           categoryBreakdown,
+          dailySales,
         };
 
-        // ── Add Shopify merch to Union.fit revenue ─────────────
-        // Union.fit merch (gift cards, food & bev) and Shopify merch (online store)
-        // are separate revenue streams — no overlap, so add Shopify on top.
-        // Only add to months that already have Union.fit base data — Shopify-only
-        // months would show misleadingly low totals (e.g. $2K vs actual $200K+).
+        // Merge Shopify into monthlyRevenue
         if (monthlyRevenue.length > 0) {
-          try {
-            const shopifyByMonth = new Map(revSummary.map((m) => [m.month, m]));
-
-            for (let i = 0; i < monthlyRevenue.length; i++) {
-              const m = monthlyRevenue[i];
-              const shopMonth = shopifyByMonth.get(m.month);
-              if (shopMonth) {
-                monthlyRevenue[i] = {
-                  ...m,
-                  gross: Math.round((m.gross + shopMonth.gross) * 100) / 100,
-                  net: Math.round((m.net + shopMonth.net) * 100) / 100,
-                };
-              }
+          const shopifyByMonth = new Map(revSummary.map((m) => [m.month, m]));
+          for (let i = 0; i < monthlyRevenue.length; i++) {
+            const m = monthlyRevenue[i];
+            const shopMonth = shopifyByMonth.get(m.month);
+            if (shopMonth) {
+              monthlyRevenue[i] = {
+                ...m,
+                gross: Math.round((m.gross + shopMonth.gross) * 100) / 100,
+                net: Math.round((m.net + shopMonth.net) * 100) / 100,
+              };
             }
-
-            // Update current/previous month revenue on stats
-            if (stats) {
-              const currentEntry = monthlyRevenue.find((m) => m.month === currentMonthKey);
-              const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-              const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
-              const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
-              if (currentEntry) stats.currentMonthRevenue = currentEntry.net;
-              if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
-            }
-
-            console.log(`[api/stats] Shopify merch added for ${shopifyByMonth.size} months`);
-          } catch (err) {
-            console.warn("[api/stats] Shopify merch merge failed:", err);
           }
+
+          // Re-update current/previous month stats
+          const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+          const currentEntry = monthlyRevenue.find((m) => m.month === currentMonthKey);
+          const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
+          if (currentEntry) stats.currentMonthRevenue = currentEntry.net;
+          if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
         }
       }
-    } catch {
-      // Shopify tables might not exist yet (migration hasn't run)
     }
 
-    // ── 7. Month-over-month YoY (uses deduplicated monthlyRevenue) ──
-    try {
-      const now2 = new Date();
-      let lastMonth = now2.getMonth(); // 0-indexed current month
-      let lastMonthYear = now2.getFullYear();
-      if (lastMonth === 0) {
-        lastMonth = 12;
-        lastMonthYear -= 1;
+    // ── Spa ──
+    let spa: SpaData | null = null;
+    if (spaResult && spaResult.totalRevenue > 0) {
+      spa = {
+        mtdRevenue: spaResult.mtdRevenue,
+        avgMonthlyRevenue: spaResult.avgMonthlyRevenue,
+        totalRevenue: spaResult.totalRevenue,
+        monthlyRevenue: spaResult.monthlyRevenue.map((m) => ({ month: m.month, gross: m.gross, net: m.net })),
+        serviceBreakdown: spaResult.serviceBreakdown.map((s) => ({
+          category: s.category,
+          totalRevenue: s.totalRevenue,
+          totalNetRevenue: s.totalNetRevenue,
+        })),
+        customerBehavior: spaResult.customerBehavior ?? null,
+      };
+    }
+
+    // ── Rentals + dedup ──
+    let rentalRevenue: import("@/types/dashboard").RentalRevenueData | null = null;
+    if (rentalResult) {
+      const [rentalMonthly, rentalAnnual] = rentalResult;
+      rentalRevenue = { monthly: rentalMonthly, annual: rentalAnnual };
+
+      // Dedup: replace Union.fit rental with spreadsheet totals in monthlyRevenue
+      if (monthlyRevenue.length > 0 && unionRentalResult) {
+        const unionRentalByMonth = new Map(
+          unionRentalResult.rows.map((r: Record<string, unknown>) => [r.month as string, { gross: Number(r.gross) || 0, net: Number(r.net) || 0 }])
+        );
+        const ssRentalByMonth = new Map(rentalMonthly.map((r) => [r.month, r.total]));
+
+        for (let i = 0; i < monthlyRevenue.length; i++) {
+          const m = monthlyRevenue[i];
+          const unionR = unionRentalByMonth.get(m.month);
+          const ssR = ssRentalByMonth.get(m.month);
+          if (unionR || ssR) {
+            const deductGross = unionR?.gross ?? 0;
+            const deductNet = unionR?.net ?? 0;
+            const addAmount = ssR ?? 0;
+            monthlyRevenue[i] = {
+              ...m,
+              gross: Math.round((m.gross - deductGross + addAmount) * 100) / 100,
+              net: Math.round((m.net - deductNet + addAmount) * 100) / 100,
+            };
+          }
+        }
+
+        // Re-update current/previous month stats after rental dedup
+        const now3 = new Date();
+        const curKey = `${now3.getFullYear()}-${String(now3.getMonth() + 1).padStart(2, "0")}`;
+        const prevD = new Date(now3.getFullYear(), now3.getMonth() - 1, 1);
+        const prevKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, "0")}`;
+        const curE = monthlyRevenue.find((m) => m.month === curKey);
+        const prevE = monthlyRevenue.find((m) => m.month === prevKey);
+        if (curE) stats.currentMonthRevenue = curE.net;
+        if (prevE) stats.previousMonthRevenue = prevE.net;
       }
+    }
+
+    // ── Month-over-month YoY ──
+    let monthOverMonth = null;
+    if (monthlyRevenue.length > 0) {
+      const now2 = new Date();
+      let lastMonth = now2.getMonth();
+      let lastMonthYear = now2.getFullYear();
+      if (lastMonth === 0) { lastMonth = 12; lastMonthYear -= 1; }
 
       const currentKey = `${lastMonthYear}-${String(lastMonth).padStart(2, "0")}`;
       const priorKey = `${lastMonthYear - 1}-${String(lastMonth).padStart(2, "0")}`;
@@ -278,104 +349,15 @@ export async function GET(request: Request) {
           yoyNetPct: currentEntry && priorEntry && pNet > 0
             ? Math.round((cNet - pNet) / pNet * 1000) / 10 : null,
         };
-        console.log(`[api/stats] MonthOverMonth: ${monthNames[lastMonth]} ${lastMonthYear} vs ${lastMonthYear - 1} (using deduplicated data)`);
       }
-    } catch (err) {
-      console.warn("[api/stats] Failed to compute month-over-month:", err);
     }
 
-    // ── 8. Spa stats ────────────────────────────────────────
-    let spa: SpaData | null = null;
-    try {
-      const spaStats = await getSpaStats();
-      if (spaStats.totalRevenue > 0) {
-        spa = {
-          mtdRevenue: spaStats.mtdRevenue,
-          avgMonthlyRevenue: spaStats.avgMonthlyRevenue,
-          totalRevenue: spaStats.totalRevenue,
-          monthlyRevenue: spaStats.monthlyRevenue.map((m) => ({ month: m.month, gross: m.gross, net: m.net })),
-          serviceBreakdown: spaStats.serviceBreakdown.map((s) => ({
-            category: s.category,
-            totalRevenue: s.totalRevenue,
-            totalNetRevenue: s.totalNetRevenue,
-          })),
-          customerBehavior: spaStats.customerBehavior ?? null,
-        };
-      }
-    } catch {
-      // Spa data may not exist yet
-    }
-
-    // ── 7b. Studio Rentals (spreadsheet is source of truth) ───
-    let rentalRevenue: import("@/types/dashboard").RentalRevenueData | null = null;
-    try {
-      const [rentalMonthly, rentalAnnual] = await Promise.all([
-        getMonthlyRentalRevenue(),
-        getAnnualRentalRevenue(),
-      ]);
-      rentalRevenue = { monthly: rentalMonthly, annual: rentalAnnual };
-
-      // Dedup: Union.fit has SOME rental revenue — replace with spreadsheet totals.
-      // For monthly revenue: subtract Union.fit rental, add spreadsheet rental.
-      if (monthlyRevenue.length > 0) {
-        try {
-          const pool = getPool();
-          const unionRentalRes = await pool.query(`
-            SELECT LEFT(period_start, 7) AS month,
-                   SUM(revenue) AS gross, SUM(net_revenue) AS net
-            FROM revenue_categories
-            WHERE (category ~* 'rental|teacher\\s*rental|studio\\s*rental')
-              AND LEFT(period_start, 7) = LEFT(period_end, 7)
-            GROUP BY LEFT(period_start, 7)
-          `);
-          const unionRentalByMonth = new Map(
-            unionRentalRes.rows.map((r: Record<string, unknown>) => [r.month as string, { gross: Number(r.gross) || 0, net: Number(r.net) || 0 }])
-          );
-          const ssRentalByMonth = new Map(rentalMonthly.map((r) => [r.month, r.total]));
-
-          for (let i = 0; i < monthlyRevenue.length; i++) {
-            const m = monthlyRevenue[i];
-            const unionR = unionRentalByMonth.get(m.month);
-            const ssR = ssRentalByMonth.get(m.month);
-            if (unionR || ssR) {
-              // Subtract Union.fit rental, add spreadsheet rental (which is net revenue)
-              const deductGross = unionR?.gross ?? 0;
-              const deductNet = unionR?.net ?? 0;
-              const addAmount = ssR ?? 0;
-              monthlyRevenue[i] = {
-                ...m,
-                gross: Math.round((m.gross - deductGross + addAmount) * 100) / 100,
-                net: Math.round((m.net - deductNet + addAmount) * 100) / 100,
-              };
-            }
-          }
-          // Re-update current/previous month stats after rental dedup
-          if (stats) {
-            const now3 = new Date();
-            const curKey = `${now3.getFullYear()}-${String(now3.getMonth() + 1).padStart(2, "0")}`;
-            const prevD = new Date(now3.getFullYear(), now3.getMonth() - 1, 1);
-            const prevKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, "0")}`;
-            const curE = monthlyRevenue.find((m) => m.month === curKey);
-            const prevE = monthlyRevenue.find((m) => m.month === prevKey);
-            if (curE) stats.currentMonthRevenue = curE.net;
-            if (prevE) stats.previousMonthRevenue = prevE.net;
-          }
-
-          console.log(`[api/stats] Rental dedup applied: ${unionRentalByMonth.size} Union months replaced with ${ssRentalByMonth.size} spreadsheet months`);
-        } catch (err) {
-          console.warn("[api/stats] Rental dedup failed:", err);
-        }
-      }
-    } catch (err) {
-      console.warn("[api/stats] Rental revenue query failed:", err);
-    }
-
-    // ── 8. Annual revenue breakdown by segment ─────────────
+    // ── Annual breakdown + Shopify/rental adjustments ──
     let annualBreakdown: import("@/types/dashboard").AnnualRevenueBreakdown[] | null = null;
-    try {
-      const raw = await getAnnualRevenueBreakdown();
+    if (annualBreakdownResult) {
+      const raw = annualBreakdownResult;
 
-      // Add Shopify merch on top of Union.fit merch (separate revenue streams)
+      // Add Shopify merch
       if (shopifyMerch?.annualRevenue) {
         const shopifyByYear = new Map(shopifyMerch.annualRevenue.map((a) => [a.year, a]));
         for (const yearData of raw) {
@@ -394,7 +376,7 @@ export async function GET(request: Request) {
         }
       }
 
-      // Dedup rentals: replace Union.fit "Rentals" segment with spreadsheet totals
+      // Dedup rentals
       if (rentalRevenue?.annual) {
         const ssRentalByYear = new Map(rentalRevenue.annual.map((a) => [a.year, a.total]));
         for (const yearData of raw) {
@@ -415,29 +397,27 @@ export async function GET(request: Request) {
         }
       }
 
+      // Exclude retreat revenue from annual totals
+      for (const yearData of raw) {
+        const retreatSeg = yearData.segments.find((s) => s.segment === "Retreats");
+        if (retreatSeg) {
+          yearData.totalGross -= retreatSeg.gross;
+          yearData.totalNet -= retreatSeg.net;
+        }
+      }
+
       annualBreakdown = raw;
-      console.log(`[api/stats] Annual breakdown: ${raw.length} years`);
-    } catch (err) {
-      console.warn("[api/stats] Annual breakdown failed:", err);
     }
 
-    // ── 9. Data freshness ──────────────────────────────────
+    // ── Data freshness ──
     let dataFreshness: DataFreshness | null = null;
-    try {
-      const pool = getPool();
-      const [arRes, regRes, shopRes, pipeRes] = await Promise.all([
-        pool.query("SELECT MAX(imported_at) AS ts FROM auto_renews").catch(() => ({ rows: [{ ts: null }] })),
-        pool.query("SELECT MAX(imported_at) AS ts FROM registrations").catch(() => ({ rows: [{ ts: null }] })),
-        pool.query("SELECT MAX(synced_at) AS ts FROM shopify_orders").catch(() => ({ rows: [{ ts: null }] })),
-        pool.query("SELECT MAX(ran_at) AS ts FROM pipeline_runs").catch(() => ({ rows: [{ ts: null }] })),
-      ]);
-
+    if (freshnessResult) {
+      const [arRes, regRes, shopRes, pipeRes] = freshnessResult;
       const timestamps = [arRes.rows[0].ts, regRes.rows[0].ts, shopRes.rows[0].ts, pipeRes.rows[0].ts]
         .filter(Boolean)
         .map((t: string) => new Date(t).getTime());
       const overall = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
 
-      // Partial = union and shopify updated at different times (>1h apart)
       const unionTs = [arRes.rows[0].ts, regRes.rows[0].ts].filter(Boolean).map((t: string) => new Date(t).getTime());
       const shopifyTs = shopRes.rows[0].ts ? new Date(shopRes.rows[0].ts).getTime() : null;
       const latestUnion = unionTs.length > 0 ? Math.max(...unionTs) : null;
@@ -451,38 +431,16 @@ export async function GET(request: Request) {
         overall,
         isPartial,
       };
-    } catch (err) {
-      console.warn("[api/stats] Data freshness query failed:", err);
     }
 
-    // ── 9b. Insights ──────────────────────────────────────────
-    let insights = null;
-    try {
-      const { getRecentInsights } = await import("@/lib/db/insights-store");
-      insights = await getRecentInsights(20);
-      if (insights && insights.length > 0) {
-        console.log(`[api/stats] Loaded ${insights.length} insights`);
-      }
-    } catch {
-      // insights table may not exist yet
-    }
+    const t2 = Date.now();
+    console.log(`[api/stats] Phase 2 (assembly): ${t2 - t1}ms | Total: ${t2 - t0}ms`);
 
-    // ── 9c. Overview data ──────────────────────────────────────
-    let overviewData = null;
-    try {
-      const { getOverviewData } = await import("@/lib/db/overview-store");
-      overviewData = await getOverviewData();
-      console.log("[api/stats] Loaded overview data");
-    } catch (err) {
-      console.warn("[api/stats] Overview data failed:", err);
-    }
+    // ── Return response ──
+    stats.dataFreshness = dataFreshness;
+    stats.annualBreakdown = annualBreakdown;
+    stats.rentalRevenue = rentalRevenue;
 
-    // ── 10. Return response ──────────────────────────────────
-    if (stats) {
-      stats.dataFreshness = dataFreshness;
-      stats.annualBreakdown = annualBreakdown;
-      stats.rentalRevenue = rentalRevenue;
-    }
     const responseBody = {
       ...(stats || {}),
       trends,
@@ -492,12 +450,11 @@ export async function GET(request: Request) {
       shopify,
       shopifyMerch,
       spa,
-      insights,
-      overviewData,
+      insights: insightsResult,
+      overviewData: overviewResult,
       dataSource: "database",
     };
 
-    // Store in cache for subsequent requests
     setStatsCache(responseBody);
 
     return NextResponse.json(responseBody, {

@@ -28,6 +28,7 @@ import {
   InfoIcon,
   CircleCheckIcon,
   DoorEnter,
+  Ticket as TicketIcon,
   UserStar,
   CalendarWeek,
   ActivityIcon,
@@ -139,6 +140,7 @@ import type {
   ExpiringIntroWeekData,
   ExpiringIntroCustomer,
   IntroWeekConversionData,
+  DailyMovementRow,
 } from "@/types/dashboard";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -339,13 +341,9 @@ function isoWeekToDate(isoWeek: string): Date | null {
   return result;
 }
 
-/** Format a period (date string or ISO week) as "M/D" */
-/** Format a Date as MM/DD/YY */
+/** Format a Date as M/D (e.g. 3/2 for March 2). No year unless multi-year chart. */
 function formatDateShort(d: Date): string {
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${mm}/${dd}/${yy}`;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 /** Format a period (date string or ISO week) as MM/DD/YY for bar chart labels */
@@ -364,11 +362,11 @@ function formatWeekRange(start: string, _end: string): string {
   return formatDateShort(s);
 }
 
-/** Format cohort start as short label "Jan 26" for bar chart x-axis */
+/** Format cohort start as short label "1/26" for bar chart x-axis */
 function formatCohortShort(start: string): string {
   const s = new Date(start + "T00:00:00");
   if (isNaN(s.getTime())) return start;
-  return `${s.toLocaleDateString("en-US", { month: "short" })} ${s.getDate()}`;
+  return `${s.getMonth() + 1}/${s.getDate()}`;
 }
 
 /** Format week range as "Jan 19-25" or "Jan 26-Feb 1" for cohort labels */
@@ -2147,7 +2145,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
     color: string;
     getCount: (w: TimeWindowMetrics) => number;
   }[] = [
-    { key: "dropIns", icon: DoorEnter, label: LABELS.dropIns, color: COLORS.dropIn, getCount: (w) => w.activity.dropIns },
+    { key: "dropIns", icon: TicketIcon, label: LABELS.dropIns, color: COLORS.dropIn, getCount: (w) => w.activity.dropIns },
     { key: "guests", icon: UserStar, label: "Guests", color: COLORS.teal, getCount: (w) => w.activity.guests },
     { key: "introWeeks", icon: CalendarWeek, label: "Intro Weeks", color: COLORS.copper, getCount: (w) => w.activity.introWeeks },
   ];
@@ -2177,7 +2175,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
         {/* Auto-Renews */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 px-1">
-            <Recycle className="size-4" style={{ color: SECTION_COLORS["growth-auto"] }} />
+            <Recycle className="size-4" style={{ color: SECTION_COLORS["growth-members"] }} />
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{LABELS.autoRenews}</span>
           </div>
           {autoRenewRows.map(({ key, icon: Icon, label, color, activeCount, getSub }) => {
@@ -2217,7 +2215,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
         {/* Non Auto-Renews */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 px-1">
-            <RecycleOff className="size-4" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+            <RecycleOff className="size-4" style={{ color: SECTION_COLORS["growth-dropins"] }} />
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Non Auto-Renews</span>
           </div>
           {nonAutoRows.map(({ key, icon: Icon, label, color, getCount }) => {
@@ -2252,7 +2250,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
       <DashboardCard>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Recycle className="size-5" style={{ color: SECTION_COLORS["growth-auto"] }} />
+            <Recycle className="size-5" style={{ color: SECTION_COLORS["growth-members"] }} />
             {LABELS.autoRenews}
           </CardTitle>
         </CardHeader>
@@ -2312,7 +2310,7 @@ function OverviewSection({ data }: { data: OverviewData }) {
       <DashboardCard>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <RecycleOff className="size-5" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
+            <RecycleOff className="size-5" style={{ color: SECTION_COLORS["growth-dropins"] }} />
             Non Auto-Renews
           </CardTitle>
         </CardHeader>
@@ -2737,12 +2735,14 @@ function AnnualSegmentBreakdownCard({ breakdown }: { breakdown: AnnualRevenueBre
   const yearData = breakdown.find((b) => b.year === selectedYear);
   if (!yearData || availableYears.length === 0) return null;
 
-  // Sort segments by defined order
-  const sorted = [...yearData.segments].sort((a, b) => {
-    const ai = SEGMENT_ORDER.indexOf(a.segment);
-    const bi = SEGMENT_ORDER.indexOf(b.segment);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-  });
+  // Sort segments by defined order; exclude Retreats (shown in dedicated Retreat section)
+  const sorted = [...yearData.segments]
+    .filter((s) => s.segment !== "Retreats")
+    .sort((a, b) => {
+      const ai = SEGMENT_ORDER.indexOf(a.segment);
+      const bi = SEGMENT_ORDER.indexOf(b.segment);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
 
   return (
     <DashboardCard>
@@ -3273,56 +3273,141 @@ function NewCustomerChartCard({ volume, cohorts }: {
 
 // ─── Churn Section ──────────────────────────────────────────
 
-// ─── Intro Week Placeholder ─────────────────────────────────
+// ─── Intro Week Module (bar chart + table, matching CategoryDetail pattern) ──
 
 function IntroWeekModule({ introWeek }: { introWeek: IntroWeekData | null }) {
   if (!introWeek) return null;
 
   const { lastWeek, last4Weeks, last4WeekAvg } = introWeek;
+
+  // Build bar chart data: 4 completed weeks + current (partial) week
+  const completedBarData = last4Weeks.map((w) => ({
+    week: formatDateShort(new Date(w.weekStart + "T12:00:00")),
+    customers: w.customers,
+  }));
+  const currentWeekData = lastWeek ? {
+    week: formatDateShort(new Date(lastWeek.weekStart + "T12:00:00")),
+    customers: lastWeek.customers,
+  } : null;
+  const barData = [...completedBarData, ...(currentWeekData ? [currentWeekData] : [])];
+
+  // Delta vs 4-week avg
   const lastWeekDelta = lastWeek && last4WeekAvg > 0
     ? Math.round(((lastWeek.customers - last4WeekAvg) / last4WeekAvg) * 100)
     : null;
+  const deltaLabel = lastWeekDelta !== null
+    ? `${lastWeekDelta > 0 ? "+" : ""}${lastWeekDelta}% vs 4-wk avg`
+    : null;
+  const deltaColor = lastWeekDelta !== null
+    ? (lastWeekDelta > 0 ? "text-emerald-600" : lastWeekDelta < 0 ? "text-red-500" : "text-muted-foreground")
+    : "text-muted-foreground";
+
+  // Table: This Week | 4-wk Avg | vs Avg
+  const tableRows = [
+    { label: "This Week", value: lastWeek ? formatNumber(lastWeek.customers) : "\u2014" },
+    { label: "4-wk Avg", value: formatNumber(last4WeekAvg) },
+    { label: "vs Avg", value: lastWeekDelta !== null ? `${lastWeekDelta > 0 ? "+" : ""}${lastWeekDelta}%` : "\u2014", color: lastWeekDelta !== null ? (lastWeekDelta > 0 ? COLORS.success : lastWeekDelta < 0 ? COLORS.error : undefined) : undefined },
+  ];
+
+  const introColor = COLORS.copper;
 
   return (
-    <DashboardCard matchHeight>
-      <CardHeader>
-        <div className="flex items-center justify-between w-full">
-          <div>
-            <CardTitle>Customers By Week</CardTitle>
-            <CardDescription>New Intro Week Customers by Week</CardDescription>
+    <div className="space-y-4">
+      {/* ── Top: Total count card ── */}
+      <div className="md:w-1/4">
+        <DashboardCard>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <CalendarWeek className="size-4 shrink-0" style={{ color: introColor }} />
+              <CardTitle>Intro Week</CardTitle>
+            </div>
+            <CardAction>
+              <span className="text-2xl font-semibold tracking-tight tabular-nums">{lastWeek ? formatNumber(lastWeek.customers) : "\u2014"}</span>
+            </CardAction>
+          </CardHeader>
+        </DashboardCard>
+      </div>
+
+      {/* ── Weekly bar chart card ── */}
+      <DashboardCard>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <CalendarWeek className="size-4 shrink-0" style={{ color: introColor }} />
+            <CardTitle>Weekly Signups</CardTitle>
           </div>
+          <CardDescription>New intro week customers per week</CardDescription>
+          {deltaLabel && (
+            <CardAction>
+              <span className={`text-lg font-semibold tracking-tight tabular-nums ${deltaColor}`}>{deltaLabel}</span>
+            </CardAction>
+          )}
+        </CardHeader>
+
+        {barData.length > 0 && (
+          <CardContent>
+            <ChartContainer config={{ customers: { label: "Customers", color: introColor } }} className="h-[220px] w-full">
+              <BarChart
+                accessibilityLayer
+                data={barData}
+                margin={{ top: 28 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="week"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                />
+                <YAxis hide />
+                <Bar dataKey="customers" fill="var(--color-customers)" radius={8}>
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                  />
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        )}
+
+        {/* ── Summary table ── */}
+        <div className="border-t">
+          <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+            <thead className="bg-muted [&_tr]:border-b">
+              <tr>
+                <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
+                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Value</th>
+              </tr>
+            </thead>
+            <tbody className="[&_tr:last-child]:border-0">
+              {tableRows.map((r) => (
+                <tr key={r.label} className="border-b">
+                  <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{r.label}</td>
+                  <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={r.color ? { color: r.color } : undefined}>
+                    {r.value}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Download button ── */}
+        <CardFooter>
           <Button
             variant="outline"
-            size="icon"
+            size="sm"
             onClick={() => { window.location.href = "/api/intro-week-export"; }}
             title="Download active Intro Week customers as CSV"
           >
-            <DownloadIcon className="size-4" />
+            <DownloadIcon className="size-4 mr-2" />
+            Export
           </Button>
-        </div>
-      </CardHeader>
-
-      <CardContent>
-        <MetricRow
-          slots={[
-            { value: lastWeek ? formatNumber(lastWeek.customers) : "\u2014", label: "This Week" },
-            { value: formatNumber(last4WeekAvg), label: "4-wk Avg" },
-            { value: lastWeekDelta !== null ? `${lastWeekDelta > 0 ? "+" : ""}${lastWeekDelta}` : "\u2014", valueSuffix: lastWeekDelta !== null ? "%" : "", label: "vs Avg" },
-          ]}
-        />
-      </CardContent>
-
-      {lastWeekDelta !== null && (
-        <CardFooter className="flex-col items-start gap-2 text-sm">
-          <div className="flex gap-2 leading-none font-medium">
-            {lastWeekDelta > 0 ? "+" : ""}{lastWeekDelta}% vs 4-week average
-          </div>
-          <div className="text-muted-foreground leading-none">
-            Intro Week Signups
-          </div>
         </CardFooter>
-      )}
-    </DashboardCard>
+      </DashboardCard>
+    </div>
   );
 }
 
@@ -3992,7 +4077,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 // ─── Category Detail Card (Members / SKY3 / TV) ─────────────
 // Clean card: big count, simple metric rows, no chart clutter
 
-function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData }: {
+function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData, dailyMovement, dailyKeyNew, dailyKeyChurn }: {
   title: string;
   color: string;
   icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
@@ -4006,11 +4091,25 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   pacingNew?: (p: PacingData) => { actual: number; paced: number };
   pacingChurn?: (p: PacingData) => { actual: number; paced: number };
   churnData?: CategoryChurnData;
+  dailyMovement?: DailyMovementRow[] | null;
+  dailyKeyNew?: (r: DailyMovementRow) => number;
+  dailyKeyChurn?: (r: DailyMovementRow) => number;
 }) {
   const completedWeekly = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
   const latestW = completedWeekly.length >= 1 ? completedWeekly[completedWeekly.length - 1] : null;
   const prevW = completedWeekly.length >= 2 ? completedWeekly[completedWeekly.length - 2] : null;
   const isPacing = pacing && pacing.daysElapsed < pacing.daysInMonth;
+
+  // ── Daily line chart data ──
+  const hasDaily = dailyMovement && dailyMovement.length > 0 && dailyKeyNew && dailyKeyChurn;
+  const dailyData = hasDaily ? dailyMovement.map((d) => {
+    const newCount = dailyKeyNew(d);
+    const churned = dailyKeyChurn(d);
+    const net = newCount - churned;
+    const dateObj = new Date(d.date + "T12:00:00");
+    const label = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+    return { date: label, new: newCount, churned, net };
+  }) : [];
 
   // ── Bar chart: new adds per week + total count label for last 4 completed weeks ──
   const last4 = completedWeekly.slice(-4);
@@ -4092,97 +4191,208 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   const netColor = netVal > 0 ? "text-emerald-600" : netVal < 0 ? "text-red-500" : "text-muted-foreground";
   const wkLabel = latestW ? weekLabel(latestW.period) : "";
 
-  // Churn note for MEMBER footer
-  const churnNote = churnData?.category === "MEMBER" ? (() => {
-    const lastCompleted = churnData.monthly.length >= 2 ? churnData.monthly[churnData.monthly.length - 2] : null;
-    if (!lastCompleted || !lastCompleted.annualActiveAtStart) return null;
-    return `Annual: ${lastCompleted.annualCanceledCount}/${lastCompleted.annualActiveAtStart} churned · Monthly: ${lastCompleted.monthlyCanceledCount}/${lastCompleted.monthlyActiveAtStart} churned`;
-  })() : null;
-
   return (
-    <DashboardCard>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          {Icon ? (
-            <Icon className="size-4 shrink-0" style={{ color }} />
-          ) : (
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
-          )}
-          <CardTitle>{title}</CardTitle>
-        </div>
-        <CardDescription>New Adds per Week</CardDescription>
-        <CardAction>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums">{formatNumber(count)}</span>
-        </CardAction>
-      </CardHeader>
-
-      <CardContent>
-        {barData.length > 0 && (
-          <ChartContainer config={{ newAdds: { label: "New Adds", color } }} className="h-[200px] w-full">
-            <BarChart
-              accessibilityLayer
-              data={barData}
-              margin={{ top: 20 }}
-            >
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="week"
-                tickLine={false}
-                tickMargin={10}
-                axisLine={false}
-              />
-              <YAxis hide />
-              <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
-                <LabelList
-                  position="top"
-                  offset={12}
-                  className="fill-foreground"
-                  fontSize={12}
-                  formatter={(v: number) => `+${v}`}
-                />
-              </Bar>
-            </BarChart>
-          </ChartContainer>
-        )}
-      </CardContent>
-
-      <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className={`flex gap-2 leading-none font-medium ${netColor}`}>
-          Net {netLabel} {wkLabel}
-        </div>
-        {churnNote && (
-          <div className="text-muted-foreground leading-none">
-            {churnNote}
-          </div>
-        )}
-      </CardFooter>
-
-      {/* ── Metrics table — inside the card, separated by border-t ── */}
-      <div className="border-t">
-        <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
-          <thead className="bg-muted [&_tr]:border-b">
-            <tr>
-              <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
-              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Last Week</th>
-              <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Prior Week</th>
-            </tr>
-          </thead>
-          <tbody className="[&_tr:last-child]:border-0">
-            {metrics.map((m, i) => (
-                <tr key={i} className="border-b">
-                  <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
-                  <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
-                    {m.value}
-                  </td>
-                  <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">
-                    {m.priorValue ?? ""}
-                  </td>
-                </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="space-y-4">
+      {/* ── Top: Total count card ── */}
+      <div className="md:w-1/4">
+        <DashboardCard>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              {Icon ? (
+                <Icon className="size-4 shrink-0" style={{ color }} />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+              )}
+              <CardTitle>{title}</CardTitle>
+            </div>
+            <CardAction>
+              <span className="text-2xl font-semibold tracking-tight tabular-nums">{formatNumber(count)}</span>
+            </CardAction>
+          </CardHeader>
+        </DashboardCard>
       </div>
-    </DashboardCard>
+
+      {/* ── Bottom: 50/50 charts ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+      {/* ── Left card: Daily Movement ── */}
+      {dailyData.length > 0 && (
+        <DashboardCard>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              {Icon ? (
+                <Icon className="size-4 shrink-0" style={{ color }} />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+              )}
+              <CardTitle>Daily Movement</CardTitle>
+            </div>
+            <CardDescription>Net change per day (7 days)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{ net: { label: "Net", color: "#888" } }} className="h-[220px] w-full">
+              <LineChart
+                accessibilityLayer
+                data={dailyData}
+                margin={{ top: 28, left: 12, right: 24 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                />
+                <ReferenceLine y={0} stroke="#d4d4d4" strokeDasharray="3 3" />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent indicator="line" />}
+                />
+                <Line
+                  dataKey="net"
+                  type="natural"
+                  stroke="#a0a0a0"
+                  strokeWidth={2}
+                  dot={(props: Record<string, unknown>) => {
+                    const { cx, cy, payload } = props as { cx: number; cy: number; payload: { net: number } };
+                    const v = payload.net;
+                    const fill = v > 0 ? COLORS.success : v < 0 ? COLORS.error : "#a0a0a0";
+                    return <circle cx={cx} cy={cy} r={4} fill={fill} stroke="none" />;
+                  }}
+                  activeDot={{ r: 6 }}
+                >
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    fontSize={12}
+                    content={/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+                    ((props: any) => {
+                      const { x = 0, y = 0, value = 0 } = props;
+                      const v = typeof value === "number" ? value : 0;
+                      const fill = v > 0 ? COLORS.success : v < 0 ? COLORS.error : "#888";
+                      const label = v > 0 ? `+${v}` : String(v);
+                      return <text x={x} y={y - 12} textAnchor="middle" fill={fill} fontSize={12} fontWeight={500}>{label}</text>;
+                    })}
+                  />
+                </Line>
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+          <div className="border-t">
+            <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+              <thead className="bg-muted [&_tr]:border-b">
+                <tr>
+                  <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap" />
+                  {dailyData.map((d, i) => (
+                    <th key={d.date} className={`h-10 px-2 text-right align-middle font-medium text-muted-foreground whitespace-nowrap ${i === dailyData.length - 1 ? "pr-4" : ""}`}>{d.date}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="[&_tr:last-child]:border-0">
+                <tr className="border-b">
+                  <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">New</td>
+                  {dailyData.map((d, i) => (
+                    <td key={d.date} className={`px-2 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${i === dailyData.length - 1 ? "pr-4" : ""}`} style={{ color: COLORS.success }}>
+                      {d.new > 0 ? `+${d.new}` : d.new}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="border-b">
+                  <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">Churned</td>
+                  {dailyData.map((d, i) => (
+                    <td key={d.date} className={`px-2 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${i === dailyData.length - 1 ? "pr-4" : ""}`} style={{ color: COLORS.error }}>
+                      {d.churned > 0 ? `-${d.churned}` : d.churned}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="border-b">
+                  <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">Net</td>
+                  {dailyData.map((d, i) => (
+                    <td key={d.date} className={`px-2 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap ${i === dailyData.length - 1 ? "pr-4" : ""} ${d.net > 0 ? "text-emerald-600" : d.net < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                      {d.net > 0 ? `+${d.net}` : d.net}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </DashboardCard>
+      )}
+
+      {/* ── Right card: Weekly Movement ── */}
+      <DashboardCard>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            {Icon ? (
+              <Icon className="size-4 shrink-0" style={{ color }} />
+            ) : (
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+            )}
+            <CardTitle>Weekly Movement</CardTitle>
+          </div>
+          <CardDescription>New adds per week</CardDescription>
+          <CardAction>
+            <span className={`text-lg font-semibold tracking-tight tabular-nums ${netColor}`}>{netLabel} {wkLabel}</span>
+          </CardAction>
+        </CardHeader>
+
+        {barData.length > 0 && (
+          <CardContent>
+            <ChartContainer config={{ newAdds: { label: "New Adds", color } }} className="h-[220px] w-full">
+              <BarChart
+                accessibilityLayer
+                data={barData}
+                margin={{ top: 28 }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="week"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                />
+                <YAxis hide />
+                <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
+                  <LabelList
+                    position="top"
+                    offset={12}
+                    className="fill-foreground"
+                    fontSize={12}
+                    formatter={(v: number) => `+${v}`}
+                  />
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        )}
+
+        {/* ── Metrics table ── */}
+        <div className="border-t">
+          <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+            <thead className="bg-muted [&_tr]:border-b">
+              <tr>
+                <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
+                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Last Week</th>
+                <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Prior Week</th>
+              </tr>
+            </thead>
+            <tbody className="[&_tr:last-child]:border-0">
+              {metrics.map((m, i) => (
+                  <tr key={i} className="border-b">
+                    <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
+                    <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>
+                      {m.value}
+                    </td>
+                    <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                      {m.priorValue ?? ""}
+                    </td>
+                  </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </DashboardCard>
+    </div>
+    </div>
   );
 }
 
@@ -4341,6 +4551,8 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
   const meta = USAGE_CATEGORY_META[data.category];
   const Icon = meta?.icon;
   const iconColor = meta?.color;
+  // Compact mode for many segments (e.g. Sky3 single-day distribution)
+  const compact = data.segments.length > 6;
 
   const downloadAll = () => {
     window.location.href = `/api/usage-export?category=${data.category}`;
@@ -4372,50 +4584,97 @@ function UsageCategoryCard({ data }: { data: UsageCategoryData }) {
         </CardAction>
       </CardHeader>
       <CardContent className="pt-0">
-        <Table style={{ fontFamily: FONT_SANS }}>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[100px] text-xs">Persona</TableHead>
-              <TableHead className="w-[60px] text-xs">Usage</TableHead>
-              <TableHead className="text-xs">&nbsp;</TableHead>
-              <TableHead className="w-[55px] text-right text-xs">Total</TableHead>
-              <TableHead className="w-[50px] text-right text-xs">%</TableHead>
-              <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.segments.map((seg) => (
-              <TableRow key={seg.name}>
-                <TableCell className="py-1.5 font-medium text-sm">{seg.name}</TableCell>
-                <TableCell className="py-1.5 text-xs text-muted-foreground tabular-nums">{seg.rangeLabel}</TableCell>
-                <TableCell className="py-1.5">
-                  <div className="h-5 rounded-sm overflow-hidden bg-muted/40">
-                    <div
-                      className="h-full rounded-sm transition-all"
-                      style={{
-                        width: `${Math.max((seg.percent / maxPercent) * 100, 2)}%`,
-                        backgroundColor: seg.color,
-                      }}
-                    />
-                  </div>
-                </TableCell>
-                <TableCell className="py-1.5 text-right tabular-nums text-sm">{seg.count.toLocaleString()}</TableCell>
-                <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{seg.percent}%</TableCell>
-                <TableCell className="py-1.5 px-0 text-center">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 mx-auto"
-                    onClick={() => downloadSegment(seg.name)}
-                    title={`Download ${seg.name} as CSV`}
-                  >
-                    <DownloadIcon className="size-3.5" />
-                  </Button>
-                </TableCell>
+        {compact ? (
+          /* ── Compact distribution layout (Sky3: 0-6+ individual buckets) ── */
+          <Table style={{ fontFamily: FONT_SANS }}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[100px] text-xs">Visits/Mo</TableHead>
+                <TableHead className="text-xs">&nbsp;</TableHead>
+                <TableHead className="w-[55px] text-right text-xs">Total</TableHead>
+                <TableHead className="w-[50px] text-right text-xs">%</TableHead>
+                <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {data.segments.map((seg) => (
+                <TableRow key={seg.name}>
+                  <TableCell className="py-1.5 font-medium text-sm tabular-nums">{seg.rangeLabel}</TableCell>
+                  <TableCell className="py-1.5">
+                    <div className="h-5 rounded-sm overflow-hidden bg-muted/40">
+                      <div
+                        className="h-full rounded-sm transition-all"
+                        style={{
+                          width: `${Math.max((seg.percent / maxPercent) * 100, 2)}%`,
+                          backgroundColor: seg.color,
+                        }}
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-1.5 text-right tabular-nums text-sm">{seg.count.toLocaleString()}</TableCell>
+                  <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{seg.percent}%</TableCell>
+                  <TableCell className="py-1.5 px-0 text-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 mx-auto"
+                      onClick={() => downloadSegment(seg.name)}
+                      title={`Download ${seg.rangeLabel} as CSV`}
+                    >
+                      <DownloadIcon className="size-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          /* ── Standard persona layout (Members, TV) ── */
+          <Table style={{ fontFamily: FONT_SANS }}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[100px] text-xs">Persona</TableHead>
+                <TableHead className="w-[60px] text-xs">Usage</TableHead>
+                <TableHead className="text-xs">&nbsp;</TableHead>
+                <TableHead className="w-[55px] text-right text-xs">Total</TableHead>
+                <TableHead className="w-[50px] text-right text-xs">%</TableHead>
+                <TableHead className="w-10 px-0 text-center"><DownloadIcon className="size-3.5 text-muted-foreground inline-block" /></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.segments.map((seg) => (
+                <TableRow key={seg.name}>
+                  <TableCell className="py-1.5 font-medium text-sm">{seg.name}</TableCell>
+                  <TableCell className="py-1.5 text-xs text-muted-foreground tabular-nums">{seg.rangeLabel}</TableCell>
+                  <TableCell className="py-1.5">
+                    <div className="h-5 rounded-sm overflow-hidden bg-muted/40">
+                      <div
+                        className="h-full rounded-sm transition-all"
+                        style={{
+                          width: `${Math.max((seg.percent / maxPercent) * 100, 2)}%`,
+                          backgroundColor: seg.color,
+                        }}
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-1.5 text-right tabular-nums text-sm">{seg.count.toLocaleString()}</TableCell>
+                  <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{seg.percent}%</TableCell>
+                  <TableCell className="py-1.5 px-0 text-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 mx-auto"
+                      onClick={() => downloadSegment(seg.name)}
+                      title={`Download ${seg.name} as CSV`}
+                    >
+                      <DownloadIcon className="size-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </DashboardCard>
   );
@@ -4543,8 +4802,17 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               fill: `${COLORS.member}50`,
             });
           }
-          const weeklyAvg = last4.length > 0
-            ? (last4.reduce((s, w) => s + w.memberChurn, 0) / last4.length) : 0;
+          // 6-month trimmed avg (exclude migration-spike weeks)
+          const baselineWeeks = (() => {
+            if (completedWeeks.length < 4) return completedWeeks;
+            const acts = completedWeeks.map(w => w.memberChurn + (w.newMembers ?? 0));
+            const sorted = [...acts].sort((a, b) => a - b);
+            const med = sorted[Math.floor(sorted.length / 2)];
+            const thresh = med * 3;
+            return completedWeeks.filter((_, i) => acts[i] <= thresh);
+          })();
+          const weeklyAvg = baselineWeeks.length > 0
+            ? (baselineWeeks.reduce((s, w) => s + w.memberChurn, 0) / baselineWeeks.length) : 0;
           const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
@@ -4559,19 +4827,20 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                     </div>
                     <CardAction>
                       <div className="text-right">
-                        <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
-                        <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                        <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{weeklyAvg.toFixed(1)}</div>
+                        <div className="text-xs text-muted-foreground leading-tight">6-mo avg / week</div>
                       </div>
                     </CardAction>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
-                    <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                    <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
+                      <ReferenceLine y={weeklyAvg} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                       <Bar dataKey="churn" radius={8}>
-                        <LabelList dataKey="churn" position="top" fontSize={11} fontWeight={600} />
+                        <LabelList dataKey="churn" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} />
                       </Bar>
                     </BarChart>
                   </ChartContainer>
@@ -4617,18 +4886,19 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                   <CardDescription>Monthly-billed member churn rate</CardDescription>
                   <CardAction>
                     <div className="text-right">
-                      <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
+                      <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{avgMonthly.toFixed(1)}%</div>
                       <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
                     </div>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                    <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                    <BarChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                      <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                       <Bar dataKey="rate" radius={8}>
-                        <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                        <LabelList dataKey="rate" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
                       </Bar>
                     </BarChart>
                   </ChartContainer>
@@ -4679,7 +4949,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                   config={{
                     retained: { label: "Members Retained", color: COLORS.member },
                   } satisfies ChartConfig}
-                  className="h-[240px] w-full"
+                  className="mt-4 h-[240px] w-full"
                 >
                   <RAreaChart
                     accessibilityLayer
@@ -4729,12 +4999,11 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
         <div className="flex flex-col gap-3">
           <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Churn Reduction Opportunities</h3>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
           {/* ── Attendance Drop Alert ── */}
           {churnRates.attendanceDrops && churnRates.attendanceDrops.totalFlagged > 0 && (
             <AttendanceDropCard drops={churnRates.attendanceDrops!} />
           )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {/* ── Approaching Milestones ── */}
         {alerts && (
           (() => {
@@ -5693,6 +5962,23 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
   const categories = merch.categoryBreakdown || [];
   const totalCategoryRevenue = categories.reduce((s, c) => s + c.revenue, 0);
 
+  // Daily sales chart data (last 30 days)
+  const dailySalesData = (merch.dailySales || []).map((d) => {
+    const dt = new Date(d.date + "T12:00:00");
+    return {
+      date: `${dt.getMonth() + 1}/${dt.getDate()}`,
+      fullDate: d.date,
+      gross: d.gross,
+      orders: d.orderCount,
+    };
+  });
+  const dailySalesTotal = dailySalesData.reduce((s, d) => s + d.gross, 0);
+  const dailySalesOrders = dailySalesData.reduce((s, d) => s + d.orders, 0);
+
+  const dailySalesConfig = {
+    gross: { label: "Revenue", color: COLORS.merch },
+  } satisfies ChartConfig;
+
   const merchChartConfig = {
     gross: { label: "Gross Revenue", color: SECTION_COLORS["revenue-merch"] },
   } satisfies ChartConfig;
@@ -5715,52 +6001,69 @@ function MerchRevenueTab({ merch, lastSyncAt }: { merch: ShopifyMerchData; lastS
 
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI row — 4 cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <DashboardCard>
-          <CardHeader>
-            <CardDescription>MTD Revenue</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(merch.mtdRevenue)}</CardTitle>
-          </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">
-            Month to Date
-          </CardFooter>
-        </DashboardCard>
-
-        <DashboardCard>
-          <CardHeader>
-            <CardDescription>{currentYear} YTD Revenue</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">{formatCurrency(ytdRevenue)}</CardTitle>
-          </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">
-            Year to Date
-          </CardFooter>
-        </DashboardCard>
-
-        {yoyDelta !== null && (
-          <DashboardCard>
-            <CardHeader>
-              <CardDescription>YoY Change</CardDescription>
-              <CardTitle className={`text-2xl font-semibold tabular-nums ${yoyDelta >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}%
-              </CardTitle>
-            </CardHeader>
-            <CardFooter className="text-sm text-muted-foreground">
-              {priorYear - 1} → {priorYear}
-            </CardFooter>
-          </DashboardCard>
-        )}
-
-        <DashboardCard>
-          <CardHeader>
-            <CardDescription>Repeat Rate</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">{merch.repeatCustomerRate}%</CardTitle>
-          </CardHeader>
-          <CardFooter className="text-sm text-muted-foreground">
-            Returning Customers
-          </CardFooter>
-        </DashboardCard>
-      </div>
+      {/* Daily Sales — 30 day line chart */}
+      <DashboardCard>
+        <CardHeader>
+          <CardTitle>Daily Sales</CardTitle>
+          <CardDescription>Last 30 Days — {formatCurrency(dailySalesTotal)} total, {formatNumber(dailySalesOrders)} orders</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {dailySalesData.length > 0 ? (
+            <ChartContainer config={dailySalesConfig} className="h-[220px] w-full">
+              <LineChart data={dailySalesData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  interval={Math.max(0, Math.floor(dailySalesData.length / 6) - 1)}
+                  fontSize={12}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) => `$${v}`}
+                  width={50}
+                  fontSize={12}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      formatter={(v) => formatCurrency(v as number)}
+                      labelFormatter={(label, payload) => {
+                        const item = (payload as Array<Record<string, unknown>>)?.[0]?.payload as { fullDate?: string; orders?: number } | undefined;
+                        return `${label} — ${item?.orders ?? 0} orders`;
+                      }}
+                    />
+                  }
+                />
+                <Line
+                  type="monotone"
+                  dataKey="gross"
+                  stroke="var(--color-gross)"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
+                />
+              </LineChart>
+            </ChartContainer>
+          ) : (
+            <p className="text-sm text-muted-foreground py-8 text-center">No daily sales data available</p>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground border-t pt-3">
+          <span>MTD: <strong className="text-foreground">{formatCurrency(merch.mtdRevenue)}</strong></span>
+          <span>YTD: <strong className="text-foreground">{formatCurrency(ytdRevenue)}</strong></span>
+          {yoyDelta !== null && (
+            <span>YoY: <strong className={yoyDelta >= 0 ? "text-emerald-600" : "text-red-500"}>
+              {yoyDelta > 0 ? "+" : ""}{Math.round(yoyDelta * 10) / 10}%
+            </strong></span>
+          )}
+          <span>Repeat: <strong className="text-foreground">{merch.repeatCustomerRate}%</strong></span>
+        </CardFooter>
+      </DashboardCard>
 
       {/* Annual Merch Revenue + Buyer Breakdown side by side */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -6029,7 +6332,7 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
     {
       label: "Auto-Renew",
       icon: Recycle,
-      color: SECTION_COLORS["growth-auto"],
+      color: SECTION_COLORS["growth-members"],
       orders: breakdown.subscriber.orders,
       revenue: breakdown.subscriber.revenue,
       customers: breakdown.subscriber.customers,
@@ -6038,7 +6341,7 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
     {
       label: "Non Auto-Renew",
       icon: RecycleOff,
-      color: SECTION_COLORS["growth-non-auto"],
+      color: SECTION_COLORS["growth-dropins"],
       orders: breakdown.nonSubscriber.orders,
       revenue: breakdown.nonSubscriber.revenue,
       customers: breakdown.nonSubscriber.customers,
@@ -6053,13 +6356,13 @@ function MerchBuyerBreakdown({ breakdown }: { breakdown: MerchCustomerBreakdown 
         {subPct > 0 && (
           <div
             className="h-full transition-all"
-            style={{ width: `${subPct}%`, backgroundColor: SECTION_COLORS["growth-auto"] }}
+            style={{ width: `${subPct}%`, backgroundColor: SECTION_COLORS["growth-members"] }}
           />
         )}
         {nonSubPct > 0 && (
           <div
             className="h-full transition-all"
-            style={{ width: `${nonSubPct}%`, backgroundColor: SECTION_COLORS["growth-non-auto"], opacity: 0.5 }}
+            style={{ width: `${nonSubPct}%`, backgroundColor: SECTION_COLORS["growth-dropins"], opacity: 0.5 }}
           />
         )}
       </div>
@@ -6687,6 +6990,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
   const weekly = trends?.weekly || [];
   const monthly = trends?.monthly || [];
   const pacing = trends?.pacing || null;
+  const dailyMovement = trends?.dailyMovement || null;
 
   // Scroll to top on section change
   useEffect(() => {
@@ -6736,17 +7040,14 @@ function DashboardContent({ activeSection, data, refreshData }: {
             const prevEntry = mr.find((m) => m.month === prevKey);
 
             // If we have current month data, show MTD with pacing
+            // Note: monthlyRevenue.gross/.net already exclude retreat revenue (subtracted at API level)
             if (curEntry && curEntry.gross > 0) {
-              const retreatGross = curEntry.retreatGross ?? 0;
-              const retreatNet = curEntry.retreatNet ?? 0;
-              const curGross = curEntry.gross - retreatGross;
-              const curNet = curEntry.net - retreatNet;
+              const curGross = curEntry.gross;
+              const curNet = curEntry.net;
               const dayOfMonth = nowD.getDate();
               const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
               const pacedGross = daysInMonth > 0 ? Math.round((curGross / dayOfMonth) * daysInMonth) : curGross;
-              // For pacing comparison, also subtract retreat from previous month
-              const prevRetreat = prevEntry?.retreatGross ?? 0;
-              const prevGross = (prevEntry?.gross ?? 0) - prevRetreat;
+              const prevGross = prevEntry?.gross ?? 0;
               const vsLastPct = prevGross > 0 ? Math.round(((pacedGross - prevGross) / prevGross) * 1000) / 10 : null;
               const monthLabel = nowD.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
@@ -6916,92 +7217,121 @@ function DashboardContent({ activeSection, data, refreshData }: {
         </div>
       )}
 
-      {/* ── GROWTH: AUTO-RENEWS ── */}
-      {activeSection === "growth-auto" && (
+      {/* ── GROWTH: MEMBERS ── */}
+      {activeSection === "growth-members" && (
         <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <Recycle className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-auto"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Auto-Renews</h1>
+              <ArrowBadgeDown className="size-7 shrink-0" style={{ color: COLORS.member }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Members</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth by plan type</p>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth</p>
           </div>
-          {/* Movement block: Members + Sky3 (in-studio plans) */}
-          <div>
-            <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">In-Studio Plans</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.members}
-                color={COLORS.member}
-                icon={ArrowBadgeDown}
-                count={data.activeSubscribers.member}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newMembers}
-                weeklyKeyChurn={(r) => r.memberChurn}
-                weeklyKeyNet={(r) => r.netMemberGrowth}
-                pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
-                pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
-              />
-              <CategoryDetail
-                title={LABELS.sky3}
-                color={COLORS.sky3}
-                icon={BrandSky}
-                count={data.activeSubscribers.sky3}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSky3}
-                weeklyKeyChurn={(r) => r.sky3Churn}
-                weeklyKeyNet={(r) => r.netSky3Growth}
-                pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
-                pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
-              />
-            </div>
-          </div>
-
-          {/* Digital block: Sky Ting TV */}
-          <div>
-            <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Digital</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CategoryDetail
-                title={LABELS.tv}
-                color={COLORS.tv}
-                icon={DeviceTv}
-                count={data.activeSubscribers.skyTingTv}
-                weekly={weekly}
-                monthly={monthly}
-                pacing={pacing}
-                weeklyKeyNew={(r) => r.newSkyTingTv}
-                weeklyKeyChurn={(r) => r.skyTingTvChurn}
-                weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
-              />
-            </div>
-          </div>
+          <CategoryDetail
+            title={LABELS.members}
+            color={COLORS.member}
+            icon={ArrowBadgeDown}
+            count={data.activeSubscribers.member}
+            weekly={weekly}
+            monthly={monthly}
+            pacing={pacing}
+            weeklyKeyNew={(r) => r.newMembers}
+            weeklyKeyChurn={(r) => r.memberChurn}
+            weeklyKeyNet={(r) => r.netMemberGrowth}
+            pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
+            pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
+            dailyMovement={dailyMovement}
+            dailyKeyNew={(d) => d.newMembers}
+            dailyKeyChurn={(d) => d.churnedMembers}
+          />
         </div>
       )}
 
-      {/* ── GROWTH: NON-AUTO-RENEWS ── */}
-      {activeSection === "growth-non-auto" && (
+      {/* ── GROWTH: SKY3 ── */}
+      {activeSection === "growth-sky3" && (
         <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
-              <RecycleOff className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-non-auto"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Non Auto-Renews</h1>
+              <BrandSky className="size-7 shrink-0" style={{ color: COLORS.sky3 }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Sky3</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, intro week activity, and one-time purchases</p>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth</p>
+          </div>
+          <CategoryDetail
+            title={LABELS.sky3}
+            color={COLORS.sky3}
+            icon={BrandSky}
+            count={data.activeSubscribers.sky3}
+            weekly={weekly}
+            monthly={monthly}
+            pacing={pacing}
+            weeklyKeyNew={(r) => r.newSky3}
+            weeklyKeyChurn={(r) => r.sky3Churn}
+            weeklyKeyNet={(r) => r.netSky3Growth}
+            pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
+            pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
+            dailyMovement={dailyMovement}
+            dailyKeyNew={(d) => d.newSky3}
+            dailyKeyChurn={(d) => d.churnedSky3}
+          />
+        </div>
+      )}
+
+      {/* ── GROWTH: SKY TING TV ── */}
+      {activeSection === "growth-tv" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <DeviceTv className="size-7 shrink-0" style={{ color: COLORS.tv }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Sky Ting TV</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Subscriber movement, pacing, and net growth</p>
+          </div>
+          <CategoryDetail
+            title={LABELS.tv}
+            color={COLORS.tv}
+            icon={DeviceTv}
+            count={data.activeSubscribers.skyTingTv}
+            weekly={weekly}
+            monthly={monthly}
+            pacing={pacing}
+            weeklyKeyNew={(r) => r.newSkyTingTv}
+            weeklyKeyChurn={(r) => r.skyTingTvChurn}
+            weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+            dailyMovement={dailyMovement}
+            dailyKeyNew={(d) => d.newTv}
+            dailyKeyChurn={(d) => d.churnedTv}
+          />
+        </div>
+      )}
+
+      {/* ── GROWTH: DROP-INS ── */}
+      {activeSection === "growth-dropins" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <TicketIcon className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-dropins"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Drop-Ins</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Drop-in visits, frequency, and weekly trends</p>
           </div>
           {trends?.dropIns && (
-            <div className="flex flex-col gap-3">
-              <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Drop-ins</h3>
-              <DropInsSubsection dropIns={trends.dropIns} />
-            </div>
+            <DropInsSubsection dropIns={trends.dropIns} />
           )}
-          <div className="flex flex-col gap-3">
-            <h3 className="text-lg font-bold tracking-tight text-muted-foreground mb-3">Intro Week</h3>
-            <IntroWeekModule introWeek={trends?.introWeek ?? null} />
+        </div>
+      )}
+
+      {/* ── GROWTH: INTRO WEEK ── */}
+      {activeSection === "growth-intro" && (
+        <div className="flex flex-col gap-4">
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
+              <CalendarWeek className="size-7 shrink-0" style={{ color: SECTION_COLORS["growth-intro"] }} />
+              <h1 className="text-3xl font-semibold tracking-tight">Intro Week</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Intro week purchases and customer activity</p>
           </div>
+          <IntroWeekModule introWeek={trends?.introWeek ?? null} />
         </div>
       )}
 

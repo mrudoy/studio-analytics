@@ -466,6 +466,56 @@ export async function getShopifyCategoryBreakdown(): Promise<
   }));
 }
 
+/** Daily sales for the last N days (fills zero-sale days). */
+export async function getShopifyDailySales(
+  days = 30,
+): Promise<Array<{ date: string; gross: number; net: number; orderCount: number }>> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT
+       DATE(created_at AT TIME ZONE 'America/New_York') AS day,
+       COALESCE(SUM(total_price), 0) AS gross,
+       COALESCE(SUM(subtotal_price), 0) AS net,
+       COUNT(*) AS order_count
+     FROM shopify_orders
+     WHERE created_at >= (CURRENT_DATE - $1 * INTERVAL '1 day')
+       AND financial_status NOT IN ('voided', 'refunded')
+       AND canceled_at IS NULL
+     GROUP BY DATE(created_at AT TIME ZONE 'America/New_York')
+     ORDER BY day`,
+    [days],
+  );
+
+  const salesByDay = new Map(
+    res.rows.map((r: { day: string | Date; gross: string; net: string; order_count: string }) => [
+      r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day).slice(0, 10),
+      {
+        gross: parseFloat(r.gross) || 0,
+        net: parseFloat(r.net) || 0,
+        orderCount: parseInt(r.order_count) || 0,
+      },
+    ]),
+  );
+
+  // Fill in zero-sale days
+  const result: Array<{ date: string; gross: number; net: number; orderCount: number }> = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const entry = salesByDay.get(key);
+    result.push({
+      date: key,
+      gross: entry?.gross ?? 0,
+      net: entry?.net ?? 0,
+      orderCount: entry?.orderCount ?? 0,
+    });
+  }
+
+  return result;
+}
+
 /**
  * Cross-reference Shopify merch orders with Union.fit auto-renew subscriptions.
  * Matches on LOWER(email). A customer is "active subscriber" if they had ANY

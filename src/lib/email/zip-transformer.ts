@@ -296,11 +296,13 @@ export class ZipTransformer {
 
   /**
    * Resolve the revenue category name for an order.
-   * Path A: order.eventId → event.revenueCategoryId → name
-   * Path B: order pass → pass.passTypeId → passType.revenueCategoryId → name
+   * Path A: order.eventId → event.revenueCategoryId → lookup name
+   * Path B: order pass → pass.passTypeId → passType.revenueCategoryId → lookup name
+   * Path C (fallback): match pass.name / pass.passCategoryName / event.name
+   *         against known business category patterns
    */
   private resolveRevenueCategory(order: RawOrder): string | null {
-    // Path A: via event
+    // Path A: via event → revenueCategoryId lookup
     if (order.eventId) {
       const event = this.eventById.get(order.eventId);
       if (event?.revenueCategoryId) {
@@ -309,10 +311,11 @@ export class ZipTransformer {
       }
     }
 
-    // Path B: via pass → pass_type
+    // Path B: via pass → pass_type → revenueCategoryId lookup
     const passId = order.subscriptionPassId || order.paidWithPassId;
+    let pass: RawPass | undefined;
     if (passId) {
-      const pass = this.passById.get(passId);
+      pass = this.passById.get(passId);
       if (pass?.passTypeId) {
         const passType = this.passTypeById.get(pass.passTypeId);
         if (passType?.revenueCategoryId) {
@@ -321,6 +324,47 @@ export class ZipTransformer {
         }
       }
     }
+
+    // Path C (fallback): name-based pattern matching
+    // Use pass.passCategoryName, pass.name, or event.name to infer category
+    const candidates: string[] = [];
+    if (pass?.passCategoryName) candidates.push(pass.passCategoryName);
+    if (pass?.name) candidates.push(pass.name);
+    if (order.eventId) {
+      const event = this.eventById.get(order.eventId);
+      if (event?.name) candidates.push(event.name);
+    }
+
+    for (const name of candidates) {
+      const cat = this.inferCategoryFromName(name);
+      if (cat) return cat;
+    }
+
+    return null;
+  }
+
+  /**
+   * Infer a revenue category from a pass/event name using pattern matching.
+   * Uses the same business terms defined in TODOS.md Revenue Category Terms Rule.
+   */
+  private inferCategoryFromName(name: string): string | null {
+    const n = name.toLowerCase();
+
+    // Specific patterns first (more specific before less specific)
+    if (/sky\s*3|sky\s*three|3.?pack/i.test(n)) return "SKY3 / Packs";
+    if (/sky\s*ting\s*tv|sttv|retreat\s*ting/i.test(n)) return "SKY TING TV";
+    if (/intro|trial/i.test(n)) return "Intro / Trial";
+    if (/member/i.test(n) && !/sky\s*3|sky\s*ting\s*tv/i.test(n)) return "Members";
+    if (/drop.?in|single\s*class/i.test(n)) return "Drop-Ins";
+    if (/workshop/i.test(n)) return "Workshops";
+    if (/spa|wellness|massage|facial/i.test(n)) return "Wellness / Spa";
+    if (/teacher\s*training|tt\b|training/i.test(n)) return "Teacher Training";
+    if (/retail|merch|merchandise|shop/i.test(n)) return "Retail / Merch";
+    if (/private|1.on.1|one.on.one/i.test(n)) return "Privates";
+    if (/donat/i.test(n)) return "Donations";
+    if (/rental|rent/i.test(n)) return "Rentals";
+    if (/retreat/i.test(n)) return "Retreats";
+    if (/community/i.test(n)) return "Community";
 
     return null;
   }
@@ -345,8 +389,7 @@ export class ZipTransformer {
     refunds: RawRefund[]
   ): Map<string, RevenueCategory[]> {
     if (this.revenueCategoryById.size === 0) {
-      console.warn("[zip-transformer] No revenue category lookups — skipping revenue computation");
-      return new Map();
+      console.warn("[zip-transformer] No revenue category lookups — orders will be bucketed as Uncategorized");
     }
 
     // Accumulator: month → category → totals

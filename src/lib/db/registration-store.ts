@@ -1356,20 +1356,31 @@ export async function materializeFirstInStudioSub(): Promise<() => Promise<void>
   const pool = getPool();
   const tableName = `_mat_first_in_studio_sub`;
 
-  // Drop if exists (from a prior call that didn't clean up), then create + populate
-  await pool.query(`DROP TABLE IF EXISTS ${tableName}`);
-  await pool.query(`
-    CREATE UNLOGGED TABLE ${tableName} AS
-    SELECT LOWER(customer_email) as email,
-           MIN(created_at::date) as first_sub_date
-    FROM auto_renews
-    WHERE customer_email IS NOT NULL AND customer_email != ''
-      AND created_at IS NOT NULL AND created_at != ''
-      ${IN_STUDIO_PLAN_FILTER}
-    GROUP BY LOWER(customer_email)
-  `);
-  // Add index on the materialized table for fast joins
-  await pool.query(`CREATE INDEX ON ${tableName} (email)`);
+  // Use a PG advisory lock to prevent concurrent CREATE TABLE races.
+  // Lock key is a deterministic hash of the table name.
+  const lockKey = 839274651; // arbitrary fixed int for this table
+  const client = await pool.connect();
+  try {
+    await client.query(`SELECT pg_advisory_lock(${lockKey})`);
+    await client.query(`DROP TABLE IF EXISTS ${tableName}`);
+    await client.query(`
+      CREATE UNLOGGED TABLE ${tableName} AS
+      SELECT LOWER(customer_email) as email,
+             MIN(created_at::date) as first_sub_date
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL AND customer_email != ''
+        AND created_at IS NOT NULL AND created_at != ''
+        ${IN_STUDIO_PLAN_FILTER}
+      GROUP BY LOWER(customer_email)
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_mat_fiss_email ON ${tableName} (email)`);
+    await client.query(`SELECT pg_advisory_unlock(${lockKey})`);
+  } catch (err) {
+    await client.query(`SELECT pg_advisory_unlock(${lockKey})`).catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 
   console.log(`[registration-store] Materialized first_in_studio_sub table`);
   return async () => {
@@ -1781,12 +1792,16 @@ const MEMBER_SEGMENTS: SegmentDef[] = [
   { name: "Core",        rangeLabel: "12+/mo",  color: SEG_GREEN_DK, min: 12,  max: Infinity },
 ];
 
-// Sky3: red → green → blue (over-users = wrong plan, not bad)
+// Sky3: single-day distribution (0 through 6+)
+// Color gradient: red (0) → warm (1-2) → green (3 = plan value) → blue (4-5) → purple (6+)
 const SKY3_SEGMENTS: SegmentDef[] = [
-  { name: "Dormant",     rangeLabel: "0/mo",   color: SEG_RED,      min: -1,  max: 0 },
-  { name: "Under-Using", rangeLabel: "<1/mo",  color: SEG_RED_LITE, min: 0,   max: 1 },
-  { name: "On Pace",     rangeLabel: "1-3/mo", color: SEG_GREEN,    min: 1,   max: 3 },
-  { name: "Over-Using",  rangeLabel: "3+/mo",  color: SEG_BLUE,     min: 3,   max: Infinity },
+  { name: "0",   rangeLabel: "0/mo",   color: SEG_RED,      min: -1,  max: 0 },
+  { name: "1",   rangeLabel: "1/mo",   color: "#D4817B",    min: 0,   max: 1 },
+  { name: "2",   rangeLabel: "2/mo",   color: "#CDA63A",    min: 1,   max: 2 },
+  { name: "3",   rangeLabel: "3/mo",   color: SEG_GREEN,    min: 2,   max: 3 },
+  { name: "4",   rangeLabel: "4/mo",   color: "#5B9A7A",    min: 3,   max: 4 },
+  { name: "5",   rangeLabel: "5/mo",   color: "#5B8FA5",    min: 4,   max: 5 },
+  { name: "6+",  rangeLabel: "6+/mo",  color: SEG_BLUE,     min: 5,   max: Infinity },
 ];
 
 // Sky Ting TV: red → yellow → shades of green

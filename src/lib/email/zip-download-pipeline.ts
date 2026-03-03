@@ -477,7 +477,7 @@ async function runZipImport(
   // ── Compute + save revenue by category ──────────────────
   progress("Computing revenue by category...", 90);
 
-  if (rawOrders.length > 0 && revenueCategoryLookups.length > 0) {
+  if (rawOrders.length > 0) {
     const monthlyRevenue = transformer.computeRevenueByCategory(rawOrders, refunds);
     let totalRevCatsSaved = 0;
 

@@ -40,7 +40,9 @@ export async function computeStatsFromDB(): Promise<DashboardStats | null> {
     const latestPeriod = await getLatestPeriod();
     if (latestPeriod) {
       const rows = await getRevenueForPeriod(latestPeriod.periodStart, latestPeriod.periodEnd);
-      const totalNet = rows.reduce((sum, r) => sum + r.netRevenue, 0);
+      // Exclude retreat revenue from totals (retreat categories contain "retreat" but not "retreat ting")
+      const isRetreat = (cat: string) => /retreat/i.test(cat) && !/retreat\s*ting/i.test(cat);
+      const totalNet = rows.filter((r) => !isRetreat(r.category)).reduce((sum, r) => sum + r.netRevenue, 0);
       currentMonthRevenue = Math.round(totalNet * 100) / 100;
 
       // Try to find the previous period for previousMonthRevenue.
@@ -54,7 +56,7 @@ export async function computeStatsFromDB(): Promise<DashboardStats | null> {
       const prevRows = await getRevenueForPeriod(prevStart, prevEnd);
       if (prevRows.length > 0) {
         previousMonthRevenue = Math.round(
-          prevRows.reduce((sum, r) => sum + r.netRevenue, 0) * 100
+          prevRows.filter((r) => !isRetreat(r.category)).reduce((sum, r) => sum + r.netRevenue, 0) * 100
         ) / 100;
       }
     }

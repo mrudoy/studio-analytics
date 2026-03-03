@@ -50,6 +50,7 @@ export interface ShopifyMerchData {
   customerBreakdown?: MerchCustomerBreakdown | null;
   annualRevenue: ShopifyAnnualRevenue[];
   categoryBreakdown: ShopifyCategoryBreakdown[];
+  dailySales: Array<{ date: string; gross: number; net: number; orderCount: number }>;
 }
 
 export interface DataFreshness {
@@ -771,4 +772,15 @@ export interface TrendsData {
   introWeekConversion: IntroWeekConversionData | null;
   usage: UsageData | null;
   expiringIntroWeeks: ExpiringIntroWeekData | null;
+  dailyMovement: DailyMovementRow[] | null;
+}
+
+export interface DailyMovementRow {
+  date: string;
+  newMembers: number;
+  newSky3: number;
+  newTv: number;
+  churnedMembers: number;
+  churnedSky3: number;
+  churnedTv: number;
 }

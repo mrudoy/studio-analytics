@@ -255,6 +255,75 @@ export async function getCanceledAutoRenews(startDate: string, endDate: string):
   return (rows as RawAutoRenewRow[]).map(mapRow);
 }
 
+export interface DailyMovementRow {
+  date: string; // YYYY-MM-DD
+  newMembers: number;
+  newSky3: number;
+  newTv: number;
+  churnedMembers: number;
+  churnedSky3: number;
+  churnedTv: number;
+}
+
+/**
+ * Daily new + churned subscriber counts per category for the last `days` days.
+ */
+export async function getDailySubscriberMovement(days = 7): Promise<DailyMovementRow[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    WITH dates AS (
+      SELECT generate_series(
+        (CURRENT_DATE - ($1 || ' days')::interval)::date,
+        CURRENT_DATE,
+        '1 day'
+      )::date AS d
+    ),
+    new_by_day AS (
+      SELECT NULLIF(created_at, '')::date AS d,
+        COUNT(*) FILTER (WHERE plan_name ~* 'member' AND plan_name !~* 'sky.?3|sky.?ting.?tv|retreat') AS new_members,
+        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?3') AS new_sky3,
+        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?ting.?tv|retreat.?ting') AS new_tv
+      FROM auto_renews
+      WHERE NULLIF(created_at, '') IS NOT NULL
+        AND NULLIF(created_at, '')::date >= CURRENT_DATE - ($1 || ' days')::interval
+        AND plan_state NOT IN ('Expired')
+      GROUP BY NULLIF(created_at, '')::date
+    ),
+    churned_by_day AS (
+      SELECT NULLIF(canceled_at, '')::date AS d,
+        COUNT(*) FILTER (WHERE plan_name ~* 'member' AND plan_name !~* 'sky.?3|sky.?ting.?tv|retreat') AS churned_members,
+        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?3') AS churned_sky3,
+        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?ting.?tv|retreat.?ting') AS churned_tv
+      FROM auto_renews
+      WHERE NULLIF(canceled_at, '') IS NOT NULL
+        AND NULLIF(canceled_at, '')::date >= CURRENT_DATE - ($1 || ' days')::interval
+      GROUP BY NULLIF(canceled_at, '')::date
+    )
+    SELECT
+      dates.d::text AS date,
+      COALESCE(n.new_members, 0)::int AS new_members,
+      COALESCE(n.new_sky3, 0)::int AS new_sky3,
+      COALESCE(n.new_tv, 0)::int AS new_tv,
+      COALESCE(c.churned_members, 0)::int AS churned_members,
+      COALESCE(c.churned_sky3, 0)::int AS churned_sky3,
+      COALESCE(c.churned_tv, 0)::int AS churned_tv
+    FROM dates
+    LEFT JOIN new_by_day n ON n.d = dates.d
+    LEFT JOIN churned_by_day c ON c.d = dates.d
+    ORDER BY dates.d
+  `, [days]);
+
+  return rows.map((r: Record<string, unknown>) => ({
+    date: String(r.date).slice(0, 10),
+    newMembers: Number(r.new_members),
+    newSky3: Number(r.new_sky3),
+    newTv: Number(r.new_tv),
+    churnedMembers: Number(r.churned_members),
+    churnedSky3: Number(r.churned_sky3),
+    churnedTv: Number(r.churned_tv),
+  }));
+}
+
 /**
  * Canonical active subscriber counts by category — SINGLE SOURCE OF TRUTH.
  *
@@ -312,10 +381,8 @@ export async function getActiveCounts(): Promise<ActiveCounts> {
  * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
  *
- * Both active counts AND MRR are deduplicated by email per category.
- * If a person has multiple active subscription rows in the same category
- * (e.g. plan upgrade without canceling old row), we keep only the
- * highest monthly rate to avoid inflating MRR.
+ * Active counts use getActiveCounts() — unique people, not subscription rows.
+ * MRR sums all subscription rows (a person with 2 plans contributes 2x MRR).
  */
 export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   const active = await getActiveAutoRenews();
@@ -323,32 +390,14 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
 
   const counts = await getActiveCounts();
 
-  // Deduplicate MRR: keep highest monthlyRate per email per category
-  const mrrByEmail: Record<string, Map<string, number>> = {
-    member: new Map(),
-    sky3: new Map(),
-    skyTingTv: new Map(),
-    unknown: new Map(),
-  };
+  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
 
   for (const ar of active) {
-    const email = ar.customerEmail.toLowerCase();
-    if (!email) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
-    const existing = mrrByEmail[key].get(email) ?? 0;
-    if (ar.monthlyRate > existing) {
-      mrrByEmail[key].set(email, ar.monthlyRate);
-    }
-  }
-
-  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
-  for (const key of ["member", "sky3", "skyTingTv", "unknown"] as const) {
-    for (const rate of mrrByEmail[key].values()) {
-      mrr[key] += rate;
-    }
+    mrr[key] += ar.monthlyRate;
   }
 
   // Round MRR values
