@@ -2286,3 +2286,146 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
   return { members, totalFlagged: members.length, notAttendingCount, underUsingCount, newDecliningCount };
 }
 
+/**
+ * TEMPORARY — Sky3 Churn Profile Analysis
+ *
+ * For each Sky3 subscriber who canceled in the last 6 months, determines:
+ *  - Tenure (months from created_at to canceled_at)
+ *  - Visit history before subscription (were they already a drop-in / intro week customer?)
+ *  - Visit pattern before cancellation (last 30d, prior 30d, total during subscription)
+ *  - Prior customer type: "drop-in", "intro-week", "both", "brand-new", "other"
+ */
+export async function getSky3ChurnProfile() {
+  const pool = getPool();
+
+  const { rows } = await pool.query(`
+    WITH canceled_sky3 AS (
+      SELECT DISTINCT ON (customer_email)
+        LOWER(customer_email) AS email,
+        customer_name AS name,
+        plan_name,
+        created_at,
+        canceled_at,
+        CASE
+          WHEN created_at ~ '^\\d{4}-' AND canceled_at ~ '^\\d{4}-' THEN
+            ROUND((LEFT(canceled_at,10)::date - LEFT(created_at,10)::date) / 30.44, 1)
+          ELSE NULL
+        END AS tenure_months
+      FROM auto_renews
+      WHERE canceled_at IS NOT NULL AND canceled_at::text > ''
+        AND created_at IS NOT NULL AND created_at ~ '^\\d{4}-'
+        AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%sky5%'
+             OR plan_name ILIKE '%5 pack%' OR plan_name ILIKE '%5-pack%'
+             OR plan_name ILIKE '%skyhigh%')
+        AND LEFT(canceled_at,10)::date >= (CURRENT_DATE - INTERVAL '6 months')
+      ORDER BY customer_email, canceled_at DESC
+    ),
+    -- Visits BEFORE subscription start (prior customer activity)
+    prior_visits AS (
+      SELECT c.email,
+        COUNT(CASE WHEN UPPER(r.pass) LIKE '%INTRO WEEK%' THEN 1 END)::int AS prior_intro_visits,
+        COUNT(CASE WHEN UPPER(r.pass) LIKE '%DROP%' OR r.pass ILIKE '%single%' THEN 1 END)::int AS prior_dropin_visits,
+        COUNT(CASE WHEN UPPER(r.pass) LIKE '%GUEST%' THEN 1 END)::int AS prior_guest_visits,
+        COUNT(r.id)::int AS prior_total_visits,
+        MIN(LEFT(r.attended_at,10)::date) AS first_ever_visit
+      FROM canceled_sky3 c
+      LEFT JOIN registrations r ON LOWER(r.email) = c.email
+        AND r.state IN ('redeemed','confirmed')
+        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+        AND LEFT(r.attended_at,10)::date < LEFT(c.created_at,10)::date
+      GROUP BY c.email
+    ),
+    -- Visits DURING subscription (before cancellation)
+    sub_visits AS (
+      SELECT c.email,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (LEFT(c.canceled_at,10)::date - 30)
+                   AND LEFT(r.attended_at,10)::date < LEFT(c.canceled_at,10)::date THEN 1 END)::int AS visits_30d_before_cancel,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (LEFT(c.canceled_at,10)::date - 60)
+                   AND LEFT(r.attended_at,10)::date < (LEFT(c.canceled_at,10)::date - 30) THEN 1 END)::int AS visits_60_30d_before_cancel,
+        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= LEFT(c.created_at,10)::date
+                   AND LEFT(r.attended_at,10)::date < LEFT(c.canceled_at,10)::date THEN 1 END)::int AS total_visits_during_sub
+      FROM canceled_sky3 c
+      LEFT JOIN registrations r ON LOWER(r.email) = c.email
+        AND r.state IN ('redeemed','confirmed')
+        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
+      GROUP BY c.email
+    )
+    SELECT
+      c.email, c.name, c.plan_name, c.created_at, c.canceled_at, c.tenure_months,
+      COALESCE(p.prior_intro_visits, 0) AS prior_intro_visits,
+      COALESCE(p.prior_dropin_visits, 0) AS prior_dropin_visits,
+      COALESCE(p.prior_guest_visits, 0) AS prior_guest_visits,
+      COALESCE(p.prior_total_visits, 0) AS prior_total_visits,
+      p.first_ever_visit,
+      COALESCE(s.visits_30d_before_cancel, 0) AS visits_30d_before_cancel,
+      COALESCE(s.visits_60_30d_before_cancel, 0) AS visits_60_30d_before_cancel,
+      COALESCE(s.total_visits_during_sub, 0) AS total_visits_during_sub,
+      CASE
+        WHEN COALESCE(p.prior_total_visits, 0) = 0 THEN 'brand-new'
+        WHEN p.prior_intro_visits > 0 AND p.prior_dropin_visits > 0 THEN 'both'
+        WHEN p.prior_intro_visits > 0 THEN 'intro-week'
+        WHEN p.prior_dropin_visits > 0 THEN 'drop-in'
+        WHEN p.prior_guest_visits > 0 THEN 'guest'
+        ELSE 'other'
+      END AS prior_customer_type
+    FROM canceled_sky3 c
+    LEFT JOIN prior_visits p ON p.email = c.email
+    LEFT JOIN sub_visits s ON s.email = c.email
+    ORDER BY c.canceled_at DESC
+  `);
+
+  // Compute summary stats
+  const total = rows.length;
+  const byType: Record<string, number> = {};
+  let tenureSum = 0;
+  let tenureCount = 0;
+  const tenures: number[] = [];
+
+  for (const r of rows) {
+    const t = r.prior_customer_type;
+    byType[t] = (byType[t] || 0) + 1;
+    if (r.tenure_months != null) {
+      const tm = parseFloat(r.tenure_months);
+      tenureSum += tm;
+      tenureCount++;
+      tenures.push(tm);
+    }
+  }
+
+  tenures.sort((a, b) => a - b);
+  const medianTenure = tenures.length > 0 ? tenures[Math.floor(tenures.length / 2)] : null;
+  const avgTenure = tenureCount > 0 ? Math.round(tenureSum / tenureCount * 10) / 10 : null;
+
+  // "Already active" = had ANY visits before subscribing (not brand-new)
+  const alreadyActive = total - (byType["brand-new"] || 0);
+  const alreadyActivePercent = total > 0 ? Math.round(alreadyActive / total * 1000) / 10 : 0;
+  const brandNewPercent = total > 0 ? Math.round((byType["brand-new"] || 0) / total * 1000) / 10 : 0;
+
+  return {
+    total,
+    byType,
+    alreadyActive,
+    alreadyActivePercent,
+    brandNewPercent,
+    medianTenure,
+    avgTenure,
+    rows: rows.map((r) => ({
+      email: r.email,
+      name: r.name,
+      planName: r.plan_name,
+      createdAt: r.created_at,
+      canceledAt: r.canceled_at,
+      tenureMonths: r.tenure_months != null ? parseFloat(r.tenure_months) : null,
+      priorIntroVisits: parseInt(r.prior_intro_visits),
+      priorDropinVisits: parseInt(r.prior_dropin_visits),
+      priorGuestVisits: parseInt(r.prior_guest_visits),
+      priorTotalVisits: parseInt(r.prior_total_visits),
+      firstEverVisit: r.first_ever_visit,
+      visits30dBeforeCancel: parseInt(r.visits_30d_before_cancel),
+      visits60_30dBeforeCancel: parseInt(r.visits_60_30d_before_cancel),
+      totalVisitsDuringSub: parseInt(r.total_visits_during_sub),
+      priorCustomerType: r.prior_customer_type as string,
+    })),
+  };
+}
+
