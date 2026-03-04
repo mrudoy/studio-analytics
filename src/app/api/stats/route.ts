@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const noCache = url.searchParams.get("nocache") === "1";
 
     if (!noCache) {
-      const cached = getStatsCache();
+      const cached = await getStatsCache();
       if (cached) {
         const age = getStatsCacheAge();
         console.log(`[api/stats] Serving from cache (age: ${age}s)`);
@@ -455,7 +455,7 @@ export async function GET(request: Request) {
       dataSource: "database",
     };
 
-    setStatsCache(responseBody);
+    await setStatsCache(responseBody);
 
     return NextResponse.json(responseBody, {
       headers: { "X-Cache": "MISS" },

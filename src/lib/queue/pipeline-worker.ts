@@ -8,7 +8,7 @@ import type { PipelineResult } from "@/types/pipeline";
 import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
-import { invalidateStatsCache } from "../cache/stats-cache";
+import { invalidateStatsCache, bumpDataVersion } from "../cache/stats-cache";
 import { fetchLatestExport, markExportProcessed } from "../union-api/fetch-export";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
@@ -226,7 +226,10 @@ export function startPipelineWorker(): Worker {
   w.on("completed", async (job) => {
     console.log(`[worker] Pipeline job ${job.id} completed`);
 
-    // Invalidate /api/stats cache so the next request picks up fresh data
+    // Bump DB version + invalidate in-memory cache so next request gets fresh data.
+    // bumpDataVersion() ensures even external processes (seed scripts, manual SQL)
+    // trigger cache invalidation — the in-memory invalidate is belt-and-suspenders.
+    await bumpDataVersion();
     invalidateStatsCache();
 
     // Auto-backup after successful pipeline run (local + cloud)

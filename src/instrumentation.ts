@@ -12,6 +12,10 @@ export async function register() {
       const { runMigrations } = await import("./lib/db/migrations");
       await runMigrations();
 
+      // Ensure data_version table for DB-based cache invalidation
+      const { ensureDataVersionTable } = await import("./lib/cache/stats-cache");
+      await ensureDataVersionTable();
+
       console.log("[instrumentation] Starting pipeline worker (runtime: nodejs)...");
       const { startPipelineWorker } = await import("./lib/queue/pipeline-worker");
       startPipelineWorker();

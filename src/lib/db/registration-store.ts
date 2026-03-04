@@ -324,6 +324,15 @@ export async function backfillRegistrationEmails(): Promise<number> {
   }
 
   console.log(`[registration-store] Backfill total: ${total} records updated`);
+
+  // Bump DB data version so the stats cache auto-invalidates
+  if (total > 0) {
+    try {
+      const { bumpDataVersion } = await import("../cache/stats-cache");
+      await bumpDataVersion();
+    } catch { /* non-fatal */ }
+  }
+
   return total;
 }
 
