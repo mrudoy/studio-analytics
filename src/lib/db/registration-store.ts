@@ -2094,7 +2094,7 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
       SELECT DISTINCT ON (customer_email)
         customer_email AS email, customer_name AS name, plan_name, created_at
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled','Invalid')
+      WHERE plan_state NOT IN ('Canceled','Invalid','Paused','In Trial')
         AND plan_name NOT ILIKE '%sky3%'
         AND plan_name NOT ILIKE '%tv%'
         AND plan_name NOT ILIKE '%annual%'
