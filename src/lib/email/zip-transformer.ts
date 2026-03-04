@@ -366,6 +366,7 @@ export class ZipTransformer {
         subscription: String(isSubscription),
         revenue: reg.revenue,
         unionRegistrationId: reg.id,
+        passId: reg.passId || "",
       });
     }
 

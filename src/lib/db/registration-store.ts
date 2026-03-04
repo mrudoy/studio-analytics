@@ -28,6 +28,8 @@ export interface RegistrationRow {
   revenue: number;
   /** Union.fit registration ID from raw export (for precise dedup) */
   unionRegistrationId?: string;
+  /** Union.fit pass ID (for pass-email cache backfills) */
+  passId?: string;
 }
 
 export interface WeeklyCount {
@@ -94,8 +96,8 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           first_name, last_name, email, phone, role,
           registered_at, canceled_at, attended_at,
           registration_type, state, pass, subscription, revenue_state, revenue,
-          union_registration_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+          union_registration_id, pass_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
         ON CONFLICT (email, attended_at) DO UPDATE SET
           event_name = COALESCE(EXCLUDED.event_name, registrations.event_name),
           event_id = COALESCE(EXCLUDED.event_id, registrations.event_id),
@@ -109,14 +111,15 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           canceled_at = COALESCE(EXCLUDED.canceled_at, registrations.canceled_at),
           revenue_state = COALESCE(EXCLUDED.revenue_state, registrations.revenue_state),
           revenue = COALESCE(EXCLUDED.revenue, registrations.revenue),
-          union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id)`,
+          union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id),
+          pass_id = COALESCE(NULLIF(EXCLUDED.pass_id, ''), registrations.pass_id)`,
         [
           r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt,
           r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
           r.firstName, r.lastName, r.email, r.phone || null, r.role || null,
           r.registeredAt || null, r.canceledAt || null, r.attendedAt,
           r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
-          r.revenue, r.unionRegistrationId || null,
+          r.revenue, r.unionRegistrationId || null, r.passId || null,
         ]
       );
     }
@@ -221,29 +224,39 @@ export async function loadPassEmailCache(): Promise<Map<string, { email: string;
 }
 
 /**
- * Backfill empty-email registrations using the pass_email_cache.
- * This re-runs the zip registration import logic: for each empty-email
- * registration that has a union_registration_id, re-fetch the raw
- * registration from the zip to get its passId, then look up the cache.
+ * Backfill empty-email registrations using multiple strategies:
  *
- * Since we don't store passId on registrations, we use an indirect approach:
- * update empty-email registrations where we can match them to a known email
- * by finding another registration with the same union_registration_id that
- * already has email, OR by using attended_at proximity matching.
+ * 1. pass_email_cache: if the registration has a pass_id, look it up
+ *    in the cache table for email resolution.
+ * 2. Timestamp match: find another registration with the same attended_at
+ *    that has email (same class, same time = same person).
  *
- * Returns the number of records updated.
+ * Returns the total number of records updated.
  */
 export async function backfillRegistrationEmails(): Promise<number> {
   const pool = getPool();
+  let total = 0;
 
-  // Strategy: for each empty-email registration, find any other registration
-  // from the same person at the same performance (same attended_at minute).
-  // Since the bulk import (Feb 23) has correct emails for historical records,
-  // and some zip records DO resolve, we can propagate emails to nearby records.
-  //
-  // This is a heuristic, not a primary fix. The primary fix is the cache in
-  // the transformer going forward.
-  const { rowCount } = await pool.query(`
+  // Strategy 1: pass_id → pass_email_cache lookup
+  // This is the most reliable approach when pass_id is available.
+  const cacheResult = await pool.query(`
+    UPDATE registrations r
+    SET email = c.email,
+        first_name = COALESCE(NULLIF(r.first_name, ''), c.first_name),
+        last_name = COALESCE(NULLIF(r.last_name, ''), c.last_name),
+        pass = COALESCE(NULLIF(r.pass, ''), c.pass_name)
+    FROM pass_email_cache c
+    WHERE r.email = ''
+      AND r.pass_id IS NOT NULL AND r.pass_id <> ''
+      AND r.pass_id = c.pass_id
+      AND c.email <> ''
+  `);
+  const cacheFixed = cacheResult.rowCount ?? 0;
+  total += cacheFixed;
+  console.log(`[registration-store] Backfill: ${cacheFixed} via pass_email_cache`);
+
+  // Strategy 2: timestamp match with known-email registrations
+  const tsResult = await pool.query(`
     WITH fixable AS (
       SELECT DISTINCT ON (bad.id) bad.id, good.email, good.first_name, good.last_name,
              good.event_name, good.pass
@@ -262,9 +275,12 @@ export async function backfillRegistrationEmails(): Promise<number> {
     FROM fixable f
     WHERE r.id = f.id
   `);
+  const tsFixed = tsResult.rowCount ?? 0;
+  total += tsFixed;
+  console.log(`[registration-store] Backfill: ${tsFixed} via timestamp match`);
 
-  console.log(`[registration-store] Backfilled ${rowCount ?? 0} empty-email registrations via timestamp match`);
-  return rowCount ?? 0;
+  console.log(`[registration-store] Backfill total: ${total} records updated`);
+  return total;
 }
 
 /**
