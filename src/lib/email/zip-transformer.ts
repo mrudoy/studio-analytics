@@ -73,6 +73,15 @@ const PASS_STATE_MAP: Record<string, string> = {
   "Pending Cancel": "Pending Cancel",
 };
 
+// ── Pass-Email Cache entry (from DB) ────────────────────────
+
+export interface PassEmailCacheEntry {
+  email: string;
+  firstName: string;
+  lastName: string;
+  passName: string;
+}
+
 // ── Transformer ─────────────────────────────────────────────
 
 export class ZipTransformer {
@@ -83,6 +92,7 @@ export class ZipTransformer {
   private locationById: Map<string, RawLocation>;
   private passTypeById: Map<string, RawPassType>;
   private revenueCategoryById: Map<string, RawRevenueCategoryLookup>;
+  private passEmailCache: Map<string, PassEmailCacheEntry> = new Map();
 
   constructor(tables: RawZipTables) {
     this.membershipById = new Map(tables.memberships.map((m) => [m.id, m]));
@@ -113,6 +123,62 @@ export class ZipTransformer {
 
   getPass(id: string): RawPass | undefined {
     return this.passById.get(id);
+  }
+
+  /**
+   * Set the pass-email cache loaded from the DB.
+   * Used as fallback when passById lookup fails (expired passes).
+   */
+  setPassEmailCache(cache: Map<string, PassEmailCacheEntry>): void {
+    this.passEmailCache = cache;
+    console.log(
+      `[zip-transformer] Pass-email cache set: ${cache.size} entries`
+    );
+  }
+
+  /**
+   * Resolve email/name for a registration or order via passId.
+   * Primary: passById → membershipById (current zip export).
+   * Fallback: passEmailCache (accumulated from prior runs).
+   * Returns { email, firstName, lastName, passName } or null.
+   */
+  private resolveEmailFromPass(passId: string): {
+    email: string;
+    firstName: string;
+    lastName: string;
+    passName: string;
+    source: "zip" | "cache";
+  } | null {
+    // Primary path: pass in current zip → membership
+    const pass = this.passById.get(passId);
+    if (pass) {
+      const membership = pass.membershipId
+        ? this.membershipById.get(pass.membershipId)
+        : undefined;
+      if (membership?.email) {
+        return {
+          email: membership.email,
+          firstName: membership.firstName || "",
+          lastName: membership.lastName || "",
+          passName: pass.name || "",
+          source: "zip",
+        };
+      }
+    }
+
+    // Fallback: pass-email cache from DB
+    const cached = this.passEmailCache.get(passId);
+    if (cached?.email) {
+      return {
+        email: cached.email,
+        firstName: cached.firstName || "",
+        lastName: cached.lastName || "",
+        passName: cached.passName || "",
+        source: "cache",
+      };
+    }
+
+    return null;
   }
 
   // ── Auto-Renews: passes → AutoRenewRow[] ──────────────────
@@ -155,7 +221,7 @@ export class ZipTransformer {
         planPrice: pass.price,
         customerName: `${membership.firstName} ${membership.lastName}`.trim(),
         customerEmail: membership.email,
-        createdAt: pass.createdAt,
+        createdAt: pass.createdAt || pass.created,
         canceledAt: pass.canceledAt || undefined,
         unionPassId: pass.id,
       });
@@ -179,19 +245,40 @@ export class ZipTransformer {
     const rows: ZipOrderRow[] = [];
 
     for (const order of rawOrders) {
-      const membership = this.membershipById.get(order.membershipId);
+      // Primary: direct membership lookup
+      const membership = order.membershipId
+        ? this.membershipById.get(order.membershipId)
+        : undefined;
+
+      // For pass name and fallback email resolution
       const pass = order.paidWithPassId
         ? this.passById.get(order.paidWithPassId)
         : undefined;
 
+      let customerName = membership
+        ? `${membership.firstName} ${membership.lastName}`.trim()
+        : "";
+      let email = membership?.email || "";
+      let typeName = pass?.name || order.paymentMethod || "";
+
+      // Fallback: if no email from membership, try pass-email cache
+      if (!email && order.paidWithPassId) {
+        const cached = this.passEmailCache.get(order.paidWithPassId);
+        if (cached?.email) {
+          email = cached.email;
+          customerName = customerName || `${cached.firstName} ${cached.lastName}`.trim();
+          if (!typeName || typeName === order.paymentMethod) {
+            typeName = cached.passName || typeName;
+          }
+        }
+      }
+
       rows.push({
-        created: order.createdAt,
+        created: order.createdAt || order.created,
         code: order.id, // Union.fit order ID as dedup key
-        customer: membership
-          ? `${membership.firstName} ${membership.lastName}`.trim()
-          : "",
-        email: membership?.email || "",
-        type: pass?.name || order.paymentMethod || "",
+        customer: customerName,
+        email,
+        type: typeName,
         payment: order.paymentMethod || "",
         total: order.total,
         unionOrderId: order.id,
@@ -209,14 +296,14 @@ export class ZipTransformer {
    */
   transformRegistrationsBatch(
     rawRegistrations: RawRegistration[]
-  ): ZipRegistrationRow[] {
+  ): { rows: ZipRegistrationRow[]; stats: { resolvedZip: number; resolvedCache: number; unresolved: number } } {
     const rows: ZipRegistrationRow[] = [];
+    let resolvedZip = 0;
+    let resolvedCache = 0;
+    let unresolved = 0;
 
     for (const reg of rawRegistrations) {
       const pass = reg.passId ? this.passById.get(reg.passId) : undefined;
-      const membership = pass?.membershipId
-        ? this.membershipById.get(pass.membershipId)
-        : undefined;
       const performance = reg.performanceId
         ? this.performanceById.get(reg.performanceId)
         : undefined;
@@ -240,6 +327,28 @@ export class ZipTransformer {
         ? pass.autoRenewUnlimited || pass.autoRenewPeriodLimit > 0
         : false;
 
+      // Resolve email via primary path or cache fallback
+      let email = "";
+      let firstName = "";
+      let lastName = "";
+      let passName = pass?.name || "";
+
+      if (reg.passId) {
+        const resolved = this.resolveEmailFromPass(reg.passId);
+        if (resolved) {
+          email = resolved.email;
+          firstName = resolved.firstName;
+          lastName = resolved.lastName;
+          if (!passName) passName = resolved.passName;
+          if (resolved.source === "zip") resolvedZip++;
+          else resolvedCache++;
+        } else {
+          unresolved++;
+        }
+      } else {
+        unresolved++;
+      }
+
       rows.push({
         eventName: event?.name || performance?.name || "",
         eventId: event?.id,
@@ -247,20 +356,20 @@ export class ZipTransformer {
         performanceStartsAt: performance?.startsAt || "",
         locationName: location?.name || "",
         teacherName,
-        firstName: membership?.firstName || "",
-        lastName: membership?.lastName || "",
-        email: membership?.email || "",
+        firstName,
+        lastName,
+        email,
         attendedAt: reg.attendedAt || "",
         registrationType: "",
         state: reg.state || "",
-        pass: pass?.name || "",
+        pass: passName,
         subscription: String(isSubscription),
         revenue: reg.revenue,
         unionRegistrationId: reg.id,
       });
     }
 
-    return rows;
+    return { rows, stats: { resolvedZip, resolvedCache, unresolved } };
   }
 
   // ── Customers: memberships → CustomerRow[] ────────────────
@@ -280,7 +389,7 @@ export class ZipTransformer {
         email: m.email,
         role: m.role || "",
         orders: 0, // Could count from orders table if needed
-        created: m.createdAt,
+        created: m.createdAt || m.created,
       });
     }
 
@@ -433,7 +542,7 @@ export class ZipTransformer {
         continue;
       }
 
-      const dateStr = order.completedAt || order.createdAt;
+      const dateStr = order.completedAt || order.createdAt || order.created;
       const month = dateStr ? this.extractMonth(dateStr) : null;
       if (!month) {
         skippedNoDate++;
@@ -472,7 +581,7 @@ export class ZipTransformer {
         continue;
       }
 
-      const dateStr = refund.createdAt;
+      const dateStr = refund.createdAt || refund.created;
       const month = dateStr ? this.extractMonth(dateStr) : null;
       if (!month) {
         refundsSkipped++;

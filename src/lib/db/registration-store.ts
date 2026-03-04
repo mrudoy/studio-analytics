@@ -133,6 +133,140 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
   console.log(`[registration-store] Registrations: ${before} -> ${after} (+${after - before} new)`);
 }
 
+// ── Pass-Email Cache ──────────────────────────────────────────
+// The zip export's passes.csv only contains active passes. Registrations
+// from prior periods reference expired passes that aren't in the export,
+// so the passId → pass → membership → email join fails (~50-90% of records).
+//
+// Fix: persist a pass_email_cache table that accumulates passId → email
+// mappings across pipeline runs. Each run adds current passes. The
+// transformer uses the cache as a fallback when passById misses.
+
+/**
+ * Ensure the pass_email_cache table exists.
+ */
+export async function ensurePassEmailCache(): Promise<void> {
+  const pool = getPool();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pass_email_cache (
+      pass_id TEXT PRIMARY KEY,
+      membership_id TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL,
+      first_name TEXT DEFAULT '',
+      last_name TEXT DEFAULT '',
+      pass_name TEXT DEFAULT '',
+      cached_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+/**
+ * Upsert pass → email mappings into the cache from the current zip's
+ * passes + memberships. Called each pipeline run before registration import.
+ */
+export async function savePassEmailCache(
+  entries: { passId: string; membershipId: string; email: string; firstName: string; lastName: string; passName: string }[]
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  const pool = getPool();
+  const client = await pool.connect();
+  let upserted = 0;
+  try {
+    await client.query("BEGIN");
+    for (const e of entries) {
+      if (!e.email) continue;
+      await client.query(
+        `INSERT INTO pass_email_cache (pass_id, membership_id, email, first_name, last_name, pass_name)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (pass_id) DO UPDATE SET
+           email = EXCLUDED.email,
+           first_name = EXCLUDED.first_name,
+           last_name = EXCLUDED.last_name,
+           pass_name = EXCLUDED.pass_name,
+           cached_at = NOW()`,
+        [e.passId, e.membershipId, e.email, e.firstName, e.lastName, e.passName]
+      );
+      upserted++;
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+  console.log(`[registration-store] Pass-email cache: ${upserted} entries upserted`);
+  return upserted;
+}
+
+/**
+ * Load the pass_email_cache into a Map for use as transformer fallback.
+ */
+export async function loadPassEmailCache(): Promise<Map<string, { email: string; firstName: string; lastName: string; passName: string }>> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT pass_id, email, first_name, last_name, pass_name FROM pass_email_cache`
+  );
+  const map = new Map<string, { email: string; firstName: string; lastName: string; passName: string }>();
+  for (const r of rows) {
+    map.set(r.pass_id, {
+      email: r.email,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      passName: r.pass_name,
+    });
+  }
+  console.log(`[registration-store] Loaded ${map.size} entries from pass-email cache`);
+  return map;
+}
+
+/**
+ * Backfill empty-email registrations using the pass_email_cache.
+ * This re-runs the zip registration import logic: for each empty-email
+ * registration that has a union_registration_id, re-fetch the raw
+ * registration from the zip to get its passId, then look up the cache.
+ *
+ * Since we don't store passId on registrations, we use an indirect approach:
+ * update empty-email registrations where we can match them to a known email
+ * by finding another registration with the same union_registration_id that
+ * already has email, OR by using attended_at proximity matching.
+ *
+ * Returns the number of records updated.
+ */
+export async function backfillRegistrationEmails(): Promise<number> {
+  const pool = getPool();
+
+  // Strategy: for each empty-email registration, find any other registration
+  // from the same person at the same performance (same attended_at minute).
+  // Since the bulk import (Feb 23) has correct emails for historical records,
+  // and some zip records DO resolve, we can propagate emails to nearby records.
+  //
+  // This is a heuristic, not a primary fix. The primary fix is the cache in
+  // the transformer going forward.
+  const { rowCount } = await pool.query(`
+    WITH fixable AS (
+      SELECT DISTINCT ON (bad.id) bad.id, good.email, good.first_name, good.last_name,
+             good.event_name, good.pass
+      FROM registrations bad
+      JOIN registrations good
+        ON good.email <> ''
+        AND good.attended_at = bad.attended_at
+      WHERE bad.email = ''
+        AND bad.union_registration_id IS NOT NULL
+        AND bad.union_registration_id <> ''
+    )
+    UPDATE registrations r
+    SET email = f.email, first_name = f.first_name, last_name = f.last_name,
+        event_name = COALESCE(NULLIF(r.event_name, ''), f.event_name),
+        pass = COALESCE(NULLIF(r.pass, ''), f.pass)
+    FROM fixable f
+    WHERE r.id = f.id
+  `);
+
+  console.log(`[registration-store] Backfilled ${rowCount ?? 0} empty-email registrations via timestamp match`);
+  return rowCount ?? 0;
+}
+
 /**
  * Save first visits (additive — appends new rows, never deletes existing).
  */

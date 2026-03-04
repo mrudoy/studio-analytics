@@ -43,7 +43,13 @@ import {
 } from "./zip-schemas";
 import { saveAutoRenews } from "../db/auto-renew-store";
 import { saveOrders } from "../db/order-store";
-import { saveRegistrations } from "../db/registration-store";
+import {
+  saveRegistrations,
+  ensurePassEmailCache,
+  savePassEmailCache,
+  loadPassEmailCache,
+  backfillRegistrationEmails,
+} from "../db/registration-store";
 import { saveCustomers } from "../db/customer-store";
 import { saveRevenueCategories, isMonthLocked } from "../db/revenue-store";
 import { setWatermark } from "../db/watermark-store";
@@ -402,6 +408,38 @@ async function runZipImport(
     );
   }
 
+  // ── Populate pass-email cache ──────────────────────────
+  // Each pipeline run adds current passes → email mappings to the DB cache.
+  // Over time this accumulates ALL passes ever seen, so even expired passes
+  // can be resolved in future runs.
+  progress("Updating pass-email cache...", 48);
+
+  await ensurePassEmailCache();
+
+  // Build a quick membership lookup for cache population
+  const membershipLookup = new Map(memberships.map((m) => [m.id, m]));
+  const cacheEntries: { passId: string; membershipId: string; email: string; firstName: string; lastName: string; passName: string }[] = [];
+  for (const pass of passes) {
+    if (!pass.membershipId) continue;
+    const membership = membershipLookup.get(pass.membershipId);
+    if (!membership?.email) continue;
+    cacheEntries.push({
+      passId: pass.id,
+      membershipId: pass.membershipId,
+      email: membership.email,
+      firstName: membership.firstName || "",
+      lastName: membership.lastName || "",
+      passName: pass.name || "",
+    });
+  }
+
+  const cachedCount = await savePassEmailCache(cacheEntries);
+  console.log(`[zip-pipeline] Pass-email cache: ${cachedCount} entries from current export`);
+
+  // Load the full cache (current + all prior runs) for transformer fallback
+  const passEmailCache = await loadPassEmailCache();
+  transformer.setPassEmailCache(passEmailCache);
+
   // ── Transform + save orders (batched) ───────────────────
   progress("Importing orders...", 55);
 
@@ -442,12 +480,18 @@ async function runZipImport(
     );
     const BATCH_SIZE = 10_000;
     let totalRegs = 0;
+    let totalResolvedZip = 0;
+    let totalResolvedCache = 0;
+    let totalUnresolved = 0;
 
     for (let i = 0; i < rawRegs.length; i += BATCH_SIZE) {
       const batch = rawRegs.slice(i, i + BATCH_SIZE);
-      const regRows = transformer.transformRegistrationsBatch(batch);
+      const { rows: regRows, stats } = transformer.transformRegistrationsBatch(batch);
       await saveRegistrations(regRows);
       totalRegs += regRows.length;
+      totalResolvedZip += stats.resolvedZip;
+      totalResolvedCache += stats.resolvedCache;
+      totalUnresolved += stats.unresolved;
 
       const pct = 70 + Math.round((i / rawRegs.length) * 15);
       progress(
@@ -457,9 +501,22 @@ async function runZipImport(
     }
 
     recordCounts.registrations = totalRegs;
+    const totalResolved = totalResolvedZip + totalResolvedCache;
+    const resolutionPct = totalRegs > 0
+      ? ((totalResolved / totalRegs) * 100).toFixed(1)
+      : "0";
     console.log(
-      `[zip-pipeline] Registrations saved: ${totalRegs.toLocaleString()}`
+      `[zip-pipeline] Registrations saved: ${totalRegs.toLocaleString()}. ` +
+        `Email resolution: ${totalResolved}/${totalRegs} (${resolutionPct}%) — ` +
+        `${totalResolvedZip} from zip, ${totalResolvedCache} from cache, ${totalUnresolved} unresolved`
     );
+
+    // Backfill existing empty-email records using timestamp matching
+    progress("Backfilling empty-email registrations...", 86);
+    const backfilled = await backfillRegistrationEmails();
+    if (backfilled > 0) {
+      console.log(`[zip-pipeline] Backfilled ${backfilled} empty-email registrations`);
+    }
   }
 
   // ── Transform + save customers ──────────────────────────
