@@ -1,8 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { getRedisConnection } from "./connection";
 import { loadSettings } from "../crypto/credentials";
-import { runEmailPipeline } from "./email-pipeline";
-import { runZipDownloadPipeline, runZipWebhookPipeline } from "../email/zip-download-pipeline";
+import { runZipWebhookPipeline } from "../email/zip-download-pipeline";
 import { runShopifySync } from "../shopify/shopify-sync";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
@@ -13,8 +12,8 @@ import { invalidateStatsCache } from "../cache/stats-cache";
 import { fetchLatestExport, markExportProcessed } from "../union-api/fetch-export";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
- *  70 min to accommodate 60-min email polling + Playwright triggers + analytics. */
-const PIPELINE_TIMEOUT_MS = 70 * 60 * 1000; // 70 minutes
+ *  15 min — API-only pipeline (no Playwright/Gmail). */
+const PIPELINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Race a promise against a timeout. If the timeout fires first, throw.
@@ -43,7 +42,7 @@ async function runPipeline(job: Job): Promise<PipelineResult> {
   return withTimeout(
     runPipelineInner(job),
     PIPELINE_TIMEOUT_MS,
-    "Pipeline timed out after 70 minutes — try again or check Union.fit connectivity"
+    "Pipeline timed out after 15 minutes — try again or check Union.fit API connectivity"
   );
 }
 
@@ -55,19 +54,19 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   const settings = loadSettings();
   const hasApiKey = !!(settings?.unionApiKey);
   const hasWebhookUrl = !!job.data.downloadUrl;
-  const hasEmailCreds = !!(settings?.credentials && settings?.robotEmail?.address);
 
-  if (!hasApiKey && !hasWebhookUrl && !hasEmailCreds) {
+  if (!hasApiKey && !hasWebhookUrl) {
     throw new Error(
-      "No data source configured. Set a Union API key, webhook URL, or Union.fit credentials + robot email in Settings."
+      "No data source configured. Set a Union API key or provide a webhook download URL in Settings."
     );
   }
 
-  // ── Try zip pipeline (PRIMARY path) ──
-  // Priority: (1) webhook URL if provided, (2) Gmail polling, (3) Playwright fallback
+  // ── RULE: API ONLY — NO SCRAPING ──
+  // Only two paths: (1) webhook URL if provided, (2) Union Data Exporter API.
+  // Gmail polling and Playwright/browser scraping are permanently disabled.
   let result: PipelineResult | null = null;
 
-  // Path A: Direct URL from webhook — no Gmail needed
+  // Path 1: Direct URL from webhook
   if (job.data.downloadUrl) {
     try {
       updateProgress(job, "Downloading zip from webhook...", 5);
@@ -85,11 +84,10 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[pipeline] Webhook pipeline failed: ${msg}`);
-      // Fall through to Gmail path
     }
   }
 
-  // Path A2: Union Data Exporter API — fetch latest export URL directly
+  // Path 2: Union Data Exporter API — fetch latest export URL directly
   if (!result && hasApiKey) {
     try {
       updateProgress(job, "Checking Union Data Exporter API...", 5);
@@ -119,50 +117,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[pipeline] API export fetch failed: ${msg}`);
-      // Fall through to Gmail path
     }
-  }
-
-  // Path B: Gmail polling for zip download link
-  if (!result && hasEmailCreds) {
-    try {
-      updateProgress(job, "Trying zip download pipeline...", 5);
-      console.log(`[pipeline] Attempting zip pipeline: robot=${settings!.robotEmail!.address}`);
-
-      const zipResult = await runZipDownloadPipeline({
-        robotEmail: settings!.robotEmail!.address,
-        lookbackHours: 48,
-        onProgress: (step, percent) => updateProgress(job, step, percent),
-      });
-
-      if (zipResult.success) {
-        console.log(`[pipeline] Zip pipeline succeeded in ${zipResult.duration}s`);
-        result = zipResult;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[pipeline] Zip pipeline unavailable, falling back to email pipeline: ${msg}`);
-    }
-  }
-
-  // ── Fallback: email pipeline (Playwright + Gmail CSV delivery) ──
-  if (!result && hasEmailCreds) {
-    // Date range: if explicitly provided in the job, pass it through as an override.
-    // Otherwise, the email-pipeline builds per-report ranges from watermarks automatically.
-    const dateRange = job.data.dateRangeStart && job.data.dateRangeEnd
-      ? `${job.data.dateRangeStart} - ${job.data.dateRangeEnd}`
-      : undefined;
-
-    updateProgress(job, "Starting email-based pipeline (fallback)", 5);
-    console.log(`[pipeline] Email pipeline fallback: robot=${settings!.robotEmail!.address}`);
-
-    result = await runEmailPipeline({
-      unionEmail: settings!.credentials!.email,
-      unionPassword: settings!.credentials!.password,
-      robotEmail: settings!.robotEmail!.address,
-      dateRange: dateRange || undefined,
-      onProgress: (step, percent, categories) => updateProgress(job, step, percent, categories),
-    });
   }
 
   // ── Shopify sync (non-fatal — dashboard still works without it) ──
@@ -190,7 +145,8 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   if (!result) {
     throw new Error(
       "Pipeline could not fetch data from any source. " +
-      "Check your Union API key, webhook configuration, or email credentials in Settings."
+      "Check your Union API key or webhook configuration in Settings. " +
+      "(API-only mode — no Gmail or browser scraping.)"
     );
   }
 
@@ -263,7 +219,7 @@ export function startPipelineWorker(): Worker {
     {
       connection: getRedisConnection(),
       concurrency: 1,
-      lockDuration: 4_500_000, // 75 minutes — pipeline timeout is 70 min + margin
+      lockDuration: 1_200_000, // 20 minutes — API-only pipeline timeout is 15 min + margin
     }
   );
 

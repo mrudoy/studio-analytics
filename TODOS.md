@@ -82,6 +82,14 @@ When user asks about data, tell them which report to pull based on this mapping:
 | Auto-Renew Cancellations | Cancelled | Reports > Auto Renew > Cancelled | Total people that cancelled during a specific window |
 | Auto-Renew New | New | Reports > Auto Renew > New | Total people that signed up for an auto-renew during a specific window |
 
+### NO SCRAPING Rule (PERMANENT)
+**RULE**: The pipeline must NEVER use Playwright, browser automation, or any form of web scraping. Data acquisition is API-ONLY:
+- **Union Data Exporter API** — primary path, fetches zip export via API key
+- **Webhook URL** — receives download URL directly via HTTP POST
+- Gmail polling and the Playwright/email fallback are permanently disabled in `pipeline-worker.ts`
+- If the API path fails or has no new data, the pipeline stops — it does NOT fall back to scraping
+- This rule was set by Mike on 2026-03-04
+
 ### Monthly Revenue Rule (NEW)
 **RULE**: Revenue data MUST be stored at monthly granularity so we can do MoM comparisons and growth analysis. Each month gets its own `period_start` / `period_end` (e.g. `2024-01-01` to `2024-01-31`). The report source is "Sales by Revenue Category" (`/reports/revenue`) on Union.fit, pulled once per month with the date range set to that month.
 - User will manually upload historical months (Jan 2024 through present)
