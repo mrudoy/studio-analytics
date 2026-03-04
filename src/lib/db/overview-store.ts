@@ -9,8 +9,9 @@
 import { getNewAutoRenews, getCanceledAutoRenews, getAutoRenewStats } from "./auto-renew-store";
 import { getDropInCountForRange, getIntroWeekCountForRange, getGuestCountForRange } from "./registration-store";
 import { getShopifyRevenueForRange } from "./shopify-store";
-import type { OverviewData, TimeWindowMetrics } from "@/types/dashboard";
+import type { OverviewData, TimeWindowMetrics, PlanChangeDetail } from "@/types/dashboard";
 import type { StoredAutoRenew } from "./auto-renew-store";
+import type { AutoRenewCategory } from "@/types/union-data";
 
 // ── Date helpers ─────────────────────────────────────────
 
@@ -90,6 +91,99 @@ function getLastMonth() {
   };
 }
 
+// ── Tier ranking for upgrade / downgrade classification ──
+
+const TIER_RANK: Record<string, number> = {
+  SKY_TING_TV: 1,
+  SKY3: 2,
+  MEMBER: 3,
+};
+
+/**
+ * Detect plan changes: emails that appear in BOTH the new and canceled arrays
+ * with different categories in the same time window.
+ *
+ * When someone upgrades (e.g. Sky3 → Member), Union.fit cancels the old plan
+ * and creates a new one. Without this filter those show as +1 new Member
+ * AND -1 churned Sky3 — inflating both growth and churn.
+ *
+ * Returns the counts and the filtered arrays with plan-changers removed.
+ */
+type KnownCategory = "MEMBER" | "SKY3" | "SKY_TING_TV";
+
+function detectPlanChanges(
+  newAR: StoredAutoRenew[],
+  canceledAR: StoredAutoRenew[],
+): {
+  filteredNew: StoredAutoRenew[];
+  filteredCanceled: StoredAutoRenew[];
+  planChanges: PlanChangeDetail[];
+} {
+  // Build email → category map from each list (dedup by email, take first match)
+  const newByEmail = new Map<string, KnownCategory>();
+  for (const r of newAR) {
+    const email = r.customerEmail?.toLowerCase() || "";
+    if (!email || r.category === "UNKNOWN") continue;
+    if (!newByEmail.has(email)) newByEmail.set(email, r.category as KnownCategory);
+  }
+
+  const canceledByEmail = new Map<string, KnownCategory>();
+  for (const r of canceledAR) {
+    const email = r.customerEmail?.toLowerCase() || "";
+    if (!email || r.category === "UNKNOWN") continue;
+    if (!canceledByEmail.has(email)) canceledByEmail.set(email, r.category as KnownCategory);
+  }
+
+  // Find emails in BOTH lists with DIFFERENT categories.
+  // Group by (from → to) pair so we can report "3 people: Sky3 → Member".
+  const planChangeEmails = new Set<string>();
+  const moveCounts = new Map<string, { from: KnownCategory; to: KnownCategory; count: number }>();
+
+  for (const [email, newCat] of newByEmail) {
+    const oldCat = canceledByEmail.get(email);
+    if (!oldCat || oldCat === newCat) continue;
+
+    const oldRank = TIER_RANK[oldCat] ?? 0;
+    const newRank = TIER_RANK[newCat] ?? 0;
+    if (oldRank === 0 || newRank === 0) continue;
+
+    planChangeEmails.add(email);
+    const key = `${oldCat}→${newCat}`;
+    const existing = moveCounts.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      moveCounts.set(key, { from: oldCat, to: newCat, count: 1 });
+    }
+  }
+
+  if (planChangeEmails.size === 0) {
+    return { filteredNew: newAR, filteredCanceled: canceledAR, planChanges: [] };
+  }
+
+  // Build detailed plan change list
+  const planChanges: PlanChangeDetail[] = [];
+  for (const move of moveCounts.values()) {
+    const direction = (TIER_RANK[move.to] ?? 0) > (TIER_RANK[move.from] ?? 0) ? "upgrade" : "downgrade";
+    planChanges.push({ from: move.from, to: move.to, direction, count: move.count });
+  }
+  // Sort: upgrades first, then by count descending
+  planChanges.sort((a, b) => {
+    if (a.direction !== b.direction) return a.direction === "upgrade" ? -1 : 1;
+    return b.count - a.count;
+  });
+
+  // Filter out plan-change emails from both arrays
+  const filteredNew = newAR.filter(
+    (r) => !planChangeEmails.has(r.customerEmail?.toLowerCase() || ""),
+  );
+  const filteredCanceled = canceledAR.filter(
+    (r) => !planChangeEmails.has(r.customerEmail?.toLowerCase() || ""),
+  );
+
+  return { filteredNew, filteredCanceled, planChanges };
+}
+
 // ── Aggregation ──────────────────────────────────────────
 
 function countByCategory(rows: StoredAutoRenew[]): Record<"MEMBER" | "SKY3" | "SKY_TING_TV", number> {
@@ -120,8 +214,13 @@ async function computeWindow(
     getShopifyRevenueForRange(start, end).catch(() => 0),
   ]);
 
-  const newCounts = countByCategory(newAR);
-  const canceledCounts = countByCategory(canceledAR);
+  // Detect cross-category plan changes (upgrades/downgrades) and remove them
+  // from the new/canceled arrays so category rows show only organic movement.
+  const { filteredNew, filteredCanceled, planChanges } =
+    detectPlanChanges(newAR, canceledAR);
+
+  const newCounts = countByCategory(filteredNew);
+  const canceledCounts = countByCategory(filteredCanceled);
 
   return {
     label,
@@ -132,6 +231,7 @@ async function computeWindow(
       member:    { new: newCounts.MEMBER,      churned: canceledCounts.MEMBER },
       sky3:      { new: newCounts.SKY3,        churned: canceledCounts.SKY3 },
       skyTingTv: { new: newCounts.SKY_TING_TV, churned: canceledCounts.SKY_TING_TV },
+      planChanges,
     },
     activity: {
       dropIns,

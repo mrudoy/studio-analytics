@@ -672,6 +672,14 @@ export interface ConversionPoolModuleData {
 
 // ── Overview types ─────────────────────────────────────────
 
+/** A single plan change: one person moved from one tier to another */
+export interface PlanChangeDetail {
+  from: "MEMBER" | "SKY3" | "SKY_TING_TV";
+  to: "MEMBER" | "SKY3" | "SKY_TING_TV";
+  direction: "upgrade" | "downgrade";
+  count: number;           // how many people made this exact move
+}
+
 /** Metrics for a single time window (Yesterday, Last Week, This Month, Last Month) */
 export interface TimeWindowMetrics {
   label: string;        // "Yesterday", "Last Week", etc.
@@ -682,6 +690,7 @@ export interface TimeWindowMetrics {
     member:    { new: number; churned: number };
     sky3:      { new: number; churned: number };
     skyTingTv: { new: number; churned: number };
+    planChanges: PlanChangeDetail[];
   };
   activity: {
     dropIns: number;

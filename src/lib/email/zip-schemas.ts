@@ -42,6 +42,7 @@ const optStr = z.string().default("");
 export const RawMembershipSchema = z.object({
   id: z.string(),
   createdAt: optStr,
+  created: optStr,       // alias: csv-parser maps "created_at" → "created" via COLUMN_ALIASES
   updatedAt: optStr,
   role: optStr,
   firstName: optStr,
@@ -58,6 +59,7 @@ export type RawMembership = z.infer<typeof RawMembershipSchema>;
 export const RawPassSchema = z.object({
   id: z.string(),
   createdAt: optStr,
+  created: optStr,       // alias: csv-parser maps "created_at" → "created" via COLUMN_ALIASES
   updatedAt: optStr,
   deletedAt: optStr,
   canceledAt: optStr,
@@ -107,6 +109,7 @@ export type RawPass = z.infer<typeof RawPassSchema>;
 export const RawOrderSchema = z.object({
   id: z.string(),
   createdAt: optStr,
+  created: optStr,       // alias: csv-parser maps "created_at" → "created" via COLUMN_ALIASES
   updatedAt: optStr,
   completedAt: optStr,
   membershipId: optStr,
@@ -141,6 +144,7 @@ export type RawOrder = z.infer<typeof RawOrderSchema>;
 export const RawRegistrationSchema = z.object({
   id: z.string(),
   createdAt: optStr,
+  created: optStr,       // alias: csv-parser maps "created_at" → "created" via COLUMN_ALIASES
   updatedAt: optStr,
   attendedAt: optStr,
   canceledAt: optStr,
@@ -221,6 +225,7 @@ export type RawRevenueCategoryLookup = z.infer<typeof RawRevenueCategoryLookupSc
 export const RawRefundSchema = z.object({
   id: z.string(),
   createdAt: optStr,
+  created: optStr,       // alias: csv-parser maps "created_at" → "created" via COLUMN_ALIASES
   orderId: optStr,
   revenueCategoryId: optStr,
   state: optStr,
