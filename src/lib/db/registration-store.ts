@@ -239,6 +239,8 @@ export async function backfillRegistrationEmails(): Promise<number> {
 
   // Strategy 1: pass_id → pass_email_cache lookup
   // This is the most reliable approach when pass_id is available.
+  // Guard: only update if the target (email, attended_at) pair doesn't already exist,
+  // otherwise the unique constraint idx_reg_dedup would fire.
   const cacheResult = await pool.query(`
     UPDATE registrations r
     SET email = c.email,
@@ -250,12 +252,36 @@ export async function backfillRegistrationEmails(): Promise<number> {
       AND r.pass_id IS NOT NULL AND r.pass_id <> ''
       AND r.pass_id = c.pass_id
       AND c.email <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM registrations dup
+        WHERE dup.email = c.email AND dup.attended_at = r.attended_at AND dup.id <> r.id
+      )
   `);
   const cacheFixed = cacheResult.rowCount ?? 0;
   total += cacheFixed;
   console.log(`[registration-store] Backfill: ${cacheFixed} via pass_email_cache`);
 
+  // Delete empty-email duplicates that now have a real-email counterpart
+  // (rows that couldn't be updated because a matching row already existed)
+  const dedup1 = await pool.query(`
+    DELETE FROM registrations r
+    WHERE r.email = ''
+      AND r.pass_id IS NOT NULL AND r.pass_id <> ''
+      AND EXISTS (
+        SELECT 1 FROM pass_email_cache c
+        WHERE c.pass_id = r.pass_id AND c.email <> ''
+          AND EXISTS (
+            SELECT 1 FROM registrations dup
+            WHERE dup.email = c.email AND dup.attended_at = r.attended_at AND dup.id <> r.id
+          )
+      )
+  `);
+  if ((dedup1.rowCount ?? 0) > 0) {
+    console.log(`[registration-store] Backfill: removed ${dedup1.rowCount} empty-email duplicates (cache path)`);
+  }
+
   // Strategy 2: timestamp match with known-email registrations
+  // Same guard: skip if target (email, attended_at) already exists.
   const tsResult = await pool.query(`
     WITH fixable AS (
       SELECT DISTINCT ON (bad.id) bad.id, good.email, good.first_name, good.last_name,
@@ -267,6 +293,10 @@ export async function backfillRegistrationEmails(): Promise<number> {
       WHERE bad.email = ''
         AND bad.union_registration_id IS NOT NULL
         AND bad.union_registration_id <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM registrations dup
+          WHERE dup.email = good.email AND dup.attended_at = bad.attended_at AND dup.id <> bad.id
+        )
     )
     UPDATE registrations r
     SET email = f.email, first_name = f.first_name, last_name = f.last_name,
@@ -278,6 +308,20 @@ export async function backfillRegistrationEmails(): Promise<number> {
   const tsFixed = tsResult.rowCount ?? 0;
   total += tsFixed;
   console.log(`[registration-store] Backfill: ${tsFixed} via timestamp match`);
+
+  // Delete remaining empty-email duplicates from timestamp match
+  const dedup2 = await pool.query(`
+    DELETE FROM registrations r
+    WHERE r.email = ''
+      AND EXISTS (
+        SELECT 1 FROM registrations good
+        WHERE good.email <> '' AND good.attended_at = r.attended_at
+          AND good.event_name = r.event_name
+      )
+  `);
+  if ((dedup2.rowCount ?? 0) > 0) {
+    console.log(`[registration-store] Backfill: removed ${dedup2.rowCount} empty-email duplicates (timestamp path)`);
+  }
 
   console.log(`[registration-store] Backfill total: ${total} records updated`);
   return total;
