@@ -28,6 +28,14 @@ export async function sendDigestEmail(): Promise<DigestResult> {
   const settings = loadSettings();
   const digest = settings?.emailDigest;
 
+  // Guard: only send from the production Railway service.
+  // Preview/PR deployments have their own DB, so the atomic guard can't
+  // prevent duplicates across environments. Require an explicit env flag.
+  const railwayEnv = process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_ENVIRONMENT || "";
+  if (railwayEnv && railwayEnv !== "production") {
+    return { sent: 0, skipped: `Non-production environment (${railwayEnv})` };
+  }
+
   // Guard: skip if not configured or paused
   if (!digest?.enabled) {
     return { sent: 0, skipped: "Email digest disabled" };
