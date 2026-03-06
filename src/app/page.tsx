@@ -4233,7 +4233,7 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
               <LineChart
                 accessibilityLayer
                 data={dailyData}
-                margin={{ top: 28, left: 12, right: 24 }}
+                margin={{ top: 28, left: 24, right: 24 }}
               >
                 <CartesianGrid vertical={false} />
                 <XAxis
