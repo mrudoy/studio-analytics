@@ -466,7 +466,8 @@ const migrations: Migration[] = [
           AND a.id < b.id;
 
       -- Recreate all dropped indexes using DATE-compatible expressions
-      CREATE INDEX idx_rc_period_month ON revenue_categories(DATE_TRUNC('month', period_start));
+      -- Note: DATE_TRUNC is STABLE not IMMUTABLE, so use plain column index
+      CREATE INDEX idx_rc_period_month ON revenue_categories(period_start);
       CREATE INDEX idx_reg_attended_at ON registrations(attended_at) WHERE attended_at IS NOT NULL;
       CREATE UNIQUE INDEX idx_ar_dedup ON auto_renews(customer_email, plan_name, created_at);
       CREATE UNIQUE INDEX idx_fv_dedup ON first_visits(email, attended_at);

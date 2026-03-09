@@ -83,7 +83,7 @@ export async function POST() {
     { name: "dedup registrations", sql: `DELETE FROM registrations a USING registrations b WHERE a.email = b.email AND a.attended_at = b.attended_at AND a.id < b.id` },
     { name: "dedup first_visits", sql: `DELETE FROM first_visits a USING first_visits b WHERE a.email = b.email AND a.attended_at = b.attended_at AND a.id < b.id` },
     // Recreate all indexes
-    { name: "CREATE idx_rc_period_month", sql: `CREATE INDEX idx_rc_period_month ON revenue_categories(DATE_TRUNC('month', period_start))` },
+    { name: "CREATE idx_rc_period_month", sql: `CREATE INDEX idx_rc_period_month ON revenue_categories(period_start)` },
     { name: "CREATE idx_reg_attended_at", sql: `CREATE INDEX idx_reg_attended_at ON registrations(attended_at) WHERE attended_at IS NOT NULL` },
     { name: "CREATE idx_ar_dedup", sql: `CREATE UNIQUE INDEX idx_ar_dedup ON auto_renews(customer_email, plan_name, created_at)` },
     { name: "CREATE idx_fv_dedup", sql: `CREATE UNIQUE INDEX idx_fv_dedup ON first_visits(email, attended_at)` },
