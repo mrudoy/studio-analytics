@@ -362,6 +362,50 @@ const migrations: Migration[] = [
       UPDATE pipeline_runs SET date_range_start = NULL WHERE date_range_start = '';
       UPDATE pipeline_runs SET date_range_end = NULL WHERE date_range_end = '';
 
+      -- Normalize non-ISO date formats (e.g. "2/8/26 1:04 AM") → YYYY-MM-DD
+      -- These come from Shopify/order imports with M/D/YY timestamps
+      UPDATE orders SET created_at = TO_CHAR(
+        TO_TIMESTAMP(created_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD'
+      ) WHERE created_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}';
+
+      UPDATE auto_renews SET created_at = TO_CHAR(
+        TO_TIMESTAMP(created_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD'
+      ) WHERE created_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}';
+
+      UPDATE auto_renews SET canceled_at = TO_CHAR(
+        TO_TIMESTAMP(canceled_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD'
+      ) WHERE canceled_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}';
+
+      -- Null out any remaining unparseable values rather than crash
+      UPDATE orders SET created_at = NULL
+        WHERE created_at IS NOT NULL AND created_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE auto_renews SET created_at = NULL
+        WHERE created_at IS NOT NULL AND created_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE auto_renews SET canceled_at = NULL
+        WHERE canceled_at IS NOT NULL AND canceled_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE registrations SET attended_at = NULL
+        WHERE attended_at IS NOT NULL AND attended_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE registrations SET registered_at = NULL
+        WHERE registered_at IS NOT NULL AND registered_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE registrations SET performance_starts_at = NULL
+        WHERE performance_starts_at IS NOT NULL AND performance_starts_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE registrations SET canceled_at = NULL
+        WHERE canceled_at IS NOT NULL AND canceled_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE first_visits SET attended_at = NULL
+        WHERE attended_at IS NOT NULL AND attended_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE first_visits SET registered_at = NULL
+        WHERE registered_at IS NOT NULL AND registered_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE first_visits SET performance_starts_at = NULL
+        WHERE performance_starts_at IS NOT NULL AND performance_starts_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE new_customers SET created_at = NULL
+        WHERE created_at IS NOT NULL AND created_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE customers SET created_at = NULL
+        WHERE created_at IS NOT NULL AND created_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE pipeline_runs SET date_range_start = NULL
+        WHERE date_range_start IS NOT NULL AND date_range_start !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+      UPDATE pipeline_runs SET date_range_end = NULL
+        WHERE date_range_end IS NOT NULL AND date_range_end !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}';
+
       -- Convert TEXT → DATE
       ALTER TABLE revenue_categories
         ALTER COLUMN period_start TYPE DATE USING period_start::DATE,
