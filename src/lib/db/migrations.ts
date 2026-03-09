@@ -336,6 +336,14 @@ const migrations: Migration[] = [
   {
     name: "012_text_to_date_columns",
     up: `
+      -- Drop indexes that depend on TEXT-specific expressions BEFORE altering column types.
+      -- idx_rc_period_month uses LEFT(period_start, 7) — incompatible with DATE.
+      -- idx_rc_period_end_month uses LEFT(period_end, 7) — incompatible with DATE.
+      -- idx_reg_attended_at has WHERE attended_at != '' — incompatible with DATE.
+      DROP INDEX IF EXISTS idx_rc_period_month;
+      DROP INDEX IF EXISTS idx_rc_period_end_month;
+      DROP INDEX IF EXISTS idx_reg_attended_at;
+
       -- Clean empty strings → NULL (DATE columns cannot store '')
       UPDATE revenue_categories SET period_start = NULL WHERE period_start = '';
       UPDATE revenue_categories SET period_end = NULL WHERE period_end = '';
@@ -382,12 +390,8 @@ const migrations: Migration[] = [
       ALTER TABLE new_customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
       ALTER TABLE customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
 
-      -- Rebuild functional indexes for DATE types
-      DROP INDEX IF EXISTS idx_rc_period_month;
+      -- Recreate indexes using DATE-compatible expressions
       CREATE INDEX idx_rc_period_month ON revenue_categories(DATE_TRUNC('month', period_start));
-      DROP INDEX IF EXISTS idx_rc_period_end_month;
-
-      DROP INDEX IF EXISTS idx_reg_attended_at;
       CREATE INDEX idx_reg_attended_at ON registrations(attended_at) WHERE attended_at IS NOT NULL;
     `,
   },
