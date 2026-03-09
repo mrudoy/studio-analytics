@@ -9,7 +9,7 @@ import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 import { invalidateStatsCache, bumpDataVersion } from "../cache/stats-cache";
-import { fetchAllExports, markExportProcessed } from "../union-api/fetch-export";
+import { fetchAllExports, markExportProcessed, logExport } from "../union-api/fetch-export";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
  *  30 min — processes all available API exports (typically 10-12 daily exports). */
@@ -126,6 +126,8 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
                 (a, b) => a + (typeof b === "number" ? b : 0), 0
               );
               console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
+              // Log this export for freshness tracking
+              await logExport(exportInfo, totalRecords, i, allExports.length);
               // Mark the latest (first) export as the watermark
               if (i === 0) {
                 await markExportProcessed(exportInfo.createdAt, totalRecords);

@@ -10,6 +10,7 @@ import { loadSettings } from "../crypto/credentials";
 import { getOverviewData } from "../db/overview-store";
 import { getPool } from "../db/database";
 import { buildDigestHtml } from "./digest-template";
+import { getDataFreshness } from "../union-api/fetch-export";
 
 export interface DigestResult {
   sent: number;
@@ -75,7 +76,8 @@ export async function sendDigestEmail(): Promise<DigestResult> {
 
   // We won the atomic claim — build and send the email
   const data = await getOverviewData();
-  const html = buildDigestHtml(data);
+  const freshness = await getDataFreshness();
+  const html = buildDigestHtml(data, freshness);
 
   // Format today's date for subject line
   const today = new Date().toLocaleDateString("en-US", {
@@ -119,7 +121,8 @@ export async function sendTestDigestEmail(
   fromAddress?: string,
 ): Promise<void> {
   const data = await getOverviewData();
-  const html = buildDigestHtml(data);
+  const freshness = await getDataFreshness();
+  const html = buildDigestHtml(data, freshness);
 
   const today = new Date().toLocaleDateString("en-US", {
     month: "short",

@@ -7,6 +7,7 @@
  */
 
 import type { OverviewData, TimeWindowMetrics } from "@/types/dashboard";
+import type { DataFreshness } from "../union-api/fetch-export";
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ function totalRow(
 
 // ── Public ─────────────────────────────────────────────────
 
-export function buildDigestHtml(data: OverviewData): string {
+export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | null): string {
   const windows = [data.yesterday, data.thisWeek, data.lastWeek];
   const { currentActive } = data;
 
@@ -109,6 +110,25 @@ export function buildDigestHtml(data: OverviewData): string {
     year: "numeric",
     timeZone: "America/New_York",
   });
+
+  // Build freshness warning banner if data is stale
+  const freshnessBanner = freshness && !freshness.isFresh
+    ? `
+          <!-- Data Freshness Warning -->
+          <tr>
+            <td style="padding:0;">
+              <div style="background-color:#fef3c7;border-bottom:1px solid #f59e0b;padding:12px 24px;">
+                <div style="font-size:13px;font-weight:600;color:#92400e;">
+                  Union data incomplete since ${new Date(freshness.latestDataDate).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
+                </div>
+                <div style="font-size:11px;color:#a16207;margin-top:2px;">
+                  Latest export covers through ${new Date(freshness.latestDataDate).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })} (${freshness.daysStale} day${freshness.daysStale === 1 ? "" : "s"} behind).
+                  Numbers below may be understated.
+                </div>
+              </div>
+            </td>
+          </tr>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -121,11 +141,12 @@ export function buildDigestHtml(data: OverviewData): string {
 
           <!-- Header -->
           <tr>
-            <td style="padding:24px 24px 12px;border-bottom:1px solid #e5e7eb;">
+            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner ? "none" : "1px solid #e5e7eb"};">
               <div style="font-size:20px;font-weight:700;color:#111827;">Auto-Renews</div>
               <div style="font-size:13px;color:#6b7280;margin-top:4px;">${today}</div>
             </td>
           </tr>
+          ${freshnessBanner}
 
           <!-- Table -->
           <tr>
