@@ -17,7 +17,11 @@ export async function GET(req: Request) {
   }
 
   if (mode === "revenue-debug") {
-    return revenueDebug();
+    try {
+      return await revenueDebug();
+    } catch (err) {
+      return NextResponse.json({ topLevelError: String(err), stack: (err as Error).stack }, { status: 500 });
+    }
   }
 
   try {
