@@ -39,64 +39,75 @@ export async function GET(req: Request) {
 
 async function revenueDebug() {
   const pool = getPool();
+  const results: Record<string, unknown> = {};
 
-  // 1. All raw categories for March 2026
-  const marchRaw = await pool.query(
-    `SELECT category, revenue, net_revenue, period_start, period_end
-     FROM revenue_categories
-     WHERE SUBSTR(period_start, 1, 7) = '2026-03'
-     ORDER BY revenue DESC`
-  );
+  try {
+    const marchRaw = await pool.query(
+      `SELECT category, revenue, net_revenue, period_start, period_end
+       FROM revenue_categories
+       WHERE SUBSTR(period_start, 1, 7) = '2026-03'
+       ORDER BY revenue DESC`
+    );
+    results.marchRawCategories = marchRaw.rows;
+  } catch (e) { results.marchRawError = String(e); }
 
-  // 2. All distinct spa-like categories ever
-  const spaLike = await pool.query(
-    `SELECT DISTINCT category, SUM(revenue) as total
-     FROM revenue_categories
-     WHERE category ILIKE '%sauna%' OR category ILIKE '%spa%'
-       OR category ILIKE '%plunge%' OR category ILIKE '%contrast%'
-       OR category ILIKE '%infrared%' OR category ILIKE '%cupping%'
-       OR category ILIKE '%treatment%' OR category ILIKE '%cold%'
-       OR category ILIKE '%lounge%'
-     GROUP BY category
-     ORDER BY total DESC`
-  );
-
-  // 3. Feb 2026 spa categories
-  const febSpa = await pool.query(
-    `SELECT category, revenue, net_revenue
-     FROM revenue_categories
-     WHERE SUBSTR(period_start, 1, 7) = '2026-02'
-       AND (category ILIKE '%sauna%' OR category ILIKE '%spa%'
+  try {
+    const spaLike = await pool.query(
+      `SELECT category, SUM(revenue) as total
+       FROM revenue_categories
+       WHERE category ILIKE '%sauna%' OR category ILIKE '%spa%'
          OR category ILIKE '%plunge%' OR category ILIKE '%contrast%'
          OR category ILIKE '%infrared%' OR category ILIKE '%cupping%'
          OR category ILIKE '%treatment%' OR category ILIKE '%cold%'
-         OR category ILIKE '%lounge%')
-     ORDER BY revenue DESC`
-  );
+         OR category ILIKE '%lounge%'
+       GROUP BY category
+       ORDER BY total DESC`
+    );
+    results.allSpaLikeCategories = spaLike.rows;
+  } catch (e) { results.spaLikeError = String(e); }
 
-  // 4. ALL categories for March (to see what's in "Other")
-  const marchOther = await pool.query(
-    `SELECT category, revenue, net_revenue
-     FROM revenue_categories
-     WHERE SUBSTR(period_start, 1, 7) = '2026-03'
-     ORDER BY revenue DESC`
-  );
+  try {
+    const febSpa = await pool.query(
+      `SELECT category, revenue, net_revenue
+       FROM revenue_categories
+       WHERE SUBSTR(period_start, 1, 7) = '2026-02'
+         AND (category ILIKE '%sauna%' OR category ILIKE '%spa%'
+           OR category ILIKE '%plunge%' OR category ILIKE '%contrast%'
+           OR category ILIKE '%infrared%' OR category ILIKE '%cupping%'
+           OR category ILIKE '%treatment%' OR category ILIKE '%cold%'
+           OR category ILIKE '%lounge%')
+       ORDER BY revenue DESC`
+    );
+    results.febSpaCategoriesDetail = febSpa.rows;
+  } catch (e) { results.febSpaError = String(e); }
 
-  // 5. Latest pipeline run info
-  const pipeline = await pool.query(
-    `SELECT ran_at, duration_ms, record_counts, warnings
-     FROM pipeline_runs
-     ORDER BY ran_at DESC
-     LIMIT 3`
-  );
+  try {
+    const pipeline = await pool.query(
+      `SELECT * FROM pipeline_runs ORDER BY ran_at DESC LIMIT 3`
+    );
+    results.recentPipelineRuns = pipeline.rows;
+  } catch (e) { results.pipelineError = String(e); }
 
-  return NextResponse.json({
-    marchRawCategories: marchRaw.rows,
-    allSpaLikeCategories: spaLike.rows,
-    febSpaCategoriesDetail: febSpa.rows,
-    marchOtherCategories: marchOther.rows,
-    recentPipelineRuns: pipeline.rows,
-  });
+  // Also check: what does getSpaMTDRevenue see?
+  try {
+    const spaMtd = await pool.query(
+      `SELECT category, revenue, net_revenue, period_start, period_end
+       FROM revenue_categories
+       WHERE category IN ('Infrared Sauna Suite', 'Contrast Suite', 'Spa Lounge', 'Treatment Room', 'CUPPING')
+         AND SUBSTR(period_start, 1, 7) = '2026-03'`
+    );
+    results.exactSpaCategoryMatch = spaMtd.rows;
+  } catch (e) { results.exactSpaError = String(e); }
+
+  // Check what categories exist for current month
+  try {
+    const allCats = await pool.query(
+      `SELECT DISTINCT category FROM revenue_categories WHERE SUBSTR(period_start, 1, 7) = '2026-03' ORDER BY category`
+    );
+    results.marchDistinctCategories = allCats.rows.map((r: { category: string }) => r.category);
+  } catch (e) { results.marchCatsError = String(e); }
+
+  return NextResponse.json(results);
 }
 
 async function getQuarterlySnapshot() {
