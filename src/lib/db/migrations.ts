@@ -203,6 +203,24 @@ const migrations: Migration[] = [
         ON first_visits (LOWER(email), attended_at);
     `,
   },
+  // Export log for freshness tracking — records each processed API export
+  {
+    name: "008_export_log_table",
+    up: `
+      CREATE TABLE IF NOT EXISTS export_log (
+        id SERIAL PRIMARY KEY,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        export_created_at TEXT NOT NULL,
+        data_range_start TEXT,
+        data_range_end TEXT,
+        record_count INTEGER DEFAULT 0,
+        export_index INTEGER DEFAULT 0,
+        total_exports INTEGER DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_log_range_end
+        ON export_log (data_range_end DESC);
+    `,
+  },
 ];
 
 /**

@@ -11,8 +11,8 @@ export function getPipelineQueue(): Queue {
   g.__pipelineQueue = new Queue("pipeline", {
     connection: getRedisConnection(),
     defaultJobOptions: {
-      attempts: 2,
-      backoff: { type: "fixed", delay: 10_000 }, // 10s delay before retry
+      attempts: 5,
+      backoff: { type: "exponential", delay: 30_000 }, // 30s, 60s, 2m, 4m, 8m
       removeOnComplete: { count: 10 },
       removeOnFail: { count: 10 },
     },

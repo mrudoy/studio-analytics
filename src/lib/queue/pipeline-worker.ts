@@ -10,6 +10,7 @@ import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 import { invalidateStatsCache, bumpDataVersion } from "../cache/stats-cache";
 import { fetchAllExports, markExportProcessed, logExport } from "../union-api/fetch-export";
+import { sendPipelineAlert } from "../email/pipeline-alerts";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
  *  30 min — processes all available API exports (typically 10-12 daily exports). */
@@ -300,8 +301,21 @@ export function startPipelineWorker(): Worker {
     }
   });
 
-  w.on("failed", (job, err) => {
+  w.on("failed", async (job, err) => {
     console.error(`[worker] Pipeline job ${job?.id} failed:`, err.message);
+
+    // Send alert email if all retries exhausted
+    if (job && job.attemptsMade >= (job.opts?.attempts ?? 5)) {
+      console.warn(`[worker] All ${job.attemptsMade} retries exhausted for job ${job.id}`);
+      try {
+        await sendPipelineAlert(
+          "retry_exhausted",
+          `Job ${job.id} failed after ${job.attemptsMade} attempts.\n\nLast error: ${err.message}`,
+        );
+      } catch (alertErr) {
+        console.error("[worker] Failed to send pipeline alert:", alertErr instanceof Error ? alertErr.message : alertErr);
+      }
+    }
   });
 
   w.on("error", (err) => {
@@ -311,6 +325,39 @@ export function startPipelineWorker(): Worker {
   w.on("stalled", (jobId) => {
     console.warn(`[worker] Job ${jobId} stalled — lock may have expired`);
   });
+
+  // Zombie job cleanup: every 5 minutes, check for active jobs >20 min old
+  // and force-fail them so the queue isn't permanently blocked.
+  const ZOMBIE_CHECK_INTERVAL = 5 * 60 * 1000; // 5 min
+  const ZOMBIE_THRESHOLD_MS = 20 * 60 * 1000;   // 20 min
+
+  setInterval(async () => {
+    try {
+      const { getPipelineQueue } = await import("./pipeline-queue");
+      const q = getPipelineQueue();
+      const activeJobs = await q.getJobs(["active"]);
+
+      for (const job of activeJobs) {
+        const elapsed = Date.now() - (job.processedOn || job.timestamp);
+        if (elapsed > ZOMBIE_THRESHOLD_MS) {
+          console.warn(
+            `[worker] Zombie cleanup: force-failing job ${job.id} (running ${Math.round(elapsed / 60_000)}m)`,
+          );
+          try {
+            await job.moveToFailed(
+              new Error(`Zombie cleanup: exceeded ${Math.round(ZOMBIE_THRESHOLD_MS / 60_000)} minute limit`),
+              "0",
+              false,
+            );
+          } catch {
+            // Best-effort
+          }
+        }
+      }
+    } catch {
+      // Non-fatal — Redis might be temporarily unavailable
+    }
+  }, ZOMBIE_CHECK_INTERVAL);
 
   g.__pipelineWorker = w;
   console.log("[worker] Pipeline worker started and listening for jobs");

@@ -26,6 +26,18 @@ export async function register() {
       await syncSchedule();
       console.log("[instrumentation] Schedule sync complete");
 
+      // Boot-time catch-up: if the pipeline missed runs while the server
+      // was down, auto-enqueue after a 60s delay to let Redis stabilize.
+      setTimeout(async () => {
+        try {
+          const { checkAndCatchUp } = await import("./lib/queue/catchup");
+          const result = await checkAndCatchUp();
+          console.log(`[instrumentation] Catch-up check: ${result.reason}`);
+        } catch (err) {
+          console.warn("[instrumentation] Catch-up check failed:", err instanceof Error ? err.message : err);
+        }
+      }, 60_000);
+
       // Graceful shutdown
       const shutdown = async (signal: string) => {
         console.log(`[instrumentation] ${signal} received, shutting down...`);
