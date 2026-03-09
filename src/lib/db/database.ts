@@ -1,4 +1,9 @@
-import { Pool } from "pg";
+import { Pool, types } from "pg";
+
+// Override DATE parser to return "YYYY-MM-DD" strings instead of Date objects.
+// This ensures existing code that does `.slice(0, 7)` etc. continues to work
+// after migrating date columns from TEXT to DATE type (migration 011).
+types.setTypeParser(1082, (val: string) => val);
 
 // Singleton pool with HMR guard for Next.js dev mode
 const globalForDb = globalThis as unknown as { pgPool?: Pool };
@@ -62,17 +67,17 @@ export async function initDatabase(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS revenue_categories (
       id SERIAL PRIMARY KEY,
-      period_start TEXT NOT NULL,
-      period_end TEXT NOT NULL,
+      period_start DATE NOT NULL,
+      period_end DATE NOT NULL,
       category TEXT NOT NULL,
-      revenue REAL DEFAULT 0,
-      union_fees REAL DEFAULT 0,
-      stripe_fees REAL DEFAULT 0,
-      other_fees REAL DEFAULT 0,
-      transfers REAL DEFAULT 0,
-      refunded REAL DEFAULT 0,
-      union_fees_refunded REAL DEFAULT 0,
-      net_revenue REAL DEFAULT 0,
+      revenue NUMERIC(12,2) DEFAULT 0,
+      union_fees NUMERIC(12,2) DEFAULT 0,
+      stripe_fees NUMERIC(12,2) DEFAULT 0,
+      other_fees NUMERIC(12,2) DEFAULT 0,
+      transfers NUMERIC(12,2) DEFAULT 0,
+      refunded NUMERIC(12,2) DEFAULT 0,
+      union_fees_refunded NUMERIC(12,2) DEFAULT 0,
+      net_revenue NUMERIC(12,2) DEFAULT 0,
       locked INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(period_start, period_end, category)
@@ -81,8 +86,8 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS pipeline_runs (
       id SERIAL PRIMARY KEY,
       ran_at TIMESTAMPTZ DEFAULT NOW(),
-      date_range_start TEXT,
-      date_range_end TEXT,
+      date_range_start DATE,
+      date_range_end DATE,
       record_counts TEXT,
       duration_ms INTEGER
     );
@@ -101,69 +106,72 @@ export async function initDatabase(): Promise<void> {
       snapshot_id TEXT,
       plan_name TEXT,
       plan_state TEXT,
-      plan_price REAL,
+      plan_price NUMERIC(12,2),
       customer_name TEXT,
       customer_email TEXT,
-      created_at TEXT,
+      created_at DATE,
       order_id TEXT,
       sales_channel TEXT,
-      canceled_at TEXT,
+      canceled_at DATE,
       canceled_by TEXT,
       admin TEXT,
       current_state TEXT,
       current_plan TEXT,
+      union_pass_id TEXT,
+      plan_category TEXT,
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS first_visits (
       id SERIAL PRIMARY KEY,
       event_name TEXT,
-      performance_starts_at TEXT,
+      performance_starts_at DATE,
       location_name TEXT,
       video_name TEXT,
       teacher_name TEXT,
       first_name TEXT,
       last_name TEXT,
       email TEXT,
-      registered_at TEXT,
-      attended_at TEXT,
+      registered_at DATE,
+      attended_at DATE,
       registration_type TEXT,
       state TEXT,
       pass TEXT,
       subscription TEXT,
-      revenue REAL,
+      revenue NUMERIC(12,2),
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS registrations (
       id SERIAL PRIMARY KEY,
       event_name TEXT,
-      performance_starts_at TEXT,
+      performance_starts_at DATE,
       location_name TEXT,
       video_name TEXT,
       teacher_name TEXT,
       first_name TEXT,
       last_name TEXT,
       email TEXT,
-      registered_at TEXT,
-      attended_at TEXT,
+      registered_at DATE,
+      attended_at DATE,
       registration_type TEXT,
       state TEXT,
       pass TEXT,
       subscription TEXT,
-      revenue REAL,
+      revenue NUMERIC(12,2),
+      is_first_visit BOOLEAN DEFAULT FALSE,
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
-      created_at TEXT,
+      created_at DATE,
       code TEXT,
       customer TEXT,
       email TEXT,
       order_type TEXT,
       payment TEXT,
-      total REAL DEFAULT 0,
+      total NUMERIC(12,2) DEFAULT 0,
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -173,7 +181,7 @@ export async function initDatabase(): Promise<void> {
       email TEXT,
       role TEXT,
       order_count INTEGER DEFAULT 0,
-      created_at TEXT,
+      created_at DATE,
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -185,8 +193,8 @@ export async function initDatabase(): Promise<void> {
       email TEXT UNIQUE,
       phone TEXT,
       role TEXT,
-      total_spent REAL DEFAULT 0,
-      ltv REAL DEFAULT 0,
+      total_spent NUMERIC(12,2) DEFAULT 0,
+      ltv NUMERIC(12,2) DEFAULT 0,
       order_count INTEGER DEFAULT 0,
       current_free_pass INTEGER DEFAULT 0,
       current_free_auto_renew INTEGER DEFAULT 0,
@@ -207,7 +215,7 @@ export async function initDatabase(): Promise<void> {
       neighborhood TEXT,
       inspiration TEXT,
       practice_frequency TEXT,
-      created_at TEXT,
+      created_at DATE,
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);

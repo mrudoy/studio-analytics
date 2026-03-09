@@ -114,10 +114,10 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id),
           pass_id = COALESCE(NULLIF(EXCLUDED.pass_id, ''), registrations.pass_id)`,
         [
-          r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt,
+          r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt || null,
           r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
-          r.firstName, r.lastName, r.email, r.phone || null, r.role || null,
-          r.registeredAt || null, r.canceledAt || null, r.attendedAt,
+          r.firstName, r.lastName, r.email.toLowerCase(), r.phone || null, r.role || null,
+          r.registeredAt || null, r.canceledAt || null, r.attendedAt || null,
           r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
           r.revenue, r.unionRegistrationId || null, r.passId || null,
         ]
@@ -357,11 +357,18 @@ export async function saveFirstVisits(rows: RegistrationRow[]): Promise<void> {
         ON CONFLICT (email, attended_at) DO NOTHING`,
         [
           r.eventName, r.performanceStartsAt, r.locationName, r.videoName || null,
-          r.teacherName, r.firstName, r.lastName, r.email,
+          r.teacherName, r.firstName, r.lastName, r.email.toLowerCase(),
           r.registeredAt || null, r.attendedAt,
           r.registrationType, r.state, r.pass, r.subscription,
           r.revenue,
         ]
+      );
+
+      // Also mark the corresponding registration row
+      await client.query(
+        `UPDATE registrations SET is_first_visit = TRUE
+         WHERE email = $1 AND attended_at = $2`,
+        [r.email.toLowerCase(), r.attendedAt]
       );
     }
     await client.query("COMMIT");
@@ -385,9 +392,9 @@ export async function saveFirstVisits(rows: RegistrationRow[]): Promise<void> {
 export async function getDropInsByWeek(startDate?: string, endDate?: string): Promise<WeeklyCount[]> {
   const pool = getPool();
   let query = `
-    SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
+    SELECT TO_CHAR(attended_at, 'IYYY-"W"IW') as week, COUNT(*) as count
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
+    WHERE attended_at IS NOT NULL
       AND (subscription = 'false' OR subscription IS NULL)
       ${dropInPassFilter()}
   `;
@@ -423,9 +430,9 @@ export async function getDropInsByWeek(startDate?: string, endDate?: string): Pr
 export async function getFirstVisitsByWeek(startDate?: string, endDate?: string): Promise<WeeklySegmentedCount[]> {
   const pool = getPool();
   let query = `
-    SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, pass, COUNT(*) as count
+    SELECT TO_CHAR(attended_at, 'IYYY-"W"IW') as week, pass, COUNT(*) as count
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
+    WHERE attended_at IS NOT NULL
       AND (subscription = 'false' OR subscription IS NULL)
       ${dropInPassFilter()}
   `;
@@ -481,9 +488,9 @@ export async function getFirstVisitsByWeek(startDate?: string, endDate?: string)
 export async function getRegistrationsByWeek(startDate?: string, endDate?: string): Promise<WeeklyCount[]> {
   const pool = getPool();
   let query = `
-    SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
+    SELECT TO_CHAR(attended_at, 'IYYY-"W"IW') as week, COUNT(*) as count
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
+    WHERE attended_at IS NOT NULL
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -517,7 +524,7 @@ export async function getDropInCountForRange(
   const res = await pool.query(
     `SELECT COUNT(*) AS cnt
      FROM registrations
-     WHERE attended_at IS NOT NULL AND attended_at != ''
+     WHERE attended_at IS NOT NULL
        AND attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
        ${dropInPassFilter()}`,
@@ -539,7 +546,7 @@ export async function getGuestCountForRange(
   const res = await pool.query(
     `SELECT COUNT(*) AS cnt
      FROM registrations
-     WHERE attended_at IS NOT NULL AND attended_at != ''
+     WHERE attended_at IS NOT NULL
        AND attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
        AND (UPPER(pass) LIKE '%GUEST%' OR UPPER(pass) LIKE '%COMMUNITY%')`,
@@ -560,7 +567,7 @@ export async function getIntroWeekCountForRange(
   const res = await pool.query(
     `SELECT COUNT(*) AS cnt
      FROM registrations
-     WHERE attended_at IS NOT NULL AND attended_at != ''
+     WHERE attended_at IS NOT NULL
        AND attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
        AND UPPER(pass) LIKE '%INTRO WEEK%'`,
@@ -583,7 +590,7 @@ export async function getDropInStats(): Promise<AttendanceStats | null> {
   const currentResult = await pool.query(
     `SELECT COUNT(*) as count FROM registrations
      WHERE attended_at >= $1 AND (subscription = 'false' OR subscription IS NULL)
-       AND attended_at IS NOT NULL AND attended_at != ''
+       AND attended_at IS NOT NULL
        ${dropInPassFilter()}`,
     [currentMonthStart]
   );
@@ -600,7 +607,7 @@ export async function getDropInStats(): Promise<AttendanceStats | null> {
     `SELECT COUNT(*) as count FROM registrations
      WHERE attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
-       AND attended_at IS NOT NULL AND attended_at != ''
+       AND attended_at IS NOT NULL
        ${dropInPassFilter()}`,
     [prevMonthStart, currentMonthStart]
   );
@@ -616,10 +623,10 @@ export async function getDropInStats(): Promise<AttendanceStats | null> {
   const sixWeeksAgoStr = sixWeeksAgo.toISOString().split("T")[0];
 
   const weeklyResult = await pool.query(
-    `SELECT TO_CHAR(attended_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
+    `SELECT TO_CHAR(attended_at, 'IYYY-"W"IW') as week, COUNT(*) as count
      FROM registrations
      WHERE attended_at >= $1 AND (subscription = 'false' OR subscription IS NULL)
-       AND attended_at IS NOT NULL AND attended_at != ''
+       AND attended_at IS NOT NULL
        ${dropInPassFilter()}
      GROUP BY week
      ORDER BY week`,
@@ -657,7 +664,7 @@ export async function hasRegistrationData(): Promise<boolean> {
  */
 export async function hasFirstVisitData(): Promise<boolean> {
   const pool = getPool();
-  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM first_visits`);
+  const { rows } = await pool.query(`SELECT COUNT(*) as count FROM registrations WHERE is_first_visit = TRUE`);
   return Number(rows[0].count) > 0;
 }
 
@@ -740,11 +747,11 @@ export async function getFirstTimeUniqueVisitorsByWeek(
   }
 
   const query = `
-    SELECT DATE_TRUNC('week', attended_at::date)::date::text as "weekStart",
+    SELECT DATE_TRUNC('week', attended_at)::date::text as "weekStart",
            COUNT(DISTINCT email) as "uniqueVisitors"
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
-      AND email IS NOT NULL AND email != ''
+    WHERE attended_at IS NOT NULL
+      AND email IS NOT NULL
       AND (subscription = 'false' OR subscription IS NULL)
       ${dropInPassFilter()}
       ${dateFilter}
@@ -787,8 +794,8 @@ export async function getFirstTimeSourceBreakdown(
     WITH first_per_email AS (
       SELECT email, MIN(attended_at) as first_at
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND (subscription = 'false' OR subscription IS NULL)
         ${dropInPassFilter()}
         ${dateFilter}
@@ -827,11 +834,11 @@ export async function getIntroWeekCustomersByWeek(
   }
 
   const query = `
-    SELECT DATE_TRUNC('week', attended_at::date)::date::text as "weekStart",
+    SELECT DATE_TRUNC('week', attended_at)::date::text as "weekStart",
            COUNT(DISTINCT email)::int as "customers"
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
-      AND email IS NOT NULL AND email != ''
+    WHERE attended_at IS NOT NULL
+      AND email IS NOT NULL
       AND (subscription = 'false' OR subscription IS NULL)
       AND UPPER(pass) LIKE '%INTRO WEEK%'
       ${dateFilter}
@@ -877,10 +884,10 @@ export async function getActiveIntroWeekCustomers(
       SELECT
         email,
         CONCAT(first_name, ' ', last_name) AS name,
-        attended_at::date AS visit_date
+        attended_at AS visit_date
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND UPPER(pass) LIKE '%INTRO WEEK%'
         AND state IN ('redeemed', 'confirmed')
     ),
@@ -939,10 +946,10 @@ export async function getIntroWeekConversionData(): Promise<IntroWeekConversionR
       SELECT
         LOWER(email) AS email,
         CONCAT(first_name, ' ', last_name) AS name,
-        attended_at::date AS visit_date
+        attended_at AS visit_date
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND UPPER(pass) LIKE '%INTRO WEEK%'
         AND state IN ('redeemed', 'confirmed')
     ),
@@ -1008,13 +1015,13 @@ export async function getExpiringIntroWeekCustomers(): Promise<{
         LOWER(email) as email,
         MIN(first_name) as first_name,
         MIN(last_name) as last_name,
-        MIN(attended_at::date) as intro_start
+        MIN(attended_at) as intro_start
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND (subscription = 'false' OR subscription IS NULL)
         AND UPPER(pass) LIKE '%INTRO WEEK%'
-        AND attended_at::date >= (CURRENT_DATE - INTERVAL '14 days')
+        AND attended_at >= (CURRENT_DATE - INTERVAL '14 days')
       GROUP BY LOWER(email)
     ),
     intro_windows AS (
@@ -1033,9 +1040,9 @@ export async function getExpiringIntroWeekCustomers(): Promise<{
         COUNT(*)::int as classes_attended
       FROM registrations r
       JOIN intro_windows iw ON LOWER(r.email) = iw.email
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.attended_at::date >= iw.intro_start
-        AND r.attended_at::date <= iw.intro_end
+      WHERE r.attended_at IS NOT NULL
+        AND r.attended_at >= iw.intro_start
+        AND r.attended_at <= iw.intro_end
         AND (r.subscription = 'false' OR r.subscription IS NULL)
       GROUP BY LOWER(r.email)
     )
@@ -1092,17 +1099,18 @@ export async function getReturningUniqueVisitorsByWeek(
   }
 
   const query = `
-    SELECT DATE_TRUNC('week', r.attended_at::date)::date::text as "weekStart",
+    SELECT DATE_TRUNC('week', r.attended_at)::date::text as "weekStart",
            COUNT(DISTINCT r.email) as "uniqueVisitors"
     FROM registrations r
-    WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-      AND r.email IS NOT NULL AND r.email != ''
+    WHERE r.attended_at IS NOT NULL
+      AND r.email IS NOT NULL
       AND (r.subscription = 'false' OR r.subscription IS NULL)
       ${dropInPassFilter("r.pass")}
       AND r.email NOT IN (
-        SELECT DISTINCT email FROM first_visits
-        WHERE attended_at IS NOT NULL AND attended_at != ''
-          AND email IS NOT NULL AND email != ''
+        SELECT DISTINCT email FROM registrations
+        WHERE is_first_visit = TRUE
+          AND attended_at IS NOT NULL
+          AND email IS NOT NULL
           ${fvDateFilter}
       )
       ${regDateFilter}
@@ -1146,14 +1154,15 @@ export async function getReturningSourceBreakdown(
     WITH qualifying AS (
       SELECT r.email, r.attended_at, r.pass
       FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
         AND r.email NOT IN (
-          SELECT DISTINCT email FROM first_visits
-          WHERE attended_at IS NOT NULL AND attended_at != ''
-            AND email IS NOT NULL AND email != ''
+          SELECT DISTINCT email FROM registrations
+          WHERE is_first_visit = TRUE
+            AND attended_at IS NOT NULL
+            AND email IS NOT NULL
             ${fvDateFilter}
         )
         ${regDateFilter}
@@ -1198,24 +1207,24 @@ export async function getDropInWeeklyDetail(weeksBack = 16): Promise<DropInWeekD
   const query = `
     WITH first_ever AS (
       -- Each customer's all-time first non-subscriber visit date
-      SELECT LOWER(email) as email, MIN(attended_at::date) as first_drop_in_date
+      SELECT LOWER(email) as email, MIN(attended_at) as first_drop_in_date
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND (subscription = 'false' OR subscription IS NULL)
         ${dropInPassFilter()}
       GROUP BY LOWER(email)
     ),
     drop_in_visits AS (
-      SELECT r.email, r.attended_at::date as visit_date,
-             DATE_TRUNC('week', r.attended_at::date)::date as week_start
+      SELECT r.email, r.attended_at as visit_date,
+             DATE_TRUNC('week', r.attended_at)::date as week_start
       FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
-        AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
-        AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date
+        AND r.attended_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at < DATE_TRUNC('week', CURRENT_DATE)::date
     )
     SELECT
       d.week_start::text as "weekStart",
@@ -1254,23 +1263,23 @@ export async function getDropInWTD(): Promise<DropInWeekDetailRow & { daysLeft: 
 
   const query = `
     WITH first_ever AS (
-      SELECT LOWER(email) as email, MIN(attended_at::date) as first_drop_in_date
+      SELECT LOWER(email) as email, MIN(attended_at) as first_drop_in_date
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND (subscription = 'false' OR subscription IS NULL)
         ${dropInPassFilter()}
       GROUP BY LOWER(email)
     ),
     wtd_visits AS (
-      SELECT r.email, r.attended_at::date as visit_date
+      SELECT r.email, r.attended_at as visit_date
       From registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
-        AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
-        AND r.attended_at::date <= CURRENT_DATE
+        AND r.attended_at >= DATE_TRUNC('week', CURRENT_DATE)::date
+        AND r.attended_at <= CURRENT_DATE
     )
     SELECT
       DATE_TRUNC('week', CURRENT_DATE)::date::text as "weekStart",
@@ -1312,12 +1321,12 @@ export async function getDropInLastWeekWTD(): Promise<number> {
   const query = `
     SELECT COUNT(*) as visits
     FROM registrations r
-    WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-      AND r.email IS NOT NULL AND r.email != ''
+    WHERE r.attended_at IS NOT NULL
+      AND r.email IS NOT NULL
       AND (r.subscription = 'false' OR r.subscription IS NULL)
       ${dropInPassFilter("r.pass")}
-      AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date
-      AND r.attended_at::date <= (CURRENT_DATE - INTERVAL '7 days')::date
+      AND r.attended_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date
+      AND r.attended_at <= (CURRENT_DATE - INTERVAL '7 days')::date
   `;
 
   const { rows } = await pool.query(query);
@@ -1341,11 +1350,11 @@ export async function getDropInFrequencyDistribution(): Promise<{
     WITH visit_counts AS (
       SELECT LOWER(email) as email, COUNT(*) as visits
       FROM registrations
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      WHERE attended_at IS NOT NULL
+        AND email IS NOT NULL
         AND (subscription = 'false' OR subscription IS NULL)
         ${dropInPassFilter()}
-        AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+        AND attended_at >= (CURRENT_DATE - INTERVAL '90 days')
       GROUP BY LOWER(email)
     )
     SELECT
@@ -1432,10 +1441,11 @@ export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]
 
   const query = `
     WITH first_date_per_email AS (
-      SELECT LOWER(email) as email, MIN(attended_at::date) as first_date
-      FROM first_visits
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+      SELECT LOWER(email) as email, MIN(attended_at) as first_date
+      FROM registrations
+      WHERE is_first_visit = TRUE
+        AND attended_at IS NOT NULL
+        AND email IS NOT NULL
         ${IN_STUDIO_PASS_FILTER}
       GROUP BY LOWER(email)
     ),
@@ -1479,20 +1489,21 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
   const query = `
     WITH new_custs AS (
       SELECT LOWER(email) as email,
-             MIN(attended_at::date) as first_date,
-             DATE_TRUNC('week', MIN(attended_at::date))::date as cohort_start
-      FROM first_visits
-      WHERE attended_at IS NOT NULL AND attended_at != ''
-        AND email IS NOT NULL AND email != ''
+             MIN(attended_at) as first_date,
+             DATE_TRUNC('week', MIN(attended_at))::date as cohort_start
+      FROM registrations
+      WHERE is_first_visit = TRUE
+        AND attended_at IS NOT NULL
+        AND email IS NOT NULL
         ${IN_STUDIO_PASS_FILTER}
       GROUP BY LOWER(email)
     ),
     conversions AS (
       SELECT LOWER(customer_email) as email,
-             MIN(created_at::date) as earliest_sub
+             MIN(created_at) as earliest_sub
       FROM auto_renews
-      WHERE customer_email IS NOT NULL AND customer_email != ''
-        AND created_at IS NOT NULL AND created_at != ''
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
         ${IN_STUDIO_PLAN_FILTER}
       GROUP BY LOWER(customer_email)
     ),
@@ -1569,10 +1580,10 @@ export async function materializeFirstInStudioSub(): Promise<() => Promise<void>
     await client.query(`
       CREATE UNLOGGED TABLE ${tableName} AS
       SELECT LOWER(customer_email) as email,
-             MIN(created_at::date) as first_sub_date
+             MIN(created_at) as first_sub_date
       FROM auto_renews
-      WHERE customer_email IS NOT NULL AND customer_email != ''
-        AND created_at IS NOT NULL AND created_at != ''
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
         ${IN_STUDIO_PLAN_FILTER}
       GROUP BY LOWER(customer_email)
     `);
@@ -1614,15 +1625,15 @@ function getHighIntentPoolCTE(baseDateFilter: string): string {
     SELECT week_start, COUNT(DISTINCT email) as pool_size
     FROM (
       SELECT LOWER(r.email) as email,
-             DATE_TRUNC('week', r.attended_at::date)::date as week_start,
+             DATE_TRUNC('week', r.attended_at)::date as week_start,
              COUNT(*) OVER (
                PARTITION BY LOWER(r.email)
-               ORDER BY r.attended_at::date
+               ORDER BY r.attended_at
                RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW
              ) as rolling_30d_visits
       FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
         ${baseDateFilter}
@@ -1649,22 +1660,22 @@ export interface ConversionPoolWeekRow {
 export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKey = "all", useTempTable = false): Promise<ConversionPoolWeekRow[]> {
   const pool = getPool();
   const sliceFilter = POOL_SLICE_FILTERS[slice];
-  const baseDateFilter = `AND r.attended_at::date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
-        AND r.attended_at::date < DATE_TRUNC('week', CURRENT_DATE)::date`;
+  const baseDateFilter = `AND r.attended_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at < DATE_TRUNC('week', CURRENT_DATE)::date`;
 
   const poolCTE = slice === "high-intent"
     ? `non_auto_pool AS (${getHighIntentPoolCTE(baseDateFilter)})`
     : `non_auto_pool AS (
-      SELECT DATE_TRUNC('week', r.attended_at::date)::date as week_start,
+      SELECT DATE_TRUNC('week', r.attended_at)::date as week_start,
              COUNT(DISTINCT LOWER(r.email)) as pool_size
       FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
         ${baseDateFilter}
         ${sliceFilter}
-      GROUP BY DATE_TRUNC('week', r.attended_at::date)::date
+      GROUP BY DATE_TRUNC('week', r.attended_at)::date
     )`;
 
   // When temp table is available, reference it directly instead of recomputing
@@ -1672,10 +1683,10 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
     ? `first_in_studio_sub AS (SELECT email, first_sub_date FROM ${FIRST_IN_STUDIO_SUB_TABLE})`
     : `first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
-             MIN(created_at::date) as first_sub_date
+             MIN(created_at) as first_sub_date
       FROM auto_renews
-      WHERE customer_email IS NOT NULL AND customer_email != ''
-        AND created_at IS NOT NULL AND created_at != ''
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
         ${IN_STUDIO_PLAN_FILTER}
       GROUP BY LOWER(customer_email))`;
 
@@ -1697,10 +1708,10 @@ export async function getConversionPoolWeekly(weeksBack = 16, slice: PoolSliceKe
       WHERE EXISTS (
         SELECT 1 FROM registrations r
         WHERE LOWER(r.email) = f.email
-          AND r.attended_at IS NOT NULL AND r.attended_at != ''
+          AND r.attended_at IS NOT NULL
           AND (r.subscription = 'false' OR r.subscription IS NULL)
           ${dropInPassFilter("r.pass")}
-          AND r.attended_at::date < f.first_sub_date
+          AND r.attended_at < f.first_sub_date
           ${sliceFilter}
       )
     ),
@@ -1751,25 +1762,25 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all", useTempT
     pool_7d AS (
       SELECT COUNT(DISTINCT email) as cnt FROM (
         SELECT LOWER(r.email) as email,
-               COUNT(*) OVER (PARTITION BY LOWER(r.email) ORDER BY r.attended_at::date RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW) as rolling
+               COUNT(*) OVER (PARTITION BY LOWER(r.email) ORDER BY r.attended_at RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW) as rolling
         FROM registrations r
-        WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-          AND r.email IS NOT NULL AND r.email != ''
+        WHERE r.attended_at IS NOT NULL
+          AND r.email IS NOT NULL
           AND (r.subscription = 'false' OR r.subscription IS NULL)
           ${dropInPassFilter("r.pass")}
-          AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
-          AND r.attended_at::date <= CURRENT_DATE
+          AND r.attended_at >= DATE_TRUNC('week', CURRENT_DATE)::date
+          AND r.attended_at <= CURRENT_DATE
       ) sub WHERE rolling >= 2
     )` : `
     pool_7d AS (
       SELECT COUNT(DISTINCT LOWER(r.email)) as cnt
       FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
-        AND r.attended_at::date >= DATE_TRUNC('week', CURRENT_DATE)::date
-        AND r.attended_at::date <= CURRENT_DATE
+        AND r.attended_at >= DATE_TRUNC('week', CURRENT_DATE)::date
+        AND r.attended_at <= CURRENT_DATE
         ${sliceFilter}
     )`;
 
@@ -1777,25 +1788,25 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all", useTempT
     pool_30d AS (
       SELECT COUNT(DISTINCT email) as cnt FROM (
         SELECT LOWER(r.email) as email,
-               COUNT(*) OVER (PARTITION BY LOWER(r.email) ORDER BY r.attended_at::date RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW) as rolling
+               COUNT(*) OVER (PARTITION BY LOWER(r.email) ORDER BY r.attended_at RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW) as rolling
         FROM registrations r
-        WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-          AND r.email IS NOT NULL AND r.email != ''
+        WHERE r.attended_at IS NOT NULL
+          AND r.email IS NOT NULL
           AND (r.subscription = 'false' OR r.subscription IS NULL)
           ${dropInPassFilter("r.pass")}
-          AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
-          AND r.attended_at::date <= CURRENT_DATE
+          AND r.attended_at >= (CURRENT_DATE - INTERVAL '30 days')::date
+          AND r.attended_at <= CURRENT_DATE
       ) sub WHERE rolling >= 2
     )` : `
     pool_30d AS (
       SELECT COUNT(DISTINCT LOWER(r.email)) as cnt
       FROM registrations r
-      WHERE r.attended_at IS NOT NULL AND r.attended_at != ''
-        AND r.email IS NOT NULL AND r.email != ''
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
-        AND r.attended_at::date >= (CURRENT_DATE - INTERVAL '30 days')::date
-        AND r.attended_at::date <= CURRENT_DATE
+        AND r.attended_at >= (CURRENT_DATE - INTERVAL '30 days')::date
+        AND r.attended_at <= CURRENT_DATE
         ${sliceFilter}
     )`;
 
@@ -1803,10 +1814,10 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all", useTempT
     ? `first_in_studio_sub AS (SELECT email, first_sub_date FROM ${FIRST_IN_STUDIO_SUB_TABLE})`
     : `first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
-             MIN(created_at::date) as first_sub_date
+             MIN(created_at) as first_sub_date
       FROM auto_renews
-      WHERE customer_email IS NOT NULL AND customer_email != ''
-        AND created_at IS NOT NULL AND created_at != ''
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
         ${IN_STUDIO_PLAN_FILTER}
       GROUP BY LOWER(customer_email))`;
 
@@ -1822,10 +1833,10 @@ export async function getConversionPoolWTD(slice: PoolSliceKey = "all", useTempT
         AND EXISTS (
           SELECT 1 FROM registrations r
           WHERE LOWER(r.email) = f.email
-            AND r.attended_at IS NOT NULL AND r.attended_at != ''
+            AND r.attended_at IS NOT NULL
             AND (r.subscription = 'false' OR r.subscription IS NULL)
             ${dropInPassFilter("r.pass")}
-            AND r.attended_at::date < f.first_sub_date
+            AND r.attended_at < f.first_sub_date
             ${sliceFilter}
         )
     )
@@ -1880,10 +1891,10 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all", use
     ? `first_in_studio_sub AS (SELECT email, first_sub_date FROM ${FIRST_IN_STUDIO_SUB_TABLE})`
     : `first_in_studio_sub AS (
       SELECT LOWER(customer_email) as email,
-             MIN(created_at::date) as first_sub_date
+             MIN(created_at) as first_sub_date
       FROM auto_renews
-      WHERE customer_email IS NOT NULL AND customer_email != ''
-        AND created_at IS NOT NULL AND created_at != ''
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
         ${IN_STUDIO_PLAN_FILTER}
       GROUP BY LOWER(customer_email))`;
 
@@ -1894,15 +1905,15 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all", use
       SELECT f.email,
              f.first_sub_date,
              DATE_TRUNC('week', f.first_sub_date)::date as convert_week,
-             MIN(r.attended_at::date) as first_non_auto_visit,
-             COUNT(DISTINCT r.attended_at::date) as visit_count,
-             f.first_sub_date - MIN(r.attended_at::date) as days_to_convert
+             MIN(r.attended_at) as first_non_auto_visit,
+             COUNT(DISTINCT r.attended_at) as visit_count,
+             f.first_sub_date - MIN(r.attended_at) as days_to_convert
       FROM first_in_studio_sub f
       JOIN registrations r ON LOWER(r.email) = f.email
-        AND r.attended_at IS NOT NULL AND r.attended_at != ''
+        AND r.attended_at IS NOT NULL
         AND (r.subscription = 'false' OR r.subscription IS NULL)
         ${dropInPassFilter("r.pass")}
-        AND r.attended_at::date < f.first_sub_date
+        AND r.attended_at < f.first_sub_date
         ${sliceFilter}
       WHERE f.first_sub_date >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '12 weeks')::date
       GROUP BY f.email, f.first_sub_date
@@ -2060,10 +2071,10 @@ export async function getUsageFrequencyByCategory(): Promise<UsageData> {
       LOWER(email) as email,
       COUNT(*) as visits
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
-      AND email IS NOT NULL AND email != ''
+    WHERE attended_at IS NOT NULL
+      AND email IS NOT NULL
       AND state IN ('redeemed', 'confirmed')
-      AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+      AND attended_at >= (CURRENT_DATE - INTERVAL '90 days')
     GROUP BY LOWER(email)
   `;
   const { rows: visitRows } = await pool.query(visitQuery);
@@ -2199,10 +2210,10 @@ export async function getUsageDetailByCategory(
       LOWER(email) as email,
       COUNT(*) as visits
     FROM registrations
-    WHERE attended_at IS NOT NULL AND attended_at != ''
-      AND email IS NOT NULL AND email != ''
+    WHERE attended_at IS NOT NULL
+      AND email IS NOT NULL
       AND state IN ('redeemed', 'confirmed')
-      AND attended_at::date >= (CURRENT_DATE - INTERVAL '90 days')
+      AND attended_at >= (CURRENT_DATE - INTERVAL '90 days')
     GROUP BY LOWER(email)
   `;
   const { rows: visitRows } = await pool.query(visitQuery);
@@ -2305,15 +2316,14 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
     ),
     visit_counts AS (
       SELECT a.email, a.name, a.plan_name, a.created_at,
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 13) THEN 1 END)::int AS visits_last_2wk,
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 27)
-                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 13) THEN 1 END)::int AS visits_prior_2wk,
+        COUNT(CASE WHEN r.attended_at >= (CURRENT_DATE - 13) THEN 1 END)::int AS visits_last_2wk,
+        COUNT(CASE WHEN r.attended_at >= (CURRENT_DATE - 27)
+                   AND r.attended_at < (CURRENT_DATE - 13) THEN 1 END)::int AS visits_prior_2wk,
         COUNT(r.id)::int AS visits_8wk
       FROM active a
       LEFT JOIN registrations r ON r.email = a.email
         AND r.state IN ('redeemed','confirmed')
-        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
-        AND LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 55)
+        AND r.attended_at >= (CURRENT_DATE - 55)
       GROUP BY a.email, a.name, a.plan_name, a.created_at
     ),
     segmented AS (
@@ -2321,8 +2331,8 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
         ROUND(visits_8wk::numeric / 8, 1) AS avg_weekly,
         ROUND(((visits_last_2wk - visits_prior_2wk)::numeric / visits_prior_2wk) * 100, 0) AS drop_pct,
         CASE
-          WHEN created_at ~ '^\\d{4}-' THEN
-            ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
+          WHEN created_at IS NOT NULL THEN
+            ROUND((CURRENT_DATE - created_at) / 30.44, 1)
           ELSE NULL
         END AS tenure_months,
         CASE
@@ -2423,25 +2433,24 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
     visit_counts AS (
       SELECT a.email, a.name, a.plan_name, a.created_at,
         -- visits in last 30 days (current billing cycle)
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 29) THEN 1 END)::int AS visits_last_30d,
+        COUNT(CASE WHEN r.attended_at >= (CURRENT_DATE - 29) THEN 1 END)::int AS visits_last_30d,
         -- visits 31-60 days ago (prior billing cycle)
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 59)
-                   AND LEFT(r.attended_at,10)::date < (CURRENT_DATE - 29) THEN 1 END)::int AS visits_prior_30d,
+        COUNT(CASE WHEN r.attended_at >= (CURRENT_DATE - 59)
+                   AND r.attended_at < (CURRENT_DATE - 29) THEN 1 END)::int AS visits_prior_30d,
         -- total visits in 90 days
         COUNT(r.id)::int AS visits_90d
       FROM active_sky3 a
       LEFT JOIN registrations r ON LOWER(r.email) = a.email
         AND r.state IN ('redeemed','confirmed')
-        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
-        AND LEFT(r.attended_at,10)::date >= (CURRENT_DATE - 89)
+        AND r.attended_at >= (CURRENT_DATE - 89)
       GROUP BY a.email, a.name, a.plan_name, a.created_at
     ),
     segmented AS (
       SELECT *,
         ROUND(visits_90d::numeric / 3, 1) AS avg_per_month,
         CASE
-          WHEN created_at IS NOT NULL AND created_at ~ '^\\d{4}-' THEN
-            ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1)
+          WHEN created_at IS NOT NULL THEN
+            ROUND((CURRENT_DATE - created_at) / 30.44, 1)
           ELSE NULL
         END AS tenure_months,
         -- Effective cost per class this month ($95 / visits)
@@ -2452,8 +2461,8 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
           -- Tier 2: Under-Using — only 1 visit (paying $95/class, worse than $39 drop-in)
           WHEN visits_last_30d = 1 THEN 2
           -- Tier 3: New & Declining — tenure ≤ 3 months AND last 30d < prior 30d
-          WHEN created_at IS NOT NULL AND created_at ~ '^\\d{4}-'
-               AND ROUND((CURRENT_DATE - LEFT(created_at,10)::date) / 30.44, 1) <= 3
+          WHEN created_at IS NOT NULL
+               AND ROUND((CURRENT_DATE - created_at) / 30.44, 1) <= 3
                AND visits_prior_30d > 0
                AND visits_last_30d < visits_prior_30d THEN 3
           ELSE NULL
@@ -2510,17 +2519,17 @@ export async function getSky3ChurnProfile() {
         created_at,
         canceled_at,
         CASE
-          WHEN created_at ~ '^\\d{4}-' AND canceled_at ~ '^\\d{4}-' THEN
-            ROUND((LEFT(canceled_at,10)::date - LEFT(created_at,10)::date) / 30.44, 1)
+          WHEN created_at IS NOT NULL AND canceled_at IS NOT NULL THEN
+            ROUND((canceled_at - created_at) / 30.44, 1)
           ELSE NULL
         END AS tenure_months
       FROM auto_renews
-      WHERE canceled_at IS NOT NULL AND canceled_at::text > ''
-        AND created_at IS NOT NULL AND created_at ~ '^\\d{4}-'
+      WHERE canceled_at IS NOT NULL
+        AND created_at IS NOT NULL
         AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%sky5%'
              OR plan_name ILIKE '%5 pack%' OR plan_name ILIKE '%5-pack%'
              OR plan_name ILIKE '%skyhigh%')
-        AND LEFT(canceled_at,10)::date >= (CURRENT_DATE - INTERVAL '6 months')
+        AND canceled_at >= (CURRENT_DATE - INTERVAL '6 months')
       ORDER BY customer_email, canceled_at DESC
     ),
     -- Visits BEFORE subscription start (prior customer activity)
@@ -2530,27 +2539,25 @@ export async function getSky3ChurnProfile() {
         COUNT(CASE WHEN UPPER(r.pass) LIKE '%DROP%' OR r.pass ILIKE '%single%' THEN 1 END)::int AS prior_dropin_visits,
         COUNT(CASE WHEN UPPER(r.pass) LIKE '%GUEST%' THEN 1 END)::int AS prior_guest_visits,
         COUNT(r.id)::int AS prior_total_visits,
-        MIN(LEFT(r.attended_at,10)::date) AS first_ever_visit
+        MIN(r.attended_at) AS first_ever_visit
       FROM canceled_sky3 c
       LEFT JOIN registrations r ON LOWER(r.email) = c.email
         AND r.state IN ('redeemed','confirmed')
-        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
-        AND LEFT(r.attended_at,10)::date < LEFT(c.created_at,10)::date
+        AND r.attended_at < c.created_at
       GROUP BY c.email
     ),
     -- Visits DURING subscription (before cancellation)
     sub_visits AS (
       SELECT c.email,
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (LEFT(c.canceled_at,10)::date - 30)
-                   AND LEFT(r.attended_at,10)::date < LEFT(c.canceled_at,10)::date THEN 1 END)::int AS visits_30d_before_cancel,
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= (LEFT(c.canceled_at,10)::date - 60)
-                   AND LEFT(r.attended_at,10)::date < (LEFT(c.canceled_at,10)::date - 30) THEN 1 END)::int AS visits_60_30d_before_cancel,
-        COUNT(CASE WHEN LEFT(r.attended_at,10)::date >= LEFT(c.created_at,10)::date
-                   AND LEFT(r.attended_at,10)::date < LEFT(c.canceled_at,10)::date THEN 1 END)::int AS total_visits_during_sub
+        COUNT(CASE WHEN r.attended_at >= (c.canceled_at - 30)
+                   AND r.attended_at < c.canceled_at THEN 1 END)::int AS visits_30d_before_cancel,
+        COUNT(CASE WHEN r.attended_at >= (c.canceled_at - 60)
+                   AND r.attended_at < (c.canceled_at - 30) THEN 1 END)::int AS visits_60_30d_before_cancel,
+        COUNT(CASE WHEN r.attended_at >= c.created_at
+                   AND r.attended_at < c.canceled_at THEN 1 END)::int AS total_visits_during_sub
       FROM canceled_sky3 c
       LEFT JOIN registrations r ON LOWER(r.email) = c.email
         AND r.state IN ('redeemed','confirmed')
-        AND r.attended_at ~ '^\\d{4}-\\d{2}-\\d{2}'
       GROUP BY c.email
     )
     SELECT

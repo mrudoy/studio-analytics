@@ -28,8 +28,8 @@ const detectDropInConverter: Detector = async (pool) => {
         LEFT JOIN auto_renews ar
           ON LOWER(r.email) = LOWER(ar.customer_email)
           AND ar.plan_state IN ('Active', 'In Trial')
-        WHERE r.attended_at >= TO_CHAR(NOW() - INTERVAL '90 days', 'YYYY-MM-DD')
-          AND r.email IS NOT NULL AND r.email != ''
+        WHERE r.attended_at >= (CURRENT_DATE - INTERVAL '90 days')
+          AND r.email IS NOT NULL
           AND ar.customer_email IS NULL
         GROUP BY r.email
         HAVING COUNT(*) >= 4
@@ -77,8 +77,8 @@ const detectSky3EarlyChurn: Detector = async (pool) => {
       SELECT COUNT(*) AS total
       FROM auto_renews
       WHERE plan_state = 'Canceled'
-        AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%skyhigh%' OR plan_name ILIKE '%pack%')
-        AND canceled_at >= TO_CHAR(NOW() - INTERVAL '90 days', 'YYYY-MM-DD')
+        AND plan_category = 'SKY3'
+        AND canceled_at >= (CURRENT_DATE - INTERVAL '90 days')
     `);
 
     const totalCanceled = parseInt(totalRes.rows[0]?.total ?? "0", 10);
@@ -89,13 +89,11 @@ const detectSky3EarlyChurn: Detector = async (pool) => {
       SELECT COUNT(*) AS early
       FROM auto_renews
       WHERE plan_state = 'Canceled'
-        AND (plan_name ILIKE '%sky3%' OR plan_name ILIKE '%skyhigh%' OR plan_name ILIKE '%pack%')
-        AND canceled_at >= TO_CHAR(NOW() - INTERVAL '90 days', 'YYYY-MM-DD')
-        AND created_at IS NOT NULL AND created_at != ''
-        AND canceled_at IS NOT NULL AND canceled_at != ''
-        AND (
-          TO_DATE(canceled_at, 'YYYY-MM-DD') - TO_DATE(created_at, 'YYYY-MM-DD')
-        ) < 90
+        AND plan_category = 'SKY3'
+        AND canceled_at >= (CURRENT_DATE - INTERVAL '90 days')
+        AND created_at IS NOT NULL
+        AND canceled_at IS NOT NULL
+        AND (canceled_at - created_at) < 90
     `);
 
     const earlyCanceled = parseInt(earlyRes.rows[0]?.early ?? "0", 10);
@@ -135,9 +133,10 @@ const detectNewCustomerReturnRate: Detector = async (pool) => {
     // First visits in the last 60 days (with email)
     const fvRes = await pool.query(`
       SELECT COUNT(DISTINCT email) AS total_fv
-      FROM first_visits
-      WHERE attended_at >= TO_CHAR(NOW() - INTERVAL '60 days', 'YYYY-MM-DD')
-        AND email IS NOT NULL AND email != ''
+      FROM registrations
+      WHERE is_first_visit = TRUE
+        AND attended_at >= (CURRENT_DATE - INTERVAL '60 days')
+        AND email IS NOT NULL
     `);
 
     const totalFirstVisits = parseInt(fvRes.rows[0]?.total_fv ?? "0", 10);
@@ -146,12 +145,14 @@ const detectNewCustomerReturnRate: Detector = async (pool) => {
     // Of those, how many have a subsequent registration?
     const returnedRes = await pool.query(`
       SELECT COUNT(DISTINCT fv.email) AS returned
-      FROM first_visits fv
+      FROM registrations fv
       INNER JOIN registrations r
-        ON LOWER(fv.email) = LOWER(r.email)
+        ON fv.email = r.email
         AND r.attended_at > fv.attended_at
-      WHERE fv.attended_at >= TO_CHAR(NOW() - INTERVAL '60 days', 'YYYY-MM-DD')
-        AND fv.email IS NOT NULL AND fv.email != ''
+        AND r.is_first_visit = FALSE
+      WHERE fv.is_first_visit = TRUE
+        AND fv.attended_at >= (CURRENT_DATE - INTERVAL '60 days')
+        AND fv.email IS NOT NULL
     `);
 
     const returned = parseInt(returnedRes.rows[0]?.returned ?? "0", 10);
@@ -191,12 +192,12 @@ const detectRevenueTrendAnomaly: Detector = async (pool) => {
   try {
     // Get monthly net revenue for the last 4 months
     const res = await pool.query(`
-      SELECT LEFT(period_start, 7) AS month,
+      SELECT TO_CHAR(period_start, 'YYYY-MM') AS month,
              SUM(net_revenue) AS net
       FROM revenue_categories
-      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-        AND period_start >= TO_CHAR(NOW() - INTERVAL '4 months', 'YYYY-MM-01')
-      GROUP BY LEFT(period_start, 7)
+      WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+        AND period_start >= DATE_TRUNC('month', NOW() - INTERVAL '4 months')
+      GROUP BY TO_CHAR(period_start, 'YYYY-MM')
       ORDER BY month DESC
       LIMIT 4
     `);

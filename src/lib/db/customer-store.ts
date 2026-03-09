@@ -51,7 +51,7 @@ export async function saveCustomers(rows: CustomerRow[]): Promise<void> {
         `INSERT INTO new_customers (name, email, role, order_count, created_at)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (email) DO NOTHING`,
-        [r.name, r.email, r.role, r.orders, r.created]
+        [r.name, r.email.toLowerCase(), r.role, r.orders, r.created || null]
       );
     }
     await client.query("COMMIT");
@@ -77,7 +77,7 @@ export async function getCustomers(startDate?: string, endDate?: string): Promis
   let query = `
     SELECT id, name, email, role, order_count, created_at
     FROM new_customers
-    WHERE created_at IS NOT NULL AND created_at != ''
+    WHERE created_at IS NOT NULL
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -111,9 +111,9 @@ export async function getCustomers(startDate?: string, endDate?: string): Promis
 export async function getNewCustomersByWeek(startDate?: string, endDate?: string): Promise<{ week: string; count: number }[]> {
   const pool = getPool();
   let query = `
-    SELECT TO_CHAR(created_at::date, 'IYYY-"W"IW') as week, COUNT(*) as count
+    SELECT TO_CHAR(created_at, 'IYYY-"W"IW') as week, COUNT(*) as count
     FROM new_customers
-    WHERE created_at IS NOT NULL AND created_at != ''
+    WHERE created_at IS NOT NULL
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -326,7 +326,7 @@ export async function saveFullCustomers(rows: FullCustomerRow[]): Promise<void> 
           row.unionId,
           row.firstName,
           row.lastName,
-          row.email,
+          row.email.toLowerCase(),
           row.phone || null,
           row.role || null,
           row.totalSpent,
@@ -353,7 +353,7 @@ export async function saveFullCustomers(rows: FullCustomerRow[]): Promise<void> 
           row.neighborhood || null,
           row.inspiration || null,
           row.practiceFrequency || null,
-          row.createdAt,
+          row.createdAt || null,
         ]
       );
     }

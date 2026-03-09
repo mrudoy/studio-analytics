@@ -37,17 +37,17 @@ export async function getSpaServiceBreakdown(): Promise<SpaServiceRevenue[]> {
   const pool = getPool();
   const res = await pool.query(
     `WITH deduped AS (
-       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+       SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
          category, revenue, net_revenue, period_start
        FROM revenue_categories
-       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-       ORDER BY category, LEFT(period_start, 7), period_end DESC
+       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+       ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
      )
      SELECT
        category,
        SUM(revenue) AS total_revenue,
        SUM(net_revenue) AS total_net_revenue,
-       COUNT(DISTINCT SUBSTR(period_start, 1, 7)) AS months
+       COUNT(DISTINCT TO_CHAR(period_start, 'YYYY-MM')) AS months
      FROM deduped
      WHERE category = ANY($1)
      GROUP BY category
@@ -77,14 +77,14 @@ export async function getSpaMonthlyRevenue(): Promise<SpaMonthlyRevenue[]> {
   const pool = getPool();
   const res = await pool.query(
     `WITH deduped AS (
-       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+       SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
          category, revenue, net_revenue, period_start
        FROM revenue_categories
-       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-       ORDER BY category, LEFT(period_start, 7), period_end DESC
+       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+       ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
      )
      SELECT
-       SUBSTR(period_start, 1, 7) AS month,
+       TO_CHAR(period_start, 'YYYY-MM') AS month,
        category,
        revenue,
        net_revenue
@@ -123,16 +123,16 @@ export async function getSpaMTDRevenue(): Promise<number> {
 
   const res = await pool.query(
     `WITH deduped AS (
-       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+       SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
          category, revenue, period_start
        FROM revenue_categories
-       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-       ORDER BY category, LEFT(period_start, 7), period_end DESC
+       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+       ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
      )
      SELECT COALESCE(SUM(revenue), 0) AS mtd
      FROM deduped
      WHERE category = ANY($1)
-       AND SUBSTR(period_start, 1, 7) = $2`,
+       AND TO_CHAR(period_start, 'YYYY-MM') = $2`,
     [SPA_CATEGORIES as unknown as string[], currentMonth]
   );
 
@@ -189,7 +189,7 @@ export async function getSpaCustomerBehavior(): Promise<SpaCustomerBehavior | nu
   const emailsRes = await pool.query(`
     SELECT DISTINCT email
     FROM registrations
-    WHERE ${SPA_LOCATION_FILTER} AND email IS NOT NULL AND email != ''
+    WHERE ${SPA_LOCATION_FILTER} AND email IS NOT NULL
   `);
   const spaEmails = emailsRes.rows.map((r: Record<string, unknown>) => r.email as string);
 
@@ -207,7 +207,7 @@ export async function getSpaCustomerBehavior(): Promise<SpaCustomerBehavior | nu
           ELSE '11+ visits'
         END AS bucket
       FROM registrations
-      WHERE ${SPA_LOCATION_FILTER} AND email IS NOT NULL AND email != ''
+      WHERE ${SPA_LOCATION_FILTER} AND email IS NOT NULL
       GROUP BY email
     ) sub
     GROUP BY bucket
@@ -246,12 +246,12 @@ export async function getSpaCustomerBehavior(): Promise<SpaCustomerBehavior | nu
   // 6. Monthly visits
   const monthlyRes = await pool.query(`
     SELECT
-      SUBSTR(attended_at, 1, 7) AS month,
+      TO_CHAR(attended_at, 'YYYY-MM') AS month,
       COUNT(*) AS visits,
       COUNT(DISTINCT email) AS unique_visitors
     FROM registrations
     WHERE ${SPA_LOCATION_FILTER} AND attended_at IS NOT NULL
-    GROUP BY SUBSTR(attended_at, 1, 7)
+    GROUP BY TO_CHAR(attended_at, 'YYYY-MM')
     ORDER BY month DESC
     LIMIT 18
   `);

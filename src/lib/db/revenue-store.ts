@@ -16,7 +16,7 @@ export async function saveRevenueCategories(
     const year = periodStart.slice(0, 4);
     const { rows: existing } = await pool.query(
       `SELECT 1 FROM revenue_categories
-       WHERE LEFT(period_start, 4) = $1 AND LEFT(period_start, 7) = LEFT(period_end, 7)
+       WHERE TO_CHAR(period_start, 'YYYY') = $1 AND DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
        LIMIT 1`,
       [year]
     );
@@ -42,8 +42,8 @@ export async function saveRevenueCategories(
       const monthPrefix = periodStart.slice(0, 7); // YYYY-MM
       const { rowCount } = await client.query(
         `DELETE FROM revenue_categories
-         WHERE LEFT(period_start, 7) = $1
-           AND LEFT(period_end, 7) = $1
+         WHERE TO_CHAR(period_start, 'YYYY-MM') = $1
+           AND TO_CHAR(period_end, 'YYYY-MM') = $1
            AND NOT (period_start = $2 AND period_end = $3)
            AND locked = 0`,
         [monthPrefix, periodStart, periodEnd]
@@ -120,7 +120,7 @@ export async function isMonthLocked(year: number, month: number): Promise<boolea
   const pool = getPool();
   const monthStr = `${year}-${String(month).padStart(2, "0")}`;
   const { rows } = await pool.query(
-    `SELECT 1 FROM revenue_categories WHERE LEFT(period_start, 7) = $1 AND locked = 1 LIMIT 1`,
+    `SELECT 1 FROM revenue_categories WHERE TO_CHAR(period_start, 'YYYY-MM') = $1 AND locked = 1 LIMIT 1`,
     [monthStr]
   );
   return rows.length > 0;
@@ -172,7 +172,7 @@ export async function getLatestPeriod(): Promise<{ periodStart: string; periodEn
   // Only consider same-month periods (exclude multi-year accumulation rows)
   const { rows } = await pool.query(
     `SELECT period_start, period_end FROM revenue_categories
-     WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
+     WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
      ORDER BY period_end DESC LIMIT 1`
   );
   if (rows.length === 0) return null;
@@ -222,8 +222,8 @@ export async function getMonthlyRevenue(year: number, month: number): Promise<{
          period_start, period_end, category, revenue, union_fees, stripe_fees,
          other_fees, transfers, refunded, union_fees_refunded, net_revenue, locked
        FROM revenue_categories
-       WHERE LEFT(period_start, 7) = $1
-         AND LEFT(period_end, 7) = $1
+       WHERE TO_CHAR(period_start, 'YYYY-MM') = $1
+         AND TO_CHAR(period_end, 'YYYY-MM') = $1
        ORDER BY category, period_end DESC
      )
      SELECT * FROM deduped ORDER BY revenue DESC`,
@@ -273,11 +273,11 @@ export async function getAllMonthlyRevenue(): Promise<{
   const pool = getPool();
   const { rows } = await pool.query(
     `WITH deduped AS (
-       SELECT DISTINCT ON (category, LEFT(period_start, 7))
+       SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
          period_start, period_end, category, revenue, net_revenue
        FROM revenue_categories
-       WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-       ORDER BY category, LEFT(period_start, 7), period_end DESC
+       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+       ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
      )
      SELECT
        MIN(period_start) AS period_start,
@@ -286,7 +286,7 @@ export async function getAllMonthlyRevenue(): Promise<{
        SUM(revenue) AS total_revenue,
        SUM(net_revenue) AS total_net_revenue
      FROM deduped
-     GROUP BY LEFT(period_start, 7)
+     GROUP BY TO_CHAR(period_start, 'YYYY-MM')
      ORDER BY period_start ASC`
   );
 
@@ -307,20 +307,20 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
   const pool = getPool();
   const { rows } = await pool.query(`
     WITH deduped AS (
-      SELECT DISTINCT ON (category, LEFT(period_start, 7))
+      SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
         category, revenue, net_revenue, period_start
       FROM revenue_categories
-      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-      ORDER BY category, LEFT(period_start, 7), period_end DESC
+      WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+      ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
     )
     SELECT
-      LEFT(period_start, 7) AS month,
+      TO_CHAR(period_start, 'YYYY-MM') AS month,
       SUM(revenue) AS gross,
       SUM(net_revenue) AS net
     FROM deduped
     WHERE category ~* 'retreat'
       AND NOT category ~* 'retreat\\s*ting'
-    GROUP BY LEFT(period_start, 7)
+    GROUP BY TO_CHAR(period_start, 'YYYY-MM')
     ORDER BY month
   `);
 
@@ -343,19 +343,19 @@ export async function getMonthlyMerchRevenue(): Promise<Map<string, { gross: num
   const pool = getPool();
   const { rows } = await pool.query(`
     WITH deduped AS (
-      SELECT DISTINCT ON (category, LEFT(period_start, 7))
+      SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
         category, revenue, net_revenue, period_start
       FROM revenue_categories
-      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-      ORDER BY category, LEFT(period_start, 7), period_end DESC
+      WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+      ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
     )
     SELECT
-      LEFT(period_start, 7) AS month,
+      TO_CHAR(period_start, 'YYYY-MM') AS month,
       SUM(revenue) AS gross,
       SUM(net_revenue) AS net
     FROM deduped
     WHERE category IN ('Merch', 'Products')
-    GROUP BY LEFT(period_start, 7)
+    GROUP BY TO_CHAR(period_start, 'YYYY-MM')
     ORDER BY month
   `);
 
@@ -387,14 +387,14 @@ export async function getAnnualRevenueBreakdown(): Promise<
   const pool = getPool();
   const res = await pool.query(`
     WITH deduped AS (
-      SELECT DISTINCT ON (category, LEFT(period_start, 7))
+      SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
         category, revenue, net_revenue, period_start
       FROM revenue_categories
-      WHERE LEFT(period_start, 7) = LEFT(period_end, 7)
-      ORDER BY category, LEFT(period_start, 7), period_end DESC
+      WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+      ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
     )
     SELECT
-      EXTRACT(YEAR FROM period_start::date)::int AS year,
+      EXTRACT(YEAR FROM period_start)::int AS year,
       CASE
         -- Digital (Sky Ting TV & related)
         WHEN category ~* 'sky\\s*ting\\s*tv'

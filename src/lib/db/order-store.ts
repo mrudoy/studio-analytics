@@ -69,7 +69,7 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
          ON CONFLICT (code) DO UPDATE SET
            email = COALESCE(NULLIF(EXCLUDED.email, ''), orders.email),
            union_order_id = COALESCE(EXCLUDED.union_order_id, orders.union_order_id)`,
-        [r.created, r.code, r.customer, r.email, r.type, r.payment, r.total, r.unionOrderId || null]
+        [r.created || null, r.code, r.customer, (r.email || '').toLowerCase(), r.type, r.payment, r.total, r.unionOrderId || null]
       );
     }
     await client.query("COMMIT");
@@ -95,7 +95,7 @@ export async function getOrders(startDate?: string, endDate?: string): Promise<S
   let query = `
     SELECT id, created_at, code, customer, email, order_type, payment, total
     FROM orders
-    WHERE created_at IS NOT NULL AND created_at != ''
+    WHERE created_at IS NOT NULL
   `;
   const params: string[] = [];
   let paramIdx = 1;
@@ -133,7 +133,7 @@ export async function getRevenueByType(startDate?: string, endDate?: string): Pr
   let query = `
     SELECT order_type, SUM(total) as revenue, COUNT(*) as count
     FROM orders
-    WHERE created_at IS NOT NULL AND created_at != ''
+    WHERE created_at IS NOT NULL
   `;
   const params: string[] = [];
   let paramIdx = 1;

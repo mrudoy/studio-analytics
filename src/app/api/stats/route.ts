@@ -103,12 +103,12 @@ export async function GET(request: Request) {
       safe(import("@/lib/db/overview-store").then((m) => m.getOverviewData())),
       // 12. Union rental dedup query (needed for rental merge)
       safe(pool.query(`
-        SELECT LEFT(period_start, 7) AS month,
+        SELECT TO_CHAR(period_start, 'YYYY-MM') AS month,
                SUM(revenue) AS gross, SUM(net_revenue) AS net
         FROM revenue_categories
         WHERE (category ~* 'rental|teacher\\s*rental|studio\\s*rental')
-          AND LEFT(period_start, 7) = LEFT(period_end, 7)
-        GROUP BY LEFT(period_start, 7)
+          AND DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+        GROUP BY TO_CHAR(period_start, 'YYYY-MM')
       `)),
     ]);
 

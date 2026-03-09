@@ -221,6 +221,176 @@ const migrations: Migration[] = [
         ON export_log (data_range_end DESC);
     `,
   },
+  // ── DB Optimization Migrations ──────────────────────────────
+  // Performance indexes on revenue_categories + plan_category column + is_first_visit
+  {
+    name: "009_indexes_plan_category_first_visit",
+    up: `
+      -- Revenue category indexes (most-queried table had zero indexes)
+      CREATE INDEX IF NOT EXISTS idx_rc_period_month
+        ON revenue_categories (LEFT(period_start, 7));
+      CREATE INDEX IF NOT EXISTS idx_rc_category
+        ON revenue_categories (category);
+      CREATE INDEX IF NOT EXISTS idx_rc_period_end_month
+        ON revenue_categories (LEFT(period_end, 7));
+
+      -- Stored plan_category column on auto_renews (eliminates 7x regex duplication)
+      ALTER TABLE auto_renews ADD COLUMN IF NOT EXISTS plan_category TEXT;
+
+      UPDATE auto_renews SET plan_category = CASE
+        WHEN UPPER(plan_name) LIKE '%SKY3%' OR UPPER(plan_name) LIKE '%SKY5%'
+          OR UPPER(plan_name) LIKE '%SKYHIGH%' OR UPPER(plan_name) LIKE '%5 PACK%'
+          OR UPPER(plan_name) LIKE '%5-PACK%' THEN 'SKY3'
+        WHEN UPPER(plan_name) LIKE '%SKY TING TV%' OR UPPER(plan_name) LIKE '%SKYTING TV%'
+          OR UPPER(plan_name) LIKE '%RETREAT TING%' OR UPPER(plan_name) LIKE '%10SKYTING%'
+          OR UPPER(plan_name) LIKE '%SKY WEEK TV%' THEN 'SKY_TING_TV'
+        WHEN UPPER(plan_name) LIKE '%UNLIMITED%' OR UPPER(plan_name) LIKE '%MEMBER%'
+          OR UPPER(plan_name) LIKE '%ALL ACCESS%' OR UPPER(plan_name) LIKE '%TING FAM%'
+          THEN 'MEMBER'
+        ELSE 'UNKNOWN'
+      END WHERE plan_category IS NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_ar_plan_category ON auto_renews(plan_category);
+
+      -- is_first_visit column on registrations (merges first_visits into registrations)
+      ALTER TABLE registrations ADD COLUMN IF NOT EXISTS is_first_visit BOOLEAN DEFAULT FALSE;
+
+      UPDATE registrations r SET is_first_visit = TRUE
+      FROM first_visits fv
+      WHERE LOWER(r.email) = LOWER(fv.email) AND r.attended_at = fv.attended_at;
+
+      CREATE INDEX IF NOT EXISTS idx_reg_is_first_visit
+        ON registrations (is_first_visit) WHERE is_first_visit = TRUE;
+    `,
+  },
+  // REAL → NUMERIC(12,2) for all money columns (fixes floating-point precision)
+  {
+    name: "010_real_to_numeric_money",
+    up: `
+      ALTER TABLE revenue_categories
+        ALTER COLUMN revenue TYPE NUMERIC(12,2) USING revenue::NUMERIC(12,2),
+        ALTER COLUMN union_fees TYPE NUMERIC(12,2) USING union_fees::NUMERIC(12,2),
+        ALTER COLUMN stripe_fees TYPE NUMERIC(12,2) USING stripe_fees::NUMERIC(12,2),
+        ALTER COLUMN other_fees TYPE NUMERIC(12,2) USING other_fees::NUMERIC(12,2),
+        ALTER COLUMN transfers TYPE NUMERIC(12,2) USING transfers::NUMERIC(12,2),
+        ALTER COLUMN refunded TYPE NUMERIC(12,2) USING refunded::NUMERIC(12,2),
+        ALTER COLUMN union_fees_refunded TYPE NUMERIC(12,2) USING union_fees_refunded::NUMERIC(12,2),
+        ALTER COLUMN net_revenue TYPE NUMERIC(12,2) USING net_revenue::NUMERIC(12,2);
+
+      ALTER TABLE auto_renews
+        ALTER COLUMN plan_price TYPE NUMERIC(12,2) USING plan_price::NUMERIC(12,2);
+
+      ALTER TABLE first_visits
+        ALTER COLUMN revenue TYPE NUMERIC(12,2) USING revenue::NUMERIC(12,2);
+
+      ALTER TABLE registrations
+        ALTER COLUMN revenue TYPE NUMERIC(12,2) USING revenue::NUMERIC(12,2);
+
+      ALTER TABLE orders
+        ALTER COLUMN total TYPE NUMERIC(12,2) USING total::NUMERIC(12,2);
+
+      ALTER TABLE customers
+        ALTER COLUMN total_spent TYPE NUMERIC(12,2) USING total_spent::NUMERIC(12,2),
+        ALTER COLUMN ltv TYPE NUMERIC(12,2) USING ltv::NUMERIC(12,2);
+    `,
+  },
+  // Email normalization — lowercase all emails + deduplicate
+  {
+    name: "011_email_normalization",
+    up: `
+      -- Lowercase all stored emails
+      UPDATE auto_renews SET customer_email = LOWER(customer_email)
+        WHERE customer_email IS NOT NULL AND customer_email != LOWER(customer_email);
+      UPDATE registrations SET email = LOWER(email)
+        WHERE email IS NOT NULL AND email != LOWER(email);
+      UPDATE first_visits SET email = LOWER(email)
+        WHERE email IS NOT NULL AND email != LOWER(email);
+      UPDATE orders SET email = LOWER(email)
+        WHERE email IS NOT NULL AND email != LOWER(email);
+      UPDATE new_customers SET email = LOWER(email)
+        WHERE email IS NOT NULL AND email != LOWER(email);
+      UPDATE customers SET email = LOWER(email)
+        WHERE email IS NOT NULL AND email != LOWER(email);
+
+      -- Deduplicate rows that would conflict after lowercasing
+      DELETE FROM auto_renews a USING auto_renews b
+        WHERE LOWER(a.customer_email) = LOWER(b.customer_email)
+          AND a.plan_name = b.plan_name AND a.created_at = b.created_at AND a.id < b.id;
+
+      DELETE FROM registrations a USING registrations b
+        WHERE LOWER(a.email) = LOWER(b.email)
+          AND a.attended_at = b.attended_at AND a.id < b.id;
+
+      DELETE FROM first_visits a USING first_visits b
+        WHERE LOWER(a.email) = LOWER(b.email)
+          AND a.attended_at = b.attended_at AND a.id < b.id;
+
+      DELETE FROM new_customers a USING new_customers b
+        WHERE LOWER(a.email) = LOWER(b.email) AND a.id < b.id;
+
+      DELETE FROM customers a USING customers b
+        WHERE LOWER(a.email) = LOWER(b.email) AND a.id < b.id;
+    `,
+  },
+  // TEXT → DATE conversion for all date columns
+  {
+    name: "012_text_to_date_columns",
+    up: `
+      -- Clean empty strings → NULL (DATE columns cannot store '')
+      UPDATE revenue_categories SET period_start = NULL WHERE period_start = '';
+      UPDATE revenue_categories SET period_end = NULL WHERE period_end = '';
+      UPDATE auto_renews SET created_at = NULL WHERE created_at = '';
+      UPDATE auto_renews SET canceled_at = NULL WHERE canceled_at = '';
+      UPDATE registrations SET performance_starts_at = NULL WHERE performance_starts_at = '';
+      UPDATE registrations SET registered_at = NULL WHERE registered_at = '';
+      UPDATE registrations SET attended_at = NULL WHERE attended_at = '';
+      UPDATE registrations SET canceled_at = NULL WHERE canceled_at = '';
+      UPDATE first_visits SET performance_starts_at = NULL WHERE performance_starts_at = '';
+      UPDATE first_visits SET registered_at = NULL WHERE registered_at = '';
+      UPDATE first_visits SET attended_at = NULL WHERE attended_at = '';
+      UPDATE orders SET created_at = NULL WHERE created_at = '';
+      UPDATE new_customers SET created_at = NULL WHERE created_at = '';
+      UPDATE customers SET created_at = NULL WHERE created_at = '';
+      UPDATE pipeline_runs SET date_range_start = NULL WHERE date_range_start = '';
+      UPDATE pipeline_runs SET date_range_end = NULL WHERE date_range_end = '';
+
+      -- Convert TEXT → DATE
+      ALTER TABLE revenue_categories
+        ALTER COLUMN period_start TYPE DATE USING period_start::DATE,
+        ALTER COLUMN period_end TYPE DATE USING period_end::DATE;
+
+      ALTER TABLE pipeline_runs
+        ALTER COLUMN date_range_start TYPE DATE USING date_range_start::DATE,
+        ALTER COLUMN date_range_end TYPE DATE USING date_range_end::DATE;
+
+      ALTER TABLE auto_renews
+        ALTER COLUMN created_at TYPE DATE USING created_at::DATE,
+        ALTER COLUMN canceled_at TYPE DATE USING canceled_at::DATE;
+
+      ALTER TABLE first_visits
+        ALTER COLUMN performance_starts_at TYPE DATE USING performance_starts_at::DATE,
+        ALTER COLUMN registered_at TYPE DATE USING registered_at::DATE,
+        ALTER COLUMN attended_at TYPE DATE USING attended_at::DATE;
+
+      ALTER TABLE registrations
+        ALTER COLUMN performance_starts_at TYPE DATE USING performance_starts_at::DATE,
+        ALTER COLUMN registered_at TYPE DATE USING registered_at::DATE,
+        ALTER COLUMN attended_at TYPE DATE USING attended_at::DATE,
+        ALTER COLUMN canceled_at TYPE DATE USING canceled_at::DATE;
+
+      ALTER TABLE orders ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
+      ALTER TABLE new_customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
+      ALTER TABLE customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
+
+      -- Rebuild functional indexes for DATE types
+      DROP INDEX IF EXISTS idx_rc_period_month;
+      CREATE INDEX idx_rc_period_month ON revenue_categories(DATE_TRUNC('month', period_start));
+      DROP INDEX IF EXISTS idx_rc_period_end_month;
+
+      DROP INDEX IF EXISTS idx_reg_attended_at;
+      CREATE INDEX idx_reg_attended_at ON registrations(attended_at) WHERE attended_at IS NOT NULL;
+    `,
+  },
 ];
 
 /**

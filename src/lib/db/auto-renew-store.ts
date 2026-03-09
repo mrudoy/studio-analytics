@@ -94,8 +94,8 @@ export async function saveAutoRenews(
         row.planState,
         row.planPrice,
         row.customerName,
-        row.customerEmail,
-        row.createdAt,
+        row.customerEmail.toLowerCase(),
+        row.createdAt || null,
         row.orderId || null,
         row.salesChannel || null,
         row.canceledAt || null,
@@ -104,6 +104,7 @@ export async function saveAutoRenews(
         row.currentState || null,
         row.currentPlan || null,
         row.unionPassId || null,
+        getCategory(row.planName),
       ];
 
       // If union_pass_id is provided, remove any stale row with the same ID but
@@ -123,8 +124,8 @@ export async function saveAutoRenews(
           snapshot_id, plan_name, plan_state, plan_price,
           customer_name, customer_email, created_at, order_id, sales_channel,
           canceled_at, canceled_by, admin, current_state, current_plan,
-          union_pass_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          union_pass_id, plan_category
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (customer_email, plan_name, created_at)
         DO UPDATE SET
           snapshot_id = EXCLUDED.snapshot_id,
@@ -139,6 +140,7 @@ export async function saveAutoRenews(
           current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
           current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
           union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
+          plan_category = EXCLUDED.plan_category,
           imported_at = NOW()`,
         values
       );
@@ -279,25 +281,25 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
       )::date AS d
     ),
     new_by_day AS (
-      SELECT NULLIF(created_at, '')::date AS d,
-        COUNT(*) FILTER (WHERE plan_name ~* 'member' AND plan_name !~* 'sky.?3|sky.?ting.?tv|retreat') AS new_members,
-        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?3') AS new_sky3,
-        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?ting.?tv|retreat.?ting') AS new_tv
+      SELECT created_at AS d,
+        COUNT(*) FILTER (WHERE plan_category = 'MEMBER') AS new_members,
+        COUNT(*) FILTER (WHERE plan_category = 'SKY3') AS new_sky3,
+        COUNT(*) FILTER (WHERE plan_category = 'SKY_TING_TV') AS new_tv
       FROM auto_renews
-      WHERE NULLIF(created_at, '') IS NOT NULL
-        AND NULLIF(created_at, '')::date >= CURRENT_DATE - ($1 || ' days')::interval
+      WHERE created_at IS NOT NULL
+        AND created_at >= CURRENT_DATE - ($1 || ' days')::interval
         AND plan_state NOT IN ('Expired')
-      GROUP BY NULLIF(created_at, '')::date
+      GROUP BY created_at
     ),
     churned_by_day AS (
-      SELECT NULLIF(canceled_at, '')::date AS d,
-        COUNT(*) FILTER (WHERE plan_name ~* 'member' AND plan_name !~* 'sky.?3|sky.?ting.?tv|retreat') AS churned_members,
-        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?3') AS churned_sky3,
-        COUNT(*) FILTER (WHERE plan_name ~* 'sky.?ting.?tv|retreat.?ting') AS churned_tv
+      SELECT canceled_at AS d,
+        COUNT(*) FILTER (WHERE plan_category = 'MEMBER') AS churned_members,
+        COUNT(*) FILTER (WHERE plan_category = 'SKY3') AS churned_sky3,
+        COUNT(*) FILTER (WHERE plan_category = 'SKY_TING_TV') AS churned_tv
       FROM auto_renews
-      WHERE NULLIF(canceled_at, '') IS NOT NULL
-        AND NULLIF(canceled_at, '')::date >= CURRENT_DATE - ($1 || ' days')::interval
-      GROUP BY NULLIF(canceled_at, '')::date
+      WHERE canceled_at IS NOT NULL
+        AND canceled_at >= CURRENT_DATE - ($1 || ' days')::interval
+      GROUP BY canceled_at
     )
     SELECT
       dates.d::text AS date,

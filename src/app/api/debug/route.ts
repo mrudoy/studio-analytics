@@ -61,11 +61,11 @@ export async function GET(req: Request) {
       // Get distinct date formats (first 5 characters to see pattern)
       const { rows: datePatterns } = await pool.query(`
         SELECT
-          LEFT(created_at, 15) as created_pattern,
+          TO_CHAR(created_at, 'YYYY-MM-DD') as created_pattern,
           COUNT(*) as count
         FROM auto_renews
-        WHERE created_at IS NOT NULL AND created_at != ''
-        GROUP BY LEFT(created_at, 15)
+        WHERE created_at IS NOT NULL
+        GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD')
         ORDER BY count DESC
         LIMIT 20
       `);
