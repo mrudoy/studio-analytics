@@ -11,9 +11,10 @@
 
 import { getPool } from "./database";
 
-/** All spa-related revenue category names */
+/** All spa-related revenue category names (both consolidated + legacy granular) */
 export const SPA_CATEGORIES = [
-  "Infrared Sauna Suite",
+  "Wellness / Spa",        // consolidated name from zip pipeline
+  "Infrared Sauna Suite",  // legacy granular names from older imports
   "Contrast Suite",
   "Spa Lounge",
   "Treatment Room",
