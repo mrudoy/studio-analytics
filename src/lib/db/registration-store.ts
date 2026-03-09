@@ -2344,7 +2344,7 @@ export async function getAttendanceDropAlerts(): Promise<AttendanceDropData> {
       FROM visit_counts
       WHERE visits_prior_2wk >= 3
     )
-    SELECT email, name, plan_name, COALESCE(created_at,'') AS created_at,
+    SELECT email, name, plan_name, created_at,
       visits_last_2wk, visits_prior_2wk, visits_8wk,
       avg_weekly, drop_pct, tenure_months, segment
     FROM segmented
@@ -2469,7 +2469,7 @@ export async function getSky3EngagementRisk(): Promise<Sky3EngagementRiskData> {
         END AS segment
       FROM visit_counts
     )
-    SELECT email, name, plan_name, COALESCE(created_at,'') AS created_at,
+    SELECT email, name, plan_name, created_at,
       visits_last_30d, visits_prior_30d, visits_90d,
       avg_per_month, tenure_months, eff_cost, segment
     FROM segmented

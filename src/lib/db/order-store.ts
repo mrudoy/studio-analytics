@@ -121,7 +121,7 @@ export async function getOrders(startDate?: string, endDate?: string): Promise<S
     email: (r.email as string) || "",
     orderType: r.order_type as string,
     payment: r.payment as string,
-    total: r.total as number,
+    total: Number(r.total) || 0,
   }));
 }
 

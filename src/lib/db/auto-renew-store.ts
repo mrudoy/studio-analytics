@@ -183,7 +183,7 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
   const name = raw.plan_name || "";
   const cat = getCategory(name);
   const annual = isAnnualPlan(name);
-  const price = raw.plan_price || 0;
+  const price = parseFloat(String(raw.plan_price)) || 0;
 
   return {
     id: raw.id,
