@@ -74,17 +74,11 @@ async function revenueDebug() {
      ORDER BY revenue DESC`
   );
 
-  // 4. Categories that are in "Other" bucket for March (doesn't match known patterns)
-  const knownPatterns = [
-    'SKY UNLIMITED', 'SKY TING TV', 'SKY3', 'DROP-IN', 'INTRO WEEK',
-    'WORKSHOP', 'TEACHER TRAINING', 'RENTAL', 'RETREAT', 'COMMUNITY',
-    'SAUNA', 'SPA', 'CONTRAST', 'INFRARED', 'CUPPING', 'TREATMENT'
-  ];
+  // 4. ALL categories for March (to see what's in "Other")
   const marchOther = await pool.query(
     `SELECT category, revenue, net_revenue
      FROM revenue_categories
      WHERE SUBSTR(period_start, 1, 7) = '2026-03'
-       AND UPPER(category) NOT SIMILAR TO '%(${knownPatterns.join('|')})%'
      ORDER BY revenue DESC`
   );
 
