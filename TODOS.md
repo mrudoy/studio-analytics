@@ -62,6 +62,22 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [x] ~~**Overview page redesign** — Replaced KPI hero with time-based sections (Yesterday, Last Week, This Month, Last Month). Grouped cards: Subscriptions, Activity, Merch Revenue. Committed `3e08e04`.~~
 - [x] ~~Style guide~~ — created `docs/style-guide.md` with full typography hierarchy (section headers, sub-group headers, card titles, KPI values), color system, icon mapping, chart rules, and anti-patterns. Sub-group headers: text-[15px] font-semibold text-muted-foreground, no icons, no border-left.
 
+### Testing & CI Safeguards (Lessons from Migration 012)
+The TEXT→DATE migration (012) broke the dashboard in 5 cascading ways. Here's what to do differently:
+
+**Root causes:**
+1. `pg` driver returns NUMERIC(12,2) as JS strings (OID 1700). `as number` is compile-time only — no runtime conversion.
+2. `COALESCE(date_col, '')` fails for DATE columns (empty string is invalid).
+3. TEXT→DATE conversion collapses unique index keys.
+4. `DATE_TRUNC()` is STABLE (not IMMUTABLE) — can't be used in index expressions.
+
+**Safeguards to implement:**
+- [ ] **Add a smoke test script** (`scripts/smoke-test.ts`) — runs after deploy, hits `/api/stats?nocache=1` and validates that all critical fields (mrr, activeSubscribers, arpu, currentMonthRevenue, revenueCategories.totalRevenue) are non-null and > 0. Can be triggered manually or wired into a post-deploy hook.
+- [ ] **Type-safe NUMERIC parsing helper** — create a `parseNumeric(val: unknown): number` utility in `src/lib/db/utils.ts` that handles string→number conversion from pg. Use it everywhere instead of raw `as number` casts. Grep for `as number` periodically to catch regressions.
+- [ ] **Pre-migration dry-run checks** — for any migration that changes column types, add a pre-check step that validates: (a) no empty strings in affected columns, (b) all values pass `::newtype` cast, (c) unique indexes won't have collisions after type change. See the pattern from migration 012's dry-run GET in db-check.
+- [ ] **Railway staging deployments** — test migrations on the staging environment first (Railway project `handsome-energy` has staging). Run the full API smoke test against staging before promoting to production.
+- [ ] **Add pg type awareness comments** — in store files, mark columns that return strings from pg with `// pg: returns string` comments so future code knows to use `Number()` or `parseFloat()`.
+
 ### Data Report Key (from Data.pdf)
 When user asks about data, tell them which report to pull based on this mapping:
 
