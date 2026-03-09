@@ -16,6 +16,10 @@ export async function GET(req: Request) {
     return getQuarterlySnapshot();
   }
 
+  if (mode === "revenue-debug") {
+    return revenueDebug();
+  }
+
   try {
     const data = await getSky3ChurnProfile();
     const summary = {
@@ -31,6 +35,74 @@ export async function GET(req: Request) {
     console.error("Sky3 churn analysis error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+}
+
+async function revenueDebug() {
+  const pool = getPool();
+
+  // 1. All raw categories for March 2026
+  const marchRaw = await pool.query(
+    `SELECT category, revenue, net_revenue, period_start, period_end
+     FROM revenue_categories
+     WHERE SUBSTR(period_start, 1, 7) = '2026-03'
+     ORDER BY revenue DESC`
+  );
+
+  // 2. All distinct spa-like categories ever
+  const spaLike = await pool.query(
+    `SELECT DISTINCT category, SUM(revenue) as total
+     FROM revenue_categories
+     WHERE category ILIKE '%sauna%' OR category ILIKE '%spa%'
+       OR category ILIKE '%plunge%' OR category ILIKE '%contrast%'
+       OR category ILIKE '%infrared%' OR category ILIKE '%cupping%'
+       OR category ILIKE '%treatment%' OR category ILIKE '%cold%'
+       OR category ILIKE '%lounge%'
+     GROUP BY category
+     ORDER BY total DESC`
+  );
+
+  // 3. Feb 2026 spa categories
+  const febSpa = await pool.query(
+    `SELECT category, revenue, net_revenue
+     FROM revenue_categories
+     WHERE SUBSTR(period_start, 1, 7) = '2026-02'
+       AND (category ILIKE '%sauna%' OR category ILIKE '%spa%'
+         OR category ILIKE '%plunge%' OR category ILIKE '%contrast%'
+         OR category ILIKE '%infrared%' OR category ILIKE '%cupping%'
+         OR category ILIKE '%treatment%' OR category ILIKE '%cold%'
+         OR category ILIKE '%lounge%')
+     ORDER BY revenue DESC`
+  );
+
+  // 4. Categories that are in "Other" bucket for March (doesn't match known patterns)
+  const knownPatterns = [
+    'SKY UNLIMITED', 'SKY TING TV', 'SKY3', 'DROP-IN', 'INTRO WEEK',
+    'WORKSHOP', 'TEACHER TRAINING', 'RENTAL', 'RETREAT', 'COMMUNITY',
+    'SAUNA', 'SPA', 'CONTRAST', 'INFRARED', 'CUPPING', 'TREATMENT'
+  ];
+  const marchOther = await pool.query(
+    `SELECT category, revenue, net_revenue
+     FROM revenue_categories
+     WHERE SUBSTR(period_start, 1, 7) = '2026-03'
+       AND UPPER(category) NOT SIMILAR TO '%(${knownPatterns.join('|')})%'
+     ORDER BY revenue DESC`
+  );
+
+  // 5. Latest pipeline run info
+  const pipeline = await pool.query(
+    `SELECT ran_at, duration_ms, record_counts, warnings
+     FROM pipeline_runs
+     ORDER BY ran_at DESC
+     LIMIT 3`
+  );
+
+  return NextResponse.json({
+    marchRawCategories: marchRaw.rows,
+    allSpaLikeCategories: spaLike.rows,
+    febSpaCategoriesDetail: febSpa.rows,
+    marchOtherCategories: marchOther.rows,
+    recentPipelineRuns: pipeline.rows,
+  });
 }
 
 async function getQuarterlySnapshot() {
