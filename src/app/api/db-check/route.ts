@@ -25,6 +25,13 @@ export async function POST() {
     { name: "drop idx_rc_period_month", sql: "DROP INDEX IF EXISTS idx_rc_period_month" },
     { name: "drop idx_rc_period_end_month", sql: "DROP INDEX IF EXISTS idx_rc_period_end_month" },
     { name: "drop idx_reg_attended_at", sql: "DROP INDEX IF EXISTS idx_reg_attended_at" },
+    // Drop unique indexes on date columns — TEXT→DATE may collapse duplicates
+    { name: "drop idx_ar_dedup", sql: "DROP INDEX IF EXISTS idx_ar_dedup" },
+    { name: "drop idx_fv_dedup", sql: "DROP INDEX IF EXISTS idx_fv_dedup" },
+    { name: "drop idx_reg_dedup", sql: "DROP INDEX IF EXISTS idx_reg_dedup" },
+    { name: "drop idx_reg_email_lower_attended", sql: "DROP INDEX IF EXISTS idx_reg_email_lower_attended" },
+    { name: "drop idx_ar_email_lower_created", sql: "DROP INDEX IF EXISTS idx_ar_email_lower_created" },
+    { name: "drop idx_fv_email_lower_attended", sql: "DROP INDEX IF EXISTS idx_fv_email_lower_attended" },
     // Clean empty strings → NULL
     { name: "clean revenue_categories.period_start", sql: "UPDATE revenue_categories SET period_start = NULL WHERE period_start = ''" },
     { name: "clean revenue_categories.period_end", sql: "UPDATE revenue_categories SET period_end = NULL WHERE period_end = ''" },
@@ -46,6 +53,7 @@ export async function POST() {
     { name: "normalize orders M/D/YY", sql: `UPDATE orders SET created_at = TO_CHAR(TO_TIMESTAMP(created_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD') WHERE created_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}'` },
     { name: "normalize auto_renews.created_at M/D/YY", sql: `UPDATE auto_renews SET created_at = TO_CHAR(TO_TIMESTAMP(created_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD') WHERE created_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}'` },
     { name: "normalize auto_renews.canceled_at M/D/YY", sql: `UPDATE auto_renews SET canceled_at = TO_CHAR(TO_TIMESTAMP(canceled_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD') WHERE canceled_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}'` },
+    { name: "normalize new_customers.created_at M/D/YY", sql: `UPDATE new_customers SET created_at = TO_CHAR(TO_TIMESTAMP(created_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD') WHERE created_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}'` },
     // NULL out remaining non-ISO values
     { name: "null non-ISO orders.created_at", sql: `UPDATE orders SET created_at = NULL WHERE created_at IS NOT NULL AND created_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'` },
     { name: "null non-ISO auto_renews.created_at", sql: `UPDATE auto_renews SET created_at = NULL WHERE created_at IS NOT NULL AND created_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'` },
@@ -70,9 +78,19 @@ export async function POST() {
     { name: "ALTER orders.created_at", sql: `ALTER TABLE orders ALTER COLUMN created_at TYPE DATE USING created_at::DATE` },
     { name: "ALTER new_customers.created_at", sql: `ALTER TABLE new_customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE` },
     { name: "ALTER customers.created_at", sql: `ALTER TABLE customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE` },
-    // Recreate indexes
+    // Deduplicate rows that collide after TEXT→DATE
+    { name: "dedup auto_renews", sql: `DELETE FROM auto_renews a USING auto_renews b WHERE a.customer_email = b.customer_email AND a.plan_name = b.plan_name AND a.created_at = b.created_at AND a.id < b.id` },
+    { name: "dedup registrations", sql: `DELETE FROM registrations a USING registrations b WHERE a.email = b.email AND a.attended_at = b.attended_at AND a.id < b.id` },
+    { name: "dedup first_visits", sql: `DELETE FROM first_visits a USING first_visits b WHERE a.email = b.email AND a.attended_at = b.attended_at AND a.id < b.id` },
+    // Recreate all indexes
     { name: "CREATE idx_rc_period_month", sql: `CREATE INDEX idx_rc_period_month ON revenue_categories(DATE_TRUNC('month', period_start))` },
     { name: "CREATE idx_reg_attended_at", sql: `CREATE INDEX idx_reg_attended_at ON registrations(attended_at) WHERE attended_at IS NOT NULL` },
+    { name: "CREATE idx_ar_dedup", sql: `CREATE UNIQUE INDEX idx_ar_dedup ON auto_renews(customer_email, plan_name, created_at)` },
+    { name: "CREATE idx_fv_dedup", sql: `CREATE UNIQUE INDEX idx_fv_dedup ON first_visits(email, attended_at)` },
+    { name: "CREATE idx_reg_dedup", sql: `CREATE UNIQUE INDEX idx_reg_dedup ON registrations(email, attended_at)` },
+    { name: "CREATE idx_reg_email_lower_attended", sql: `CREATE INDEX idx_reg_email_lower_attended ON registrations(LOWER(email), attended_at)` },
+    { name: "CREATE idx_ar_email_lower_created", sql: `CREATE INDEX idx_ar_email_lower_created ON auto_renews(LOWER(customer_email), created_at)` },
+    { name: "CREATE idx_fv_email_lower_attended", sql: `CREATE INDEX idx_fv_email_lower_attended ON first_visits(LOWER(email), attended_at)` },
     // Record migration
     { name: "record migration", sql: `INSERT INTO _migrations (name) VALUES ('012_text_to_date_columns')` },
   ];
@@ -81,6 +99,8 @@ export async function POST() {
 
   try {
     await client.query("BEGIN");
+    // Allow up to 5 minutes for heavy ALTER TABLE operations
+    await client.query("SET LOCAL statement_timeout = 300000");
 
     for (const step of steps) {
       try {

@@ -337,12 +337,19 @@ const migrations: Migration[] = [
     name: "012_text_to_date_columns",
     up: `
       -- Drop indexes that depend on TEXT-specific expressions BEFORE altering column types.
-      -- idx_rc_period_month uses LEFT(period_start, 7) — incompatible with DATE.
-      -- idx_rc_period_end_month uses LEFT(period_end, 7) — incompatible with DATE.
-      -- idx_reg_attended_at has WHERE attended_at != '' — incompatible with DATE.
+      -- Functional indexes incompatible with DATE:
       DROP INDEX IF EXISTS idx_rc_period_month;
       DROP INDEX IF EXISTS idx_rc_period_end_month;
       DROP INDEX IF EXISTS idx_reg_attended_at;
+      -- Unique indexes on date columns — TEXT→DATE may collapse duplicates
+      -- (e.g. "2025-01-15" and "2025-01-15 00:00" both become same DATE):
+      DROP INDEX IF EXISTS idx_ar_dedup;
+      DROP INDEX IF EXISTS idx_fv_dedup;
+      DROP INDEX IF EXISTS idx_reg_dedup;
+      -- Composite indexes that include date columns:
+      DROP INDEX IF EXISTS idx_reg_email_lower_attended;
+      DROP INDEX IF EXISTS idx_ar_email_lower_created;
+      DROP INDEX IF EXISTS idx_fv_email_lower_attended;
 
       -- Clean empty strings → NULL (DATE columns cannot store '')
       UPDATE revenue_categories SET period_start = NULL WHERE period_start = '';
@@ -375,6 +382,13 @@ const migrations: Migration[] = [
       UPDATE auto_renews SET canceled_at = TO_CHAR(
         TO_TIMESTAMP(canceled_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD'
       ) WHERE canceled_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}';
+
+      UPDATE new_customers SET created_at = TO_CHAR(
+        TO_TIMESTAMP(created_at, 'MM/DD/YY HH12:MI AM'), 'YYYY-MM-DD'
+      ) WHERE created_at ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}';
+
+      -- first_visits has "Fri, 1/16/26 12:22 PM EST" format — null these out
+      -- (too varied to normalize; small number of rows)
 
       -- Null out any remaining unparseable values rather than crash
       UPDATE orders SET created_at = NULL
@@ -434,9 +448,32 @@ const migrations: Migration[] = [
       ALTER TABLE new_customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
       ALTER TABLE customers ALTER COLUMN created_at TYPE DATE USING created_at::DATE;
 
-      -- Recreate indexes using DATE-compatible expressions
+      -- Deduplicate rows that now collide after TEXT→DATE conversion
+      DELETE FROM auto_renews a USING auto_renews b
+        WHERE a.customer_email = b.customer_email
+          AND a.plan_name = b.plan_name
+          AND a.created_at = b.created_at
+          AND a.id < b.id;
+
+      DELETE FROM registrations a USING registrations b
+        WHERE a.email = b.email
+          AND a.attended_at = b.attended_at
+          AND a.id < b.id;
+
+      DELETE FROM first_visits a USING first_visits b
+        WHERE a.email = b.email
+          AND a.attended_at = b.attended_at
+          AND a.id < b.id;
+
+      -- Recreate all dropped indexes using DATE-compatible expressions
       CREATE INDEX idx_rc_period_month ON revenue_categories(DATE_TRUNC('month', period_start));
       CREATE INDEX idx_reg_attended_at ON registrations(attended_at) WHERE attended_at IS NOT NULL;
+      CREATE UNIQUE INDEX idx_ar_dedup ON auto_renews(customer_email, plan_name, created_at);
+      CREATE UNIQUE INDEX idx_fv_dedup ON first_visits(email, attended_at);
+      CREATE UNIQUE INDEX idx_reg_dedup ON registrations(email, attended_at);
+      CREATE INDEX idx_reg_email_lower_attended ON registrations(LOWER(email), attended_at);
+      CREATE INDEX idx_ar_email_lower_created ON auto_renews(LOWER(customer_email), created_at);
+      CREATE INDEX idx_fv_email_lower_attended ON first_visits(LOWER(email), attended_at);
     `,
   },
 ];
