@@ -23,6 +23,17 @@ export interface FetchExportResult {
  * the DB upserts handle deduplication on insert.
  */
 export async function fetchLatestExport(apiKey: string): Promise<FetchExportResult | null> {
+  const all = await fetchAllExports(apiKey);
+  return all.length > 0 ? all[0] : null;
+}
+
+/**
+ * Fetch ALL available exports from the Union Data Exporter API.
+ * Returns newest first. Daily exports are incremental (only recently changed
+ * records), so processing all of them gives us the most complete dataset.
+ * The DB upserts handle deduplication — processing the same record twice is safe.
+ */
+export async function fetchAllExports(apiKey: string): Promise<FetchExportResult[]> {
   const response = await fetch(UNION_API_URL, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -36,21 +47,20 @@ export async function fetchLatestExport(apiKey: string): Promise<FetchExportResu
 
   if (!exporters || exporters.length === 0) {
     console.log("[union-api] No exports available");
-    return null;
+    return [];
   }
 
-  // API returns newest first
-  const latest = exporters[0];
+  console.log(`[union-api] Found ${exporters.length} exports available`);
 
-  console.log(`[union-api] Fetching export: created_at=${latest.created_at}, org=${latest.org}`);
-  return {
-    downloadUrl: latest.download_url,
-    createdAt: latest.created_at,
+  // API returns newest first
+  return exporters.map((exp) => ({
+    downloadUrl: exp.download_url,
+    createdAt: exp.created_at,
     dataRange: {
-      start: latest.data_updated_starts_at,
-      end: latest.data_updated_ends_at,
+      start: exp.data_updated_starts_at,
+      end: exp.data_updated_ends_at,
     },
-  };
+  }));
 }
 
 /**

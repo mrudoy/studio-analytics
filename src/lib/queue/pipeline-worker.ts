@@ -9,11 +9,11 @@ import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 import { invalidateStatsCache, bumpDataVersion } from "../cache/stats-cache";
-import { fetchLatestExport, markExportProcessed } from "../union-api/fetch-export";
+import { fetchAllExports, markExportProcessed } from "../union-api/fetch-export";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
- *  15 min — API-only pipeline (no Playwright/Gmail). */
-const PIPELINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+ *  30 min — processes all available API exports (typically 10-12 daily exports). */
+const PIPELINE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
  * Race a promise against a timeout. If the timeout fires first, throw.
@@ -87,32 +87,62 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     }
   }
 
-  // Path 2: Union Data Exporter API — fetch latest export URL directly
+  // Path 2: Union Data Exporter API — fetch and process ALL available exports.
+  // Daily exports are incremental (only recently changed records), so we must
+  // process every available export to build a complete dataset. DB upserts
+  // handle deduplication — processing the same record twice is safe.
   if (!result && hasApiKey) {
     try {
       updateProgress(job, "Checking Union Data Exporter API...", 5);
       console.log("[pipeline] Trying Union Data Exporter API");
 
-      const exportInfo = await fetchLatestExport(settings!.unionApiKey!);
-      if (exportInfo) {
-        updateProgress(job, "Downloading zip from API export...", 8);
-        console.log(`[pipeline] API export: ${exportInfo.downloadUrl.slice(0, 80)}...`);
+      const allExports = await fetchAllExports(settings!.unionApiKey!);
+      if (allExports.length > 0) {
+        console.log(`[pipeline] Processing ${allExports.length} exports (newest first)`);
 
-        const zipResult = await runZipWebhookPipeline({
-          downloadUrl: exportInfo.downloadUrl,
-          onProgress: (step, percent) => updateProgress(job, step, percent),
-        });
-
-        if (zipResult.success) {
-          console.log(`[pipeline] API export pipeline succeeded in ${zipResult.duration}s`);
-          const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
-            (a, b) => a + (typeof b === "number" ? b : 0), 0
+        // Process newest first so the latest data wins any upsert conflicts
+        for (let i = 0; i < allExports.length; i++) {
+          const exportInfo = allExports[i];
+          const pctBase = 5 + Math.round((i / allExports.length) * 80);
+          updateProgress(
+            job,
+            `Processing export ${i + 1}/${allExports.length} (${exportInfo.dataRange.start?.slice(0, 10) || "full"})...`,
+            pctBase
           );
-          await markExportProcessed(exportInfo.createdAt, totalRecords);
-          result = zipResult;
+          console.log(`[pipeline] Export ${i + 1}/${allExports.length}: ${exportInfo.createdAt}`);
+
+          try {
+            const zipResult = await runZipWebhookPipeline({
+              downloadUrl: exportInfo.downloadUrl,
+              onProgress: (step, percent) => {
+                // Scale sub-progress within this export's slice
+                const scaledPct = pctBase + Math.round((percent / 100) * (80 / allExports.length));
+                updateProgress(job, step, Math.min(scaledPct, 90));
+              },
+            });
+
+            if (zipResult.success) {
+              const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
+                (a, b) => a + (typeof b === "number" ? b : 0), 0
+              );
+              console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
+              // Mark the latest (first) export as the watermark
+              if (i === 0) {
+                await markExportProcessed(exportInfo.createdAt, totalRecords);
+                result = zipResult;
+              }
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`[pipeline] Export ${i + 1} failed: ${msg} — continuing`);
+          }
+        }
+
+        if (result) {
+          console.log(`[pipeline] All exports processed. Pipeline succeeded in ${result.duration}s`);
         }
       } else {
-        console.log("[pipeline] No new API export available");
+        console.log("[pipeline] No API exports available");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
