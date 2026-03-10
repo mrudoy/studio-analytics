@@ -31,6 +31,36 @@ export async function GET() {
       ORDER BY n_live_tup DESC
     `);
 
+    // Revenue period overlap check
+    const revPeriods = await pool.query(`
+      SELECT
+        TO_CHAR(period_start, 'YYYY-MM') AS month,
+        period_start::text AS ps,
+        period_end::text AS pe,
+        COUNT(*) AS cat_count,
+        ROUND(SUM(revenue)::numeric, 0) AS total_gross,
+        ROUND(SUM(net_revenue)::numeric, 0) AS total_net
+      FROM revenue_categories
+      WHERE period_start >= '2025-01-01'
+      GROUP BY period_start, period_end
+      ORDER BY period_start DESC, period_end DESC
+    `);
+
+    // Retreat revenue by month
+    const retreatRevenue = await pool.query(`
+      SELECT
+        TO_CHAR(period_start, 'YYYY-MM') AS month,
+        period_start::text AS ps,
+        period_end::text AS pe,
+        category,
+        revenue AS gross,
+        net_revenue AS net
+      FROM revenue_categories
+      WHERE category ~* 'retreat'
+        AND period_start >= '2025-01-01'
+      ORDER BY period_start DESC
+    `);
+
     return NextResponse.json({
       migrations: migrations.rows.map((r: Record<string, unknown>) => ({
         name: r.name,
@@ -38,6 +68,8 @@ export async function GET() {
       })),
       columnTypes: columnTypes.rows,
       tableCounts: counts.rows,
+      revenuePeriods: revPeriods.rows,
+      retreatRevenue: retreatRevenue.rows,
     });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
