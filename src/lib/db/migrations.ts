@@ -477,6 +477,28 @@ const migrations: Migration[] = [
       CREATE INDEX idx_fv_email_lower_attended ON first_visits(LOWER(email), attended_at);
     `,
   },
+  // Persistent cache for Union.fit lookup tables.
+  // Full exports include populated pass_types.csv and revenue_categories.csv,
+  // but daily exports have these as header-only. Cache from full exports so
+  // daily pipeline runs can resolve revenue categories.
+  {
+    name: "013_lookup_table_cache",
+    up: `
+      CREATE TABLE IF NOT EXISTS pass_type_lookups (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        revenue_category_id TEXT,
+        fees_outside BOOLEAN DEFAULT FALSE,
+        created_at TEXT,
+        cached_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS revenue_category_lookups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        cached_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `,
+  },
 ];
 
 /**

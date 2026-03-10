@@ -206,6 +206,8 @@ export const RawPassTypeSchema = z.object({
   id: z.string(),
   name: optStr,
   revenueCategoryId: optStr,
+  feesOutside: optStr,
+  passCategoryName: optStr,
   createdAt: optStr,
 });
 

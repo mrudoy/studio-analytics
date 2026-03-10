@@ -55,6 +55,13 @@ import {
 import { saveCustomers } from "../db/customer-store";
 import { saveRevenueCategories, isMonthLocked } from "../db/revenue-store";
 import { setWatermark } from "../db/watermark-store";
+import {
+  ensureLookupTables,
+  savePassTypeLookups,
+  saveRevenueCategoryLookups,
+  loadPassTypeLookups,
+  loadRevenueCategoryLookups,
+} from "../db/lookup-store";
 import { parseCSV } from "../parser/csv-parser";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, basename } from "path";
@@ -388,6 +395,59 @@ async function runZipImport(
     "transfers"
   );
 
+  // ── Cache / load lookup tables ───────────────────────────
+  progress("Syncing lookup table cache...", 33);
+
+  await ensureLookupTables();
+
+  let effectivePassTypes = passTypes;
+  let effectiveRevCatLookups = revenueCategoryLookups;
+
+  if (passTypes.length > 0) {
+    // Full export — cache the lookup tables for future daily runs
+    await savePassTypeLookups(
+      passTypes.map((pt) => ({
+        id: pt.id,
+        name: pt.name ?? null,
+        revenueCategoryId: pt.revenueCategoryId ?? null,
+        feesOutside: pt.feesOutside === "true",
+        createdAt: pt.createdAt ?? null,
+      }))
+    );
+  } else {
+    // Daily export (header-only) — load from cache
+    console.log("[zip-pipeline] pass_types.csv empty, loading from DB cache");
+    const cached = await loadPassTypeLookups();
+    effectivePassTypes = Array.from(cached.values()).map((c) => ({
+      id: c.id,
+      name: c.name ?? "",
+      revenueCategoryId: c.revenueCategoryId ?? "",
+      feesOutside: c.feesOutside ? "true" : "false",
+      passCategoryName: "",
+      createdAt: "",
+    }));
+    console.log(`[zip-pipeline] Loaded ${effectivePassTypes.length} pass types from cache`);
+  }
+
+  if (revenueCategoryLookups.length > 0) {
+    // Full export — cache
+    await saveRevenueCategoryLookups(
+      revenueCategoryLookups.map((rc) => ({
+        id: rc.id,
+        name: rc.name ?? "",
+      }))
+    );
+  } else {
+    // Daily export (header-only) — load from cache
+    console.log("[zip-pipeline] revenue_categories.csv empty, loading from DB cache");
+    const cached = await loadRevenueCategoryLookups();
+    effectiveRevCatLookups = Array.from(cached.values()).map((c) => ({
+      id: c.id,
+      name: c.name,
+    }));
+    console.log(`[zip-pipeline] Loaded ${effectiveRevCatLookups.length} revenue categories from cache`);
+  }
+
   // ── Build transformer ───────────────────────────────────
   progress("Building lookup maps...", 35);
 
@@ -397,8 +457,8 @@ async function runZipImport(
     events,
     performances,
     locations,
-    passTypes,
-    revenueCategoryLookups,
+    passTypes: effectivePassTypes,
+    revenueCategoryLookups: effectiveRevCatLookups,
   };
   const transformer = new ZipTransformer(tables);
 
