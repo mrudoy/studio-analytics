@@ -61,6 +61,19 @@ export async function GET() {
       ORDER BY period_start DESC
     `);
 
+    // Category breakdown for recent months
+    const catDetail = await pool.query(`
+      SELECT
+        TO_CHAR(period_start, 'YYYY-MM') AS month,
+        category,
+        revenue AS gross,
+        net_revenue AS net
+      FROM revenue_categories
+      WHERE period_start >= '2026-01-01'
+        AND DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+      ORDER BY period_start DESC, revenue DESC
+    `);
+
     return NextResponse.json({
       migrations: migrations.rows.map((r: Record<string, unknown>) => ({
         name: r.name,
@@ -70,6 +83,7 @@ export async function GET() {
       tableCounts: counts.rows,
       revenuePeriods: revPeriods.rows,
       retreatRevenue: retreatRevenue.rows,
+      categoryDetail: catDetail.rows,
     });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
