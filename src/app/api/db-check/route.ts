@@ -89,9 +89,9 @@ export async function GET() {
 
     // Check uploaded_data for revenue uploads
     const uploads = await pool.query(`
-      SELECT id, type, file_name, row_count, created_at
+      SELECT id, data_type, filename, period, uploaded_at
       FROM uploaded_data
-      ORDER BY created_at DESC
+      ORDER BY uploaded_at DESC
       LIMIT 20
     `);
 
