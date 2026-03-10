@@ -400,11 +400,13 @@ async function runZipImport(
 
   await ensureLookupTables();
 
-  let effectivePassTypes = passTypes;
-  let effectiveRevCatLookups = revenueCategoryLookups;
+  // Strategy: always upsert any CSV data we got (full dump or delta),
+  // then always load the full cache for the transformer. This handles:
+  //  - Full export (1700 rows): upsert all → load all from cache
+  //  - Daily delta with changes (5 rows): upsert 5 → load all 1700+ from cache
+  //  - Daily empty (0 rows): skip upsert → load all from cache
 
   if (passTypes.length > 0) {
-    // Full export — cache the lookup tables for future daily runs
     await savePassTypeLookups(
       passTypes.map((pt) => ({
         id: pt.id,
@@ -414,39 +416,39 @@ async function runZipImport(
         createdAt: pt.createdAt ?? null,
       }))
     );
-  } else {
-    // Daily export (header-only) — load from cache
-    console.log("[zip-pipeline] pass_types.csv empty, loading from DB cache");
-    const cached = await loadPassTypeLookups();
-    effectivePassTypes = Array.from(cached.values()).map((c) => ({
-      id: c.id,
-      name: c.name ?? "",
-      revenueCategoryId: c.revenueCategoryId ?? "",
-      feesOutside: c.feesOutside ? "true" : "false",
-      passCategoryName: "",
-      createdAt: "",
-    }));
-    console.log(`[zip-pipeline] Loaded ${effectivePassTypes.length} pass types from cache`);
+    console.log(`[zip-pipeline] Upserted ${passTypes.length} pass types to cache`);
   }
 
   if (revenueCategoryLookups.length > 0) {
-    // Full export — cache
     await saveRevenueCategoryLookups(
       revenueCategoryLookups.map((rc) => ({
         id: rc.id,
         name: rc.name ?? "",
       }))
     );
-  } else {
-    // Daily export (header-only) — load from cache
-    console.log("[zip-pipeline] revenue_categories.csv empty, loading from DB cache");
-    const cached = await loadRevenueCategoryLookups();
-    effectiveRevCatLookups = Array.from(cached.values()).map((c) => ({
-      id: c.id,
-      name: c.name,
-    }));
-    console.log(`[zip-pipeline] Loaded ${effectiveRevCatLookups.length} revenue categories from cache`);
+    console.log(`[zip-pipeline] Upserted ${revenueCategoryLookups.length} revenue categories to cache`);
   }
+
+  // Always load full cache for transformer (merges full dump + any deltas)
+  const cachedPassTypes = await loadPassTypeLookups();
+  const effectivePassTypes: typeof passTypes = cachedPassTypes.size > 0
+    ? Array.from(cachedPassTypes.values()).map((c) => ({
+        id: c.id,
+        name: c.name ?? "",
+        revenueCategoryId: c.revenueCategoryId ?? "",
+        feesOutside: c.feesOutside ? "true" : "false",
+        passCategoryName: "",
+        createdAt: "",
+      }))
+    : passTypes; // fallback to CSV if cache is empty (first run)
+
+  const cachedRevCats = await loadRevenueCategoryLookups();
+  const effectiveRevCatLookups: typeof revenueCategoryLookups = cachedRevCats.size > 0
+    ? Array.from(cachedRevCats.values()).map((c) => ({
+        id: c.id,
+        name: c.name,
+      }))
+    : revenueCategoryLookups;
 
   // ── Build transformer ───────────────────────────────────
   progress("Building lookup maps...", 35);
