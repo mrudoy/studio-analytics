@@ -233,6 +233,23 @@ export const RawRefundSchema = z.object({
   feeUnionTotalRefunded: money,
   payoutTotal: money,
   taxTotal: money,
+  toBalance: boolField,  // true = refund went to account balance (exclude from revenue report)
+  reason: optStr,
 });
 
 export type RawRefund = z.infer<typeof RawRefundSchema>;
+
+// ── Transfers (video usage / other billing charges) ────────
+
+export const RawTransferSchema = z.object({
+  id: z.string(),
+  createdAt: optStr,
+  created: optStr,       // alias: csv-parser maps "created_at" → "created" via COLUMN_ALIASES
+  payoutTotal: money,
+  description: optStr,
+  type: optStr,          // e.g. "video_usage_debit"
+  periodStart: optStr,
+  periodEnd: optStr,
+});
+
+export type RawTransfer = z.infer<typeof RawTransferSchema>;

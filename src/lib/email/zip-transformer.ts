@@ -25,6 +25,7 @@ import type {
   RawPassType,
   RawRevenueCategoryLookup,
   RawRefund,
+  RawTransfer,
 } from "./zip-schemas";
 
 import type { AutoRenewRow } from "../db/auto-renew-store";
@@ -488,60 +489,157 @@ export class ZipTransformer {
     return match ? match[1] : null;
   }
 
-  // ── Compute revenue by category from orders + refunds ───────
+  // ── Compute revenue by category from raw CSVs ───────────────
+  //
+  // Follows Union.fit's official 7-step algorithm:
+  //   1. Non-subscription passes (one-time purchases) → use pass totals/fees
+  //   2. Non-pass orders (subscriptions, other) → use order totals/fees
+  //   3. Refunds: pass-linked (use pass.total) and non-pass (use refund.amount)
+  //   4. Transfers → Uncategorized only
+  //   5. Combine into final report
+  //
+  // Key differences from prior implementation:
+  //   - Properly splits pass revenue vs order revenue (avoids double-counting)
+  //   - Handles fees_outside flag (customer-paid fees not deducted from org revenue)
+  //   - Filters out to_balance refunds
+  //   - Uses pass.total for pass-linked refunds instead of refund.amountRefunded
+  //   - Includes transfers in Uncategorized
 
   /**
-   * Aggregate all orders by (month, revenue category), applying refunds.
+   * Aggregate all revenue by (month, revenue category) using Union's algorithm.
    * Returns a Map keyed by "YYYY-MM" with RevenueCategory[] per month.
    */
   computeRevenueByCategory(
     orders: RawOrder[],
-    refunds: RawRefund[]
+    refunds: RawRefund[],
+    transfers: RawTransfer[] = []
   ): Map<string, RevenueCategory[]> {
     if (this.revenueCategoryById.size === 0) {
-      console.warn("[zip-transformer] No revenue category lookups — orders will be bucketed as Uncategorized");
+      console.warn("[revenue] No revenue category lookups — everything will be Uncategorized");
     }
 
     // Accumulator: month → category → totals
-    const buckets = new Map<string, Map<string, {
+    type Bucket = {
       revenue: number;
       unionFees: number;
       stripeFees: number;
-      otherFees: number;
+      transfers: number;
       refunded: number;
       unionFeesRefunded: number;
-    }>>();
+    };
+    const buckets = new Map<string, Map<string, Bucket>>();
 
-    const getOrCreate = (month: string, category: string) => {
+    const getOrCreate = (month: string, category: string): Bucket => {
       if (!buckets.has(month)) buckets.set(month, new Map());
       const monthMap = buckets.get(month)!;
       if (!monthMap.has(category)) {
         monthMap.set(category, {
-          revenue: 0, unionFees: 0, stripeFees: 0, otherFees: 0,
+          revenue: 0, unionFees: 0, stripeFees: 0, transfers: 0,
           refunded: 0, unionFeesRefunded: 0,
         });
       }
       return monthMap.get(category)!;
     };
 
-    // Build order lookup for refund resolution
+    // Helper: check if fees_outside is true (string "true" or boolean)
+    const isFeesOutside = (val: string | boolean): boolean => {
+      if (typeof val === "boolean") return val;
+      return val.trim().toLowerCase() === "true";
+    };
+
+    // Build order lookup by ID
     const orderById = new Map<string, RawOrder>();
     for (const o of orders) orderById.set(o.id, o);
 
-    let categorized = 0;
-    let uncategorized = 0;
+    // Build pass → refund lookup (passes with refund_id set)
+    const passRefundIds = new Set<string>(); // refund IDs linked to passes
+    const passByRefundId = new Map<string, RawPass>();
+    for (const [, pass] of this.passById) {
+      if (pass.refundId) {
+        passRefundIds.add(pass.refundId);
+        passByRefundId.set(pass.refundId, pass);
+      }
+    }
+
+    // Stats
+    let passRevCount = 0;
+    let orderRevCount = 0;
+    let uncategorizedCount = 0;
     let skippedState = 0;
     let skippedNoDate = 0;
-    const sampleUncategorized: string[] = [];
 
-    // ── Process orders ──────────────────────────────────────
+    // ── Step 2: Non-subscription passes (one-time pass purchases) ──
+
+    // Identify non-subscription passes with revenue
+    const passOrderIds = new Set<string>(); // orders associated with pass revenue
+
+    for (const [, pass] of this.passById) {
+      // Skip subscription passes
+      if (pass.passCategoryName.toLowerCase() === "subscription") continue;
+      // Skip zero-revenue
+      if (pass.total <= 0) continue;
+      // Must have an order
+      if (!pass.orderId) continue;
+
+      const order = orderById.get(pass.orderId);
+      if (!order) continue;
+
+      // Filter by order.completedAt
+      const dateStr = order.completedAt || order.createdAt || order.created;
+      const month = dateStr ? this.extractMonth(dateStr) : null;
+      if (!month) continue;
+
+      const state = order.state.toLowerCase();
+      if (state !== "completed" && state !== "refunded") continue;
+
+      passOrderIds.add(pass.orderId);
+
+      // Resolve category: pass → passType → revenueCategoryId → name
+      let categoryName: string | null = null;
+      if (pass.passTypeId) {
+        const passType = this.passTypeById.get(pass.passTypeId);
+        if (passType?.revenueCategoryId) {
+          const rc = this.revenueCategoryById.get(passType.revenueCategoryId);
+          if (rc?.name) categoryName = rc.name;
+        }
+      }
+      // Fallback: name-based inference
+      if (!categoryName) {
+        if (pass.name) categoryName = this.inferCategoryFromName(pass.name);
+        if (!categoryName && pass.passCategoryName) {
+          categoryName = this.inferCategoryFromName(pass.passCategoryName);
+        }
+      }
+
+      const cat = categoryName || "Uncategorized";
+      if (!categoryName) uncategorizedCount++;
+      else passRevCount++;
+
+      // Compute fees-to-org: if fees_outside, fees are paid by customer (don't deduct)
+      const feesOut = isFeesOutside(pass.feesOutside);
+      const unionFee = feesOut ? 0 : pass.feeUnionTotal;
+      const stripeFee = feesOut ? 0 : pass.feePaymentTotal;
+
+      const bucket = getOrCreate(month, cat);
+      bucket.revenue += pass.total;
+      bucket.unionFees += unionFee;
+      bucket.stripeFees += stripeFee;
+    }
+
+    // ── Step 3: Non-pass orders (subscriptions, registrations, other) ──
+
     for (const order of orders) {
-      // Only completed or refunded orders represent real revenue
       const state = order.state.toLowerCase();
       if (state !== "completed" && state !== "refunded") {
         skippedState++;
         continue;
       }
+
+      // Skip zero-revenue orders
+      if (order.total <= 0) continue;
+
+      // Skip orders already counted in pass revenue
+      if (passOrderIds.has(order.id)) continue;
 
       const dateStr = order.completedAt || order.createdAt || order.created;
       const month = dateStr ? this.extractMonth(dateStr) : null;
@@ -550,34 +648,49 @@ export class ZipTransformer {
         continue;
       }
 
-      const categoryName = this.resolveRevenueCategory(order);
-      if (!categoryName) {
-        uncategorized++;
-        if (sampleUncategorized.length < 5) sampleUncategorized.push(order.id);
-        // Still count under "Uncategorized"
-        const bucket = getOrCreate(month, "Uncategorized");
-        bucket.revenue += order.total;
-        bucket.unionFees += order.feeUnionTotal;
-        bucket.stripeFees += order.feePaymentTotal;
-        bucket.otherFees += order.feeOutsideTotal;
-        continue;
+      // Resolve category via subscription_pass_id → pass → passType → revenueCategoryId
+      // Per Union doc: if no subscription_pass_id, category is null → "Uncategorized"
+      // (No event_id fallback — only subscription_pass_id is used in Step 3)
+      let categoryName: string | null = null;
+      if (order.subscriptionPassId) {
+        const pass = this.passById.get(order.subscriptionPassId);
+        if (pass?.passTypeId) {
+          const passType = this.passTypeById.get(pass.passTypeId);
+          if (passType?.revenueCategoryId) {
+            const rc = this.revenueCategoryById.get(passType.revenueCategoryId);
+            if (rc?.name) categoryName = rc.name;
+          }
+        }
+        // Fallback: name-based inference (for daily exports with empty lookup tables)
+        if (!categoryName && pass?.name) {
+          categoryName = this.inferCategoryFromName(pass.name);
+        }
       }
 
-      categorized++;
-      const bucket = getOrCreate(month, categoryName);
+      const cat = categoryName || "Uncategorized";
+      if (!categoryName) uncategorizedCount++;
+      else orderRevCount++;
+
+      // Compute fees-to-org
+      const feesOut = isFeesOutside(order.feesOutside);
+      const unionFee = feesOut ? 0 : order.feeUnionTotal;
+      const stripeFee = feesOut ? 0 : order.feePaymentTotal;
+
+      const bucket = getOrCreate(month, cat);
       bucket.revenue += order.total;
-      bucket.unionFees += order.feeUnionTotal;
-      bucket.stripeFees += order.feePaymentTotal;
-      bucket.otherFees += order.feeOutsideTotal;
+      bucket.unionFees += unionFee;
+      bucket.stripeFees += stripeFee;
     }
 
-    // ── Process refunds ─────────────────────────────────────
-    let refundsApplied = 0;
+    // ── Step 4: Refunds ──────────────────────────────────────
+
+    let refundsPassApplied = 0;
+    let refundsNonPassApplied = 0;
     let refundsSkipped = 0;
 
     for (const refund of refunds) {
-      const state = refund.state?.toLowerCase() || "";
-      if (state !== "refunded" && state !== "completed" && state !== "") {
+      // Exclude balance refunds (credits to account, not real refunds)
+      if (refund.toBalance) {
         refundsSkipped++;
         continue;
       }
@@ -589,44 +702,74 @@ export class ZipTransformer {
         continue;
       }
 
-      // Resolve category: try via refund's own revenueCategoryId, else via order
+      // ── A) Pass refunds: refund is linked to a pass (pass.refund_id = refund.id)
+      const linkedPass = passByRefundId.get(refund.id);
+      if (linkedPass) {
+        // Category via pass → passType → revenueCategoryId
+        let categoryName: string | null = null;
+        if (linkedPass.passTypeId) {
+          const passType = this.passTypeById.get(linkedPass.passTypeId);
+          if (passType?.revenueCategoryId) {
+            const rc = this.revenueCategoryById.get(passType.revenueCategoryId);
+            if (rc?.name) categoryName = rc.name;
+          }
+        }
+        if (!categoryName && linkedPass.name) {
+          categoryName = this.inferCategoryFromName(linkedPass.name);
+        }
+        const cat = categoryName || "Uncategorized";
+
+        const bucket = getOrCreate(month, cat);
+        // Use pass.total for refund amount (Union says to use pass total, not refund amount)
+        bucket.refunded += Math.abs(linkedPass.total);
+        // Fees are returned on refund (positive, offset the negative fee deduction)
+        bucket.unionFeesRefunded += Math.abs(linkedPass.feeUnionTotal);
+        refundsPassApplied++;
+        continue;
+      }
+
+      // ── B) Non-pass refunds: use refund's own revenue_category_id
       let categoryName: string | null = null;
       if (refund.revenueCategoryId) {
         const rc = this.revenueCategoryById.get(refund.revenueCategoryId);
         if (rc?.name) categoryName = rc.name;
       }
-      if (!categoryName && refund.orderId) {
-        const order = orderById.get(refund.orderId);
-        if (order) categoryName = this.resolveRevenueCategory(order);
-      }
+      const refundCat = categoryName || "Uncategorized";
 
-      if (!categoryName) {
-        refundsSkipped++;
-        continue;
-      }
-
-      // amountRefunded from Union.fit is negative (e.g. "$-199.00")
-      // Store as positive in the `refunded` bucket
-      const refundAmount = Math.abs(refund.amountRefunded);
-      const refundUnionFees = Math.abs(refund.feeUnionTotalRefunded);
-
-      const bucket = getOrCreate(month, categoryName);
-      bucket.refunded += refundAmount;
-      bucket.unionFeesRefunded += refundUnionFees;
-      refundsApplied++;
+      const bucket = getOrCreate(month, refundCat);
+      bucket.refunded += Math.abs(refund.amountRefunded);
+      bucket.unionFeesRefunded += Math.abs(refund.feeUnionTotalRefunded);
+      refundsNonPassApplied++;
     }
 
-    // ── Build output ────────────────────────────────────────
+    // ── Step 5: Transfers (Uncategorized only) ───────────────
+
+    let transfersApplied = 0;
+    for (const transfer of transfers) {
+      const dateStr = transfer.createdAt || transfer.created;
+      const month = dateStr ? this.extractMonth(dateStr) : null;
+      if (!month) continue;
+
+      const bucket = getOrCreate(month, "Uncategorized");
+      // payout_total is negative for debits (e.g. "$-0.62")
+      // Store as "other fees" since they reduce net revenue
+      bucket.transfers += Math.abs(transfer.payoutTotal);
+      transfersApplied++;
+    }
+
+    // ── Step 6: Build output ─────────────────────────────────
+
     const result = new Map<string, RevenueCategory[]>();
 
     for (const [month, categoryMap] of buckets.entries()) {
       const categories: RevenueCategory[] = [];
       for (const [name, totals] of categoryMap.entries()) {
+        // Net = Revenue - UnionFees - StripeFees - Transfers - Refunded + UnionFeesRefunded
         const netRevenue =
           totals.revenue -
           totals.unionFees -
           totals.stripeFees -
-          totals.otherFees -
+          totals.transfers -
           totals.refunded +
           totals.unionFeesRefunded;
 
@@ -635,35 +778,30 @@ export class ZipTransformer {
           revenue: Math.round(totals.revenue * 100) / 100,
           unionFees: Math.round(totals.unionFees * 100) / 100,
           stripeFees: Math.round(totals.stripeFees * 100) / 100,
-          otherFees: Math.round(totals.otherFees * 100) / 100,
+          otherFees: Math.round(totals.transfers * 100) / 100,  // transfers map to other_fees column
           transfers: 0,
           refunded: Math.round(totals.refunded * 100) / 100,
           unionFeesRefunded: Math.round(totals.unionFeesRefunded * 100) / 100,
           netRevenue: Math.round(netRevenue * 100) / 100,
         });
       }
-      // Sort by revenue desc
-      categories.sort((a, b) => b.revenue - a.revenue);
+      // Sort alphabetically by category name (Union's step 7)
+      categories.sort((a, b) => a.revenueCategory.localeCompare(b.revenueCategory));
       result.set(month, categories);
     }
 
-    const uncatPct = orders.length > 0
-      ? ((uncategorized / (categorized + uncategorized)) * 100).toFixed(1)
-      : "0";
+    const totalCategorized = passRevCount + orderRevCount;
+    const total = totalCategorized + uncategorizedCount;
+    const uncatPct = total > 0 ? ((uncategorizedCount / total) * 100).toFixed(1) : "0";
 
     console.log(
-      `[zip-transformer] Revenue categories: ${categorized} orders categorized, ` +
-        `${uncategorized} uncategorized (${uncatPct}%), ` +
+      `[revenue] ${passRevCount} pass revenue items, ${orderRevCount} order revenue items, ` +
+        `${uncategorizedCount} uncategorized (${uncatPct}%). ` +
         `${skippedState} skipped (wrong state), ${skippedNoDate} skipped (no date). ` +
-        `${refundsApplied} refunds applied, ${refundsSkipped} refunds skipped. ` +
+        `Refunds: ${refundsPassApplied} pass-linked, ${refundsNonPassApplied} non-pass, ${refundsSkipped} skipped. ` +
+        `Transfers: ${transfersApplied}. ` +
         `${result.size} months produced.`
     );
-
-    if (sampleUncategorized.length > 0) {
-      console.log(
-        `[zip-transformer] Sample uncategorized order IDs: ${sampleUncategorized.join(", ")}`
-      );
-    }
 
     return result;
   }

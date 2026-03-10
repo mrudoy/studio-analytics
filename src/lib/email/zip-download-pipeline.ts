@@ -30,6 +30,7 @@ import {
   RawPassTypeSchema,
   RawRevenueCategoryLookupSchema,
   RawRefundSchema,
+  RawTransferSchema,
   type RawMembership,
   type RawPass,
   type RawOrder,
@@ -40,6 +41,7 @@ import {
   type RawPassType,
   type RawRevenueCategoryLookup,
   type RawRefund,
+  type RawTransfer,
 } from "./zip-schemas";
 import { saveAutoRenews } from "../db/auto-renew-store";
 import { saveOrders } from "../db/order-store";
@@ -380,6 +382,11 @@ async function runZipImport(
     RawRefundSchema,
     "refunds"
   );
+  const transfers = parseTable<RawTransfer>(
+    fileMap.get("transfers"),
+    RawTransferSchema,
+    "transfers"
+  );
 
   // ── Build transformer ───────────────────────────────────
   progress("Building lookup maps...", 35);
@@ -535,7 +542,7 @@ async function runZipImport(
   progress("Computing revenue by category...", 90);
 
   if (rawOrders.length > 0) {
-    const monthlyRevenue = transformer.computeRevenueByCategory(rawOrders, refunds);
+    const monthlyRevenue = transformer.computeRevenueByCategory(rawOrders, refunds, transfers);
     let totalRevCatsSaved = 0;
 
     for (const [month, categories] of monthlyRevenue.entries()) {
