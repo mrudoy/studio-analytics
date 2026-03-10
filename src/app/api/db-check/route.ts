@@ -74,6 +74,40 @@ export async function GET() {
       ORDER BY period_start DESC, revenue DESC
     `);
 
+    // Order state breakdown by month (to check if pre-pays are being filtered out)
+    const orderStates = await pool.query(`
+      SELECT
+        TO_CHAR(created_at, 'YYYY-MM') AS month,
+        COUNT(*) AS order_count,
+        ROUND(SUM(total)::numeric, 0) AS total_revenue
+      FROM orders
+      WHERE created_at >= '2026-01-01'
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      ORDER BY month DESC
+    `);
+
+    // Check uploaded_data for revenue uploads
+    const uploads = await pool.query(`
+      SELECT id, type, file_name, row_count, created_at
+      FROM uploaded_data
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+
+    // Revenue categories source check — which months have pipeline vs uploaded data?
+    const rcSourceCheck = await pool.query(`
+      SELECT
+        TO_CHAR(period_start, 'YYYY-MM') AS month,
+        COUNT(*) AS cat_count,
+        MIN(period_start)::text AS first_start,
+        MAX(period_end)::text AS last_end,
+        ROUND(SUM(revenue)::numeric, 0) AS total_gross
+      FROM revenue_categories
+      WHERE period_start >= '2025-10-01'
+      GROUP BY TO_CHAR(period_start, 'YYYY-MM')
+      ORDER BY month DESC
+    `);
+
     return NextResponse.json({
       migrations: migrations.rows.map((r: Record<string, unknown>) => ({
         name: r.name,
@@ -84,6 +118,9 @@ export async function GET() {
       revenuePeriods: revPeriods.rows,
       retreatRevenue: retreatRevenue.rows,
       categoryDetail: catDetail.rows,
+      ordersByMonth: orderStates.rows,
+      uploads: uploads.rows,
+      rcSourceCheck: rcSourceCheck.rows,
     });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
