@@ -33,23 +33,21 @@ export async function saveRevenueCategories(
   try {
     await client.query("BEGIN");
 
-    // For single-month periods: delete any existing rows in the same month
-    // with a DIFFERENT period range. Union.fit revenue data is cumulative,
-    // so the latest pipeline run replaces all prior partial-month data.
-    // This prevents the double-counting bug where multiple period ranges
-    // (e.g. Feb 1-23 + Feb 24-24) overlap and get summed.
+    // For single-month periods: delete ALL unlocked rows for the same month.
+    // This ensures a full replacement — whichever pipeline writes last gets
+    // clean data without leftover categories from a previous pipeline run.
+    // (Fixes the bug where zip pipeline "Uncategorized" rows contaminate
+    // email pipeline data, inflating totals by $100K+.)
     if (!isMultiMonth) {
       const monthPrefix = periodStart.slice(0, 7); // YYYY-MM
       const { rowCount } = await client.query(
         `DELETE FROM revenue_categories
          WHERE TO_CHAR(period_start, 'YYYY-MM') = $1
-           AND TO_CHAR(period_end, 'YYYY-MM') = $1
-           AND NOT (period_start = $2 AND period_end = $3)
            AND locked = 0`,
-        [monthPrefix, periodStart, periodEnd]
+        [monthPrefix]
       );
       if (rowCount && rowCount > 0) {
-        console.log(`[revenue-store] Cleaned ${rowCount} stale rows for ${monthPrefix} (replaced by ${periodStart}–${periodEnd})`);
+        console.log(`[revenue-store] Cleared ${rowCount} unlocked rows for ${monthPrefix} (full replacement by ${periodStart}–${periodEnd})`);
       }
     }
 
@@ -101,6 +99,30 @@ export async function lockPeriod(periodStart: string, periodEnd: string): Promis
     [periodStart, periodEnd]
   );
   console.log(`[revenue-store] Locked period ${periodStart} – ${periodEnd}`);
+}
+
+export async function unlockMonth(year: number, month: number): Promise<number> {
+  const pool = getPool();
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const { rowCount } = await pool.query(
+    `UPDATE revenue_categories SET locked = 0 WHERE TO_CHAR(period_start, 'YYYY-MM') = $1 AND locked = 1`,
+    [monthStr]
+  );
+  const count = rowCount ?? 0;
+  console.log(`[revenue-store] Unlocked ${count} rows for ${monthStr}`);
+  return count;
+}
+
+export async function deleteMonthData(year: number, month: number): Promise<number> {
+  const pool = getPool();
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const { rowCount } = await pool.query(
+    `DELETE FROM revenue_categories WHERE TO_CHAR(period_start, 'YYYY-MM') = $1`,
+    [monthStr]
+  );
+  const count = rowCount ?? 0;
+  console.log(`[revenue-store] Deleted ${count} rows for ${monthStr}`);
+  return count;
 }
 
 export async function isLocked(periodStart: string, periodEnd: string): Promise<boolean> {

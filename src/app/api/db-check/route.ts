@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db/database";
+import { unlockMonth, deleteMonthData } from "@/lib/db/revenue-store";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +123,42 @@ export async function GET() {
       uploads: uploads.rows,
       rcSourceCheck: rcSourceCheck.rows,
     });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/db-check — Unlock and clear revenue data for specified months.
+ * Body: { months: ["2026-01", "2026-02"], action: "unlock-and-clear" }
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { months, action } = body as { months: string[]; action: string };
+
+    if (action !== "unlock-and-clear") {
+      return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    }
+
+    if (!months || !Array.isArray(months) || months.length === 0) {
+      return NextResponse.json({ error: "months array required" }, { status: 400 });
+    }
+
+    const results: Record<string, { unlocked: number; deleted: number }> = {};
+
+    for (const month of months) {
+      const [yearStr, monthStr] = month.split("-");
+      const year = parseInt(yearStr);
+      const monthNum = parseInt(monthStr);
+      if (isNaN(year) || isNaN(monthNum)) continue;
+
+      const unlocked = await unlockMonth(year, monthNum);
+      const deleted = await deleteMonthData(year, monthNum);
+      results[month] = { unlocked, deleted };
+    }
+
+    return NextResponse.json({ action, results });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
