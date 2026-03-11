@@ -28,8 +28,8 @@ export function getPool(): Pool {
     min: 1,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
-    // Query timeout (30s) to prevent runaway queries
-    statement_timeout: 30_000,
+    // Query timeout — 120s for batch imports, 30s in production
+    statement_timeout: process.env.BATCH_IMPORT ? 120_000 : 30_000,
     // Railway Postgres requires SSL
     ssl: isRailway ? { rejectUnauthorized: false } : undefined,
   });
