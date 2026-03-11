@@ -89,6 +89,9 @@ export interface ZipWebhookOptions {
   downloadUrl: string;
   /** Progress callback */
   onProgress?: ProgressCallback;
+  /** Date range the export covers — used to restrict revenue saves to only months within range.
+   *  Without this, daily exports can overwrite complete historical revenue with partial data. */
+  dataRange?: { start: string; end: string };
 }
 
 /**
@@ -331,7 +334,7 @@ export async function runZipWebhookPipeline(
   );
 
   // ── Run transform + save ────────────────────────────────
-  return runZipImport(fileMap, progress, startTime);
+  return runZipImport(fileMap, progress, startTime, undefined, undefined, options.dataRange);
 }
 
 // ── Shared Import Logic ─────────────────────────────────────
@@ -341,7 +344,8 @@ async function runZipImport(
   progress: ProgressCallback,
   startTime: number,
   emailId?: string,
-  gmail?: GmailClient
+  gmail?: GmailClient,
+  dataRange?: { start: string; end: string },
 ): Promise<PipelineResult> {
   const allWarnings: string[] = [];
   const recordCounts: Record<string, number> = {};
@@ -606,30 +610,66 @@ async function runZipImport(
   if (rawOrders.length > 0) {
     const monthlyRevenue = transformer.computeRevenueByCategory(rawOrders, refunds, transfers);
     let totalRevCatsSaved = 0;
+    let monthsSaved = 0;
+    let monthsSkippedRange = 0;
+    let monthsSkippedLocked = 0;
+    let monthsFailed = 0;
+
+    // Compute allowed month range from the export's data range.
+    // Daily exports should only save revenue for months they fully cover.
+    // Without this guard, a daily export with a handful of modified old-month
+    // orders would DELETE complete historical revenue and INSERT partial data.
+    let rangeStartMonth: string | null = null;
+    let rangeEndMonth: string | null = null;
+    if (dataRange?.start && dataRange?.end) {
+      const startMatch = dataRange.start.match(/^(\d{4}-\d{2})/);
+      const endMatch = dataRange.end.match(/^(\d{4}-\d{2})/);
+      if (startMatch) rangeStartMonth = startMatch[1];
+      if (endMatch) rangeEndMonth = endMatch[1];
+    }
 
     for (const [month, categories] of monthlyRevenue.entries()) {
-      const year = parseInt(month.slice(0, 4));
-      const monthNum = parseInt(month.slice(5, 7));
+      try {
+        // Skip months outside the export's data range (prevents daily exports
+        // from overwriting complete historical months with partial data)
+        if (rangeStartMonth && rangeEndMonth && (month < rangeStartMonth || month > rangeEndMonth)) {
+          monthsSkippedRange++;
+          continue;
+        }
 
-      // Check if this month is locked (manually uploaded data)
-      const locked = await isMonthLocked(year, monthNum);
-      if (locked) {
-        console.log(`[zip-pipeline] Skipping locked revenue period ${month}`);
-        continue;
+        const year = parseInt(month.slice(0, 4));
+        const monthNum = parseInt(month.slice(5, 7));
+
+        // Check if this month is locked (manually uploaded data)
+        const locked = await isMonthLocked(year, monthNum);
+        if (locked) {
+          console.log(`[zip-pipeline] Skipping locked revenue period ${month}`);
+          monthsSkippedLocked++;
+          continue;
+        }
+
+        // Build period: first day to last day of month
+        const periodStart = `${month}-01`;
+        const lastDay = new Date(year, monthNum, 0).getDate();
+        const periodEnd = `${month}-${String(lastDay).padStart(2, "0")}`;
+
+        await saveRevenueCategories(periodStart, periodEnd, categories);
+        totalRevCatsSaved += categories.length;
+        monthsSaved++;
+      } catch (err) {
+        monthsFailed++;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[zip-pipeline] Failed to save revenue for ${month}: ${msg}`);
+        allWarnings.push(`Revenue save failed for ${month}: ${msg}`);
+        // Continue to next month — don't let one failure kill all subsequent months
       }
-
-      // Build period: first day to last day of month
-      const periodStart = `${month}-01`;
-      const lastDay = new Date(year, monthNum, 0).getDate();
-      const periodEnd = `${month}-${String(lastDay).padStart(2, "0")}`;
-
-      await saveRevenueCategories(periodStart, periodEnd, categories);
-      totalRevCatsSaved += categories.length;
     }
 
     recordCounts.revenueCategories = totalRevCatsSaved;
+    const rangeInfo = rangeStartMonth ? ` (range: ${rangeStartMonth}..${rangeEndMonth})` : " (no range filter)";
     console.log(
-      `[zip-pipeline] Revenue categories saved: ${totalRevCatsSaved} across ${monthlyRevenue.size} months`
+      `[zip-pipeline] Revenue: ${monthsSaved} months saved (${totalRevCatsSaved} categories), ` +
+      `${monthsSkippedRange} skipped (out of range), ${monthsSkippedLocked} locked, ${monthsFailed} failed${rangeInfo}`
     );
   }
 
