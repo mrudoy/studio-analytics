@@ -103,6 +103,8 @@ export interface ZipLocalOptions {
   csvDir: string;
   /** Progress callback */
   onProgress?: ProgressCallback;
+  /** Date range the export covers — auto-inferred from directory name if not provided */
+  dataRange?: { start: string; end: string };
 }
 
 // ── URL Extraction ──────────────────────────────────────────
@@ -283,7 +285,24 @@ export async function runZipLocalPipeline(
     `[zip-pipeline] Local files: ${files.length} CSVs from ${csvDir}`
   );
 
-  return runZipImport(fileMap, progress, startTime);
+  // Auto-infer dataRange from directory name if not explicitly provided.
+  // Union.fit zip directories are named like:
+  //   union_data_export-sky-ting-20260307-20260307-exZBrU3FBhnbMKJS3tVgNpR4
+  // The two 8-digit dates are the start and end of the export period.
+  let dataRange = options.dataRange;
+  if (!dataRange) {
+    const dirName = basename(csvDir);
+    const dateMatch = dirName.match(/(\d{4})(\d{2})(\d{2})-(\d{4})(\d{2})(\d{2})/);
+    if (dateMatch) {
+      dataRange = {
+        start: `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`,
+        end: `${dateMatch[4]}-${dateMatch[5]}-${dateMatch[6]}`,
+      };
+      console.log(`[zip-pipeline] Auto-inferred dataRange from directory name: ${dataRange.start} to ${dataRange.end}`);
+    }
+  }
+
+  return runZipImport(fileMap, progress, startTime, undefined, undefined, dataRange);
 }
 
 // ── Webhook Pipeline (direct URL, no Gmail) ─────────────────

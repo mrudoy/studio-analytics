@@ -40,6 +40,32 @@ export async function saveRevenueCategories(
     // email pipeline data, inflating totals by $100K+.)
     if (!isMultiMonth) {
       const monthPrefix = periodStart.slice(0, 7); // YYYY-MM
+
+      // ── DATA REGRESSION GUARD ──
+      // Before wiping existing data, check if the new data is a clear downgrade.
+      // This prevents daily zip exports (which compute revenue only from that
+      // day's orders) from overwriting complete monthly revenue with partial data.
+      const { rows: existingStats } = await client.query(
+        `SELECT COUNT(*) AS cat_count, COALESCE(SUM(revenue), 0) AS total_rev
+         FROM revenue_categories
+         WHERE TO_CHAR(period_start, 'YYYY-MM') = $1 AND locked = 0`,
+        [monthPrefix]
+      );
+      const existingCount = Number(existingStats[0].cat_count);
+      const existingRev = Number(existingStats[0].total_rev);
+      const newRev = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
+
+      if (existingCount > 0 && rows.length < existingCount * 0.6 && newRev < existingRev * 0.5) {
+        console.warn(
+          `[revenue-store] BLOCKED data regression for ${monthPrefix}: ` +
+          `existing ${existingCount} categories / $${existingRev.toFixed(0)}, ` +
+          `new ${rows.length} categories / $${newRev.toFixed(0)}. ` +
+          `Refusing to replace complete data with partial data.`
+        );
+        await client.query("ROLLBACK");
+        return;
+      }
+
       const { rowCount } = await client.query(
         `DELETE FROM revenue_categories
          WHERE TO_CHAR(period_start, 'YYYY-MM') = $1
