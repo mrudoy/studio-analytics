@@ -29,53 +29,15 @@ export async function saveRevenueCategories(
     }
   }
 
+  // ── NEVER DELETE DATA ──
+  // Revenue data is append-only. We only INSERT or UPDATE existing rows.
+  // Multiple period ranges for the same month can coexist — the dedup
+  // queries (DISTINCT ON ... ORDER BY period_end DESC) pick the best one.
+  // This guarantees we never lose historical data from partial imports.
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
-    // For single-month periods: delete ALL unlocked rows for the same month.
-    // This ensures a full replacement — whichever pipeline writes last gets
-    // clean data without leftover categories from a previous pipeline run.
-    // (Fixes the bug where zip pipeline "Uncategorized" rows contaminate
-    // email pipeline data, inflating totals by $100K+.)
-    if (!isMultiMonth) {
-      const monthPrefix = periodStart.slice(0, 7); // YYYY-MM
-
-      // ── DATA REGRESSION GUARD ──
-      // Before wiping existing data, check if the new data is a clear downgrade.
-      // This prevents daily zip exports (which compute revenue only from that
-      // day's orders) from overwriting complete monthly revenue with partial data.
-      const { rows: existingStats } = await client.query(
-        `SELECT COUNT(*) AS cat_count, COALESCE(SUM(revenue), 0) AS total_rev
-         FROM revenue_categories
-         WHERE TO_CHAR(period_start, 'YYYY-MM') = $1 AND locked = 0`,
-        [monthPrefix]
-      );
-      const existingCount = Number(existingStats[0].cat_count);
-      const existingRev = Number(existingStats[0].total_rev);
-      const newRev = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
-
-      if (existingCount > 0 && rows.length < existingCount * 0.6 && newRev < existingRev * 0.5) {
-        console.warn(
-          `[revenue-store] BLOCKED data regression for ${monthPrefix}: ` +
-          `existing ${existingCount} categories / $${existingRev.toFixed(0)}, ` +
-          `new ${rows.length} categories / $${newRev.toFixed(0)}. ` +
-          `Refusing to replace complete data with partial data.`
-        );
-        await client.query("ROLLBACK");
-        return;
-      }
-
-      const { rowCount } = await client.query(
-        `DELETE FROM revenue_categories
-         WHERE TO_CHAR(period_start, 'YYYY-MM') = $1
-           AND locked = 0`,
-        [monthPrefix]
-      );
-      if (rowCount && rowCount > 0) {
-        console.log(`[revenue-store] Cleared ${rowCount} unlocked rows for ${monthPrefix} (full replacement by ${periodStart}–${periodEnd})`);
-      }
-    }
 
     for (const row of rows) {
       await client.query(
@@ -139,17 +101,8 @@ export async function unlockMonth(year: number, month: number): Promise<number> 
   return count;
 }
 
-export async function deleteMonthData(year: number, month: number): Promise<number> {
-  const pool = getPool();
-  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
-  const { rowCount } = await pool.query(
-    `DELETE FROM revenue_categories WHERE TO_CHAR(period_start, 'YYYY-MM') = $1`,
-    [monthStr]
-  );
-  const count = rowCount ?? 0;
-  console.log(`[revenue-store] Deleted ${count} rows for ${monthStr}`);
-  return count;
-}
+// deleteMonthData intentionally removed — NEVER DELETE REVENUE DATA.
+// Revenue data is append-only. The DB is the permanent archive.
 
 export async function isLocked(periodStart: string, periodEnd: string): Promise<boolean> {
   const pool = getPool();

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db/database";
-import { unlockMonth, deleteMonthData } from "@/lib/db/revenue-store";
+import { unlockMonth } from "@/lib/db/revenue-store";
 
 export const dynamic = "force-dynamic";
 
@@ -145,7 +145,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "months array required" }, { status: 400 });
     }
 
-    const results: Record<string, { unlocked: number; deleted: number }> = {};
+    // Revenue data is NEVER deleted. Unlock only.
+    const results: Record<string, { unlocked: number }> = {};
 
     for (const month of months) {
       const [yearStr, monthStr] = month.split("-");
@@ -154,8 +155,7 @@ export async function POST(request: Request) {
       if (isNaN(year) || isNaN(monthNum)) continue;
 
       const unlocked = await unlockMonth(year, monthNum);
-      const deleted = await deleteMonthData(year, monthNum);
-      results[month] = { unlocked, deleted };
+      results[month] = { unlocked };
     }
 
     return NextResponse.json({ action, results });

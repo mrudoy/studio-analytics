@@ -76,6 +76,17 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - Delta values must use `formatDelta()` which includes comma formatting.
 - Currency values use `formatCurrency()` (auto-handles millions).
 
+## NEVER DELETE DATA (PERMANENT RULE)
+
+**Revenue data is append-only. The database is the permanent archive. Data must NEVER be erased.**
+
+- `saveRevenueCategories()` uses pure `INSERT ... ON CONFLICT DO UPDATE` (upsert). No DELETE statements.
+- Multiple period ranges for the same month can coexist. The dedup queries (`DISTINCT ON ... ORDER BY period_end DESC`) pick the best/latest data per category per month.
+- There is no `deleteMonthData()` function. It was removed. Do not recreate it.
+- If new data is partial (fewer categories or less revenue), it gets inserted alongside existing data — it does NOT replace it. The dedup queries handle picking the right rows.
+- This rule applies to ALL tables, not just `revenue_categories`. The DB is the single source of truth and historical archive. Pipeline operations are additive only.
+- If you need to "fix" data, upsert the correct values. Never delete the old ones.
+
 ## Architecture
 
 - `src/app/page.tsx` — single-file dashboard, data logic and module-level components live here
@@ -109,6 +120,7 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 ## Do NOT
 
+- **DELETE revenue data from the database — EVER.** No DELETE queries on revenue_categories. No "clear and replace" patterns. Data is append-only. Upsert only.
 - Remove FONT_SANS inline styles (Tailwind will override fonts)
 - Mix Tailwind classes with inline styles for the same property
 - Add emojis to the UI

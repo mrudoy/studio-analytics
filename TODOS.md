@@ -61,7 +61,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [ ] **Explore Customer.io API** — Investigate Customer.io as a potential CRM/email automation platform. Evaluate API capabilities, integration options, and whether it fits the daily email digest and CRM goals.
 - [x] ~~**Intro Week CSV download** — Added `/api/intro-week-export` endpoint + download button on IntroWeekModule card. CSV columns: Name, Email, Intro Week Start, Intro Week End, Days Left, Classes Attended. 14-day lookback.~~
 - [x] ~~**Intro Week Conversion Funnel Card** — New card in the Non Auto-Renew > Intro Week section. Shows expired intro weeks (last 14 days): Total Expired | Converted | Did Not Convert | Conversion Rate. Conversion = any active in-studio auto-renew (excludes TV-only). Expandable non-converters table. Download non-converters CSV via `/api/intro-week-nonconvert-export`. Files: `registration-store.ts` (getIntroWeekConversionData), `dashboard.ts` (IntroWeekConversionData type), `db-trends.ts` (wiring), `page.tsx` (IntroWeekConversionCard component).~~
-- [ ] **Revenue double-counting bug** — `revenue_categories` table has overlapping period ranges for the same month (e.g. Feb 1-23, Feb 24-24, plus all-time rows). Queries SUM all matching rows, inflating numbers ~2x. Spa showed $15K instead of ~$7K for Feb. Root cause: pipeline runs save cumulative Union.fit data with different period ranges; unique key `(period_start, period_end, category)` doesn't prevent within-month overlap. Fix: dedup queries with `DISTINCT ON`, fix save layer to replace same-month data, cleanup migration.
+- [x] ~~**Revenue double-counting bug** — `revenue_categories` table had overlapping period ranges. Fixed with DISTINCT ON in queries + full-month replacement in save layer. Further fix 2026-03-11: added data regression guard (refuses to replace >60% categories / >50% revenue with less data) + auto-infer dataRange from zip directory names. Prevents daily zip exports from destroying complete historical months. Feb 2026 data restored from historical export (through Feb 23; last 5 days ~$8K gap from lost daily export data). Commit `4779a6e`.~~
 - [x] **Missing Jan-Feb 2026 revenue on dashboard** — FIXED 2026-03-10. Root cause: daily exports produce partial revenue for months outside their date range (modified records have old `completedAt` dates). The DELETE+INSERT save strategy in `saveRevenueCategories()` was destroying complete monthly data when a daily export overwrote it with partial data. Additionally, `isMonthLocked()` could cause months to be silently skipped during full export processing. Fix: (1) Added `dataRange` pass-through from Union API export metadata to revenue save logic, (2) revenue save loop now filters months to only those within the export's `data_updated_starts_at`/`data_updated_ends_at` range (prevents daily exports from overwriting complete historical months), (3) added try-catch per month so one failed save doesn't kill subsequent months, (4) added detailed logging (saved/skipped-range/skipped-locked/failed counts). Backfilled 2026-01 ($236K, 44 cats) and 2026-02 ($229K, 43 cats) from local full export. Files: `zip-download-pipeline.ts`, `pipeline-worker.ts`. Scripts: `scripts/backfill-revenue-months.ts`, `scripts/debug-revenue-months.ts`.
 - [x] ~~**Overview page redesign** — Replaced KPI hero with time-based sections (Yesterday, Last Week, This Month, Last Month). Grouped cards: Subscriptions, Activity, Merch Revenue. Committed `3e08e04`.~~
 - [x] ~~Style guide~~ — created `docs/style-guide.md` with full typography hierarchy (section headers, sub-group headers, card titles, KPI values), color system, icon mapping, chart rules, and anti-patterns. Sub-group headers: text-[15px] font-semibold text-muted-foreground, no icons, no border-left.
@@ -108,6 +108,15 @@ When user asks about data, tell them which report to pull based on this mapping:
 - Never leave working changes uncommitted — even "small" fixes
 - If in doubt, check `git status` and push before wrapping up
 - This rule was set by Mike on 2026-03-04
+
+### NEVER DELETE DATA Rule (PERMANENT)
+**RULE**: Revenue data is APPEND-ONLY. The database is the permanent archive. Data must NEVER be erased.
+- `saveRevenueCategories()` uses pure upsert (INSERT ON CONFLICT DO UPDATE). No DELETE.
+- `deleteMonthData()` has been removed. Do not recreate it.
+- Multiple period ranges for the same month coexist. Dedup queries pick the best data.
+- If new data is partial, it sits alongside existing data — never replaces it.
+- This applies to ALL tables. Pipeline operations are additive only.
+- Set by Mike on 2026-03-11 after Feb 2026 data was destroyed by a DELETE+INSERT pattern.
 
 ### NO SCRAPING Rule (PERMANENT)
 **RULE**: The pipeline must NEVER use Playwright, browser automation, or any form of web scraping. Data acquisition is API-ONLY:
