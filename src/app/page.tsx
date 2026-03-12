@@ -58,7 +58,6 @@ import {
   YAxis,
   ReferenceLine,
   Cell,
-  Tooltip,
 } from "recharts";
 import {
   ChartContainer,
@@ -4845,19 +4844,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                       <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
                       <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                       <Bar dataKey="pct" radius={8}>
-                        <LabelList dataKey="pct" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                        <LabelList dataKey="pct" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
+                        <LabelList dataKey="count" position="inside" fontSize={11} fontWeight={500} fill="white" />
                       </Bar>
-                      <Tooltip content={({ active, payload }) => {
-                        if (!active || !payload?.[0]) return null;
-                        const d = payload[0].payload;
-                        return (
-                          <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
-                            <div className="font-semibold">{d.week}</div>
-                            <div>{d.count} churned of {d.active} active</div>
-                            <div className="font-semibold">{d.pct}% churn rate</div>
-                          </div>
-                        );
-                      }} />
                     </BarChart>
                   </ChartContainer>
                 </CardContent>
@@ -4914,7 +4903,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                       <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
                       <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                       <Bar dataKey="rate" radius={8}>
-                        <LabelList dataKey="rate" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                        <LabelList dataKey="rate" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                       </Bar>
                     </BarChart>
                   </ChartContainer>
@@ -5331,42 +5320,38 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               ? (last4.reduce((s, w) => s + (w.sky3ChurnPct ?? 0), 0) / last4.length) : 0;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
-                <Card>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Recycle className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
-                        <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
+                <DashboardCard>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Recycle className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
+                          <CardTitle>Weekly Churn</CardTitle>
+                        </div>
+                        <CardDescription>Sky3 churn rate per week</CardDescription>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-0.5">Sky3 churn rate per week</p>
+                      <CardAction>
+                        <div className="text-right">
+                          <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvgPct.toFixed(1)}%</div>
+                          <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                        </div>
+                      </CardAction>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvgPct.toFixed(1)}%</div>
-                      <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
-                    </div>
-                  </div>
-                  <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
-                    <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
-                      <CartesianGrid vertical={false} />
-                      <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
-                      <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                      <Bar dataKey="pct" radius={8}>
-                        <LabelList dataKey="pct" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
-                      </Bar>
-                      <Tooltip content={({ active, payload }) => {
-                        if (!active || !payload?.[0]) return null;
-                        const d = payload[0].payload;
-                        return (
-                          <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
-                            <div className="font-semibold">{d.week}</div>
-                            <div>{d.count} churned of {d.active} active</div>
-                            <div className="font-semibold">{d.pct}% churn rate</div>
-                          </div>
-                        );
-                      }} />
-                    </BarChart>
-                  </ChartContainer>
-                </Card>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
+                      <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
+                        <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
+                        <Bar dataKey="pct" radius={8}>
+                          <LabelList dataKey="pct" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
+                          <LabelList dataKey="count" position="inside" fontSize={11} fontWeight={500} fill="white" />
+                        </Bar>
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </DashboardCard>
             );
           })()}
           {/* ── Monthly Churn rate bar chart (right) ── */}
@@ -5414,11 +5399,12 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                      <BarChart accessibilityLayer data={monthlyData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
+                      <BarChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} />
                         <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                        <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                         <Bar dataKey="rate" radius={8}>
-                          <LabelList dataKey="rate" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                          <LabelList dataKey="rate" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                         </Bar>
                       </BarChart>
                     </ChartContainer>
@@ -5559,19 +5545,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
                         <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                         <Bar dataKey="pct" radius={8}>
-                          <LabelList dataKey="pct" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                          <LabelList dataKey="pct" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
+                          <LabelList dataKey="count" position="inside" fontSize={11} fontWeight={500} fill="white" />
                         </Bar>
-                        <Tooltip content={({ active, payload }) => {
-                          if (!active || !payload?.[0]) return null;
-                          const d = payload[0].payload;
-                          return (
-                            <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
-                              <div className="font-semibold">{d.week}</div>
-                              <div>{d.count} churned of {d.active} active</div>
-                              <div className="font-semibold">{d.pct}% churn rate</div>
-                            </div>
-                          );
-                        }} />
                       </BarChart>
                     </ChartContainer>
                   </CardContent>
@@ -5631,7 +5607,7 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
                         <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
                         <Bar dataKey="rate" radius={8}>
-                          <LabelList dataKey="rate" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                          <LabelList dataKey="rate" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                         </Bar>
                       </BarChart>
                     </ChartContainer>
