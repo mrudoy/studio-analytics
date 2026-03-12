@@ -8,11 +8,31 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes
 
 /**
- * POST /api/reprocess?limit=N — Fetch and process the N most recent Union API
- * exports (default: 1 = latest only). Bypasses BullMQ queue.
- *
- * Each Union export is a daily delta. Processing just the latest is usually
- * enough to get fresh data. Use limit=3 or higher to backfill missed days.
+ * GET /api/reprocess — List available exports with their date ranges.
+ */
+export async function GET() {
+  try {
+    const settings = loadSettings();
+    if (!settings?.unionApiKey) {
+      return NextResponse.json({ error: "No Union API key configured" }, { status: 500 });
+    }
+    const allExports = await fetchAllExports(settings.unionApiKey);
+    return NextResponse.json({
+      totalAvailable: allExports.length,
+      exports: allExports.map((exp, i) => ({
+        index: i,
+        createdAt: exp.createdAt,
+        dataRange: exp.dataRange,
+      })),
+    });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/reprocess?limit=N&offset=M — Process Union API exports.
+ * Default: limit=1, offset=0 (latest only).
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -31,7 +51,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No Union API key configured" }, { status: 500 });
     }
 
-    console.log(`[reprocess] Fetching exports from Union API (limit=${limit})...`);
+    console.log(`[reprocess] Fetching exports from Union API (limit=${limit}, offset=${offset})...`);
     const allExports = await fetchAllExports(settings.unionApiKey);
 
     if (allExports.length === 0) {
@@ -65,7 +85,7 @@ export async function POST(request: NextRequest) {
         });
 
         results.push({
-          index: i,
+          index: offset + i,
           createdAt: exp.createdAt,
           dataRange: exp.dataRange,
           success: zipResult.success,
@@ -75,7 +95,7 @@ export async function POST(request: NextRequest) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[reprocess] Export ${i + 1} failed: ${msg}`);
         results.push({
-          index: i,
+          index: offset + i,
           createdAt: exp.createdAt,
           dataRange: exp.dataRange,
           success: false,
