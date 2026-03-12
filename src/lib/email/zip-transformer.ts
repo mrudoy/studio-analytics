@@ -33,6 +33,7 @@ import type { OrderRow } from "../db/order-store";
 import type { RegistrationRow } from "../db/registration-store";
 import type { CustomerRow } from "../db/customer-store";
 import type { RevenueCategory } from "@/types/union-data";
+import { inferCategoryFromName } from "../analytics/category-utils";
 
 // ── Extended row types with Union ID fields ─────────────────
 
@@ -274,6 +275,14 @@ export class ZipTransformer {
         }
       }
 
+      // Resolve revenue category via lookup chain + fallback
+      const revenueCategory = this.resolveRevenueCategory(order) || undefined;
+
+      // Parse fees_outside (string "true"/"false" or boolean)
+      const feesOutside = typeof order.feesOutside === "string"
+        ? order.feesOutside.trim().toLowerCase() === "true"
+        : !!order.feesOutside;
+
       rows.push({
         created: order.createdAt || order.created,
         code: order.id, // Union.fit order ID as dedup key
@@ -283,6 +292,13 @@ export class ZipTransformer {
         payment: order.paymentMethod || "",
         total: order.total,
         unionOrderId: order.id,
+        state: order.state || undefined,
+        completedAt: order.completedAt || undefined,
+        feeUnionTotal: order.feeUnionTotal || 0,
+        feePaymentTotal: order.feePaymentTotal || 0,
+        feesOutside,
+        subscriptionPassId: order.subscriptionPassId || undefined,
+        revenueCategory,
       });
     }
 
@@ -459,25 +475,7 @@ export class ZipTransformer {
    * Uses the same business terms defined in TODOS.md Revenue Category Terms Rule.
    */
   private inferCategoryFromName(name: string): string | null {
-    const n = name.toLowerCase();
-
-    // Specific patterns first (more specific before less specific)
-    if (/sky\s*3|sky\s*three|3.?pack/i.test(n)) return "SKY3 / Packs";
-    if (/sky\s*ting\s*tv|sttv|retreat\s*ting/i.test(n)) return "SKY TING TV";
-    if (/intro|trial/i.test(n)) return "Intro / Trial";
-    if (/member/i.test(n) && !/sky\s*3|sky\s*ting\s*tv/i.test(n)) return "Members";
-    if (/drop.?in|single\s*class/i.test(n)) return "Drop-Ins";
-    if (/workshop/i.test(n)) return "Workshops";
-    if (/spa|wellness|massage|facial/i.test(n)) return "Wellness / Spa";
-    if (/teacher\s*training|tt\b|training/i.test(n)) return "Teacher Training";
-    if (/retail|merch|merchandise|shop/i.test(n)) return "Retail / Merch";
-    if (/private|1.on.1|one.on.one/i.test(n)) return "Privates";
-    if (/donat/i.test(n)) return "Donations";
-    if (/rental|rent/i.test(n)) return "Rentals";
-    if (/retreat/i.test(n)) return "Retreats";
-    if (/community/i.test(n)) return "Community";
-
-    return null;
+    return inferCategoryFromName(name);
   }
 
   /**

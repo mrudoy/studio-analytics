@@ -1,5 +1,7 @@
 export async function register() {
-  // Start the BullMQ worker and scheduler when the Next.js server starts
+  // Initialize database and run migrations when the Next.js server starts.
+  // Pipeline execution is triggered via CRON API routes (/api/cron/pipeline
+  // and /api/cron/revenue), NOT via BullMQ workers.
   if (process.env.NEXT_RUNTIME === "nodejs") {
     try {
       // Initialize PostgreSQL schema
@@ -16,27 +18,7 @@ export async function register() {
       const { ensureDataVersionTable } = await import("./lib/cache/stats-cache");
       await ensureDataVersionTable();
 
-      console.log("[instrumentation] Starting pipeline worker (runtime: nodejs)...");
-      const { startPipelineWorker } = await import("./lib/queue/pipeline-worker");
-      startPipelineWorker();
-      console.log("[instrumentation] Pipeline worker started successfully");
-
-      console.log("[instrumentation] Syncing schedule...");
-      const { syncSchedule } = await import("./lib/queue/scheduler");
-      await syncSchedule();
-      console.log("[instrumentation] Schedule sync complete");
-
-      // Boot-time catch-up: if the pipeline missed runs while the server
-      // was down, auto-enqueue after a 60s delay to let Redis stabilize.
-      setTimeout(async () => {
-        try {
-          const { checkAndCatchUp } = await import("./lib/queue/catchup");
-          const result = await checkAndCatchUp();
-          console.log(`[instrumentation] Catch-up check: ${result.reason}`);
-        } catch (err) {
-          console.warn("[instrumentation] Catch-up check failed:", err instanceof Error ? err.message : err);
-        }
-      }, 60_000);
+      console.log("[instrumentation] Database ready. Pipeline runs via CRON API routes.");
 
       // Graceful shutdown
       const shutdown = async (signal: string) => {
@@ -52,9 +34,9 @@ export async function register() {
       process.on("SIGTERM", () => shutdown("SIGTERM"));
       process.on("SIGINT", () => shutdown("SIGINT"));
     } catch (err) {
-      console.error("[instrumentation] Failed to start pipeline worker:", err);
+      console.error("[instrumentation] Failed to initialize database:", err);
     }
   } else {
-    console.log(`[instrumentation] Skipping worker start (runtime: ${process.env.NEXT_RUNTIME || "unknown"})`);
+    console.log(`[instrumentation] Skipping init (runtime: ${process.env.NEXT_RUNTIME || "unknown"})`);
   }
 }

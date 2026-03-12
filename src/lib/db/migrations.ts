@@ -499,6 +499,101 @@ const migrations: Migration[] = [
       );
     `,
   },
+  // ── Self-Sustaining Pipeline Architecture ────────────────────
+  // Enrich orders table with fields needed for DB-based revenue computation.
+  // Add refunds + transfers tables so revenue can be computed from accumulated
+  // DB data instead of from each daily CSV export (which is only a 24-hour delta).
+  {
+    name: "014_enrich_orders_and_revenue_tables",
+    up: `
+      -- Enrich orders table for DB-based revenue computation
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS state TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at DATE;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_union_total NUMERIC(12,2) DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_payment_total NUMERIC(12,2) DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS fees_outside BOOLEAN DEFAULT FALSE;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS subscription_pass_id TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS revenue_category TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_orders_revenue_month
+        ON orders(created_at) WHERE created_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_orders_revenue_category
+        ON orders(revenue_category) WHERE revenue_category IS NOT NULL;
+
+      -- Backfill revenue_category from order_type using inferCategoryFromName logic
+      UPDATE orders SET revenue_category = CASE
+        WHEN order_type ~* 'sky\\s*3|sky\\s*three|3.?pack' THEN 'SKY3 / Packs'
+        WHEN order_type ~* 'sky\\s*ting\\s*tv|sttv|retreat\\s*ting' THEN 'SKY TING TV'
+        WHEN order_type ~* 'intro|trial' THEN 'Intro / Trial'
+        WHEN order_type ~* 'member' AND NOT order_type ~* 'sky\\s*3|sky\\s*ting\\s*tv' THEN 'Members'
+        WHEN order_type ~* 'drop.?in|single\\s*class' THEN 'Drop-Ins'
+        WHEN order_type ~* 'workshop' THEN 'Workshops'
+        WHEN order_type ~* 'spa|wellness|massage|facial' THEN 'Wellness / Spa'
+        WHEN order_type ~* 'teacher\\s*training|training' THEN 'Teacher Training'
+        WHEN order_type ~* 'retail|merch|merchandise|shop' THEN 'Retail / Merch'
+        WHEN order_type ~* 'private|1.on.1|one.on.one' THEN 'Privates'
+        WHEN order_type ~* 'donat' THEN 'Donations'
+        WHEN order_type ~* 'rental|rent' THEN 'Rentals'
+        WHEN order_type ~* 'retreat' THEN 'Retreats'
+        WHEN order_type ~* 'community' THEN 'Community'
+        ELSE 'Uncategorized'
+      END WHERE revenue_category IS NULL;
+
+      -- Refunds table (for accurate refund tracking in DB-based revenue)
+      CREATE TABLE IF NOT EXISTS refunds (
+        id TEXT PRIMARY KEY,
+        created_at DATE,
+        order_id TEXT,
+        revenue_category_id TEXT,
+        revenue_category TEXT,
+        state TEXT,
+        amount_refunded NUMERIC(12,2) DEFAULT 0,
+        fee_union_total_refunded NUMERIC(12,2) DEFAULT 0,
+        payout_total NUMERIC(12,2) DEFAULT 0,
+        to_balance BOOLEAN DEFAULT FALSE,
+        reason TEXT,
+        imported_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Transfers table (video usage debits, etc.)
+      CREATE TABLE IF NOT EXISTS transfers (
+        id TEXT PRIMARY KEY,
+        created_at DATE,
+        payout_total NUMERIC(12,2) DEFAULT 0,
+        description TEXT,
+        type TEXT,
+        imported_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `,
+  },
+  {
+    name: "015_passes_table",
+    up: `
+      -- Passes table for DB-based 7-step revenue computation.
+      -- The algorithm requires passes for:
+      --   Step 2: non-subscription pass revenue (uses pass.total, not order.total)
+      --   Step 3: excluding pass orders from non-pass order revenue
+      --   Step 4A: pass-linked refunds (uses pass.total, not refund.amount_refunded)
+      CREATE TABLE IF NOT EXISTS passes (
+        id TEXT PRIMARY KEY,
+        pass_category_name TEXT,
+        order_id TEXT,
+        refund_id TEXT,
+        pass_type_id TEXT,
+        name TEXT,
+        total NUMERIC(12,2) DEFAULT 0,
+        fee_union_total NUMERIC(12,2) DEFAULT 0,
+        fee_payment_total NUMERIC(12,2) DEFAULT 0,
+        fees_outside BOOLEAN DEFAULT FALSE,
+        membership_id TEXT,
+        state TEXT,
+        imported_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_passes_order_id ON passes(order_id);
+      CREATE INDEX IF NOT EXISTS idx_passes_refund_id ON passes(refund_id) WHERE refund_id IS NOT NULL AND refund_id != '';
+      CREATE INDEX IF NOT EXISTS idx_passes_pass_type ON passes(pass_type_id);
+    `,
+  },
 ];
 
 /**

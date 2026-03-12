@@ -53,7 +53,10 @@ import {
   backfillRegistrationEmails,
 } from "../db/registration-store";
 import { saveCustomers } from "../db/customer-store";
-import { saveRevenueCategories, isMonthLocked } from "../db/revenue-store";
+import { saveRefunds } from "../db/refund-store";
+import { saveTransfers } from "../db/transfer-store";
+import { savePasses } from "../db/pass-store";
+import { recomputeRevenueFromDB } from "../analytics/db-revenue";
 import { setWatermark } from "../db/watermark-store";
 import {
   ensureLookupTables,
@@ -532,6 +535,33 @@ async function runZipImport(
   const passEmailCache = await loadPassEmailCache();
   transformer.setPassEmailCache(passEmailCache);
 
+  // ── Save passes to DB for revenue computation ─────────
+  // The 7-step revenue algorithm requires passes for:
+  //   Step 2: pass.total (not order.total) for non-subscription pass revenue
+  //   Step 3: excluding pass orders from non-pass order revenue
+  //   Step 4A: pass.total for pass-linked refund amounts
+  progress("Importing passes...", 52);
+
+  if (passes.length > 0) {
+    const passRows = passes.map((p) => ({
+      id: p.id,
+      passCategoryName: p.passCategoryName || "",
+      orderId: p.orderId || "",
+      refundId: p.refundId || "",
+      passTypeId: p.passTypeId || "",
+      name: p.name || "",
+      total: p.total || 0,
+      feeUnionTotal: p.feeUnionTotal || 0,
+      feePaymentTotal: p.feePaymentTotal || 0,
+      feesOutside: typeof p.feesOutside === "boolean" ? p.feesOutside : p.feesOutside === "true",
+      membershipId: p.membershipId || "",
+      state: p.state || "",
+    }));
+    await savePasses(passRows);
+    recordCounts.passes = passRows.length;
+    console.log(`[zip-pipeline] Passes saved: ${passRows.length.toLocaleString()}`);
+  }
+
   // ── Transform + save orders (batched) ───────────────────
   progress("Importing orders...", 55);
 
@@ -623,73 +653,60 @@ async function runZipImport(
     );
   }
 
-  // ── Compute + save revenue by category ──────────────────
-  progress("Computing revenue by category...", 90);
+  // ── Save refunds to DB ──────────────────────────────────
+  progress("Importing refunds...", 89);
 
-  if (rawOrders.length > 0) {
-    const monthlyRevenue = transformer.computeRevenueByCategory(rawOrders, refunds, transfers);
-    let totalRevCatsSaved = 0;
-    let monthsSaved = 0;
-    let monthsSkippedRange = 0;
-    let monthsSkippedLocked = 0;
-    let monthsFailed = 0;
-
-    // Compute allowed month range from the export's data range.
-    // Daily exports should only save revenue for months they fully cover.
-    // Without this guard, a daily export with a handful of modified old-month
-    // orders would DELETE complete historical revenue and INSERT partial data.
-    let rangeStartMonth: string | null = null;
-    let rangeEndMonth: string | null = null;
-    if (dataRange?.start && dataRange?.end) {
-      const startMatch = dataRange.start.match(/^(\d{4}-\d{2})/);
-      const endMatch = dataRange.end.match(/^(\d{4}-\d{2})/);
-      if (startMatch) rangeStartMonth = startMatch[1];
-      if (endMatch) rangeEndMonth = endMatch[1];
-    }
-
-    for (const [month, categories] of monthlyRevenue.entries()) {
-      try {
-        // Skip months outside the export's data range (prevents daily exports
-        // from overwriting complete historical months with partial data)
-        if (rangeStartMonth && rangeEndMonth && (month < rangeStartMonth || month > rangeEndMonth)) {
-          monthsSkippedRange++;
-          continue;
-        }
-
-        const year = parseInt(month.slice(0, 4));
-        const monthNum = parseInt(month.slice(5, 7));
-
-        // Check if this month is locked (manually uploaded data)
-        const locked = await isMonthLocked(year, monthNum);
-        if (locked) {
-          console.log(`[zip-pipeline] Skipping locked revenue period ${month}`);
-          monthsSkippedLocked++;
-          continue;
-        }
-
-        // Build period: first day to last day of month
-        const periodStart = `${month}-01`;
-        const lastDay = new Date(year, monthNum, 0).getDate();
-        const periodEnd = `${month}-${String(lastDay).padStart(2, "0")}`;
-
-        await saveRevenueCategories(periodStart, periodEnd, categories);
-        totalRevCatsSaved += categories.length;
-        monthsSaved++;
-      } catch (err) {
-        monthsFailed++;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[zip-pipeline] Failed to save revenue for ${month}: ${msg}`);
-        allWarnings.push(`Revenue save failed for ${month}: ${msg}`);
-        // Continue to next month — don't let one failure kill all subsequent months
-      }
-    }
-
-    recordCounts.revenueCategories = totalRevCatsSaved;
-    const rangeInfo = rangeStartMonth ? ` (range: ${rangeStartMonth}..${rangeEndMonth})` : " (no range filter)";
-    console.log(
-      `[zip-pipeline] Revenue: ${monthsSaved} months saved (${totalRevCatsSaved} categories), ` +
-      `${monthsSkippedRange} skipped (out of range), ${monthsSkippedLocked} locked, ${monthsFailed} failed${rangeInfo}`
+  if (refunds.length > 0) {
+    // Build a revenue category ID → name lookup for refund resolution
+    const revCatIdToName = new Map(
+      effectiveRevCatLookups.map((rc) => [rc.id, rc.name])
     );
+
+    const refundRows = refunds.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt || r.created,
+      orderId: r.orderId || "",
+      revenueCategoryId: r.revenueCategoryId || "",
+      revenueCategory: (r.revenueCategoryId ? revCatIdToName.get(r.revenueCategoryId) : undefined) || "",
+      state: r.state || "",
+      amountRefunded: r.amountRefunded || 0,
+      feeUnionTotalRefunded: r.feeUnionTotalRefunded || 0,
+      payoutTotal: r.payoutTotal || 0,
+      toBalance: r.toBalance,
+      reason: r.reason || "",
+    }));
+    await saveRefunds(refundRows);
+    recordCounts.refunds = refundRows.length;
+    console.log(`[zip-pipeline] Refunds saved: ${refundRows.length.toLocaleString()}`);
+  }
+
+  // ── Save transfers to DB ───────────────────────────────
+  if (transfers.length > 0) {
+    const transferRows = transfers.map((t) => ({
+      id: t.id,
+      createdAt: t.createdAt || t.created,
+      payoutTotal: t.payoutTotal || 0,
+      description: t.description || "",
+      type: t.type || "",
+    }));
+    await saveTransfers(transferRows);
+    recordCounts.transfers = transferRows.length;
+    console.log(`[zip-pipeline] Transfers saved: ${transferRows.length.toLocaleString()}`);
+  }
+
+  // ── Recompute revenue from accumulated DB data ─────────
+  // Instead of computing revenue from this single export's CSV data (which
+  // may be a 24-hour delta), recompute from ALL accumulated orders in the DB.
+  // This ensures monthly totals are always complete.
+  progress("Recomputing revenue from database...", 90);
+
+  try {
+    await recomputeRevenueFromDB();
+    console.log(`[zip-pipeline] Revenue recomputed from DB (current + previous month)`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[zip-pipeline] Revenue recomputation failed: ${msg}`);
+    allWarnings.push(`Revenue recomputation failed: ${msg}`);
   }
 
   // ── Mark email as read + set watermark ──────────────────
@@ -712,7 +729,7 @@ async function runZipImport(
   if (recordCounts.autoRenews) await setWatermark("autoRenews", now, recordCounts.autoRenews);
   if (recordCounts.registrations) await setWatermark("registrations", now, recordCounts.registrations);
   if (recordCounts.orders) await setWatermark("orders", now, recordCounts.orders);
-  if (recordCounts.revenueCategories) await setWatermark("revenueCategories", now, recordCounts.revenueCategories, "Computed from zip export");
+  await setWatermark("revenueCategories", now, 0, "Recomputed from DB");
 
   // ── Done ────────────────────────────────────────────────
   const duration = Math.round((Date.now() - startTime) / 1000);

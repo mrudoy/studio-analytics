@@ -172,6 +172,54 @@ export async function initDatabase(): Promise<void> {
       order_type TEXT,
       payment TEXT,
       total NUMERIC(12,2) DEFAULT 0,
+      union_order_id TEXT,
+      state TEXT,
+      completed_at DATE,
+      fee_union_total NUMERIC(12,2) DEFAULT 0,
+      fee_payment_total NUMERIC(12,2) DEFAULT 0,
+      fees_outside BOOLEAN DEFAULT FALSE,
+      subscription_pass_id TEXT,
+      revenue_category TEXT,
+      imported_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS refunds (
+      id TEXT PRIMARY KEY,
+      created_at DATE,
+      order_id TEXT,
+      revenue_category_id TEXT,
+      revenue_category TEXT,
+      state TEXT,
+      amount_refunded NUMERIC(12,2) DEFAULT 0,
+      fee_union_total_refunded NUMERIC(12,2) DEFAULT 0,
+      payout_total NUMERIC(12,2) DEFAULT 0,
+      to_balance BOOLEAN DEFAULT FALSE,
+      reason TEXT,
+      imported_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS transfers (
+      id TEXT PRIMARY KEY,
+      created_at DATE,
+      payout_total NUMERIC(12,2) DEFAULT 0,
+      description TEXT,
+      type TEXT,
+      imported_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS passes (
+      id TEXT PRIMARY KEY,
+      pass_category_name TEXT,
+      order_id TEXT,
+      refund_id TEXT,
+      pass_type_id TEXT,
+      name TEXT,
+      total NUMERIC(12,2) DEFAULT 0,
+      fee_union_total NUMERIC(12,2) DEFAULT 0,
+      fee_payment_total NUMERIC(12,2) DEFAULT 0,
+      fees_outside BOOLEAN DEFAULT FALSE,
+      membership_id TEXT,
+      state TEXT,
       imported_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -259,6 +307,9 @@ export async function initDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_reg_email ON registrations(email);
     CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
     CREATE INDEX IF NOT EXISTS idx_ar_email ON auto_renews(customer_email);
+    CREATE INDEX IF NOT EXISTS idx_passes_order_id ON passes(order_id);
+    CREATE INDEX IF NOT EXISTS idx_passes_refund_id ON passes(refund_id) WHERE refund_id IS NOT NULL AND refund_id != '';
+    CREATE INDEX IF NOT EXISTS idx_passes_pass_type ON passes(pass_type_id);
   `);
 
   // Unique indexes for dedup (used with ON CONFLICT DO NOTHING)
@@ -266,6 +317,11 @@ export async function initDatabase(): Promise<void> {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_dedup ON registrations(email, attended_at)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_dedup ON orders(code)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_newcust_dedup ON new_customers(email)`);
+
+  // Revenue computation indexes
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_revenue_month ON orders(created_at) WHERE created_at IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_revenue_category ON orders(revenue_category) WHERE revenue_category IS NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_union_id ON orders(union_order_id) WHERE union_order_id IS NOT NULL`);
 
   console.log("[db] PostgreSQL schema initialized");
 }

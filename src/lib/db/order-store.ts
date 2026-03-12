@@ -12,6 +12,20 @@ export interface OrderRow {
   total: number;
   /** Union.fit order ID from raw export (for precise dedup) */
   unionOrderId?: string;
+  /** Order state: completed, refunded, etc. */
+  state?: string;
+  /** When the order was completed (may differ from created) */
+  completedAt?: string;
+  /** Union.fit platform fee */
+  feeUnionTotal?: number;
+  /** Payment processor fee (Stripe) */
+  feePaymentTotal?: number;
+  /** Whether fees are paid by the customer (not deducted from org revenue) */
+  feesOutside?: boolean;
+  /** Subscription pass ID for category resolution */
+  subscriptionPassId?: string;
+  /** Resolved revenue category name (e.g. "Members", "SKY3 / Packs") */
+  revenueCategory?: string;
 }
 
 export interface StoredOrder {
@@ -64,12 +78,36 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
         );
       }
       await client.query(
-        `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total, union_order_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total, union_order_id,
+           state, completed_at, fee_union_total, fee_payment_total, fees_outside, subscription_pass_id, revenue_category)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (code) DO UPDATE SET
            email = COALESCE(NULLIF(EXCLUDED.email, ''), orders.email),
-           union_order_id = COALESCE(EXCLUDED.union_order_id, orders.union_order_id)`,
-        [r.created || null, r.code, r.customer, (r.email || '').toLowerCase(), r.type, r.payment, r.total, r.unionOrderId || null]
+           union_order_id = COALESCE(EXCLUDED.union_order_id, orders.union_order_id),
+           state = COALESCE(EXCLUDED.state, orders.state),
+           completed_at = COALESCE(EXCLUDED.completed_at, orders.completed_at),
+           fee_union_total = COALESCE(EXCLUDED.fee_union_total, orders.fee_union_total),
+           fee_payment_total = COALESCE(EXCLUDED.fee_payment_total, orders.fee_payment_total),
+           fees_outside = COALESCE(EXCLUDED.fees_outside, orders.fees_outside),
+           subscription_pass_id = COALESCE(EXCLUDED.subscription_pass_id, orders.subscription_pass_id),
+           revenue_category = COALESCE(EXCLUDED.revenue_category, orders.revenue_category)`,
+        [
+          r.created || null,
+          r.code,
+          r.customer,
+          (r.email || '').toLowerCase(),
+          r.type,
+          r.payment,
+          r.total,
+          r.unionOrderId || null,
+          r.state || null,
+          r.completedAt || null,
+          r.feeUnionTotal ?? 0,
+          r.feePaymentTotal ?? 0,
+          r.feesOutside ?? false,
+          r.subscriptionPassId || null,
+          r.revenueCategory || null,
+        ]
       );
     }
     await client.query("COMMIT");
