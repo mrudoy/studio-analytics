@@ -66,104 +66,64 @@ export interface AttendanceStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save registrations using bulk operations.
- *
- * Strategy: delete all potential conflicts in bulk, then batch-insert.
- * Two unique constraints must be cleared:
- *   - idx_reg_union_id (union_registration_id) — partial, WHERE NOT NULL
- *   - idx_reg_dedup    (email, attended_at)
+ * Save registrations (additive — appends new rows, never deletes existing).
  */
 export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> {
-  if (rows.length === 0) return;
-
   const pool = getPool();
   const beforeResult = await pool.query("SELECT COUNT(*) as count FROM registrations");
   const before = Number(beforeResult.rows[0].count);
 
-  // Deduplicate input: keep last occurrence per (email, attended_at) since
-  // the same person can appear multiple times in a daily export with updated fields.
-  const dedupMap = new Map<string, RegistrationRow>();
-  for (const r of rows) {
-    // Truncate to date-only to match the DATE column in the DB
-    const dateOnly = r.attendedAt ? r.attendedAt.slice(0, 10) : "";
-    const key = `${r.email.toLowerCase()}|${dateOnly}`;
-    dedupMap.set(key, r); // last wins
-  }
-  const dedupRows = [...dedupMap.values()];
-  if (dedupRows.length < rows.length) {
-    console.log(`[registration-store] Deduped input: ${rows.length} -> ${dedupRows.length} rows`);
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
-    // Step 1: Bulk-delete by union_registration_id (single query)
-    const unionIds = dedupRows
-      .map((r) => r.unionRegistrationId)
-      .filter((id): id is string => !!id);
-    if (unionIds.length > 0) {
+    for (const r of rows) {
+      // If this row has a union_registration_id, remove any stale row that has the
+      // same ID but a different (email, attended_at) — this happens when Union
+      // updates a member's email or attendance timestamp. Without this, the unique
+      // index idx_reg_union_id blocks the insert.
+      if (r.unionRegistrationId) {
+        await client.query(
+          `DELETE FROM registrations
+           WHERE union_registration_id = $1
+             AND NOT (email = $2 AND attended_at IS NOT DISTINCT FROM $3)`,
+          [r.unionRegistrationId, r.email.toLowerCase(), r.attendedAt || null]
+        );
+      }
       await client.query(
-        `DELETE FROM registrations WHERE union_registration_id = ANY($1::text[])`,
-        [unionIds]
-      );
-    }
-
-    // Step 2: Bulk-delete by (email, attended_at) pairs to clear idx_reg_dedup.
-    // Use a temp table for efficiency with large batches.
-    await client.query(`CREATE TEMP TABLE _reg_dedup_keys (email TEXT, attended_at DATE) ON COMMIT DROP`);
-    const DEDUP_BATCH = 200;
-    for (let i = 0; i < dedupRows.length; i += DEDUP_BATCH) {
-      const chunk = dedupRows.slice(i, i + DEDUP_BATCH);
-      const vals: unknown[] = [];
-      const placeholders = chunk.map((r, j) => {
-        vals.push(r.email.toLowerCase(), r.attendedAt || null);
-        return `($${j * 2 + 1}, $${j * 2 + 2}::date)`;
-      });
-      await client.query(
-        `INSERT INTO _reg_dedup_keys VALUES ${placeholders.join(",")}`,
-        vals
-      );
-    }
-    await client.query(
-      `DELETE FROM registrations r USING _reg_dedup_keys k
-       WHERE r.email = k.email AND r.attended_at IS NOT DISTINCT FROM k.attended_at`
-    );
-
-    // Step 3: Batch INSERT (no conflicts possible — both constraint spaces cleared)
-    const INSERT_BATCH = 100;
-    const COLS = `event_name, event_id, performance_id, performance_starts_at,
-      location_name, video_name, video_id, teacher_name,
-      first_name, last_name, email, phone, role,
-      registered_at, canceled_at, attended_at,
-      registration_type, state, pass, subscription, revenue_state, revenue,
-      union_registration_id, pass_id`;
-    const NCOLS = 24;
-
-    for (let i = 0; i < dedupRows.length; i += INSERT_BATCH) {
-      const chunk = dedupRows.slice(i, i + INSERT_BATCH);
-      const vals: unknown[] = [];
-      const placeholders = chunk.map((r, j) => {
-        const off = j * NCOLS;
-        vals.push(
+        `INSERT INTO registrations (
+          event_name, event_id, performance_id, performance_starts_at,
+          location_name, video_name, video_id, teacher_name,
+          first_name, last_name, email, phone, role,
+          registered_at, canceled_at, attended_at,
+          registration_type, state, pass, subscription, revenue_state, revenue,
+          union_registration_id, pass_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+        ON CONFLICT (email, attended_at) DO UPDATE SET
+          event_name = COALESCE(EXCLUDED.event_name, registrations.event_name),
+          event_id = COALESCE(EXCLUDED.event_id, registrations.event_id),
+          performance_id = COALESCE(EXCLUDED.performance_id, registrations.performance_id),
+          performance_starts_at = COALESCE(EXCLUDED.performance_starts_at, registrations.performance_starts_at),
+          location_name = COALESCE(EXCLUDED.location_name, registrations.location_name),
+          video_name = COALESCE(EXCLUDED.video_name, registrations.video_name),
+          video_id = COALESCE(EXCLUDED.video_id, registrations.video_id),
+          phone = COALESCE(EXCLUDED.phone, registrations.phone),
+          role = COALESCE(EXCLUDED.role, registrations.role),
+          canceled_at = COALESCE(EXCLUDED.canceled_at, registrations.canceled_at),
+          revenue_state = COALESCE(EXCLUDED.revenue_state, registrations.revenue_state),
+          revenue = COALESCE(EXCLUDED.revenue, registrations.revenue),
+          union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id),
+          pass_id = COALESCE(NULLIF(EXCLUDED.pass_id, ''), registrations.pass_id)`,
+        [
           r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt || null,
           r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
           r.firstName, r.lastName, r.email.toLowerCase(), r.phone || null, r.role || null,
           r.registeredAt || null, r.canceledAt || null, r.attendedAt || null,
           r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
           r.revenue, r.unionRegistrationId || null, r.passId || null,
-        );
-        const nums = Array.from({ length: NCOLS }, (_, k) => `$${off + k + 1}`);
-        return `(${nums.join(",")})`;
-      });
-      await client.query(
-        `INSERT INTO registrations (${COLS}) VALUES ${placeholders.join(",")}`,
-        vals
+        ]
       );
     }
-
     await client.query("COMMIT");
-    console.log(`[registration-store] Bulk saved ${dedupRows.length} registrations (${unionIds.length} with union IDs)`);
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;

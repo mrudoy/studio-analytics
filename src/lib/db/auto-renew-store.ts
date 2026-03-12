@@ -114,8 +114,8 @@ export async function saveAutoRenews(
         await client.query(
           `DELETE FROM auto_renews
            WHERE union_pass_id = $1
-             AND NOT (customer_email = $2 AND plan_name = $3 AND created_at = $4)`,
-          [row.unionPassId, row.customerEmail, row.planName, row.createdAt]
+             AND NOT (customer_email = $2 AND plan_name = $3 AND created_at IS NOT DISTINCT FROM $4)`,
+          [row.unionPassId, row.customerEmail.toLowerCase(), row.planName, row.createdAt || null]
         );
       }
 
