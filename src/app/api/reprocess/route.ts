@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
 import { fetchAllExports } from "@/lib/union-api/fetch-export";
 import { runZipWebhookPipeline } from "@/lib/email/zip-download-pipeline";
@@ -8,11 +8,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes
 
 /**
- * POST /api/reprocess — Directly fetch and process Union API exports,
- * bypassing BullMQ queue. Use when the queue worker is stuck.
+ * POST /api/reprocess?limit=N — Fetch and process the N most recent Union API
+ * exports (default: 1 = latest only). Bypasses BullMQ queue.
+ *
+ * Each Union export is a daily delta. Processing just the latest is usually
+ * enough to get fresh data. Use limit=3 or higher to backfill missed days.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  const limit = Math.min(
+    Number(request.nextUrl.searchParams.get("limit") || "1"),
+    13
+  );
 
   try {
     const settings = loadSettings();
@@ -20,14 +27,16 @@ export async function POST() {
       return NextResponse.json({ error: "No Union API key configured" }, { status: 500 });
     }
 
-    console.log("[reprocess] Fetching exports from Union API...");
+    console.log(`[reprocess] Fetching exports from Union API (limit=${limit})...`);
     const allExports = await fetchAllExports(settings.unionApiKey);
 
     if (allExports.length === 0) {
       return NextResponse.json({ error: "No exports available from Union API" }, { status: 404 });
     }
 
-    console.log(`[reprocess] Found ${allExports.length} exports. Processing newest first...`);
+    // Take only the N most recent exports (API returns newest first)
+    const toProcess = allExports.slice(0, limit);
+    console.log(`[reprocess] Processing ${toProcess.length} of ${allExports.length} available exports...`);
 
     const results: Array<{
       index: number;
@@ -38,10 +47,9 @@ export async function POST() {
       error?: string;
     }> = [];
 
-    // Process ALL exports (newest first so latest data wins upsert conflicts)
-    for (let i = 0; i < allExports.length; i++) {
-      const exp = allExports[i];
-      console.log(`[reprocess] Export ${i + 1}/${allExports.length}: ${exp.createdAt} (${exp.dataRange.start} → ${exp.dataRange.end})`);
+    for (let i = 0; i < toProcess.length; i++) {
+      const exp = toProcess[i];
+      console.log(`[reprocess] Export ${i + 1}/${toProcess.length}: ${exp.createdAt} (${exp.dataRange.start} → ${exp.dataRange.end})`);
 
       try {
         const zipResult = await runZipWebhookPipeline({
@@ -79,13 +87,14 @@ export async function POST() {
     const duration = Math.round((Date.now() - startTime) / 1000);
     const successCount = results.filter((r) => r.success).length;
 
-    console.log(`[reprocess] Done in ${duration}s. ${successCount}/${allExports.length} exports succeeded.`);
+    console.log(`[reprocess] Done in ${duration}s. ${successCount}/${toProcess.length} exports succeeded.`);
 
     return NextResponse.json({
       success: successCount > 0,
       duration,
-      exportsProcessed: allExports.length,
+      exportsProcessed: toProcess.length,
       exportsSucceeded: successCount,
+      totalAvailable: allExports.length,
       results,
     });
   } catch (e: unknown) {
