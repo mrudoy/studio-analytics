@@ -250,6 +250,73 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     return bucketToTrendRow(wk, "Weekly", bucket, prevBucket);
   });
 
+  // ── 2b. Weekly churn rate: compute active-at-start per category ──
+  {
+    const pool = getPool();
+    const { rows: allAutoRenews } = await pool.query(
+      `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email FROM auto_renews`
+    );
+    const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
+    type CatRow = { category: string; isAnnual: boolean; plan_state: string; created_at: string | null; canceled_at: string | null; email: string; monthlyRate: number };
+    const catRows: CatRow[] = allAutoRenews.map((r: Record<string, unknown>) => {
+      const name = r.plan_name as string;
+      const annual = isAnnualPlan(name);
+      const price = (r.plan_price as number) || 0;
+      const createdRaw = r.created_at as string | null;
+      const canceledRaw = r.canceled_at as string | null;
+      const createdDate = createdRaw ? parseDate(createdRaw) : null;
+      const canceledDate = canceledRaw ? parseDate(canceledRaw) : null;
+      return {
+        category: getCategory(name),
+        isAnnual: annual,
+        plan_state: r.plan_state as string,
+        created_at: createdDate ? `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, "0")}-${String(createdDate.getDate()).padStart(2, "0")}` : null,
+        canceled_at: canceledDate ? `${canceledDate.getFullYear()}-${String(canceledDate.getMonth() + 1).padStart(2, "0")}-${String(canceledDate.getDate()).padStart(2, "0")}` : null,
+        email: ((r.customer_email as string) || "").toLowerCase(),
+        monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
+      };
+    });
+
+    for (const trendRow of weekly) {
+      const weekStart = trendRow.period; // YYYY-MM-DD (Monday)
+      const [y, m, d] = weekStart.split("-").map(Number);
+      const weekEndDate = new Date(y, m - 1, d + 7);
+      const weekEnd = `${weekEndDate.getFullYear()}-${String(weekEndDate.getMonth() + 1).padStart(2, "0")}-${String(weekEndDate.getDate()).padStart(2, "0")}`;
+
+      for (const cat of ["MEMBER", "SKY3", "SKY_TING_TV"] as const) {
+        const rows = catRows.filter(r => r.category === cat);
+        // Active at week start: created before weekStart AND (still active OR canceled on/after weekStart)
+        const activeByEmail = new Map<string, CatRow>();
+        for (const r of rows) {
+          if (!r.created_at || r.created_at >= weekStart) continue;
+          if (!ACTIVE_STATES.includes(r.plan_state) && !(r.canceled_at && r.canceled_at >= weekStart)) continue;
+          // For MEMBER: only count monthly-billed (annual can't meaningfully churn weekly)
+          if (cat === "MEMBER" && r.isAnnual) continue;
+          const existing = activeByEmail.get(r.email);
+          if (!existing || r.monthlyRate > existing.monthlyRate) {
+            activeByEmail.set(r.email, r);
+          }
+        }
+        const activeCount = activeByEmail.size;
+        const churnCount = cat === "MEMBER" ? trendRow.memberChurn
+          : cat === "SKY3" ? trendRow.sky3Churn : trendRow.skyTingTvChurn;
+        const pct = activeCount > 0 ? Math.round((churnCount / activeCount) * 1000) / 10 : 0;
+
+        if (cat === "MEMBER") {
+          trendRow.activeMembersAtWeekStart = activeCount;
+          trendRow.memberChurnPct = pct;
+        } else if (cat === "SKY3") {
+          trendRow.activeSky3AtWeekStart = activeCount;
+          trendRow.sky3ChurnPct = pct;
+        } else {
+          trendRow.activeSkyTingTvAtWeekStart = activeCount;
+          trendRow.skyTingTvChurnPct = pct;
+        }
+      }
+    }
+    console.log(`[db-trends] Weekly churn rates computed for ${weekly.length} weeks`);
+  }
+
   const monthly: TrendRowData[] = recentMonthKeys.map((mo, i) => {
     const bucket = monthlyBuckets.get(mo)!;
     const prevKey = i > 0 ? recentMonthKeys[i - 1] : null;

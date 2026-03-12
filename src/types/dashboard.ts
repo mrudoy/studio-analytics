@@ -215,6 +215,13 @@ export interface TrendRowData {
   deltaPctNewMembers: number | null;
   deltaPctNewSky3: number | null;
   deltaPctRevenue: number | null;
+  // Weekly churn rate (% of active at week start who canceled)
+  memberChurnPct?: number;
+  sky3ChurnPct?: number;
+  skyTingTvChurnPct?: number;
+  activeMembersAtWeekStart?: number;
+  activeSky3AtWeekStart?: number;
+  activeSkyTingTvAtWeekStart?: number;
 }
 
 export interface PacingData {

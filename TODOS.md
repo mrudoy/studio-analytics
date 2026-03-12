@@ -22,7 +22,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 - [x] ~~Upload 2025 revenue CSV to prod~~ — uploaded 55 categories, $2.2M net, zero warnings
 - [ ] User note: email is the atomic unit for a user (for churn/subscriber identity)
 - [ ] User note: prefer line charts or bars for churn over time (no pie charts)
-- [ ] Churn visualization: consider adding line chart or bar chart for churn trend over time (user preference)
+- [x] ~~Churn visualization: weekly churn bar charts now show % churn rate (primary) with raw # on hover, for all 3 categories (Members, Sky3, Sky Ting TV). Sky Ting TV got a new weekly+monthly chart pair (was table-only). Baseline reference line is now % instead of #.~~
 - [x] ~~Pipeline completeness checker~~ — `validateCompleteness()` added to pipeline-core.ts, results shown on completion
 - [x] ~~Pipeline progress UI~~ — real-time progress %, ETA, step label in both PipelineView and dashboard FreshnessBadge
 - [ ] Cloudflare blocking pipeline on Railway — stealth plugin didn't help. Solution: run pipeline locally (Playwright works on local machine), write data to Railway DB. Need `.env.production.local` with Railway DATABASE_URL.

@@ -58,6 +58,7 @@ import {
   YAxis,
   ReferenceLine,
   Cell,
+  Tooltip,
 } from "recharts";
 import {
   ChartContainer,
@@ -4792,17 +4793,21 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           if (last4.length === 0) return null;
           const weeklyChurnData = last4.map((w) => ({
             week: formatWeekShort(w.period),
-            churn: w.memberChurn,
+            pct: w.memberChurnPct ?? 0,
+            count: w.memberChurn,
+            active: w.activeMembersAtWeekStart ?? 0,
             fill: COLORS.member,
           }));
           if (currentWeek) {
             weeklyChurnData.push({
               week: formatWeekShort(currentWeek.period),
-              churn: currentWeek.memberChurn,
+              pct: currentWeek.memberChurnPct ?? 0,
+              count: currentWeek.memberChurn,
+              active: currentWeek.activeMembersAtWeekStart ?? 0,
               fill: `${COLORS.member}50`,
             });
           }
-          // 6-month trimmed avg (exclude migration-spike weeks)
+          // 6-month trimmed avg % (exclude migration-spike weeks)
           const baselineWeeks = (() => {
             if (completedWeeks.length < 4) return completedWeeks;
             const acts = completedWeeks.map(w => w.memberChurn + (w.newMembers ?? 0));
@@ -4811,9 +4816,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             const thresh = med * 3;
             return completedWeeks.filter((_, i) => acts[i] <= thresh);
           })();
-          const weeklyAvg = baselineWeeks.length > 0
-            ? (baselineWeeks.reduce((s, w) => s + w.memberChurn, 0) / baselineWeeks.length) : 0;
-          const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.member } } satisfies ChartConfig;
+          const weeklyAvgPct = baselineWeeks.length > 0
+            ? (baselineWeeks.reduce((s, w) => s + (w.memberChurnPct ?? 0), 0) / baselineWeeks.length) : 0;
+          const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
                 <CardHeader>
@@ -4823,11 +4828,11 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                         <CardTitle>Weekly Churn</CardTitle>
                       </div>
-                      <CardDescription>Members who churned per week</CardDescription>
+                      <CardDescription>Monthly-billed member churn rate per week</CardDescription>
                     </div>
                     <CardAction>
                       <div className="text-right">
-                        <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{weeklyAvg.toFixed(1)}</div>
+                        <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{weeklyAvgPct.toFixed(1)}%</div>
                         <div className="text-xs text-muted-foreground leading-tight">6-mo avg / week</div>
                       </div>
                     </CardAction>
@@ -4838,10 +4843,21 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                     <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
-                      <ReferenceLine y={weeklyAvg} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                      <Bar dataKey="churn" radius={8}>
-                        <LabelList dataKey="churn" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} />
+                      <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
+                      <Bar dataKey="pct" radius={8}>
+                        <LabelList dataKey="pct" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
                       </Bar>
+                      <Tooltip content={({ active, payload }) => {
+                        if (!active || !payload?.[0]) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
+                            <div className="font-semibold">{d.week}</div>
+                            <div>{d.count} churned of {d.active} active</div>
+                            <div className="font-semibold">{d.pct}% churn rate</div>
+                          </div>
+                        );
+                      }} />
                     </BarChart>
                   </ChartContainer>
                 </CardContent>
@@ -5297,19 +5313,23 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             if (last4.length === 0) return null;
             const weeklyChurnData = last4.map((w) => ({
               week: formatWeekShort(w.period),
-              churn: w.sky3Churn,
+              pct: w.sky3ChurnPct ?? 0,
+              count: w.sky3Churn,
+              active: w.activeSky3AtWeekStart ?? 0,
               fill: COLORS.sky3,
             }));
             if (currentWeek) {
               weeklyChurnData.push({
                 week: formatWeekShort(currentWeek.period),
-                churn: currentWeek.sky3Churn,
+                pct: currentWeek.sky3ChurnPct ?? 0,
+                count: currentWeek.sky3Churn,
+                active: currentWeek.activeSky3AtWeekStart ?? 0,
                 fill: `${COLORS.sky3}50`,
               });
             }
-            const weeklyAvg = last4.length > 0
-              ? (last4.reduce((s, w) => s + w.sky3Churn, 0) / last4.length) : 0;
-            const weeklyChurnConfig = { churn: { label: "Churned", color: COLORS.sky3 } } satisfies ChartConfig;
+            const weeklyAvgPct = last4.length > 0
+              ? (last4.reduce((s, w) => s + (w.sky3ChurnPct ?? 0), 0) / last4.length) : 0;
+            const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
                 <Card>
                   <div className="flex items-start justify-between">
@@ -5318,10 +5338,10 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <Recycle className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
                         <span className="text-base font-semibold leading-none tracking-tight">Weekly Churn</span>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-0.5">Sky3 subscribers who churned per week</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">Sky3 churn rate per week</p>
                     </div>
                     <div className="text-right">
-                      <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvg.toFixed(1)}</div>
+                      <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvgPct.toFixed(1)}%</div>
                       <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
                     </div>
                   </div>
@@ -5329,9 +5349,21 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                     <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 20, left: 0, right: 0, bottom: 0 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
-                      <Bar dataKey="churn" radius={8}>
-                        <LabelList dataKey="churn" position="top" fontSize={11} fontWeight={600} />
+                      <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
+                      <Bar dataKey="pct" radius={8}>
+                        <LabelList dataKey="pct" position="top" fontSize={11} fontWeight={600} formatter={(v: number) => `${v}%`} />
                       </Bar>
+                      <Tooltip content={({ active, payload }) => {
+                        if (!active || !payload?.[0]) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
+                            <div className="font-semibold">{d.week}</div>
+                            <div>{d.count} churned of {d.active} active</div>
+                            <div className="font-semibold">{d.pct}% churn rate</div>
+                          </div>
+                        );
+                      }} />
                     </BarChart>
                   </ChartContainer>
                 </Card>
@@ -5470,57 +5502,156 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
   // ── Sky Ting TV ──
   if (subsection === "tv") {
   if (!churnRates || !byCategory) return <NoData label="Sky Ting TV churn data" />;
+  const tv = byCategory.skyTingTv;
   return (
-    <div className="flex flex-col gap-3">
-        <DashboardCard>
-          <CardHeader>
-            <CardTitle>
-              <div className="flex items-center gap-2">
-                <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
-                Sky Ting TV Churn
-              </div>
-            </CardTitle>
-            <CardDescription>User and MRR churn rates for Sky Ting TV subscribers</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex-1 flex flex-col">
-              <Table style={{ fontFamily: FONT_SANS }}>
-                <TableHeader className="bg-muted">
-                  <TableRow>
-                    <TableHead className="text-xs text-muted-foreground">Metric</TableHead>
-                    <TableHead className="text-xs text-muted-foreground text-right">Value</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">User Churn (Avg/Mo)</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgUserChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgUserChurnRate) : undefined }}>
-                      {byCategory.skyTingTv.avgUserChurnRate != null ? `${byCategory.skyTingTv.avgUserChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="py-1.5 text-sm">MRR Churn (Avg/Mo)</TableCell>
-                    <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: byCategory.skyTingTv.avgMrrChurnRate != null ? churnBenchmarkColor(byCategory.skyTingTv.avgMrrChurnRate) : undefined }}>
-                      {byCategory.skyTingTv.avgMrrChurnRate != null ? `${byCategory.skyTingTv.avgMrrChurnRate.toFixed(1)}%` : "–"}
-                    </TableCell>
-                  </TableRow>
-                  {latestW?.skyTingTvChurn != null && (
-                    <TableRow>
-                      <TableCell className="py-1.5 text-sm">Churned {weekLabel(latestW.period)}</TableCell>
-                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums">{latestW.skyTingTvChurn}</TableCell>
-                    </TableRow>
-                  )}
-                  {byCategory.skyTingTv.atRiskCount > 0 && (
-                    <TableRow>
-                      <TableCell className="py-1.5 text-sm">At Risk</TableCell>
-                      <TableCell className="py-1.5 text-sm font-semibold text-right tabular-nums" style={{ color: COLORS.warning }}>{byCategory.skyTingTv.atRiskCount}</TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </DashboardCard>
+    <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-3">
+          <h3 className="text-lg font-bold tracking-tight text-muted-foreground">Churn Data</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+          {/* ── Weekly Churn bar chart (left) ── */}
+          {(() => {
+            const completedWeeks = weekly.length > 1 ? weekly.slice(0, -1) : weekly;
+            const currentWeek = weekly.length > 1 ? weekly[weekly.length - 1] : null;
+            const last4 = completedWeeks.slice(-4);
+            if (last4.length === 0) return null;
+            const weeklyChurnData = last4.map((w) => ({
+              week: formatWeekShort(w.period),
+              pct: w.skyTingTvChurnPct ?? 0,
+              count: w.skyTingTvChurn,
+              active: w.activeSkyTingTvAtWeekStart ?? 0,
+              fill: COLORS.tv,
+            }));
+            if (currentWeek) {
+              weeklyChurnData.push({
+                week: formatWeekShort(currentWeek.period),
+                pct: currentWeek.skyTingTvChurnPct ?? 0,
+                count: currentWeek.skyTingTvChurn,
+                active: currentWeek.activeSkyTingTvAtWeekStart ?? 0,
+                fill: `${COLORS.tv}50`,
+              });
+            }
+            const weeklyAvgPct = last4.length > 0
+              ? (last4.reduce((s, w) => s + (w.skyTingTvChurnPct ?? 0), 0) / last4.length) : 0;
+            const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.tv } } satisfies ChartConfig;
+            return (
+                <DashboardCard>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Recycle className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+                          <CardTitle>Weekly Churn</CardTitle>
+                        </div>
+                        <CardDescription>Sky Ting TV churn rate per week</CardDescription>
+                      </div>
+                      <CardAction>
+                        <div className="text-right">
+                          <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.tv }}>{weeklyAvgPct.toFixed(1)}%</div>
+                          <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                        </div>
+                      </CardAction>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
+                      <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
+                        <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
+                        <Bar dataKey="pct" radius={8}>
+                          <LabelList dataKey="pct" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                        </Bar>
+                        <Tooltip content={({ active, payload }) => {
+                          if (!active || !payload?.[0]) return null;
+                          const d = payload[0].payload;
+                          return (
+                            <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
+                              <div className="font-semibold">{d.week}</div>
+                              <div>{d.count} churned of {d.active} active</div>
+                              <div className="font-semibold">{d.pct}% churn rate</div>
+                            </div>
+                          );
+                        }} />
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </DashboardCard>
+            );
+          })()}
+          {/* ── Monthly Churn rate bar chart (right) ── */}
+          {(() => {
+            const tvMonthly = tv.monthly;
+            const completedMonths = tvMonthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+            const currentMonth = tvMonthly.length > 0 ? tvMonthly[tvMonthly.length - 1] : null;
+            if (completedMonths.length === 0) return null;
+            const fmtShort = (m: string) => {
+              const [y, mo] = m.split("-");
+              const d = new Date(parseInt(y), parseInt(mo) - 1);
+              return d.toLocaleDateString("en-US", { month: "short" }) + " '" + y.slice(2);
+            };
+            const monthlyData = completedMonths.map((m) => ({
+              month: fmtShort(m.month),
+              rate: parseFloat(m.userChurnRate.toFixed(1)),
+              fill: COLORS.tv,
+            }));
+            if (currentMonth) {
+              monthlyData.push({
+                month: fmtShort(currentMonth.month),
+                rate: parseFloat(currentMonth.userChurnRate.toFixed(1)),
+                fill: `${COLORS.tv}50`,
+              });
+            }
+            const last6 = completedMonths.slice(-6);
+            const avgMonthly = last6.length > 0
+              ? last6.reduce((s, m) => s + m.userChurnRate, 0) / last6.length : 0;
+            const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.tv } } satisfies ChartConfig;
+            return (
+                <DashboardCard>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
+                          <CardTitle>Monthly Churn</CardTitle>
+                        </div>
+                        <CardDescription>Sky Ting TV monthly churn rate</CardDescription>
+                      </div>
+                      <CardAction>
+                        <div className="text-right">
+                          <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{avgMonthly.toFixed(1)}%</div>
+                          <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                        </div>
+                      </CardAction>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
+                      <BarChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                        <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
+                        <Bar dataKey="rate" radius={8}>
+                          <LabelList dataKey="rate" position="top" offset={12} className="fill-foreground" fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} />
+                        </Bar>
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </DashboardCard>
+            );
+          })()}
+          </div>
+        </div>
+        {tv.atRiskCount > 0 && (
+          <DashboardCard>
+            <CardHeader>
+              <CardTitle>At Risk</CardTitle>
+              <CardDescription>Sky Ting TV subscribers at risk of churning</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold tabular-nums" style={{ color: COLORS.warning }}>{tv.atRiskCount}</div>
+            </CardContent>
+          </DashboardCard>
+        )}
     </div>
   );
   }
