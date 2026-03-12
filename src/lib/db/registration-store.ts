@@ -77,16 +77,14 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
   try {
     await client.query("BEGIN");
     for (const r of rows) {
-      // If this row has a union_registration_id, remove any stale row that has the
-      // same ID but a different (email, attended_at) — this happens when Union
-      // updates a member's email or attendance timestamp. Without this, the unique
-      // index idx_reg_union_id blocks the insert.
+      // Remove any existing row with the same union_registration_id to prevent
+      // idx_reg_union_id constraint violation. This handles the case where
+      // attended_at is NULL (NULL != NULL in unique indexes, so ON CONFLICT
+      // on (email, attended_at) won't fire, but idx_reg_union_id still blocks).
       if (r.unionRegistrationId) {
         await client.query(
-          `DELETE FROM registrations
-           WHERE union_registration_id = $1
-             AND NOT (email = $2 AND attended_at IS NOT DISTINCT FROM $3)`,
-          [r.unionRegistrationId, r.email.toLowerCase(), r.attendedAt || null]
+          `DELETE FROM registrations WHERE union_registration_id = $1`,
+          [r.unionRegistrationId]
         );
       }
       await client.query(
