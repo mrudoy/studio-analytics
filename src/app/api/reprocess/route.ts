@@ -18,7 +18,11 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   const limit = Math.min(
     Number(request.nextUrl.searchParams.get("limit") || "1"),
-    13
+    15
+  );
+  const offset = Math.max(
+    Number(request.nextUrl.searchParams.get("offset") || "0"),
+    0
   );
 
   try {
@@ -34,9 +38,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No exports available from Union API" }, { status: 404 });
     }
 
-    // Take only the N most recent exports (API returns newest first)
-    const toProcess = allExports.slice(0, limit);
-    console.log(`[reprocess] Processing ${toProcess.length} of ${allExports.length} available exports...`);
+    // Take exports with offset and limit (API returns newest first)
+    const toProcess = allExports.slice(offset, offset + limit);
+    console.log(`[reprocess] Processing ${toProcess.length} exports (offset=${offset}) of ${allExports.length} available...`);
 
     const results: Array<{
       index: number;
