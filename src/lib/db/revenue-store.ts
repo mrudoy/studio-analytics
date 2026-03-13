@@ -42,7 +42,7 @@ export async function saveRevenueCategories(
     for (const row of rows) {
       await client.query(
         `INSERT INTO revenue_categories (period_start, period_end, category, revenue, union_fees, stripe_fees, other_fees, transfers, refunded, union_fees_refunded, net_revenue)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         VALUES ($1, $2, TRIM($3), $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT(period_start, period_end, category)
          DO UPDATE SET
            revenue = EXCLUDED.revenue,
@@ -219,13 +219,13 @@ export async function getMonthlyRevenue(year: number, month: number): Promise<{
   // Deduplicate: for each category in this month, take the row with the latest period_end
   const { rows } = await pool.query(
     `WITH deduped AS (
-       SELECT DISTINCT ON (category)
-         period_start, period_end, category, revenue, union_fees, stripe_fees,
+       SELECT DISTINCT ON (TRIM(category))
+         period_start, period_end, TRIM(category) AS category, revenue, union_fees, stripe_fees,
          other_fees, transfers, refunded, union_fees_refunded, net_revenue, locked
        FROM revenue_categories
        WHERE TO_CHAR(period_start, 'YYYY-MM') = $1
          AND TO_CHAR(period_end, 'YYYY-MM') = $1
-       ORDER BY category, period_end DESC
+       ORDER BY TRIM(category), period_end DESC, created_at DESC
      )
      SELECT * FROM deduped ORDER BY revenue DESC`,
     [monthStr]
@@ -274,11 +274,11 @@ export async function getAllMonthlyRevenue(): Promise<{
   const pool = getPool();
   const { rows } = await pool.query(
     `WITH deduped AS (
-       SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
-         period_start, period_end, category, revenue, net_revenue
+       SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+         period_start, period_end, TRIM(category) AS category, revenue, net_revenue
        FROM revenue_categories
        WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
-       ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
+       ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
      )
      SELECT
        MIN(period_start) AS period_start,
@@ -308,11 +308,11 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
   const pool = getPool();
   const { rows } = await pool.query(`
     WITH deduped AS (
-      SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
-        category, revenue, net_revenue, period_start
+      SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+        TRIM(category) AS category, revenue, net_revenue, period_start
       FROM revenue_categories
       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
-      ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
+      ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
     )
     SELECT
       TO_CHAR(period_start, 'YYYY-MM') AS month,
@@ -344,11 +344,11 @@ export async function getMonthlyMerchRevenue(): Promise<Map<string, { gross: num
   const pool = getPool();
   const { rows } = await pool.query(`
     WITH deduped AS (
-      SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
-        category, revenue, net_revenue, period_start
+      SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+        TRIM(category) AS category, revenue, net_revenue, period_start
       FROM revenue_categories
       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
-      ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
+      ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
     )
     SELECT
       TO_CHAR(period_start, 'YYYY-MM') AS month,
@@ -388,11 +388,11 @@ export async function getAnnualRevenueBreakdown(): Promise<
   const pool = getPool();
   const res = await pool.query(`
     WITH deduped AS (
-      SELECT DISTINCT ON (category, TO_CHAR(period_start, 'YYYY-MM'))
-        category, revenue, net_revenue, period_start
+      SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+        TRIM(category) AS category, revenue, net_revenue, period_start
       FROM revenue_categories
       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
-      ORDER BY category, TO_CHAR(period_start, 'YYYY-MM'), period_end DESC
+      ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
     )
     SELECT
       EXTRACT(YEAR FROM period_start)::int AS year,
