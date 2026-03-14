@@ -3,6 +3,7 @@ import { loadSettings } from "@/lib/crypto/credentials";
 import { fetchAllExports } from "@/lib/union-api/fetch-export";
 import { runZipWebhookPipeline } from "@/lib/email/zip-download-pipeline";
 import { bumpDataVersion, invalidateStatsCache } from "@/lib/cache/stats-cache";
+import { sendDigestEmail } from "@/lib/email/email-sender";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes
@@ -112,6 +113,22 @@ export async function POST(request: NextRequest) {
     const successCount = results.filter((r) => r.success).length;
 
     console.log(`[reprocess] Done in ${duration}s. ${successCount}/${toProcess.length} exports succeeded.`);
+
+    // Send daily digest email (non-fatal).
+    // The reprocess route bypasses BullMQ, so the worker's email trigger never fires.
+    // The once-per-day atomic guard inside sendDigestEmail() prevents duplicates.
+    if (successCount > 0) {
+      try {
+        const emailResult = await sendDigestEmail();
+        if (emailResult.sent > 0) {
+          console.log(`[reprocess] Digest email sent to ${emailResult.sent} recipients`);
+        } else if (emailResult.skipped) {
+          console.log(`[reprocess] Digest email skipped: ${emailResult.skipped}`);
+        }
+      } catch (emailErr) {
+        console.warn(`[reprocess] Digest email failed (non-fatal):`, emailErr instanceof Error ? emailErr.message : emailErr);
+      }
+    }
 
     return NextResponse.json({
       success: successCount > 0,
