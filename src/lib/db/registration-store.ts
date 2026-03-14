@@ -382,6 +382,50 @@ export async function saveFirstVisits(rows: RegistrationRow[]): Promise<void> {
   console.log(`[registration-store] First visits: ${before} -> ${after} (+${after - before} new)`);
 }
 
+/**
+ * Recompute is_first_visit flags on all registrations.
+ *
+ * For each unique email, marks their earliest attended_at as their first visit.
+ * The zip pipeline doesn't receive a separate first_visits file — it only gets
+ * registrations.csv — so we compute first visits from the registration data itself.
+ *
+ * Dashboard queries (new customer volume, cohort conversion, returning visitors)
+ * all depend on `registrations WHERE is_first_visit = TRUE`.
+ */
+export async function recomputeFirstVisitFlags(): Promise<number> {
+  const pool = getPool();
+  const t0 = Date.now();
+
+  // Step 1: Clear all existing first visit flags
+  const cleared = await pool.query(
+    `UPDATE registrations SET is_first_visit = FALSE WHERE is_first_visit = TRUE`
+  );
+  const clearedCount = cleared.rowCount || 0;
+
+  // Step 2: Mark each email's earliest attended_at as their first visit
+  const result = await pool.query(`
+    WITH earliest AS (
+      SELECT LOWER(email) as email, MIN(attended_at) as first_date
+      FROM registrations
+      WHERE email IS NOT NULL AND email != '' AND attended_at IS NOT NULL
+      GROUP BY LOWER(email)
+    )
+    UPDATE registrations r
+    SET is_first_visit = TRUE
+    FROM earliest e
+    WHERE LOWER(r.email) = e.email AND r.attended_at = e.first_date
+  `);
+  const marked = result.rowCount || 0;
+
+  const elapsed = Date.now() - t0;
+  console.log(
+    `[registration-store] Recomputed first visit flags in ${elapsed}ms: ` +
+    `cleared ${clearedCount}, marked ${marked} registrations`
+  );
+
+  return marked;
+}
+
 // ── Read Operations ──────────────────────────────────────────
 
 /**

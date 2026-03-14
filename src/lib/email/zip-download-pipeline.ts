@@ -51,6 +51,7 @@ import {
   savePassEmailCache,
   loadPassEmailCache,
   backfillRegistrationEmails,
+  recomputeFirstVisitFlags,
 } from "../db/registration-store";
 import { saveCustomers } from "../db/customer-store";
 import { saveRefunds } from "../db/refund-store";
@@ -639,6 +640,14 @@ async function runZipImport(
     if (backfilled > 0) {
       console.log(`[zip-pipeline] Backfilled ${backfilled} empty-email registrations`);
     }
+
+    // Recompute is_first_visit flags from registration data.
+    // Each email's earliest attended_at = their first visit.
+    // Dashboard metrics (new customer volume, cohort conversion, returning
+    // visitors) all depend on `registrations WHERE is_first_visit = TRUE`.
+    progress("Computing first visit flags...", 87);
+    const firstVisitCount = await recomputeFirstVisitFlags();
+    recordCounts.firstVisits = firstVisitCount;
   }
 
   // ── Transform + save customers ──────────────────────────
@@ -729,6 +738,7 @@ async function runZipImport(
   if (recordCounts.autoRenews) await setWatermark("autoRenews", now, recordCounts.autoRenews);
   if (recordCounts.registrations) await setWatermark("registrations", now, recordCounts.registrations);
   if (recordCounts.orders) await setWatermark("orders", now, recordCounts.orders);
+  if (recordCounts.firstVisits) await setWatermark("firstVisits", now, recordCounts.firstVisits);
   await setWatermark("revenueCategories", now, 0, "Recomputed from DB");
 
   // ── Done ────────────────────────────────────────────────
