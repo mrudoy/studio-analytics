@@ -99,7 +99,7 @@ function totalRow(
 
 // ── Public ─────────────────────────────────────────────────
 
-export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | null): string {
+export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | null, pipelineStaleHours?: number | null): string {
   const windows = [data.yesterday, data.thisWeek, data.lastWeek];
   const { currentActive } = data;
 
@@ -130,6 +130,24 @@ export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | 
           </tr>`
     : "";
 
+  // Pipeline staleness warning — means the scheduler may be broken
+  const pipelineBanner = pipelineStaleHours
+    ? `
+          <!-- Pipeline Staleness Warning -->
+          <tr>
+            <td style="padding:0;">
+              <div style="background-color:#fee2e2;border-bottom:1px solid #ef4444;padding:12px 24px;">
+                <div style="font-size:13px;font-weight:600;color:#991b1b;">
+                  Pipeline has not run in ${pipelineStaleHours}+ hours
+                </div>
+                <div style="font-size:11px;color:#b91c1c;margin-top:2px;">
+                  The data pipeline may be broken. Check Railway deployment logs.
+                </div>
+              </div>
+            </td>
+          </tr>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -141,12 +159,13 @@ export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | 
 
           <!-- Header -->
           <tr>
-            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner ? "none" : "1px solid #e5e7eb"};">
+            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner || pipelineBanner ? "none" : "1px solid #e5e7eb"};">
               <div style="font-size:20px;font-weight:700;color:#111827;">Auto-Renews</div>
               <div style="font-size:13px;color:#6b7280;margin-top:4px;">${today}</div>
             </td>
           </tr>
           ${freshnessBanner}
+          ${pipelineBanner}
 
           <!-- Table -->
           <tr>

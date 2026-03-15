@@ -77,7 +77,22 @@ export async function sendDigestEmail(): Promise<DigestResult> {
   // We won the atomic claim — build and send the email
   const data = await getOverviewData();
   const freshness = await getDataFreshness();
-  const html = buildDigestHtml(data, freshness);
+
+  // Check if the pipeline itself is stale (hasn't run in 24h+).
+  // This catches situations where the scheduler breaks silently.
+  let pipelineStaleHours: number | null = null;
+  try {
+    const wmResult = await pool.query(
+      `SELECT last_fetched_at FROM fetch_watermarks WHERE report_type = 'zipExport'`
+    );
+    if (wmResult.rows.length > 0) {
+      const lastRun = new Date(wmResult.rows[0].last_fetched_at);
+      const hoursAgo = (Date.now() - lastRun.getTime()) / (1000 * 60 * 60);
+      if (hoursAgo > 24) pipelineStaleHours = Math.round(hoursAgo);
+    }
+  } catch { /* non-fatal */ }
+
+  const html = buildDigestHtml(data, freshness, pipelineStaleHours);
 
   // Format today's date for subject line
   const today = new Date().toLocaleDateString("en-US", {

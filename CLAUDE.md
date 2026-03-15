@@ -118,6 +118,32 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - Conversion pool queries use an UNLOGGED materialized table (`_mat_first_in_studio_sub`) to avoid 15 redundant CTE scans.
 - Migration 007 adds 6 indexes on hot join columns for conversion pool performance.
 
+## Critical Path — DO NOT BREAK
+
+These are the system invariants that keep the pipeline, database, and emails working. Before modifying any of these files, verify that ALL of these still hold after your change.
+
+### Pipeline Scheduler (`src/instrumentation.ts`)
+- `runScheduledPipeline()` must be called on server startup (after 30s delay) and every 4 hours via `setInterval`.
+- If you refactor instrumentation.ts, the scheduler MUST remain. Without it, no data gets fetched, no metrics are computed, and no emails are sent.
+
+### Data Pipeline (`src/lib/email/zip-download-pipeline.ts`)
+- Must call `saveRegistrations()` for registration data.
+- Must call `backfillRegistrationEmails()` after registrations are saved.
+- Must call `recomputeFirstVisitFlags()` after email backfill — this marks each email's earliest `attended_at` as `is_first_visit = TRUE`. Without it, dashboard first-visit metrics, new customer volume, and cohort conversion all go stale.
+- Must call `recomputeRevenueFromDB()` to derive revenue from raw DB data.
+- Must update watermarks for all processed data types at the end.
+
+### Digest Email
+- `sendDigestEmail()` must be called after a successful pipeline run. Currently called from: `instrumentation.ts` (scheduler), `/api/cron/pipeline`, and `/api/reprocess`.
+- Has a once-per-day atomic guard (watermark claim in `fetch_watermarks`), so multiple call sites are safe.
+- If you add a new pipeline entry point, it must also call `sendDigestEmail()`.
+
+### Verification after changes to these files
+- `npm run build` must pass.
+- Check that `instrumentation.ts` still starts the scheduler.
+- Check that the zip pipeline still calls: `saveRegistrations`, `backfillRegistrationEmails`, `recomputeFirstVisitFlags`, `recomputeRevenueFromDB`.
+- Check that `sendDigestEmail()` is called after successful processing.
+
 ## Do NOT
 
 - **DELETE revenue data from the database — EVER.** No DELETE queries on revenue_categories. No "clear and replace" patterns. Data is append-only. Upsert only.
