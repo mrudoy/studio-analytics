@@ -8,16 +8,48 @@ export async function GET(request: NextRequest) {
     const pool = getPool();
     const email = request.nextUrl.searchParams.get("email");
 
-    // If email provided, look up all subs for that person
+    // If email provided, look up all subs + intro week status for that person
     if (email) {
-      const res = await pool.query(
-        `SELECT plan_name, plan_state, plan_category, created_at, canceled_at
-         FROM auto_renews
-         WHERE LOWER(customer_email) = LOWER($1)
-         ORDER BY created_at DESC`,
-        [email],
-      );
-      return NextResponse.json({ email, subscriptions: res.rows });
+      const [subs, intros, activeMatch] = await Promise.all([
+        pool.query(
+          `SELECT plan_name, plan_state, plan_category, created_at, canceled_at
+           FROM auto_renews
+           WHERE LOWER(customer_email) = LOWER($1)
+           ORDER BY created_at DESC`,
+          [email],
+        ),
+        pool.query(
+          `SELECT pass, state, attended_at, first_name, last_name
+           FROM registrations
+           WHERE LOWER(email) = LOWER($1)
+             AND UPPER(pass) LIKE '%INTRO WEEK%'
+           ORDER BY attended_at`,
+          [email],
+        ),
+        pool.query(
+          `SELECT plan_name, plan_state
+           FROM auto_renews
+           WHERE LOWER(customer_email) = LOWER($1)
+             AND plan_state NOT IN ('Canceled', 'Invalid', 'Paused')
+             AND (
+               UPPER(plan_name) LIKE '%SKY3%' OR UPPER(plan_name) LIKE '%SKY5%'
+               OR UPPER(plan_name) LIKE '%SKYHIGH%' OR UPPER(plan_name) LIKE '%5 PACK%'
+               OR UPPER(plan_name) LIKE '%5-PACK%'
+               OR UPPER(plan_name) LIKE '%UNLIMITED%' OR UPPER(plan_name) LIKE '%MEMBER%'
+               OR UPPER(plan_name) LIKE '%ALL ACCESS%' OR UPPER(plan_name) LIKE '%TING FAM%'
+               OR UPPER(plan_name) LIKE '%WELCOME SKY3%'
+             )
+             AND UPPER(plan_name) NOT LIKE '%SKY TING TV%'
+             AND UPPER(plan_name) NOT LIKE '%SKYTING TV%'`,
+          [email],
+        ),
+      ]);
+      return NextResponse.json({
+        email,
+        subscriptions: subs.rows,
+        introVisits: intros.rows,
+        activeInStudioMatch: activeMatch.rows,
+      });
     }
 
     const res = await pool.query(`
