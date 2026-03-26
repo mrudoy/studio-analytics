@@ -344,6 +344,10 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     memberCancellationsPaced: Math.round(currentBucket.memberChurn * pacingMultiplier),
     sky3CancellationsActual: currentBucket.sky3Churn,
     sky3CancellationsPaced: Math.round(currentBucket.sky3Churn * pacingMultiplier),
+    skyTingTvCancellationsActual: currentBucket.skyTingTvChurn,
+    skyTingTvCancellationsPaced: Math.round(currentBucket.skyTingTvChurn * pacingMultiplier),
+    weekDaysElapsed: (() => { const d = now.getDay(); return d === 0 ? 7 : d; })(), // 1=Mon..7=Sun
+    weekDaysTotal: 7,
   };
 
   // ── 4. Annual projection ─────────────────────────────────
@@ -1120,6 +1124,49 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     months.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
   }
 
+  // ── Pre-compute plan changers per month ────────────────────
+  // When someone upgrades (e.g. Sky3 → Member), Union cancels the old plan
+  // and creates a new one. We must exclude these from churn — they're not
+  // real cancellations. For each month, find emails that canceled in one
+  // category AND were created in a different category in the same window.
+  const planChangersByMonth = new Map<string, Set<string>>();
+  for (const month of months) {
+    const monthStart = month + "-01";
+    const [yearStr, moStr] = month.split("-");
+    const nextMonth = new Date(parseInt(yearStr), parseInt(moStr), 1);
+    const monthEnd = nextMonth.getFullYear() + "-" +
+      String(nextMonth.getMonth() + 1).padStart(2, "0") + "-01";
+
+    // Build email→category maps for new and canceled in this month
+    const newByCatEmail = new Map<string, string>(); // email → new category
+    const canceledByCatEmail = new Map<string, string>(); // email → canceled category
+    for (const r of categorized) {
+      if (r.category === "UNKNOWN") continue;
+      const email = r.customer_email.toLowerCase();
+      if (!email) continue;
+      // New in this month: created within the month window
+      if (r.created_at && r.created_at >= monthStart && r.created_at < monthEnd) {
+        if (!newByCatEmail.has(email)) newByCatEmail.set(email, r.category);
+      }
+      // Canceled in this month
+      if (r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd) {
+        if (!canceledByCatEmail.has(email)) canceledByCatEmail.set(email, r.category);
+      }
+    }
+    // Plan changers: email appears in both lists with DIFFERENT categories
+    const changers = new Set<string>();
+    for (const [email, canceledCat] of canceledByCatEmail) {
+      const newCat = newByCatEmail.get(email);
+      if (newCat && newCat !== canceledCat) {
+        changers.add(email);
+      }
+    }
+    planChangersByMonth.set(month, changers);
+    if (changers.size > 0) {
+      console.log(`[churn] ${month}: excluded ${changers.size} plan changers from churn`);
+    }
+  }
+
   // Build per-category churn data
   const catResults: Record<string, CategoryChurnData> = {};
 
@@ -1133,6 +1180,8 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       const nextMonth = new Date(parseInt(yearStr), parseInt(moStr), 1);
       const monthEnd = nextMonth.getFullYear() + "-" +
         String(nextMonth.getMonth() + 1).padStart(2, "0") + "-01";
+
+      const planChangers = planChangersByMonth.get(month) ?? new Set<string>();
 
       // Active at start of month: created before month start AND
       // (still active OR canceled on/after month start)
@@ -1151,10 +1200,12 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       const activeMrrAtStart = Array.from(activeByEmail.values()).reduce((s, r) => s + r.monthlyRate, 0);
 
       // Canceled during this month — deduplicate by email
+      // Exclude plan changers (upgrades/downgrades) — not real churn
       const canceledByEmail = new Map<string, CategorizedRow>();
       for (const r of catRows) {
         if (!(r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd)) continue;
         const email = r.customer_email.toLowerCase();
+        if (planChangers.has(email)) continue; // skip plan changers
         const existing = canceledByEmail.get(email);
         if (!existing || r.monthlyRate > existing.monthlyRate) {
           canceledByEmail.set(email, r);

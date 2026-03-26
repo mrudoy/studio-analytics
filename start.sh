@@ -6,6 +6,10 @@ echo "PORT=3000 (hardcoded)"
 echo "NODE_ENV=${NODE_ENV}"
 echo "Starting Xvfb..."
 
+# Clean stale Xvfb from previous crash (prevents "Server is already active" error)
+killall Xvfb 2>/dev/null || true
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
+
 # Start Xvfb in background
 Xvfb :99 -screen 0 1280x720x24 -nolisten tcp &
 XVFB_PID=$!
