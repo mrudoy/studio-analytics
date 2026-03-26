@@ -95,6 +95,22 @@ const REVENUE_OPPORTUNITY_COPY: Record<string, { means: string; action: string }
   ready_to_upgrade: { means: "Already buying extra", action: "Priority upgrade outreach" },
 };
 
+const TIER_DEFINITIONS: Record<string, string> = {
+  dormant: "0 visits/mo", low: "1\u20132 visits/mo", target: "3\u20134 visits/mo",
+  strong: "5\u20138 visits/mo", power_user: "9+ visits/mo",
+  unused_pack: "0 visits/mo", save_candidate: "1 visit/mo", building_habit: "2 visits/mo",
+  upgrade_candidate: "3 visits/mo", ready_to_upgrade: "4+ visits/mo",
+  inactive: "0 sessions in 14 days", light: "1 session in 14 days",
+  active: "2\u20133 sessions in 14 days", engaged: "4+ sessions in 14 days",
+};
+
+const ALERT_THRESHOLDS = {
+  members_dormant_pct: 10,
+  sky3_breakage_pct_critical: 50,
+  sky3_breakage_pct_warning: 30,
+  tv_inactive_pct: 30,
+};
+
 // ─── Formatting ─────────────────────────────────────────────
 
 function formatPct(value: number): string {
@@ -160,6 +176,7 @@ function Sparkline({ data, color, width = 64, height = 24 }: { data: number[]; c
 function TierBadge({ tier, muted = false }: { tier: string; muted?: boolean }) {
   const color = TIER_COLORS[tier] || "#95A5A6";
   const label = TIER_DISPLAY_LABELS[tier] || tier;
+  const definition = TIER_DEFINITIONS[tier];
   return (
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
@@ -169,10 +186,21 @@ function TierBadge({ tier, muted = false }: { tier: string; muted?: boolean }) {
         opacity: muted ? 0.5 : 1,
         border: `1px solid ${color}30`,
       }}
+      title={definition}
     >
       {label}
     </span>
   );
+}
+
+// ─── Status Icon (replaces sparklines on scorecard cards) ───
+
+function getStatusIcon(delta: number, deltaType: "pct" | "count", invert: boolean): { char: string; color: string } {
+  const threshold = deltaType === "pct" ? 0.5 : 3;
+  if (Math.abs(delta) < threshold) return { char: "\u25b8", color: "#95A5A6" }; // ▸ gray
+  const isPositive = invert ? delta < 0 : delta > 0;
+  if (isPositive) return { char: "\u25b2", color: "#27AE60" }; // ▲ green
+  return { char: "\u25bc", color: "#C0392B" }; // ▼ red
 }
 
 // ─── Time Window Control ────────────────────────────────────
@@ -198,12 +226,13 @@ function TimeWindowControl({ value, onChange }: { value: number; onChange: (v: n
 
 function ScorecardCard({ card, periodWeeks }: { card: UsageScorecardCard; periodWeeks: number }) {
   const color = deltaColor(card.delta, card.deltaType, card.invertDirection);
+  const icon = getStatusIcon(card.delta, card.deltaType, card.invertDirection);
   return (
     <DashboardCard>
       <CardContent className="p-3">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-muted-foreground uppercase tracking-wide">{card.label}</span>
-          {card.sparkline.length > 1 && <Sparkline data={card.sparkline} color={color} />}
+          <span style={{ color: icon.color, fontSize: 16, lineHeight: 1 }}>{icon.char}</span>
         </div>
         <div className="text-2xl font-semibold tabular-nums tracking-tight">
           {formatValue(card.value, card.format)}
@@ -213,6 +242,53 @@ function ScorecardCard({ card, periodWeeks }: { card: UsageScorecardCard; period
         </div>
       </CardContent>
     </DashboardCard>
+  );
+}
+
+// ─── Alert Banner ───────────────────────────────────────────
+
+function AlertBanner({ segment, tierData }: {
+  segment: string;
+  tierData: Sky3TierRow[] | TvEngagementRow[] | null;
+}) {
+  if (!tierData || !Array.isArray(tierData) || tierData.length === 0) return null;
+
+  let text = "";
+  let bgColor = "";
+  let borderColor = "";
+
+  if (segment === "sky3") {
+    const total = (tierData as Sky3TierRow[]).reduce((s, t) => s + t.count, 0);
+    const breakageTiers = ["unused_pack", "save_candidate"];
+    const breakageCount = (tierData as Sky3TierRow[]).filter(t => breakageTiers.includes(t.tier)).reduce((s, t) => s + t.count, 0);
+    const breakagePct = total > 0 ? Math.round((breakageCount / total) * 1000) / 10 : 0;
+    const saveCandCount = (tierData as Sky3TierRow[]).find(t => t.tier === "save_candidate")?.count ?? 0;
+
+    if (breakagePct > ALERT_THRESHOLDS.sky3_breakage_pct_critical) {
+      text = `${breakageCount} of ${total} Sky3 members are at 0\u20131 visits. ${breakageCount} members are at risk of canceling.`;
+      bgColor = "#FDF2F2"; borderColor = "#C0392B";
+    } else if (breakagePct > ALERT_THRESHOLDS.sky3_breakage_pct_warning) {
+      text = `${breakagePct}% of Sky3 members are underusing their pack. ${saveCandCount} are Save Candidates.`;
+      bgColor = "#FFF8E7"; borderColor = "#E67E22";
+    }
+  } else if (segment === "tv") {
+    const total = (tierData as TvEngagementRow[]).reduce((s, t) => s + t.count, 0);
+    const inactiveCount = (tierData as TvEngagementRow[]).find(t => t.tier === "inactive")?.count ?? 0;
+    const inactivePct = total > 0 ? Math.round((inactiveCount / total) * 1000) / 10 : 0;
+
+    if (inactivePct > ALERT_THRESHOLDS.tv_inactive_pct) {
+      text = `${inactiveCount.toLocaleString()} subscribers haven't watched anything in 14 days. That's ${inactivePct}% of all TV subscribers.`;
+      bgColor = "#FDF2F2"; borderColor = "#C0392B";
+    }
+  }
+
+  if (!text) return null;
+
+  return (
+    <div style={{ padding: "16px 20px", borderLeft: `4px solid ${borderColor}`, backgroundColor: bgColor, borderRadius: 4, marginBottom: 4 }}>
+      <span style={{ color: borderColor, marginRight: 8 }}>{"\u26a0"}</span>
+      <span className="text-sm">{text}</span>
+    </div>
   );
 }
 
@@ -523,10 +599,22 @@ function UsageActionTable({
               <TableHead className="w-[60px] text-center text-xs">Dir</TableHead>
               <TableHead className="w-[90px] text-right text-xs">Visits (Now)</TableHead>
               <TableHead className="w-[100px] text-right text-xs">Visits (Before)</TableHead>
+              <TableHead className="w-[80px] text-xs">Trend</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {members.map((m, i) => (
+            {members.map((m, i) => {
+              // Sparkline color: compare first half avg to second half avg
+              const sp = m.sparkline ?? [];
+              let spColor = DELTA_COLORS.neutral;
+              if (sp.length >= 4) {
+                const mid = Math.floor(sp.length / 2);
+                const firstHalf = sp.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+                const secondHalf = sp.slice(mid).reduce((a, b) => a + b, 0) / (sp.length - mid);
+                if (secondHalf > firstHalf + 0.5) spColor = DELTA_COLORS.positive;
+                else if (secondHalf < firstHalf - 0.5) spColor = DELTA_COLORS.negative;
+              }
+              return (
               <TableRow key={`${m.email}-${i}`}>
                 <TableCell className="py-1.5 text-sm truncate max-w-[180px]">{m.name}</TableCell>
                 <TableCell className="py-1.5 text-sm text-muted-foreground truncate max-w-[200px]">{m.email}</TableCell>
@@ -537,8 +625,10 @@ function UsageActionTable({
                 </TableCell>
                 <TableCell className="py-1.5 text-right tabular-nums text-sm">{m.currentVisits}</TableCell>
                 <TableCell className="py-1.5 text-right tabular-nums text-sm text-muted-foreground">{m.priorVisits}</TableCell>
+                <TableCell className="py-1.5">{sp.length > 1 && <Sparkline data={sp} color={spColor} width={64} height={20} />}</TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
         {totalPages > 1 && (
@@ -561,6 +651,8 @@ function UsageActionTable({
 function Sky3RevenueOpportunityTable({ tiers }: { tiers: Sky3TierRow[] }) {
   if (!tiers.length) return null;
 
+  const maxCount = Math.max(...tiers.map(t => t.count), 1);
+
   return (
     <DashboardCard>
       <CardHeader>
@@ -568,14 +660,14 @@ function Sky3RevenueOpportunityTable({ tiers }: { tiers: Sky3TierRow[] }) {
         <CardDescription>Sky3 members by usage tier</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        <Table style={{ fontFamily: FONT_SANS }}>
+        <Table style={{ fontFamily: FONT_SANS, tableLayout: "fixed", width: "100%" }}>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[160px] text-xs">Tier</TableHead>
-              <TableHead className="w-[70px] text-right text-xs">Count</TableHead>
-              <TableHead className="w-[60px] text-right text-xs">%</TableHead>
+              <TableHead className="text-xs" style={{ width: 240 }}>Tier</TableHead>
+              <TableHead className="text-right text-xs" style={{ width: 80 }}>Count</TableHead>
+              <TableHead className="text-right text-xs" style={{ width: 60 }}>%</TableHead>
               <TableHead className="text-xs">What This Means</TableHead>
-              <TableHead className="w-[180px] text-xs">What To Do</TableHead>
+              <TableHead className="text-xs" style={{ width: 200 }}>What To Do</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -584,10 +676,14 @@ function Sky3RevenueOpportunityTable({ tiers }: { tiers: Sky3TierRow[] }) {
               const color = TIER_COLORS[row.tier] || "#95A5A6";
               return (
                 <TableRow key={row.tier} style={{ borderLeft: `4px solid ${color}` }}>
-                  <TableCell className="py-2 font-medium text-sm">
-                    {TIER_DISPLAY_LABELS[row.tier] || row.tier}
+                  <TableCell className="py-2 text-sm">
+                    <span className="font-medium">{TIER_DISPLAY_LABELS[row.tier] || row.tier}</span>
+                    <span style={{ color: "#95A5A6", fontWeight: "normal", marginLeft: 6 }}>({TIER_DEFINITIONS[row.tier]})</span>
                   </TableCell>
-                  <TableCell className="py-2 text-right tabular-nums text-sm">{row.count}</TableCell>
+                  <TableCell className="py-2 text-right tabular-nums text-sm" style={{ position: "relative" }}>
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(row.count / maxCount) * 100}%`, backgroundColor: `${color}20`, borderRadius: 4, zIndex: 0 }} />
+                    <span style={{ position: "relative", zIndex: 1 }}>{row.count}</span>
+                  </TableCell>
                   <TableCell className="py-2 text-right tabular-nums text-sm text-muted-foreground">{row.pct}%</TableCell>
                   <TableCell className="py-2 text-sm text-muted-foreground">{copy?.means ?? ""}</TableCell>
                   <TableCell className="py-2 text-sm font-medium">{copy?.action ?? ""}</TableCell>
@@ -771,7 +867,34 @@ export function UsageMembersPage() {
         </div>
         <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
-      <p className="text-sm text-muted-foreground ml-10 -mt-2">Unlimited membership usage deep dive</p>
+      {(() => {
+        if (scorecardData?.cards) {
+          const dormant = scorecardData.cards.find(c => c.key === "dormant_count")?.value ?? 0;
+          const netMov = scorecardData.cards.find(c => c.key === "net_movement")?.value ?? 0;
+          const atRisk = netMov < 0 ? Math.abs(netMov) : 0;
+          const improving = netMov > 0 ? netMov : 0;
+          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{atRisk} at risk — {improving} improving — {dormant} dormant</p>;
+        }
+        return <p className="text-sm text-muted-foreground ml-10 -mt-2">Unlimited membership usage deep dive</p>;
+      })()}
+
+      {(() => {
+        // Members alert banner: check dormant %
+        if (scorecardData?.cards) {
+          const dormant = scorecardData.cards.find(c => c.key === "dormant_count")?.value ?? 0;
+          const total = scorecardData.cards.find(c => c.key === "total_subscribed")?.value ?? 1;
+          const dormantPct = Math.round((dormant / total) * 1000) / 10;
+          if (dormantPct > ALERT_THRESHOLDS.members_dormant_pct) {
+            return (
+              <div style={{ padding: "16px 20px", borderLeft: "4px solid #C0392B", backgroundColor: "#FDF2F2", borderRadius: 4, marginBottom: 4 }}>
+                <span style={{ color: "#C0392B", marginRight: 8 }}>{"\u26a0"}</span>
+                <span className="text-sm">{dormant} members are subscribed but haven't visited. That's {dormantPct}% of all Members.</span>
+              </div>
+            );
+          }
+        }
+        return null;
+      })()}
 
       {scorecardData?.cards && (
         <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />
@@ -827,7 +950,18 @@ export function UsageSky3Page() {
         </div>
         <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
-      <p className="text-sm text-muted-foreground ml-10 -mt-2">Class pack usage and upgrade opportunities</p>
+      {(() => {
+        if (tiersData && Array.isArray(tiersData) && tiersData.length > 0) {
+          const breakageTiers = ["unused_pack", "save_candidate"];
+          const upgradeTiers = ["upgrade_candidate", "ready_to_upgrade"];
+          const breakageCount = tiersData.filter(t => breakageTiers.includes(t.tier)).reduce((s, t) => s + t.count, 0);
+          const upgradeCount = tiersData.filter(t => upgradeTiers.includes(t.tier)).reduce((s, t) => s + t.count, 0);
+          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{breakageCount.toLocaleString()} at risk of canceling — {upgradeCount.toLocaleString()} ready to upgrade</p>;
+        }
+        return <p className="text-sm text-muted-foreground ml-10 -mt-2">Class pack usage and upgrade opportunities</p>;
+      })()}
+
+      <AlertBanner segment="sky3" tierData={tiersData && Array.isArray(tiersData) ? tiersData : null} />
 
       {scorecardData?.cards && (
         <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />
@@ -887,7 +1021,16 @@ export function UsageTvPage() {
         </div>
         <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
-      <p className="text-sm text-muted-foreground ml-10 -mt-2">Digital subscription engagement</p>
+      {(() => {
+        if (engagementData && Array.isArray(engagementData) && engagementData.length > 0) {
+          const inactiveCount = engagementData.find(t => t.tier === "inactive")?.count ?? 0;
+          const activeCount = engagementData.filter(t => t.tier !== "inactive").reduce((s, t) => s + t.count, 0);
+          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{inactiveCount.toLocaleString()} inactive — {activeCount.toLocaleString()} active in last 14 days</p>;
+        }
+        return <p className="text-sm text-muted-foreground ml-10 -mt-2">Digital subscription engagement</p>;
+      })()}
+
+      <AlertBanner segment="tv" tierData={engagementData && Array.isArray(engagementData) ? engagementData : null} />
 
       {scorecardData?.cards && (
         <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />

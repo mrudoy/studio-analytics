@@ -744,6 +744,47 @@ export async function getUsageScorecard(
     });
   }
 
+  // For Sky3: replace default cards with Sky3-specific ones
+  if (segment === "sky3") {
+    const sky3Cards: ScorecardCard[] = [];
+    const currentTiers = await getPeriodTierCounts(pool, ["sky3"], periodStart, periodWeeks);
+    const priorTiers = await getPeriodTierCounts(pool, ["sky3"], priorPeriodStart, periodWeeks);
+
+    // Card 1: % at Full Use (upgrade_candidate + ready_to_upgrade)
+    const fullUseTiers = ["upgrade_candidate", "ready_to_upgrade"];
+    const curFullUse = fullUseTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
+    const curFullUsePct = currentTiers.total > 0 ? Math.round((curFullUse / currentTiers.total) * 1000) / 10 : 0;
+    const priFullUse = fullUseTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
+    const priFullUsePct = priorTiers.total > 0 ? Math.round((priFullUse / priorTiers.total) * 1000) / 10 : 0;
+    sky3Cards.push({
+      key: "pct_full_use", label: "% at Full Use", value: curFullUsePct, format: "pct",
+      sparkline: [], delta: Math.round((curFullUsePct - priFullUsePct) * 10) / 10, deltaType: "pct", invertDirection: false,
+    });
+
+    // Card 2: % Breakage (unused_pack + save_candidate) — inverted
+    const breakageTiers = ["unused_pack", "save_candidate"];
+    const curBreakage = breakageTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
+    const curBreakagePct = currentTiers.total > 0 ? Math.round((curBreakage / currentTiers.total) * 1000) / 10 : 0;
+    const priBreakage = breakageTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
+    const priBreakagePct = priorTiers.total > 0 ? Math.round((priBreakage / priorTiers.total) * 1000) / 10 : 0;
+    sky3Cards.push({
+      key: "pct_breakage", label: "% Breakage", value: curBreakagePct, format: "pct",
+      sparkline: [], delta: Math.round((curBreakagePct - priBreakagePct) * 10) / 10, deltaType: "pct", invertDirection: true,
+    });
+
+    // Card 3: Upgrade Candidates (count)
+    sky3Cards.push({
+      key: "upgrade_candidates", label: "Upgrade Candidates", value: curFullUse, format: "count",
+      sparkline: [], delta: curFullUse - priFullUse, deltaType: "count", invertDirection: false,
+    });
+
+    // Card 4: Total Subscribed
+    const totalSub = cards.find(c => c.key === "total_subscribed");
+    if (totalSub) sky3Cards.push(totalSub);
+
+    return sky3Cards;
+  }
+
   // For segment-specific scorecards, add extra metrics
   if (segment === "members") {
     // Avg Visits/Mo — insert at position 3 (before Dormant)
@@ -1073,6 +1114,29 @@ export async function getUsageMembers(params: {
     LIMIT $3 OFFSET $4
   `, [segment, ps, perPage, offset]);
 
+  // Batch-fetch 8-week sparklines for all members in the page (avoid N+1)
+  const emails = rows.map((r: { email: string }) => r.email);
+  const sparklineMap = new Map<string, number[]>();
+
+  if (emails.length > 0) {
+    const eightWeeksAgo = weeksAgo(8);
+    const { rows: sparkRows } = await pool.query(`
+      SELECT member_email, week_start, visit_count
+      FROM member_weekly_visits
+      WHERE member_email = ANY($1)
+        AND segment = $2
+        AND week_start >= $3::date
+      ORDER BY member_email, week_start
+    `, [emails, segment, eightWeeksAgo]);
+
+    // Group by member
+    for (const sr of sparkRows) {
+      const em = sr.member_email as string;
+      if (!sparklineMap.has(em)) sparklineMap.set(em, []);
+      sparklineMap.get(em)!.push(Number(sr.visit_count));
+    }
+  }
+
   return {
     members: rows.map((r: {
       email: string; name: string; current_tier: string;
@@ -1085,6 +1149,7 @@ export async function getUsageMembers(params: {
       direction: r.direction,
       currentVisits: r.current_visits,
       priorVisits: r.prior_visits,
+      sparkline: sparklineMap.get(r.email) ?? [],
     })),
     total,
     page,

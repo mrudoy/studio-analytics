@@ -848,6 +848,7 @@ export interface UsageMemberRow {
   direction: string;
   currentVisits: number;
   priorVisits: number;
+  sparkline?: number[];
 }
 
 export interface UsageAnnotation {
