@@ -1374,37 +1374,6 @@ async function getStableSky3Cohort(
   };
 }
 
-/**
- * Get Sky3 distribution data — cohort-filtered current bands.
- * No takeaway — the churn-risk movement section IS the takeaway.
- */
-export async function getSky3Distribution(periodWeeks = 4): Promise<Sky3DistributionResponse> {
-  const pool = getPool();
-  const periodDays = periodWeeks * 7;
-  const periodStart = weeksAgo(periodWeeks);
-
-  // Get stable cohort
-  const { stableEmails, cohort } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
-
-  // Get current period tiers for stable cohort only
-  const allTiers = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
-  const stableTiers = allTiers.filter(r => stableEmails.has(r.member_email));
-  const total = stableTiers.length;
-
-  // Build band data
-  const current: Record<string, Sky3BandData> = {};
-  const tierCounts: Record<string, number> = {};
-  for (const r of stableTiers) {
-    tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
-  }
-  for (const band of SKY3_TIER_ORDER) {
-    const count = tierCounts[band] || 0;
-    current[band] = { count, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 };
-  }
-
-  return { periodDays, cohort, current, total };
-}
-
 // ── Sky3 Movement (Churn-Risk Framing) ─────────────────────
 
 const RISK_BANDS = ["not_using", "barely_using"];
@@ -1434,19 +1403,42 @@ export interface Sky3MovementResponse {
   cohort_size: number;
 }
 
+export interface Sky3PageData {
+  distribution: Sky3DistributionResponse;
+  movement: Sky3MovementResponse;
+}
+
 /**
- * Compare each stable cohort member's current band to their prior band.
- * Organized around the churn-risk boundary (between barely_using and getting_there).
+ * Get all Sky3 page data in a single call — distribution + movement.
+ * Shares cohort and tier queries to avoid redundant DB calls.
  */
-export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResponse> {
+export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
   const pool = getPool();
+  const periodDays = periodWeeks * 7;
   const periodStart = weeksAgo(periodWeeks);
   const priorPeriodStart = weeksAgo(periodWeeks * 2);
 
-  const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+  // Single cohort + tier fetch (shared by distribution and movement)
+  const { stableEmails, cohort } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+  const [currentTiers, priorTiers] = await Promise.all([
+    getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks),
+    getPeriodTiers(pool, ["sky3"], priorPeriodStart, periodWeeks),
+  ]);
 
-  const currentTiers = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
-  const priorTiers = await getPeriodTiers(pool, ["sky3"], priorPeriodStart, periodWeeks);
+  // ── Distribution ──
+  const stableTiers = currentTiers.filter(r => stableEmails.has(r.member_email));
+  const total = stableTiers.length;
+  const current: Record<string, Sky3BandData> = {};
+  const tierCounts: Record<string, number> = {};
+  for (const r of stableTiers) {
+    tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
+  }
+  for (const band of SKY3_TIER_ORDER) {
+    const count = tierCounts[band] || 0;
+    current[band] = { count, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 };
+  }
+
+  // ── Movement ──
 
   const currentMap = new Map<string, string>();
   const priorMap = new Map<string, string>();
@@ -1518,7 +1510,7 @@ export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResp
 
   const sumCounts = (map: Record<string, number>) => Object.values(map).reduce((s, c) => s + c, 0);
 
-  return {
+  const movement: Sky3MovementResponse = {
     period_days: periodWeeks * 7,
     boundary_crossings: {
       into_using: { count: sumCounts(buckets.boundary_into_using), transitions: toTransitions(buckets.boundary_into_using) },
@@ -1535,6 +1527,23 @@ export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResp
     stable: { count: stableCount },
     cohort_size: stableEmails.size,
   };
+
+  return {
+    distribution: { periodDays, cohort, current, total },
+    movement,
+  };
+}
+
+/** @deprecated Use getSky3PageData instead */
+export async function getSky3Distribution(periodWeeks = 4): Promise<Sky3DistributionResponse> {
+  const { distribution } = await getSky3PageData(periodWeeks);
+  return distribution;
+}
+
+/** @deprecated Use getSky3PageData instead */
+export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResponse> {
+  const { movement } = await getSky3PageData(periodWeeks);
+  return movement;
 }
 
 // Movement group types for the members endpoint

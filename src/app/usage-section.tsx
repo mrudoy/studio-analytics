@@ -1196,15 +1196,12 @@ export function UsageSky3Page() {
   const [selectedGroup, setSelectedGroup] = useState<{ key: MovementGroupKey; title: string; transitions: Sky3Transition[] } | null>(null);
   const periodDays = periodWeeks * 7;
 
-  const { data: distData } = useUsageData<Sky3DistData>(
-    `/api/usage/sky3/distribution?period_weeks=${periodWeeks}`,
+  const { data: pageData } = useUsageData<{ distribution: Sky3DistData; movement: Sky3MovementData }>(
+    `/api/usage/sky3/page-data?period_weeks=${periodWeeks}`,
     [periodWeeks]
   );
-
-  const { data: movementData } = useUsageData<Sky3MovementData>(
-    `/api/usage/sky3/movement?period_weeks=${periodWeeks}`,
-    [periodWeeks]
-  );
+  const distData = pageData?.distribution;
+  const movementData = pageData?.movement;
 
   const maxCount = distData ? Math.max(...SKY3_BANDS.map(b => distData.current[b]?.count ?? 0), 1) : 1;
 
