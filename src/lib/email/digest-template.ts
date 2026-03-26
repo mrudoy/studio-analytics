@@ -199,7 +199,7 @@ export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | 
           <!-- CTA Button -->
           <tr>
             <td style="padding:24px 24px 12px;text-align:center;">
-              <a href="https://considerate-perfection-staging.up.railway.app" target="_blank" style="display:inline-block;padding:12px 32px;background-color:#111827;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">
+              <a href="https://studio-analytics-production.up.railway.app" target="_blank" style="display:inline-block;padding:12px 32px;background-color:#111827;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">
                 See Dashboard
               </a>
             </td>

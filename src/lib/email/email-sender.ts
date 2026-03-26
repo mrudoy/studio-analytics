@@ -104,7 +104,7 @@ export async function sendDigestEmail(): Promise<DigestResult> {
   });
 
   const resend = new Resend(apiKey);
-  const from = digest.fromAddress || "Sky Ting Analytics <onboarding@resend.dev>";
+  const from = digest.fromAddress || "Sky Ting Analytics <digest@skyting.com>";
 
   const { error } = await resend.emails.send({
     from,

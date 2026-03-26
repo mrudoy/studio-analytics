@@ -61,7 +61,7 @@ export async function sendPipelineAlert(
 
   try {
     const resend = new Resend(apiKey);
-    const from = digest.fromAddress || "Sky Ting Analytics <onboarding@resend.dev>";
+    const from = digest.fromAddress || "Sky Ting Analytics <digest@skyting.com>";
     const { error } = await resend.emails.send({
       from,
       to: digest.recipients,
@@ -124,7 +124,7 @@ function buildAlertHtml(type: AlertType, detail: string): string {
           <!-- CTA -->
           <tr>
             <td style="padding:0 24px 24px;text-align:center;">
-              <a href="https://considerate-perfection-staging.up.railway.app" target="_blank" style="display:inline-block;padding:12px 32px;background-color:#111827;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">
+              <a href="https://studio-analytics-production.up.railway.app" target="_blank" style="display:inline-block;padding:12px 32px;background-color:#111827;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">
                 Check Dashboard
               </a>
             </td>
