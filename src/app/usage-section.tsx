@@ -758,11 +758,12 @@ function TvEngagementBars({ tiers }: { tiers: TvEngagementRow[] }) {
 
 // ─── Data Fetching Hook ─────────────────────────────────────
 
-function useUsageData<T>(url: string, deps: unknown[]): { data: T | null; loading: boolean } {
+function useUsageData<T>(url: string | null, deps: unknown[]): { data: T | null; loading: boolean } {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!url) { setData(null); setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
     fetch(url)
@@ -1024,8 +1025,8 @@ const SKY3_VISIT_LABELS: Record<string, string> = {
 
 const SKY3_BAR_COLORS: Record<string, string> = {
   not_using: "#E8D5D0",
-  barely_using: "#F0DCC8",
-  getting_there: "#F5EAB8",
+  barely_using: "#E8CBAF",
+  getting_there: "#EDE09E",
   full_use: "#C8E6C9",
   wants_more: "#A5D6A7",
 };
@@ -1045,24 +1046,24 @@ interface Sky3Transition { from: string; to: string; count: number }
 interface Sky3MovementGroup { count: number; transitions: Sky3Transition[] }
 interface Sky3MovementData {
   period_days: number;
-  boundary_crossings: { into_using: Sky3MovementGroup; into_risk: Sky3MovementGroup };
+  boundary_crossings: { into_success: Sky3MovementGroup; into_risk: Sky3MovementGroup };
   within_risk: { improving: Sky3MovementGroup; declining: Sky3MovementGroup };
-  within_using: { improving: Sky3MovementGroup; declining: Sky3MovementGroup };
+  within_success: { improving: Sky3MovementGroup; declining: Sky3MovementGroup };
   stable: { count: number };
   cohort_size: number;
 }
 
 type MovementGroupKey =
-  | "boundary_into_using" | "boundary_into_risk"
+  | "boundary_into_success" | "boundary_into_risk"
   | "within_risk_improving" | "within_risk_declining"
-  | "within_using_improving" | "within_using_declining";
+  | "within_success_improving" | "within_success_declining";
 
-// ─── Sky3 Churn-Risk Movement Slide-Out ─────────────────────
+// ─── Sky3 Boundary-Crossing Slide-Out (Panel B) ─────────────
 
-function Sky3ChurnPanel({
+function Sky3BoundaryPanel({
   groupKey, title, transitions, periodWeeks, onClose
 }: {
-  groupKey: MovementGroupKey;
+  groupKey: "boundary_into_success" | "boundary_into_risk";
   title: string;
   transitions: Sky3Transition[];
   periodWeeks: number;
@@ -1188,12 +1189,198 @@ function Sky3ChurnPanel({
   );
 }
 
-// ─── Sky3 Page (Churn-Risk Redesign) ────────────────────────
+// ─── Sky3 All Movement Detail Slide-Out (Panel C) ───────────
+
+function Sky3AllMovementPanel({
+  movementData, periodWeeks, periodDays, cohortSize, onClose
+}: {
+  movementData: Sky3MovementData;
+  periodWeeks: number;
+  periodDays: number;
+  cohortSize: number;
+  onClose: () => void;
+}) {
+  const [selectedTransition, setSelectedTransition] = useState<{ from: string; to: string; group: MovementGroupKey } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [page, setPage] = useState(1);
+  const perPage = 25;
+
+  // Fetch members for selected transition
+  const memberUrl = selectedTransition
+    ? `/api/usage/sky3/movement/members?${new URLSearchParams({ group: selectedTransition.group, period_weeks: String(periodWeeks), from: selectedTransition.from, to: selectedTransition.to, page: String(page), per_page: String(perPage) })}`
+    : null;
+  const { data: memberData } = useUsageData<{
+    members: { name: string; email: string; prior_visits: number; current_visits: number }[];
+    total: number; page: number;
+  }>(memberUrl, [selectedTransition, page]);
+
+  const totalCount = memberData?.total ?? 0;
+  const totalPages = Math.ceil(totalCount / perPage);
+
+  const handleClickTransition = (from: string, to: string, group: MovementGroupKey) => {
+    if (selectedTransition?.from === from && selectedTransition?.to === to) {
+      setSelectedTransition(null);
+    } else {
+      setSelectedTransition({ from, to, group });
+      setPage(1);
+    }
+  };
+
+  const handleCopyEmails = async () => {
+    if (!selectedTransition) return;
+    const p = new URLSearchParams({ group: selectedTransition.group, period_weeks: String(periodWeeks), from: selectedTransition.from, to: selectedTransition.to, fields: "email", per_page: "9999" });
+    const res = await fetch(`/api/usage/sky3/movement/members?${p}`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const renderTransitionRows = (transitions: Sky3Transition[], group: MovementGroupKey) =>
+    transitions.map(t => {
+      const isActive = selectedTransition?.from === t.from && selectedTransition?.to === t.to;
+      return (
+        <button
+          key={`${t.from}|${t.to}`}
+          className={`flex items-center justify-between w-full py-1.5 px-3 text-sm hover:bg-muted/30 transition-colors ${isActive ? "bg-muted/40 font-medium" : ""}`}
+          onClick={() => handleClickTransition(t.from, t.to, group)}
+        >
+          <span>{SKY3_VISIT_LABELS[t.from]} → {SKY3_VISIT_LABELS[t.to]}</span>
+          <span className="text-muted-foreground tabular-nums">{t.count} member{t.count !== 1 ? "s" : ""}</span>
+        </button>
+      );
+    });
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <div className="font-semibold" style={{ fontSize: "15px" }}>All Movement Detail <span className="font-normal text-muted-foreground" style={{ fontSize: "13px" }}>(last {periodDays} days)</span></div>
+            <div className="text-muted-foreground" style={{ fontSize: "13px" }}>{cohortSize} stable members</div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {/* Crossed into success */}
+          <div className="px-4 pt-3 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Using All 3 or higher ({movementData.boundary_crossings.into_success.count})</div>
+            {renderTransitionRows(movementData.boundary_crossings.into_success.transitions, "boundary_into_success")}
+          </div>
+
+          {/* Fell into risk */}
+          <div className="px-4 pt-2 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell into Getting There or lower ({movementData.boundary_crossings.into_risk.count})</div>
+            {renderTransitionRows(movementData.boundary_crossings.into_risk.transitions, "boundary_into_risk")}
+          </div>
+
+          {/* Within risk zone */}
+          <div className="px-4 pt-2 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (0-2 visits)</div>
+            {renderTransitionRows([...movementData.within_risk.improving.transitions, ...movementData.within_risk.declining.transitions].sort((a, b) => b.count - a.count), "within_risk_improving")}
+          </div>
+
+          {/* Within success zone */}
+          <div className="px-4 pt-2 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the success zone (3+ visits)</div>
+            {renderTransitionRows([...movementData.within_success.improving.transitions, ...movementData.within_success.declining.transitions].sort((a, b) => b.count - a.count), "within_success_improving")}
+          </div>
+
+          {/* Stable */}
+          <div className="px-4 pt-2 pb-3">
+            <div className="text-sm text-muted-foreground">Stable (same band): <span className="tabular-nums font-medium">{movementData.stable.count} members</span></div>
+          </div>
+
+          {/* Export button */}
+          <div className="px-4 pb-3 border-b">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1"
+              onClick={() => { window.location.href = `/api/usage/members/export?segment=sky3&period_weeks=${periodWeeks}`; }}
+            >
+              <DownloadIcon className="size-3.5" /> Export Full Movement CSV
+            </Button>
+          </div>
+
+          {/* Member table (populated when a transition is clicked) */}
+          <div className="p-4">
+            {!selectedTransition ? (
+              <p className="text-sm text-muted-foreground italic">Click a transition row above to see members.</p>
+            ) : (
+              <>
+                {/* Copy emails for selected transition */}
+                <div className="flex gap-2 mb-3">
+                  <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+                    <Copy size={14} /> {copied ? "Copied!" : `Copy All ${totalCount} Emails`}
+                  </Button>
+                </div>
+                {memberData?.members.length ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                        <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                        <th className="text-right py-1.5 text-xs text-muted-foreground font-medium">Movement</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memberData.members.map((m, i) => (
+                        <tr key={i} className="border-b border-muted/30">
+                          <td className="py-1.5 truncate max-w-[140px]">{m.name}</td>
+                          <td className="py-1.5 text-muted-foreground truncate max-w-[180px]">{m.email}</td>
+                          <td className="py-1.5 text-right text-muted-foreground tabular-nums">{m.prior_visits} → {m.current_visits}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No members.</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Pagination */}
+        {selectedTransition && totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, totalCount)} of {totalCount}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── Sky3 Download Button ────────────────────────────────────
+
+function Sky3DownloadButton({ count, onClick }: { count: number; onClick: () => void }) {
+  return (
+    <button
+      className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+      style={{ fontSize: "13px" }}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+    >
+      <DownloadIcon className="size-3" /> {count} member{count !== 1 ? "s" : ""}
+    </button>
+  );
+}
+
+// ─── Sky3 Page (Consolidated Spec) ──────────────────────────
 
 export function UsageSky3Page() {
   const [periodWeeks, setPeriodWeeks] = useState(4);
   const [selectedBand, setSelectedBand] = useState<string | null>(null);
-  const [selectedGroup, setSelectedGroup] = useState<{ key: MovementGroupKey; title: string; transitions: Sky3Transition[] } | null>(null);
+  const [selectedBoundary, setSelectedBoundary] = useState<{ key: "boundary_into_success" | "boundary_into_risk"; title: string; transitions: Sky3Transition[] } | null>(null);
+  const [showAllMovement, setShowAllMovement] = useState(false);
   const periodDays = periodWeeks * 7;
 
   const { data: pageData } = useUsageData<{ distribution: Sky3DistData; movement: Sky3MovementData }>(
@@ -1204,10 +1391,6 @@ export function UsageSky3Page() {
   const movementData = pageData?.movement;
 
   const maxCount = distData ? Math.max(...SKY3_BANDS.map(b => distData.current[b]?.count ?? 0), 1) : 1;
-
-  const openGroup = (key: MovementGroupKey, title: string, transitions: Sky3Transition[]) => {
-    setSelectedGroup({ key, title, transitions });
-  };
 
   return (
     <div className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
@@ -1220,36 +1403,47 @@ export function UsageSky3Page() {
         <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
 
-      {/* Section 1: Where Members Are Now (with churn-risk boundary line) */}
+      {/* Section 1: Where Members Are Now */}
       <div>
-        <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
+        <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
+          Where Members Are Now{" "}
+          <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last {periodDays} days)</span>
+        </h2>
         <div className="flex flex-col">
-          {distData && SKY3_BANDS.map((band, idx) => {
+          {distData && SKY3_BANDS.map((band) => {
             const d = distData.current[band];
             if (!d) return null;
             const barWidth = (d.count / maxCount) * 100;
 
             return (
               <React.Fragment key={band}>
-                {/* Churn-risk boundary line between barely_using and getting_there */}
-                {band === "getting_there" && (
-                  <div className="my-3" style={{ borderTop: "1px dashed #D5D5D5" }} />
+                {/* Churn-risk boundary line between getting_there and full_use */}
+                {band === "full_use" && (
+                  <div className="relative" style={{ margin: "12px 0" }}>
+                    <div style={{ borderTop: "1px dashed #D5D5D5" }} />
+                    <span
+                      className="absolute right-0 px-2 bg-white"
+                      style={{ fontSize: "11px", color: "#B0A8A0", letterSpacing: "0.5px", textTransform: "uppercase", top: "-8px" }}
+                    >
+                      Churn Risk Threshold
+                    </span>
+                  </div>
                 )}
                 <div
                   className="flex items-center gap-3 cursor-pointer group"
-                  style={{ marginBottom: band === "getting_there" || band === "barely_using" ? 0 : 8, marginTop: idx === 0 ? 0 : (band === "getting_there" ? 0 : 8) }}
+                  style={{ height: "40px", marginBottom: "8px", transition: "background-color 150ms ease" }}
                   onClick={() => setSelectedBand(band)}
                 >
-                  <div className="w-[220px] shrink-0 text-sm font-medium">{SKY3_BAND_LABELS[band]}</div>
-                  <div className="flex-1 relative h-10 rounded bg-muted/20 group-hover:bg-muted/30 transition-colors">
+                  <div className="shrink-0" style={{ width: "220px", fontSize: "15px", fontWeight: 400, color: "#333333" }}>{SKY3_BAND_LABELS[band]}</div>
+                  <div className="flex-1 relative rounded" style={{ height: "40px", backgroundColor: "rgba(0,0,0,0.03)" }}>
                     <div
-                      className="absolute top-0 left-0 h-full rounded transition-all"
-                      style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band] }}
+                      className="absolute top-0 left-0 h-full rounded"
+                      style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band], transition: "width 300ms ease" }}
                     />
                   </div>
-                  <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
-                  <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
-                  <div className="w-[20px] text-muted-foreground text-xs">&rsaquo;</div>
+                  <div className="tabular-nums" style={{ width: "50px", textAlign: "right", fontSize: "15px", fontWeight: 700, color: "#333333" }}>{d.count}</div>
+                  <div className="tabular-nums" style={{ width: "50px", textAlign: "right", fontSize: "13px", fontWeight: 400, color: "#95A5A6" }}>{d.pct}%</div>
+                  <Sky3DownloadButton count={d.count} onClick={() => setSelectedBand(band)} />
                 </div>
               </React.Fragment>
             );
@@ -1257,82 +1451,78 @@ export function UsageSky3Page() {
         </div>
       </div>
 
-      {/* Section 2: Churn Risk Movement */}
+      {/* Section 2: Churn Risk Movement — exactly 2 rows + 1 link */}
       {movementData && (
-        <div className="mt-2">
-          <h2 className="text-lg font-bold mb-3">Churn Risk Movement <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
+        <div style={{ marginTop: "8px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
+            Churn Risk Movement{" "}
+            <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last {periodDays} days)</span>
+          </h2>
 
-          {/* PRIMARY: Boundary crossings */}
-          <div className="flex flex-col gap-1 mb-4">
+          <div className="flex flex-col" style={{ gap: "16px", paddingTop: "8px" }}>
+            {/* Crossed UP into success */}
             <button
-              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-2 transition-colors"
-              onClick={() => openGroup("boundary_into_using", `Crossed into Getting There or higher (${movementData.boundary_crossings.into_using.count})`, movementData.boundary_crossings.into_using.transitions)}
+              className="flex items-center gap-3 text-left rounded transition-colors"
+              style={{ height: "48px", padding: "0 8px" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#F9F7F5")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={() => setSelectedBoundary({
+                key: "boundary_into_success",
+                title: `Crossed into Using All 3 Classes or higher (${movementData.boundary_crossings.into_success.count})`,
+                transitions: movementData.boundary_crossings.into_success.transitions,
+              })}
             >
               <TrendingUp size={16} color="#27AE60" className="shrink-0" />
-              <span className="font-bold tabular-nums" style={{ color: "#27AE60", fontSize: 16 }}>{movementData.boundary_crossings.into_using.count}</span>
-              <span className="text-sm" style={{ color: "#27AE60" }}>crossed into Getting There or higher</span>
-              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+              <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#27AE60" }}>{movementData.boundary_crossings.into_success.count}</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Using All 3 Classes or higher</span>
+              <span className="ml-auto">
+                <Sky3DownloadButton count={movementData.boundary_crossings.into_success.count} onClick={() => setSelectedBoundary({
+                  key: "boundary_into_success",
+                  title: `Crossed into Using All 3 Classes or higher (${movementData.boundary_crossings.into_success.count})`,
+                  transitions: movementData.boundary_crossings.into_success.transitions,
+                })} />
+              </span>
             </button>
+
+            {/* Fell DOWN into risk */}
             <button
-              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-2 transition-colors"
-              onClick={() => openGroup("boundary_into_risk", `Fell into Barely Using or lower (${movementData.boundary_crossings.into_risk.count})`, movementData.boundary_crossings.into_risk.transitions)}
+              className="flex items-center gap-3 text-left rounded transition-colors"
+              style={{ height: "48px", padding: "0 8px" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#F9F7F5")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={() => setSelectedBoundary({
+                key: "boundary_into_risk",
+                title: `Fell into Getting There or lower (${movementData.boundary_crossings.into_risk.count})`,
+                transitions: movementData.boundary_crossings.into_risk.transitions,
+              })}
             >
               <TrendingDown size={16} color="#C0392B" className="shrink-0" />
-              <span className="font-bold tabular-nums" style={{ color: "#C0392B", fontSize: 16 }}>{movementData.boundary_crossings.into_risk.count}</span>
-              <span className="text-sm" style={{ color: "#C0392B" }}>fell into Barely Using or lower</span>
-              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+              <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#C0392B" }}>{movementData.boundary_crossings.into_risk.count}</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell into Getting There or lower</span>
+              <span className="ml-auto">
+                <Sky3DownloadButton count={movementData.boundary_crossings.into_risk.count} onClick={() => setSelectedBoundary({
+                  key: "boundary_into_risk",
+                  title: `Fell into Getting There or lower (${movementData.boundary_crossings.into_risk.count})`,
+                  transitions: movementData.boundary_crossings.into_risk.transitions,
+                })} />
+              </span>
             </button>
           </div>
 
-          {/* SECONDARY: Within risk zone */}
-          <div className="ml-4 mb-4">
-            <div className="text-xs text-muted-foreground mb-2">Within the risk zone (0-1 visits)</div>
-            <button
-              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
-              onClick={() => openGroup("within_risk_improving", `Moved from 0 → 1 visit (${movementData.within_risk.improving.count})`, movementData.within_risk.improving.transitions)}
-            >
-              <TrendingUp size={14} color="#27AE60" className="shrink-0" />
-              <span className="font-bold tabular-nums text-sm" style={{ color: "#27AE60" }}>{movementData.within_risk.improving.count}</span>
-              <span className="text-[13px]" style={{ color: "#27AE60" }}>moved from 0 → 1 visit (building a habit)</span>
-              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
-            </button>
-            <button
-              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
-              onClick={() => openGroup("within_risk_declining", `Moved from 1 → 0 visits (${movementData.within_risk.declining.count})`, movementData.within_risk.declining.transitions)}
-            >
-              <TrendingDown size={14} color="#C0392B" className="shrink-0" />
-              <span className="font-bold tabular-nums text-sm" style={{ color: "#C0392B" }}>{movementData.within_risk.declining.count}</span>
-              <span className="text-[13px]" style={{ color: "#C0392B" }}>moved from 1 → 0 visits (giving up)</span>
-              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
-            </button>
-          </div>
-
-          {/* TERTIARY: Within using zone */}
-          <div className="ml-4">
-            <div className="text-xs text-muted-foreground mb-2">Within the using zone (2+ visits)</div>
-            <button
-              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
-              onClick={() => openGroup("within_using_improving", `Moved up in using zone (${movementData.within_using.improving.count})`, movementData.within_using.improving.transitions)}
-            >
-              <TrendingUp size={14} color="#27AE60" className="shrink-0" />
-              <span className="font-bold tabular-nums text-sm" style={{ color: "#27AE60" }}>{movementData.within_using.improving.count}</span>
-              <span className="text-[13px]" style={{ color: "#27AE60" }}>moved up (upsell signals)</span>
-              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
-            </button>
-            <button
-              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
-              onClick={() => openGroup("within_using_declining", `Moved down in using zone (${movementData.within_using.declining.count})`, movementData.within_using.declining.transitions)}
-            >
-              <TrendingDown size={14} color="#C0392B" className="shrink-0" />
-              <span className="font-bold tabular-nums text-sm" style={{ color: "#C0392B" }}>{movementData.within_using.declining.count}</span>
-              <span className="text-[13px]" style={{ color: "#C0392B" }}>moved down (still using, watch list)</span>
-              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
-            </button>
-          </div>
+          {/* "See all movement detail" link */}
+          <button
+            className="mt-3 cursor-pointer"
+            style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", background: "none", border: "none", padding: "0 8px" }}
+            onMouseEnter={e => { e.currentTarget.style.textDecoration = "underline"; e.currentTarget.style.color = "#666666"; }}
+            onMouseLeave={e => { e.currentTarget.style.textDecoration = "none"; e.currentTarget.style.color = "#95A5A6"; }}
+            onClick={() => setShowAllMovement(true)}
+          >
+            See all movement detail →
+          </button>
         </div>
       )}
 
-      {/* Footer: Export + Cohort Footnote */}
+      {/* Section 3: Export Footer */}
       <div className="mt-4 flex justify-end">
         <div className="text-right">
           <Button
@@ -1344,26 +1534,37 @@ export function UsageSky3Page() {
             <DownloadIcon className="size-3.5" /> Export Full Member List
           </Button>
           {distData?.cohort && (
-            <p className="text-xs text-muted-foreground mt-2" style={{ fontSize: "13px" }}>
+            <p style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", marginTop: "8px" }}>
               Based on {distData.cohort.stable_count} members subscribed in both periods. Excludes {distData.cohort.excluded.new_joins} new joins, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
             </p>
           )}
         </div>
       </div>
 
-      {/* Side Panel: Distribution band detail */}
+      {/* Panel A: Distribution band slide-out */}
       {selectedBand && (
         <Sky3SidePanel band={selectedBand} periodWeeks={periodWeeks} onClose={() => setSelectedBand(null)} />
       )}
 
-      {/* Side Panel: Churn-risk movement detail */}
-      {selectedGroup && (
-        <Sky3ChurnPanel
-          groupKey={selectedGroup.key}
-          title={selectedGroup.title}
-          transitions={selectedGroup.transitions}
+      {/* Panel B: Boundary-crossing slide-out */}
+      {selectedBoundary && (
+        <Sky3BoundaryPanel
+          groupKey={selectedBoundary.key}
+          title={selectedBoundary.title}
+          transitions={selectedBoundary.transitions}
           periodWeeks={periodWeeks}
-          onClose={() => setSelectedGroup(null)}
+          onClose={() => setSelectedBoundary(null)}
+        />
+      )}
+
+      {/* Panel C: All movement detail slide-out */}
+      {showAllMovement && movementData && (
+        <Sky3AllMovementPanel
+          movementData={movementData}
+          periodWeeks={periodWeeks}
+          periodDays={periodDays}
+          cohortSize={movementData.cohort_size}
+          onClose={() => setShowAllMovement(false)}
         />
       )}
     </div>

@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSky3MovementMembers } from "@/lib/db/usage-store";
 
 const VALID_GROUPS = [
-  "boundary_into_using",
+  "boundary_into_success",
   "boundary_into_risk",
   "within_risk_improving",
   "within_risk_declining",
-  "within_using_improving",
-  "within_using_declining",
+  "within_success_improving",
+  "within_success_declining",
 ] as const;
 
 export async function GET(request: NextRequest) {

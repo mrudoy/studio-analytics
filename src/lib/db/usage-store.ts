@@ -1376,8 +1376,8 @@ async function getStableSky3Cohort(
 
 // ── Sky3 Movement (Churn-Risk Framing) ─────────────────────
 
-const RISK_BANDS = ["not_using", "barely_using"];
-const USING_BANDS = ["getting_there", "full_use", "wants_more"];
+const RISK_BANDS = ["not_using", "barely_using", "getting_there"];
+const SUCCESS_BANDS = ["full_use", "wants_more"];
 
 export interface Sky3Transition {
   from: string;
@@ -1388,14 +1388,14 @@ export interface Sky3Transition {
 export interface Sky3MovementResponse {
   period_days: number;
   boundary_crossings: {
-    into_using: { count: number; transitions: Sky3Transition[] };
+    into_success: { count: number; transitions: Sky3Transition[] };
     into_risk: { count: number; transitions: Sky3Transition[] };
   };
   within_risk: {
     improving: { count: number; transitions: Sky3Transition[] };
     declining: { count: number; transitions: Sky3Transition[] };
   };
-  within_using: {
+  within_success: {
     improving: { count: number; transitions: Sky3Transition[] };
     declining: { count: number; transitions: Sky3Transition[] };
   };
@@ -1451,12 +1451,12 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
 
   // Categorize each member's movement
   const buckets: Record<string, Record<string, number>> = {
-    boundary_into_using: {},
+    boundary_into_success: {},
     boundary_into_risk: {},
     within_risk_improving: {},
     within_risk_declining: {},
-    within_using_improving: {},
-    within_using_declining: {},
+    within_success_improving: {},
+    within_success_declining: {},
   };
   let stableCount = 0;
 
@@ -1471,16 +1471,16 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
 
     const priInRisk = RISK_BANDS.includes(priBand);
     const curInRisk = RISK_BANDS.includes(curBand);
-    const priInUsing = USING_BANDS.includes(priBand);
-    const curInUsing = USING_BANDS.includes(curBand);
+    const priInSuccess = SUCCESS_BANDS.includes(priBand);
+    const curInSuccess = SUCCESS_BANDS.includes(curBand);
     const curIdx = SKY3_TIER_ORDER.indexOf(curBand);
     const priIdx = SKY3_TIER_ORDER.indexOf(priBand);
     const key = `${priBand}|${curBand}`;
 
-    if (priInRisk && curInUsing) {
+    if (priInRisk && curInSuccess) {
       // Crossed UP into using zone
-      buckets.boundary_into_using[key] = (buckets.boundary_into_using[key] || 0) + 1;
-    } else if (priInUsing && curInRisk) {
+      buckets.boundary_into_success[key] = (buckets.boundary_into_success[key] || 0) + 1;
+    } else if (priInSuccess && curInRisk) {
       // Crossed DOWN into risk zone
       buckets.boundary_into_risk[key] = (buckets.boundary_into_risk[key] || 0) + 1;
     } else if (priInRisk && curInRisk) {
@@ -1490,12 +1490,12 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
       } else {
         buckets.within_risk_declining[key] = (buckets.within_risk_declining[key] || 0) + 1;
       }
-    } else if (priInUsing && curInUsing) {
+    } else if (priInSuccess && curInSuccess) {
       // Within using zone
       if (curIdx > priIdx) {
-        buckets.within_using_improving[key] = (buckets.within_using_improving[key] || 0) + 1;
+        buckets.within_success_improving[key] = (buckets.within_success_improving[key] || 0) + 1;
       } else {
-        buckets.within_using_declining[key] = (buckets.within_using_declining[key] || 0) + 1;
+        buckets.within_success_declining[key] = (buckets.within_success_declining[key] || 0) + 1;
       }
     }
   }
@@ -1513,16 +1513,16 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
   const movement: Sky3MovementResponse = {
     period_days: periodWeeks * 7,
     boundary_crossings: {
-      into_using: { count: sumCounts(buckets.boundary_into_using), transitions: toTransitions(buckets.boundary_into_using) },
+      into_success: { count: sumCounts(buckets.boundary_into_success), transitions: toTransitions(buckets.boundary_into_success) },
       into_risk: { count: sumCounts(buckets.boundary_into_risk), transitions: toTransitions(buckets.boundary_into_risk) },
     },
     within_risk: {
       improving: { count: sumCounts(buckets.within_risk_improving), transitions: toTransitions(buckets.within_risk_improving) },
       declining: { count: sumCounts(buckets.within_risk_declining), transitions: toTransitions(buckets.within_risk_declining) },
     },
-    within_using: {
-      improving: { count: sumCounts(buckets.within_using_improving), transitions: toTransitions(buckets.within_using_improving) },
-      declining: { count: sumCounts(buckets.within_using_declining), transitions: toTransitions(buckets.within_using_declining) },
+    within_success: {
+      improving: { count: sumCounts(buckets.within_success_improving), transitions: toTransitions(buckets.within_success_improving) },
+      declining: { count: sumCounts(buckets.within_success_declining), transitions: toTransitions(buckets.within_success_declining) },
     },
     stable: { count: stableCount },
     cohort_size: stableEmails.size,
@@ -1548,12 +1548,12 @@ export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResp
 
 // Movement group types for the members endpoint
 type MovementGroup =
-  | "boundary_into_using"
+  | "boundary_into_success"
   | "boundary_into_risk"
   | "within_risk_improving"
   | "within_risk_declining"
-  | "within_using_improving"
-  | "within_using_declining";
+  | "within_success_improving"
+  | "within_success_declining";
 
 /**
  * Get Sky3 movement members for detail slide-out.
@@ -1600,18 +1600,18 @@ export async function getSky3MovementMembers(params: {
 
     const priInRisk = RISK_BANDS.includes(pri.tier);
     const curInRisk = RISK_BANDS.includes(cur.tier);
-    const priInUsing = USING_BANDS.includes(pri.tier);
-    const curInUsing = USING_BANDS.includes(cur.tier);
+    const priInSuccess = SUCCESS_BANDS.includes(pri.tier);
+    const curInSuccess = SUCCESS_BANDS.includes(cur.tier);
     const curIdx = SKY3_TIER_ORDER.indexOf(cur.tier);
     const priIdx = SKY3_TIER_ORDER.indexOf(pri.tier);
 
     let memberGroup: MovementGroup | null = null;
-    if (priInRisk && curInUsing) memberGroup = "boundary_into_using";
-    else if (priInUsing && curInRisk) memberGroup = "boundary_into_risk";
+    if (priInRisk && curInSuccess) memberGroup = "boundary_into_success";
+    else if (priInSuccess && curInRisk) memberGroup = "boundary_into_risk";
     else if (priInRisk && curInRisk && curIdx > priIdx) memberGroup = "within_risk_improving";
     else if (priInRisk && curInRisk && curIdx < priIdx) memberGroup = "within_risk_declining";
-    else if (priInUsing && curInUsing && curIdx > priIdx) memberGroup = "within_using_improving";
-    else if (priInUsing && curInUsing && curIdx < priIdx) memberGroup = "within_using_declining";
+    else if (priInSuccess && curInSuccess && curIdx > priIdx) memberGroup = "within_success_improving";
+    else if (priInSuccess && curInSuccess && curIdx < priIdx) memberGroup = "within_success_declining";
 
     if (memberGroup !== group) continue;
     if (from && pri.tier !== from) continue;
