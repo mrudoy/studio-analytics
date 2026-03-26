@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
              array_agg(DISTINCT plan_category ORDER BY plan_category) AS categories,
              array_agg(DISTINCT plan_name ORDER BY plan_name) AS plans
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid')
+      WHERE plan_state IN ('Valid Now', 'Paused')
         AND plan_category IN ('MEMBER', 'SKY3')
       GROUP BY LOWER(customer_email)
       HAVING COUNT(DISTINCT plan_category) > 1

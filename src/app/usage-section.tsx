@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DownloadIcon, ActivityIcon, ArrowBadgeDown, BrandSky, DeviceTv } from "@/components/dashboard/icons";
-import { TrendingUp, TrendingDown, Minus, X as XIcon, Copy } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, ArrowRight, X as XIcon, Copy, ChevronRight, ChevronDown } from "lucide-react";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
 import type {
   UsageScorecardCard,
@@ -1014,6 +1014,14 @@ const SKY3_BAND_LABELS: Record<string, string> = {
   wants_more: "Wants More (4+ visits)",
 };
 
+const SKY3_VISIT_LABELS: Record<string, string> = {
+  not_using: "0 visits",
+  barely_using: "1 visit",
+  getting_there: "2 visits",
+  full_use: "3 visits",
+  wants_more: "4+ visits",
+};
+
 const SKY3_BAR_COLORS: Record<string, string> = {
   not_using: "#E8D5D0",
   barely_using: "#F0DCC8",
@@ -1022,25 +1030,164 @@ const SKY3_BAR_COLORS: Record<string, string> = {
   wants_more: "#A5D6A7",
 };
 
-// ─── Sky3 Page (Redesigned) ─────────────────────────────────
+// ─── Sky3 Types ─────────────────────────────────────────────
 
 interface Sky3BandData { count: number; pct: number }
+interface Sky3CohortInfo { stable_count: number; excluded: { new_joins: number; paused: number; pending_cancel: number } }
 interface Sky3DistData {
   periodDays: number;
+  cohort: Sky3CohortInfo;
   current: Record<string, Sky3BandData>;
-  prior: Record<string, Sky3BandData>;
-  deltas: Record<string, { countChange: number; direction: string }>;
   takeaway: { trend: string; text: string };
   total: number;
 }
 
+interface Sky3Transition { from: string; to: string; count: number }
+interface Sky3MovementData {
+  period_days: number;
+  improving: { count: number; transitions: Sky3Transition[] };
+  stable: { count: number; by_band: Record<string, number> };
+  declining: { count: number; transitions: Sky3Transition[] };
+  cohort_size: number;
+}
+
+// ─── Sky3 Movement Detail Slide-Out ─────────────────────────
+
+function Sky3MovementPanel({
+  direction, movementData, periodWeeks, onClose
+}: {
+  direction: "improving" | "stable" | "declining";
+  movementData: Sky3MovementData;
+  periodWeeks: number;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [expandedTransition, setExpandedTransition] = useState<string | null>(null);
+  const [transitionMembers, setTransitionMembers] = useState<Record<string, { name: string; email: string }[]>>({});
+
+  const dirData = movementData[direction];
+  const count = dirData.count;
+  const title = direction === "improving" ? "Improving" : direction === "declining" ? "Declining" : "Stable";
+
+  const handleCopyEmails = async () => {
+    const res = await fetch(`/api/usage/sky3/movement/members?direction=${direction}&period_weeks=${periodWeeks}&fields=email&per_page=9999`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = () => {
+    window.location.href = `/api/usage/sky3/movement/members?direction=${direction}&period_weeks=${periodWeeks}&fields=email&per_page=9999&format=csv`;
+  };
+
+  const handleToggleTransition = async (key: string, from?: string, to?: string) => {
+    if (expandedTransition === key) {
+      setExpandedTransition(null);
+      return;
+    }
+    setExpandedTransition(key);
+    if (!transitionMembers[key]) {
+      const params = new URLSearchParams({ direction, period_weeks: String(periodWeeks), per_page: "100" });
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const res = await fetch(`/api/usage/sky3/movement/members?${params}`);
+      const d = await res.json();
+      setTransitionMembers(prev => ({ ...prev, [key]: d.members }));
+    }
+  };
+
+  // Build rows
+  let rows: { key: string; label: string; count: number; from?: string; to?: string }[] = [];
+  if (direction === "stable") {
+    const byBand = (dirData as Sky3MovementData["stable"]).by_band;
+    rows = SKY3_BANDS.map(band => ({
+      key: band,
+      label: `Still at ${SKY3_VISIT_LABELS[band]}`,
+      count: byBand[band] || 0,
+    })).filter(r => r.count > 0);
+  } else {
+    const transitions = (dirData as Sky3MovementData["improving"]).transitions;
+    rows = transitions.map(t => ({
+      key: `${t.from}|${t.to}`,
+      label: `${SKY3_VISIT_LABELS[t.from]} \u2192 ${SKY3_VISIT_LABELS[t.to]}`,
+      count: t.count,
+      from: t.from,
+      to: t.to,
+    }));
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <div className="font-semibold text-base">{title} ({count} members)</div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+        <div className="flex gap-2 p-4 border-b">
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+            <Copy size={14} /> {copied ? "Copied!" : "Copy All Emails"}
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleExport}>
+            <DownloadIcon className="size-3.5" /> Export CSV
+          </Button>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          <div className="flex flex-col gap-1">
+            {rows.map(row => (
+              <div key={row.key}>
+                <button
+                  className="flex items-center justify-between w-full py-2 px-2 rounded hover:bg-muted/30 text-sm"
+                  onClick={() => handleToggleTransition(row.key, row.from, row.to)}
+                >
+                  <div className="flex items-center gap-2">
+                    {expandedTransition === row.key ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
+                    <span>{row.label}</span>
+                  </div>
+                  <span className="text-muted-foreground tabular-nums">{row.count} member{row.count !== 1 ? "s" : ""}</span>
+                </button>
+                {expandedTransition === row.key && transitionMembers[row.key] && (
+                  <div className="ml-8 mb-2">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {transitionMembers[row.key].map((m, i) => (
+                          <tr key={i} className="border-b border-muted/30">
+                            <td className="py-1 truncate max-w-[160px]">{m.name}</td>
+                            <td className="py-1 text-muted-foreground truncate max-w-[200px]">{m.email}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Sky3 Page (Redesigned) ─────────────────────────────────
+
 export function UsageSky3Page() {
   const [periodWeeks, setPeriodWeeks] = useState(4);
   const [selectedBand, setSelectedBand] = useState<string | null>(null);
+  const [selectedDirection, setSelectedDirection] = useState<"improving" | "stable" | "declining" | null>(null);
   const periodDays = periodWeeks * 7;
 
   const { data: distData } = useUsageData<Sky3DistData>(
     `/api/usage/sky3/distribution?period_weeks=${periodWeeks}`,
+    [periodWeeks]
+  );
+
+  const { data: movementData } = useUsageData<Sky3MovementData>(
+    `/api/usage/sky3/movement?period_weeks=${periodWeeks}`,
     [periodWeeks]
   );
 
@@ -1077,32 +1224,39 @@ export function UsageSky3Page() {
         </div>
       )}
 
-      {/* Section 2: Where Members Are Now (with inline deltas) */}
+      {/* Section 2: Movement Summary */}
+      {movementData && (
+        <div className="mb-4 ml-1">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Movement (last {periodDays} days)</h2>
+          <div className="flex flex-col gap-2">
+            {([
+              { key: "improving" as const, icon: TrendingUp, color: "#27AE60", label: "improving", desc: "moved to a higher usage band" },
+              { key: "stable" as const, icon: ArrowRight, color: "#95A5A6", label: "stable", desc: "same band as last period" },
+              { key: "declining" as const, icon: TrendingDown, color: "#C0392B", label: "declining", desc: "moved to a lower usage band" },
+            ]).map(({ key, icon: Icon, color, label, desc }) => (
+              <button
+                key={key}
+                className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
+                onClick={() => setSelectedDirection(key)}
+              >
+                <Icon size={16} color={color} className="shrink-0" />
+                <span className="text-lg font-bold tabular-nums" style={{ color }}>{movementData[key].count}</span>
+                <span className="text-sm font-medium" style={{ color }}>{label}</span>
+                <span className="text-sm text-muted-foreground">{desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Section 3: Where Members Are Now (no inline deltas) */}
       <div>
-        <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days, vs. prior {periodDays} days)</span></h2>
+        <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
         <div className="flex flex-col gap-2">
           {distData && SKY3_BANDS.map(band => {
             const d = distData.current[band];
-            const delta = distData.deltas[band];
             if (!d) return null;
             const barWidth = (d.count / maxCount) * 100;
-
-            // Delta formatting with inverted logic for bad bands
-            const isBadBand = band === "not_using" || band === "barely_using";
-            let dColor = "#95A5A6";
-            let dText = "\u2014 no change";
-            let DIcon = Minus;
-            if (delta && Math.abs(delta.countChange) >= 2) {
-              if (delta.countChange < 0) {
-                dColor = isBadBand ? "#27AE60" : "#C0392B";
-                dText = `${Math.abs(delta.countChange)} fewer`;
-                DIcon = isBadBand ? TrendingUp : TrendingDown;
-              } else {
-                dColor = isBadBand ? "#C0392B" : "#27AE60";
-                dText = `${delta.countChange} more`;
-                DIcon = isBadBand ? TrendingDown : TrendingUp;
-              }
-            }
 
             return (
               <div
@@ -1119,9 +1273,6 @@ export function UsageSky3Page() {
                 </div>
                 <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
                 <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
-                <div className="w-[120px] flex items-center gap-1 text-sm" style={{ color: dColor, marginLeft: 16 }}>
-                  <DIcon size={14} /> {dText}
-                </div>
                 <div className="w-[20px] text-muted-foreground text-xs">&rsaquo;</div>
               </div>
             );
@@ -1129,7 +1280,7 @@ export function UsageSky3Page() {
         </div>
       </div>
 
-      {/* Footer: Export */}
+      {/* Footer: Export + Cohort Footnote */}
       <div className="mt-4 flex justify-end">
         <div className="text-right">
           <Button
@@ -1140,13 +1291,27 @@ export function UsageSky3Page() {
           >
             <DownloadIcon className="size-3.5" /> Export Full Member List
           </Button>
-          <p className="text-xs text-muted-foreground mt-1">Download a CSV with every Sky3 member's name, email, and current usage band.</p>
+          {distData?.cohort && (
+            <p className="text-xs text-muted-foreground mt-2" style={{ fontSize: "13px" }}>
+              Based on {distData.cohort.stable_count} members subscribed in both periods. Excludes {distData.cohort.excluded.new_joins} new joins, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Side Panel */}
+      {/* Side Panel: Distribution band detail */}
       {selectedBand && (
         <Sky3SidePanel band={selectedBand} periodWeeks={periodWeeks} onClose={() => setSelectedBand(null)} />
+      )}
+
+      {/* Side Panel: Movement detail */}
+      {selectedDirection && movementData && (
+        <Sky3MovementPanel
+          direction={selectedDirection}
+          movementData={movementData}
+          periodWeeks={periodWeeks}
+          onClose={() => setSelectedDirection(null)}
+        />
       )}
     </div>
   );

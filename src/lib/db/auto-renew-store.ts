@@ -216,7 +216,7 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
-     WHERE plan_state NOT IN ('Canceled', 'Invalid')
+     WHERE plan_state IN ('Valid Now', 'Paused')
      ORDER BY plan_name`
   );
 

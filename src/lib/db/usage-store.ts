@@ -183,7 +183,7 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         customer_name AS name,
         plan_category
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid')
+      WHERE plan_state IN ('Valid Now', 'Paused')
         AND plan_category IN ('MEMBER', 'SKY3')
         AND customer_email IS NOT NULL
     ),
@@ -222,7 +222,7 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         LOWER(customer_email) AS email,
         customer_name AS name
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid')
+      WHERE plan_state IN ('Valid Now', 'Paused')
         AND plan_category = 'SKY_TING_TV'
         AND customer_email IS NOT NULL
     ),
@@ -580,7 +580,7 @@ export async function getUsageScorecard(
     const { rows } = await pool.query(`
       SELECT COUNT(DISTINCT LOWER(customer_email)) AS cnt
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid')
+      WHERE plan_state IN ('Valid Now', 'Paused')
         AND plan_category IN (${cats})
         AND customer_email IS NOT NULL
     `);
@@ -927,7 +927,7 @@ export async function getUsageSegments(periodWeeks = 4): Promise<{
     const { rows: subRows } = await pool.query(`
       SELECT COUNT(DISTINCT LOWER(customer_email)) AS cnt
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid')
+      WHERE plan_state IN ('Valid Now', 'Paused')
         AND plan_category = $1
         AND customer_email IS NOT NULL
     `, [cat]);
@@ -1298,6 +1298,7 @@ export async function createAnnotation(weekStart: string, label: string): Promis
   return { id: rows[0].id, weekStart: rows[0].week_start, label: rows[0].label };
 }
 
+
 // ── Sky3 Distribution (redesigned page) ─────────────────────
 
 export interface Sky3BandData {
@@ -1305,93 +1306,320 @@ export interface Sky3BandData {
   pct: number;
 }
 
+export interface Sky3CohortInfo {
+  stable_count: number;
+  excluded: { new_joins: number; paused: number; pending_cancel: number };
+}
+
 export interface Sky3DistributionResponse {
   periodDays: number;
+  cohort: Sky3CohortInfo;
   current: Record<string, Sky3BandData>;
-  prior: Record<string, Sky3BandData>;
-  deltas: Record<string, { countChange: number; direction: string }>;
   takeaway: { trend: string; text: string };
   total: number;
 }
 
 /**
- * Get Sky3 distribution data — current bands, prior bands, deltas, and takeaway.
- * Computes tiers from visit_count at query time.
+ * Get the stable Sky3 cohort — members subscribed in both periods,
+ * excluding paused, pending-cancel, and new joins.
+ */
+async function getStableSky3Cohort(
+  pool: import("pg").Pool,
+  periodStart: string,
+  periodWeeks: number
+): Promise<{ stableEmails: Set<string>; cohort: Sky3CohortInfo }> {
+  // All Sky3 emails with their state
+  const { rows: activeRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email, plan_state, created_at
+    FROM auto_renews
+    WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel')
+      AND plan_category = 'SKY3'
+      AND customer_email IS NOT NULL
+    ORDER BY LOWER(customer_email), id DESC
+  `);
+
+  const pausedEmails = new Set<string>();
+  const pendingCancelEmails = new Set<string>();
+  const allActiveEmails = new Set<string>();
+  const newJoinEmails = new Set<string>();
+
+  for (const r of activeRows) {
+    const email = r.email as string;
+    allActiveEmails.add(email);
+    if (r.plan_state === "Paused") pausedEmails.add(email);
+    if (r.plan_state === "Pending Cancel") pendingCancelEmails.add(email);
+    if (r.created_at && new Date(r.created_at as string) >= new Date(periodStart)) {
+      newJoinEmails.add(email);
+    }
+  }
+
+  // Stable = active but not paused, not pending cancel, not new join
+  const stableEmails = new Set<string>();
+  for (const email of allActiveEmails) {
+    if (!pausedEmails.has(email) && !pendingCancelEmails.has(email) && !newJoinEmails.has(email)) {
+      stableEmails.add(email);
+    }
+  }
+
+  return {
+    stableEmails,
+    cohort: {
+      stable_count: stableEmails.size,
+      excluded: {
+        new_joins: newJoinEmails.size,
+        paused: pausedEmails.size,
+        pending_cancel: pendingCancelEmails.size,
+      },
+    },
+  };
+}
+
+/**
+ * Get Sky3 distribution data — cohort-filtered current bands and takeaway.
+ * Movement data is separate (getSky3Movement).
  */
 export async function getSky3Distribution(periodWeeks = 4): Promise<Sky3DistributionResponse> {
   const pool = getPool();
   const periodDays = periodWeeks * 7;
   const periodStart = weeksAgo(periodWeeks);
-  const priorPeriodStart = weeksAgo(periodWeeks * 2);
 
-  // Get current and prior period tier counts
-  const currentTiers = await getPeriodTierCounts(pool, ["sky3"], periodStart, periodWeeks);
-  const priorTiers = await getPeriodTierCounts(pool, ["sky3"], priorPeriodStart, periodWeeks);
-  const total = currentTiers.total;
+  // Get stable cohort
+  const { stableEmails, cohort } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+
+  // Get current period tiers for stable cohort only
+  const allTiers = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
+  const stableTiers = allTiers.filter(r => stableEmails.has(r.member_email));
+  const total = stableTiers.length;
 
   // Build band data
-  const bands = SKY3_TIER_ORDER;
   const current: Record<string, Sky3BandData> = {};
-  const prior: Record<string, Sky3BandData> = {};
-  const deltas: Record<string, { countChange: number; direction: string }> = {};
-
-  for (const band of bands) {
-    const curCount = currentTiers.tierCounts[band] || 0;
-    const priCount = priorTiers.tierCounts[band] || 0;
-    current[band] = { count: curCount, pct: total > 0 ? Math.round((curCount / total) * 1000) / 10 : 0 };
-    prior[band] = { count: priCount, pct: priorTiers.total > 0 ? Math.round((priCount / priorTiers.total) * 1000) / 10 : 0 };
-
-    const change = curCount - priCount;
-    // For bad bands (not_using, barely_using): decrease = improving
-    // For good bands (getting_there, full_use, wants_more): increase = improving
-    const isBadBand = band === "not_using" || band === "barely_using";
-    let direction = "steady";
-    if (Math.abs(change) >= 2) {
-      if (isBadBand) direction = change < 0 ? "improving" : "declining";
-      else direction = change > 0 ? "improving" : "declining";
-    }
-    deltas[band] = { countChange: change, direction };
+  const tierCounts: Record<string, number> = {};
+  for (const r of stableTiers) {
+    tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
+  }
+  for (const band of SKY3_TIER_ORDER) {
+    const count = tierCounts[band] || 0;
+    current[band] = { count, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 };
   }
 
-  // Takeaway logic (weighted scoring)
+  // Takeaway from movement data
+  const movement = await getSky3Movement(periodWeeks);
+  const { improving, declining } = movement;
+
+  // Takeaway scoring based on movement directions
   let score = 0;
-  const zeroChange = (current["not_using"]?.count ?? 0) - (prior["not_using"]?.count ?? 0);
-  if (zeroChange < 0) score += 3;
-  else if (zeroChange > 0) score -= 3;
+  const leavingZero = improving.transitions.filter(t => t.from === "not_using").reduce((s, t) => s + t.count, 0);
+  const enteringZero = declining.transitions.filter(t => t.to === "not_using").reduce((s, t) => s + t.count, 0);
+  if (leavingZero > enteringZero) score += 3;
+  else if (enteringZero > leavingZero) score -= 3;
 
-  const oneChange = (current["barely_using"]?.count ?? 0) - (prior["barely_using"]?.count ?? 0);
-  if (oneChange < 0) score += 1;
-  else if (oneChange > 0) score -= 1;
+  const leavingOne = improving.transitions.filter(t => t.from === "barely_using").reduce((s, t) => s + t.count, 0);
+  const enteringOne = declining.transitions.filter(t => t.to === "barely_using").reduce((s, t) => s + t.count, 0);
+  if (leavingOne > enteringOne) score += 1;
+  else if (enteringOne > leavingOne) score -= 1;
 
-  const twoPlusChange = (
-    (current["getting_there"]?.count ?? 0) + (current["full_use"]?.count ?? 0) + (current["wants_more"]?.count ?? 0)
-  ) - (
-    (prior["getting_there"]?.count ?? 0) + (prior["full_use"]?.count ?? 0) + (prior["wants_more"]?.count ?? 0)
-  );
-  if (twoPlusChange > 0) score += 2;
-  else if (twoPlusChange < 0) score -= 2;
+  const entering2Plus = improving.transitions.filter(t => SKY3_TIER_ORDER.indexOf(t.to) >= 2).reduce((s, t) => s + t.count, 0);
+  const leaving2Plus = declining.transitions.filter(t => SKY3_TIER_ORDER.indexOf(t.from) >= 2).reduce((s, t) => s + t.count, 0);
+  if (entering2Plus > leaving2Plus) score += 2;
+  else if (leaving2Plus > entering2Plus) score -= 2;
 
   let trend: string;
   let text: string;
   if (score >= 3) {
     trend = "improving";
-    text = `Usage is improving: ${Math.abs(zeroChange)} fewer members at 0 visits, ${twoPlusChange > 0 ? `${twoPlusChange} more` : "no change in"} members using 2+ classes.`;
-  } else if (score <= -3) {
-    trend = "declining";
-    text = `Usage needs attention: ${Math.abs(zeroChange)} more members at 0 visits than last period.`;
+    text = `Usage is improving: ${improving.count} members moved to a higher usage band, shrinking the 0-visit group.`;
   } else if (score > 0) {
     trend = "slightly_improving";
-    text = `Usage is moving in the right direction: ${Math.abs(zeroChange)} fewer members at 0 visits.`;
+    text = `Usage is trending up: ${improving.count} members moved to a higher usage band.`;
+  } else if (score <= -3) {
+    trend = "declining";
+    text = `Usage needs attention: ${declining.count} members dropped to a lower usage band.`;
   } else if (score < 0) {
     trend = "slightly_declining";
-    const biggestDrop = Math.abs(zeroChange) > Math.abs(twoPlusChange) ? `${Math.abs(zeroChange)} more at 0 visits` : `${Math.abs(twoPlusChange)} fewer using 2+ classes`;
-    text = `Usage dipped slightly: ${biggestDrop}.`;
+    text = `Usage dipped slightly: ${declining.count} members dropped to a lower usage band.`;
   } else {
     trend = "steady";
     text = "Usage is holding steady \u2014 no major shifts this period.";
   }
 
-  return { periodDays, current, prior, deltas, takeaway: { trend, text }, total };
+  return { periodDays, cohort, current, takeaway: { trend, text }, total };
+}
+
+// ── Sky3 Movement ──────────────────────────────────────────
+
+export interface Sky3Transition {
+  from: string;
+  to: string;
+  count: number;
+}
+
+export interface Sky3MovementResponse {
+  period_days: number;
+  improving: { count: number; transitions: Sky3Transition[] };
+  stable: { count: number; by_band: Record<string, number> };
+  declining: { count: number; transitions: Sky3Transition[] };
+  cohort_size: number;
+}
+
+/**
+ * Compare each stable cohort member's current band to their prior band.
+ */
+export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResponse> {
+  const pool = getPool();
+  const periodStart = weeksAgo(periodWeeks);
+  const priorPeriodStart = weeksAgo(periodWeeks * 2);
+
+  const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+
+  const currentTiers = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
+  const priorTiers = await getPeriodTiers(pool, ["sky3"], priorPeriodStart, periodWeeks);
+
+  const currentMap = new Map<string, string>();
+  const priorMap = new Map<string, string>();
+  for (const r of currentTiers) {
+    if (stableEmails.has(r.member_email)) currentMap.set(r.member_email, r.tier);
+  }
+  for (const r of priorTiers) {
+    if (stableEmails.has(r.member_email)) priorMap.set(r.member_email, r.tier);
+  }
+
+  const improvingTransitions: Record<string, number> = {};
+  const decliningTransitions: Record<string, number> = {};
+  const stableBands: Record<string, number> = {};
+  let improvingCount = 0;
+  let stableCount = 0;
+  let decliningCount = 0;
+
+  for (const email of stableEmails) {
+    const curBand = currentMap.get(email) || "not_using";
+    const priBand = priorMap.get(email) || "not_using";
+    const curIdx = SKY3_TIER_ORDER.indexOf(curBand);
+    const priIdx = SKY3_TIER_ORDER.indexOf(priBand);
+
+    if (curIdx > priIdx) {
+      improvingCount++;
+      const key = `${priBand}|${curBand}`;
+      improvingTransitions[key] = (improvingTransitions[key] || 0) + 1;
+    } else if (curIdx < priIdx) {
+      decliningCount++;
+      const key = `${priBand}|${curBand}`;
+      decliningTransitions[key] = (decliningTransitions[key] || 0) + 1;
+    } else {
+      stableCount++;
+      stableBands[curBand] = (stableBands[curBand] || 0) + 1;
+    }
+  }
+
+  const toTransitions = (map: Record<string, number>): Sky3Transition[] =>
+    Object.entries(map)
+      .map(([key, count]) => {
+        const [from, to] = key.split("|");
+        return { from, to, count };
+      })
+      .sort((a, b) => b.count - a.count);
+
+  return {
+    period_days: periodWeeks * 7,
+    improving: { count: improvingCount, transitions: toTransitions(improvingTransitions) },
+    stable: { count: stableCount, by_band: stableBands },
+    declining: { count: decliningCount, transitions: toTransitions(decliningTransitions) },
+    cohort_size: stableEmails.size,
+  };
+}
+
+/**
+ * Get Sky3 movement members for detail slide-out.
+ */
+export async function getSky3MovementMembers(params: {
+  direction: "improving" | "stable" | "declining";
+  periodWeeks?: number;
+  from?: string;
+  to?: string;
+  fieldsOnly?: "email";
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: { name: string; email: string; prior_band: string; current_band: string; prior_visits: number; current_visits: number }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { direction, periodWeeks = 4, from, to, fieldsOnly, page = 1, perPage = 25 } = params;
+  const periodStart = weeksAgo(periodWeeks);
+  const priorPeriodStart = weeksAgo(periodWeeks * 2);
+
+  const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+  const currentTiers = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
+  const priorTiers = await getPeriodTiers(pool, ["sky3"], priorPeriodStart, periodWeeks);
+
+  const currentMap = new Map<string, { tier: string; visits: number }>();
+  const priorMap = new Map<string, { tier: string; visits: number }>();
+  for (const r of currentTiers) {
+    if (stableEmails.has(r.member_email)) currentMap.set(r.member_email, { tier: r.tier, visits: r.total_visits });
+  }
+  for (const r of priorTiers) {
+    if (stableEmails.has(r.member_email)) priorMap.set(r.member_email, { tier: r.tier, visits: r.total_visits });
+  }
+
+  const matched: { email: string; priorBand: string; currentBand: string; priorVisits: number; currentVisits: number }[] = [];
+  for (const email of stableEmails) {
+    const cur = currentMap.get(email) || { tier: "not_using", visits: 0 };
+    const pri = priorMap.get(email) || { tier: "not_using", visits: 0 };
+    const curIdx = SKY3_TIER_ORDER.indexOf(cur.tier);
+    const priIdx = SKY3_TIER_ORDER.indexOf(pri.tier);
+
+    let dir: string;
+    if (curIdx > priIdx) dir = "improving";
+    else if (curIdx < priIdx) dir = "declining";
+    else dir = "stable";
+
+    if (dir !== direction) continue;
+    if (from && pri.tier !== from) continue;
+    if (to && cur.tier !== to) continue;
+
+    matched.push({ email, priorBand: pri.tier, currentBand: cur.tier, priorVisits: pri.visits, currentVisits: cur.visits });
+  }
+
+  const total = matched.length;
+
+  if (fieldsOnly === "email") {
+    return {
+      members: matched.map(m => ({ name: "", email: m.email, prior_band: m.priorBand, current_band: m.currentBand, prior_visits: m.priorVisits, current_visits: m.currentVisits })),
+      total,
+      page: 1,
+    };
+  }
+
+  const offset = (page - 1) * perPage;
+  const pageItems = matched.slice(offset, offset + perPage);
+  if (pageItems.length === 0) return { members: [], total, page };
+
+  const emails = pageItems.map(m => m.email);
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email,
+      customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [emails]);
+
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, nr.name as string);
+
+  return {
+    members: pageItems.map(m => ({
+      name: nameMap.get(m.email) || m.email,
+      email: m.email,
+      prior_band: m.priorBand,
+      current_band: m.currentBand,
+      prior_visits: m.priorVisits,
+      current_visits: m.currentVisits,
+    })),
+    total,
+    page,
+  };
 }
 
 /**
