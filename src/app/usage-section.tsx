@@ -1077,14 +1077,33 @@ export function UsageSky3Page() {
         </div>
       )}
 
-      {/* Section 2: Where Members Are Now */}
+      {/* Section 2: Where Members Are Now (with inline deltas) */}
       <div>
-        <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
+        <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days, vs. prior {periodDays} days)</span></h2>
         <div className="flex flex-col gap-2">
           {distData && SKY3_BANDS.map(band => {
             const d = distData.current[band];
+            const delta = distData.deltas[band];
             if (!d) return null;
             const barWidth = (d.count / maxCount) * 100;
+
+            // Delta formatting with inverted logic for bad bands
+            const isBadBand = band === "not_using" || band === "barely_using";
+            let dColor = "#95A5A6";
+            let dText = "\u2014 no change";
+            let DIcon = Minus;
+            if (delta && Math.abs(delta.countChange) >= 2) {
+              if (delta.countChange < 0) {
+                dColor = isBadBand ? "#27AE60" : "#C0392B";
+                dText = `${Math.abs(delta.countChange)} fewer`;
+                DIcon = isBadBand ? TrendingUp : TrendingDown;
+              } else {
+                dColor = isBadBand ? "#C0392B" : "#27AE60";
+                dText = `${delta.countChange} more`;
+                DIcon = isBadBand ? TrendingDown : TrendingUp;
+              }
+            }
+
             return (
               <div
                 key={band}
@@ -1100,54 +1119,10 @@ export function UsageSky3Page() {
                 </div>
                 <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
                 <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
+                <div className="w-[120px] flex items-center gap-1 text-sm" style={{ color: dColor, marginLeft: 16 }}>
+                  <DIcon size={14} /> {dText}
+                </div>
                 <div className="w-[20px] text-muted-foreground text-xs">&rsaquo;</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Section 3: How That's Changing */}
-      <div className="mt-4">
-        <h2 className="text-lg font-bold mb-3">How That&apos;s Changing <span className="text-sm font-normal text-muted-foreground">(vs. prior {periodDays} days)</span></h2>
-        <div className="flex flex-col gap-2">
-          {distData && SKY3_BANDS.map(band => {
-            const d = distData.current[band];
-            const delta = distData.deltas[band];
-            if (!d || !delta) return null;
-            const barWidth = (d.count / maxCount) * 100;
-            const isBadBand = band === "not_using" || band === "barely_using";
-            let deltaColor = "#95A5A6";
-            let deltaText = "\u2014 no change";
-            if (Math.abs(delta.countChange) >= 2) {
-              if (delta.countChange < 0) {
-                deltaColor = isBadBand ? "#27AE60" : "#C0392B";
-                deltaText = `${Math.abs(delta.countChange)} fewer`;
-              } else {
-                deltaColor = isBadBand ? "#C0392B" : "#27AE60";
-                deltaText = `${delta.countChange} more`;
-              }
-            }
-            const DeltaIcon = delta.countChange < 0
-              ? (isBadBand ? TrendingUp : TrendingDown)
-              : delta.countChange > 0
-              ? (isBadBand ? TrendingDown : TrendingUp)
-              : Minus;
-
-            return (
-              <div key={band} className="flex items-center gap-3">
-                <div className="w-[220px] shrink-0 text-sm font-medium">{SKY3_BAND_LABELS[band]}</div>
-                <div className="flex-1 relative h-10 rounded bg-muted/20">
-                  <div
-                    className="absolute top-0 left-0 h-full rounded"
-                    style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band] }}
-                  />
-                </div>
-                <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
-                <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
-                <div className="w-[120px] flex items-center gap-1 text-sm" style={{ color: deltaColor }}>
-                  <DeltaIcon size={14} /> {deltaText}
-                </div>
               </div>
             );
           })}
