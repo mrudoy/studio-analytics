@@ -1038,39 +1038,65 @@ interface Sky3DistData {
   periodDays: number;
   cohort: Sky3CohortInfo;
   current: Record<string, Sky3BandData>;
-  takeaway: { trend: string; text: string };
   total: number;
 }
 
 interface Sky3Transition { from: string; to: string; count: number }
+interface Sky3MovementGroup { count: number; transitions: Sky3Transition[] }
 interface Sky3MovementData {
   period_days: number;
-  improving: { count: number; transitions: Sky3Transition[] };
-  stable: { count: number; by_band: Record<string, number> };
-  declining: { count: number; transitions: Sky3Transition[] };
+  boundary_crossings: { into_using: Sky3MovementGroup; into_risk: Sky3MovementGroup };
+  within_risk: { improving: Sky3MovementGroup; declining: Sky3MovementGroup };
+  within_using: { improving: Sky3MovementGroup; declining: Sky3MovementGroup };
+  stable: { count: number };
   cohort_size: number;
 }
 
-// ─── Sky3 Movement Detail Slide-Out ─────────────────────────
+type MovementGroupKey =
+  | "boundary_into_using" | "boundary_into_risk"
+  | "within_risk_improving" | "within_risk_declining"
+  | "within_using_improving" | "within_using_declining";
 
-function Sky3MovementPanel({
-  direction, movementData, periodWeeks, onClose
+// ─── Sky3 Churn-Risk Movement Slide-Out ─────────────────────
+
+function Sky3ChurnPanel({
+  groupKey, title, transitions, periodWeeks, onClose
 }: {
-  direction: "improving" | "stable" | "declining";
-  movementData: Sky3MovementData;
+  groupKey: MovementGroupKey;
+  title: string;
+  transitions: Sky3Transition[];
   periodWeeks: number;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const [expandedTransition, setExpandedTransition] = useState<string | null>(null);
-  const [transitionMembers, setTransitionMembers] = useState<Record<string, { name: string; email: string }[]>>({});
+  const [filterTransition, setFilterTransition] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const perPage = 25;
 
-  const dirData = movementData[direction];
-  const count = dirData.count;
-  const title = direction === "improving" ? "Improving" : direction === "declining" ? "Declining" : "Stable";
+  // Build fetch params
+  const params = new URLSearchParams({ group: groupKey, period_weeks: String(periodWeeks), page: String(page), per_page: String(perPage) });
+  if (filterTransition) {
+    const [from, to] = filterTransition.split("|");
+    params.set("from", from);
+    params.set("to", to);
+  }
+
+  const { data } = useUsageData<{
+    members: { name: string; email: string; prior_band: string; current_band: string; prior_visits: number; current_visits: number }[];
+    total: number; page: number;
+  }>(`/api/usage/sky3/movement/members?${params}`, [groupKey, periodWeeks, page, filterTransition]);
+
+  const totalCount = data?.total ?? 0;
+  const totalPages = Math.ceil(totalCount / perPage);
 
   const handleCopyEmails = async () => {
-    const res = await fetch(`/api/usage/sky3/movement/members?direction=${direction}&period_weeks=${periodWeeks}&fields=email&per_page=9999`);
+    const p = new URLSearchParams({ group: groupKey, period_weeks: String(periodWeeks), fields: "email", per_page: "9999" });
+    if (filterTransition) {
+      const [from, to] = filterTransition.split("|");
+      p.set("from", from);
+      p.set("to", to);
+    }
+    const res = await fetch(`/api/usage/sky3/movement/members?${p}`);
     const d = await res.json();
     const emails = d.members.map((m: { email: string }) => m.email).join(", ");
     await navigator.clipboard.writeText(emails);
@@ -1078,107 +1104,96 @@ function Sky3MovementPanel({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleExport = () => {
-    window.location.href = `/api/usage/sky3/movement/members?direction=${direction}&period_weeks=${periodWeeks}&fields=email&per_page=9999&format=csv`;
+  const handleToggleFilter = (from: string, to: string) => {
+    const key = `${from}|${to}`;
+    setFilterTransition(prev => prev === key ? null : key);
+    setPage(1);
   };
-
-  const handleToggleTransition = async (key: string, from?: string, to?: string) => {
-    if (expandedTransition === key) {
-      setExpandedTransition(null);
-      return;
-    }
-    setExpandedTransition(key);
-    if (!transitionMembers[key]) {
-      const params = new URLSearchParams({ direction, period_weeks: String(periodWeeks), per_page: "100" });
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      const res = await fetch(`/api/usage/sky3/movement/members?${params}`);
-      const d = await res.json();
-      setTransitionMembers(prev => ({ ...prev, [key]: d.members }));
-    }
-  };
-
-  // Build rows
-  let rows: { key: string; label: string; count: number; from?: string; to?: string }[] = [];
-  if (direction === "stable") {
-    const byBand = (dirData as Sky3MovementData["stable"]).by_band;
-    rows = SKY3_BANDS.map(band => ({
-      key: band,
-      label: `Still at ${SKY3_VISIT_LABELS[band]}`,
-      count: byBand[band] || 0,
-    })).filter(r => r.count > 0);
-  } else {
-    const transitions = (dirData as Sky3MovementData["improving"]).transitions;
-    rows = transitions.map(t => ({
-      key: `${t.from}|${t.to}`,
-      label: `${SKY3_VISIT_LABELS[t.from]} \u2192 ${SKY3_VISIT_LABELS[t.to]}`,
-      count: t.count,
-      from: t.from,
-      to: t.to,
-    }));
-  }
 
   return (
     <>
       <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
       <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
         <div className="flex items-center justify-between p-4 border-b">
-          <div>
-            <div className="font-semibold text-base">{title} ({count} members)</div>
-          </div>
+          <div className="font-semibold text-base">{title}</div>
           <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
         </div>
-        <div className="flex gap-2 p-4 border-b">
-          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
-            <Copy size={14} /> {copied ? "Copied!" : "Copy All Emails"}
-          </Button>
-          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleExport}>
-            <DownloadIcon className="size-3.5" /> Export CSV
-          </Button>
-        </div>
-        <div className="flex-1 overflow-auto p-4">
-          <div className="flex flex-col gap-1">
-            {rows.map(row => (
-              <div key={row.key}>
+
+        {/* Transition breakdown */}
+        {transitions.length > 0 && (
+          <div className="px-4 pt-3 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-2">Breakdown:</div>
+            {transitions.map(t => {
+              const key = `${t.from}|${t.to}`;
+              const isActive = filterTransition === key;
+              return (
                 <button
-                  className="flex items-center justify-between w-full py-2 px-2 rounded hover:bg-muted/30 text-sm"
-                  onClick={() => handleToggleTransition(row.key, row.from, row.to)}
+                  key={key}
+                  className={`flex items-center justify-between w-full py-1.5 px-2 rounded text-sm hover:bg-muted/30 ${isActive ? "bg-muted/40 font-medium" : ""}`}
+                  onClick={() => handleToggleFilter(t.from, t.to)}
                 >
-                  <div className="flex items-center gap-2">
-                    {expandedTransition === row.key ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
-                    <span>{row.label}</span>
-                  </div>
-                  <span className="text-muted-foreground tabular-nums">{row.count} member{row.count !== 1 ? "s" : ""}</span>
+                  <span>{SKY3_VISIT_LABELS[t.from]} → {SKY3_VISIT_LABELS[t.to]}</span>
+                  <span className="text-muted-foreground tabular-nums">{t.count} member{t.count !== 1 ? "s" : ""}</span>
                 </button>
-                {expandedTransition === row.key && transitionMembers[row.key] && (
-                  <div className="ml-8 mb-2">
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {transitionMembers[row.key].map((m, i) => (
-                          <tr key={i} className="border-b border-muted/30">
-                            <td className="py-1 truncate max-w-[160px]">{m.name}</td>
-                            <td className="py-1 text-muted-foreground truncate max-w-[200px]">{m.email}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-2 px-4 py-3 border-b">
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+            <Copy size={14} /> {copied ? "Copied!" : `Copy All ${totalCount} Emails`}
+          </Button>
         </div>
+
+        {/* Member table */}
+        <div className="flex-1 overflow-auto p-4">
+          {data?.members.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                  <th className="text-right py-1.5 text-xs text-muted-foreground font-medium">Movement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((m, i) => (
+                  <tr key={i} className="border-b border-muted/30">
+                    <td className="py-1.5 truncate max-w-[140px]">{m.name}</td>
+                    <td className="py-1.5 text-muted-foreground truncate max-w-[180px]">{m.email}</td>
+                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{m.prior_visits} → {m.current_visits}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No members.</p>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, totalCount)} of {totalCount}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-// ─── Sky3 Page (Redesigned) ─────────────────────────────────
+// ─── Sky3 Page (Churn-Risk Redesign) ────────────────────────
 
 export function UsageSky3Page() {
   const [periodWeeks, setPeriodWeeks] = useState(4);
   const [selectedBand, setSelectedBand] = useState<string | null>(null);
-  const [selectedDirection, setSelectedDirection] = useState<"improving" | "stable" | "declining" | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<{ key: MovementGroupKey; title: string; transitions: Sky3Transition[] } | null>(null);
   const periodDays = periodWeeks * 7;
 
   const { data: distData } = useUsageData<Sky3DistData>(
@@ -1193,17 +1208,9 @@ export function UsageSky3Page() {
 
   const maxCount = distData ? Math.max(...SKY3_BANDS.map(b => distData.current[b]?.count ?? 0), 1) : 1;
 
-  // Takeaway icon + color
-  const takeawayColor = distData?.takeaway.trend === "improving" || distData?.takeaway.trend === "slightly_improving"
-    ? "#27AE60"
-    : distData?.takeaway.trend === "declining" || distData?.takeaway.trend === "slightly_declining"
-    ? "#C0392B"
-    : "#95A5A6";
-  const TakeawayIcon = distData?.takeaway.trend === "improving" || distData?.takeaway.trend === "slightly_improving"
-    ? TrendingUp
-    : distData?.takeaway.trend === "declining" || distData?.takeaway.trend === "slightly_declining"
-    ? TrendingDown
-    : Minus;
+  const openGroup = (key: MovementGroupKey, title: string, transitions: Sky3Transition[]) => {
+    setSelectedGroup({ key, title, transitions });
+  };
 
   return (
     <div className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
@@ -1216,69 +1223,117 @@ export function UsageSky3Page() {
         <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
 
-      {/* Section 1: Takeaway */}
-      {distData?.takeaway && (
-        <div className="flex items-start gap-2 mb-4 ml-1">
-          <TakeawayIcon size={18} color={takeawayColor} className="mt-0.5 shrink-0" />
-          <span className="text-base font-medium" style={{ color: takeawayColor }}>{distData.takeaway.text}</span>
-        </div>
-      )}
-
-      {/* Section 2: Movement Summary */}
-      {movementData && (
-        <div className="mb-4 ml-1">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Movement (last {periodDays} days)</h2>
-          <div className="flex flex-col gap-2">
-            {([
-              { key: "improving" as const, icon: TrendingUp, color: "#27AE60", label: "improving", desc: "moved to a higher usage band" },
-              { key: "stable" as const, icon: ArrowRight, color: "#95A5A6", label: "stable", desc: "same band as last period" },
-              { key: "declining" as const, icon: TrendingDown, color: "#C0392B", label: "declining", desc: "moved to a lower usage band" },
-            ]).map(({ key, icon: Icon, color, label, desc }) => (
-              <button
-                key={key}
-                className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
-                onClick={() => setSelectedDirection(key)}
-              >
-                <Icon size={16} color={color} className="shrink-0" />
-                <span className="text-lg font-bold tabular-nums" style={{ color }}>{movementData[key].count}</span>
-                <span className="text-sm font-medium" style={{ color }}>{label}</span>
-                <span className="text-sm text-muted-foreground">{desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Section 3: Where Members Are Now (no inline deltas) */}
+      {/* Section 1: Where Members Are Now (with churn-risk boundary line) */}
       <div>
         <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
-        <div className="flex flex-col gap-2">
-          {distData && SKY3_BANDS.map(band => {
+        <div className="flex flex-col">
+          {distData && SKY3_BANDS.map((band, idx) => {
             const d = distData.current[band];
             if (!d) return null;
             const barWidth = (d.count / maxCount) * 100;
 
             return (
-              <div
-                key={band}
-                className="flex items-center gap-3 cursor-pointer group"
-                onClick={() => setSelectedBand(band)}
-              >
-                <div className="w-[220px] shrink-0 text-sm font-medium">{SKY3_BAND_LABELS[band]}</div>
-                <div className="flex-1 relative h-10 rounded bg-muted/20 group-hover:bg-muted/30 transition-colors">
-                  <div
-                    className="absolute top-0 left-0 h-full rounded transition-all"
-                    style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band] }}
-                  />
+              <React.Fragment key={band}>
+                {/* Churn-risk boundary line between barely_using and getting_there */}
+                {band === "getting_there" && (
+                  <div className="my-3" style={{ borderTop: "1px dashed #D5D5D5" }} />
+                )}
+                <div
+                  className="flex items-center gap-3 cursor-pointer group"
+                  style={{ marginBottom: band === "getting_there" || band === "barely_using" ? 0 : 8, marginTop: idx === 0 ? 0 : (band === "getting_there" ? 0 : 8) }}
+                  onClick={() => setSelectedBand(band)}
+                >
+                  <div className="w-[220px] shrink-0 text-sm font-medium">{SKY3_BAND_LABELS[band]}</div>
+                  <div className="flex-1 relative h-10 rounded bg-muted/20 group-hover:bg-muted/30 transition-colors">
+                    <div
+                      className="absolute top-0 left-0 h-full rounded transition-all"
+                      style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band] }}
+                    />
+                  </div>
+                  <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
+                  <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
+                  <div className="w-[20px] text-muted-foreground text-xs">&rsaquo;</div>
                 </div>
-                <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
-                <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
-                <div className="w-[20px] text-muted-foreground text-xs">&rsaquo;</div>
-              </div>
+              </React.Fragment>
             );
           })}
         </div>
       </div>
+
+      {/* Section 2: Churn Risk Movement */}
+      {movementData && (
+        <div className="mt-2">
+          <h2 className="text-lg font-bold mb-3">Churn Risk Movement <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
+
+          {/* PRIMARY: Boundary crossings */}
+          <div className="flex flex-col gap-1 mb-4">
+            <button
+              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-2 transition-colors"
+              onClick={() => openGroup("boundary_into_using", `Crossed into Getting There or higher (${movementData.boundary_crossings.into_using.count})`, movementData.boundary_crossings.into_using.transitions)}
+            >
+              <TrendingUp size={16} color="#27AE60" className="shrink-0" />
+              <span className="font-bold tabular-nums" style={{ color: "#27AE60", fontSize: 16 }}>{movementData.boundary_crossings.into_using.count}</span>
+              <span className="text-sm" style={{ color: "#27AE60" }}>crossed into Getting There or higher</span>
+              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+            </button>
+            <button
+              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-2 transition-colors"
+              onClick={() => openGroup("boundary_into_risk", `Fell into Barely Using or lower (${movementData.boundary_crossings.into_risk.count})`, movementData.boundary_crossings.into_risk.transitions)}
+            >
+              <TrendingDown size={16} color="#C0392B" className="shrink-0" />
+              <span className="font-bold tabular-nums" style={{ color: "#C0392B", fontSize: 16 }}>{movementData.boundary_crossings.into_risk.count}</span>
+              <span className="text-sm" style={{ color: "#C0392B" }}>fell into Barely Using or lower</span>
+              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+            </button>
+          </div>
+
+          {/* SECONDARY: Within risk zone */}
+          <div className="ml-4 mb-4">
+            <div className="text-xs text-muted-foreground mb-2">Within the risk zone (0-1 visits)</div>
+            <button
+              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
+              onClick={() => openGroup("within_risk_improving", `Moved from 0 → 1 visit (${movementData.within_risk.improving.count})`, movementData.within_risk.improving.transitions)}
+            >
+              <TrendingUp size={14} color="#27AE60" className="shrink-0" />
+              <span className="font-bold tabular-nums text-sm" style={{ color: "#27AE60" }}>{movementData.within_risk.improving.count}</span>
+              <span className="text-[13px]" style={{ color: "#27AE60" }}>moved from 0 → 1 visit (building a habit)</span>
+              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+            </button>
+            <button
+              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
+              onClick={() => openGroup("within_risk_declining", `Moved from 1 → 0 visits (${movementData.within_risk.declining.count})`, movementData.within_risk.declining.transitions)}
+            >
+              <TrendingDown size={14} color="#C0392B" className="shrink-0" />
+              <span className="font-bold tabular-nums text-sm" style={{ color: "#C0392B" }}>{movementData.within_risk.declining.count}</span>
+              <span className="text-[13px]" style={{ color: "#C0392B" }}>moved from 1 → 0 visits (giving up)</span>
+              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+            </button>
+          </div>
+
+          {/* TERTIARY: Within using zone */}
+          <div className="ml-4">
+            <div className="text-xs text-muted-foreground mb-2">Within the using zone (2+ visits)</div>
+            <button
+              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
+              onClick={() => openGroup("within_using_improving", `Moved up in using zone (${movementData.within_using.improving.count})`, movementData.within_using.improving.transitions)}
+            >
+              <TrendingUp size={14} color="#27AE60" className="shrink-0" />
+              <span className="font-bold tabular-nums text-sm" style={{ color: "#27AE60" }}>{movementData.within_using.improving.count}</span>
+              <span className="text-[13px]" style={{ color: "#27AE60" }}>moved up (upsell signals)</span>
+              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+            </button>
+            <button
+              className="flex items-center gap-3 text-left hover:bg-muted/20 rounded px-2 py-1.5 transition-colors"
+              onClick={() => openGroup("within_using_declining", `Moved down in using zone (${movementData.within_using.declining.count})`, movementData.within_using.declining.transitions)}
+            >
+              <TrendingDown size={14} color="#C0392B" className="shrink-0" />
+              <span className="font-bold tabular-nums text-sm" style={{ color: "#C0392B" }}>{movementData.within_using.declining.count}</span>
+              <span className="text-[13px]" style={{ color: "#C0392B" }}>moved down (still using, watch list)</span>
+              <span className="ml-auto text-muted-foreground text-xs">&rsaquo;</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Footer: Export + Cohort Footnote */}
       <div className="mt-4 flex justify-end">
@@ -1304,13 +1359,14 @@ export function UsageSky3Page() {
         <Sky3SidePanel band={selectedBand} periodWeeks={periodWeeks} onClose={() => setSelectedBand(null)} />
       )}
 
-      {/* Side Panel: Movement detail */}
-      {selectedDirection && movementData && (
-        <Sky3MovementPanel
-          direction={selectedDirection}
-          movementData={movementData}
+      {/* Side Panel: Churn-risk movement detail */}
+      {selectedGroup && (
+        <Sky3ChurnPanel
+          groupKey={selectedGroup.key}
+          title={selectedGroup.title}
+          transitions={selectedGroup.transitions}
           periodWeeks={periodWeeks}
-          onClose={() => setSelectedDirection(null)}
+          onClose={() => setSelectedGroup(null)}
         />
       )}
     </div>

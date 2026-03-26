@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSky3MovementMembers } from "@/lib/db/usage-store";
 
+const VALID_GROUPS = [
+  "boundary_into_using",
+  "boundary_into_risk",
+  "within_risk_improving",
+  "within_risk_declining",
+  "within_using_improving",
+  "within_using_declining",
+] as const;
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const direction = searchParams.get("direction") as "improving" | "stable" | "declining";
+  const group = searchParams.get("group") as typeof VALID_GROUPS[number];
   const periodWeeks = Number(searchParams.get("period_weeks")) || 4;
   const from = searchParams.get("from") || undefined;
   const to = searchParams.get("to") || undefined;
@@ -11,12 +20,12 @@ export async function GET(request: NextRequest) {
   const page = Number(searchParams.get("page")) || 1;
   const perPage = Number(searchParams.get("per_page")) || 25;
 
-  if (!direction || !["improving", "stable", "declining"].includes(direction)) {
-    return NextResponse.json({ error: "direction param required (improving|stable|declining)" }, { status: 400 });
+  if (!group || !VALID_GROUPS.includes(group)) {
+    return NextResponse.json({ error: `group param required (${VALID_GROUPS.join("|")})` }, { status: 400 });
   }
 
   try {
-    const data = await getSky3MovementMembers({ direction, periodWeeks, from, to, fieldsOnly, page, perPage });
+    const data = await getSky3MovementMembers({ group, periodWeeks, from, to, fieldsOnly, page, perPage });
     return NextResponse.json(data);
   } catch (err) {
     console.error("[api/usage/sky3/movement/members] Error:", err);

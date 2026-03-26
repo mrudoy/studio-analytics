@@ -1315,7 +1315,6 @@ export interface Sky3DistributionResponse {
   periodDays: number;
   cohort: Sky3CohortInfo;
   current: Record<string, Sky3BandData>;
-  takeaway: { trend: string; text: string };
   total: number;
 }
 
@@ -1376,8 +1375,8 @@ async function getStableSky3Cohort(
 }
 
 /**
- * Get Sky3 distribution data — cohort-filtered current bands and takeaway.
- * Movement data is separate (getSky3Movement).
+ * Get Sky3 distribution data — cohort-filtered current bands.
+ * No takeaway — the churn-risk movement section IS the takeaway.
  */
 export async function getSky3Distribution(periodWeeks = 4): Promise<Sky3DistributionResponse> {
   const pool = getPool();
@@ -1403,50 +1402,13 @@ export async function getSky3Distribution(periodWeeks = 4): Promise<Sky3Distribu
     current[band] = { count, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 };
   }
 
-  // Takeaway from movement data
-  const movement = await getSky3Movement(periodWeeks);
-  const { improving, declining } = movement;
-
-  // Takeaway scoring based on movement directions
-  let score = 0;
-  const leavingZero = improving.transitions.filter(t => t.from === "not_using").reduce((s, t) => s + t.count, 0);
-  const enteringZero = declining.transitions.filter(t => t.to === "not_using").reduce((s, t) => s + t.count, 0);
-  if (leavingZero > enteringZero) score += 3;
-  else if (enteringZero > leavingZero) score -= 3;
-
-  const leavingOne = improving.transitions.filter(t => t.from === "barely_using").reduce((s, t) => s + t.count, 0);
-  const enteringOne = declining.transitions.filter(t => t.to === "barely_using").reduce((s, t) => s + t.count, 0);
-  if (leavingOne > enteringOne) score += 1;
-  else if (enteringOne > leavingOne) score -= 1;
-
-  const entering2Plus = improving.transitions.filter(t => SKY3_TIER_ORDER.indexOf(t.to) >= 2).reduce((s, t) => s + t.count, 0);
-  const leaving2Plus = declining.transitions.filter(t => SKY3_TIER_ORDER.indexOf(t.from) >= 2).reduce((s, t) => s + t.count, 0);
-  if (entering2Plus > leaving2Plus) score += 2;
-  else if (leaving2Plus > entering2Plus) score -= 2;
-
-  let trend: string;
-  let text: string;
-  if (score >= 3) {
-    trend = "improving";
-    text = `Usage is improving: ${improving.count} members moved to a higher usage band, shrinking the 0-visit group.`;
-  } else if (score > 0) {
-    trend = "slightly_improving";
-    text = `Usage is trending up: ${improving.count} members moved to a higher usage band.`;
-  } else if (score <= -3) {
-    trend = "declining";
-    text = `Usage needs attention: ${declining.count} members dropped to a lower usage band.`;
-  } else if (score < 0) {
-    trend = "slightly_declining";
-    text = `Usage dipped slightly: ${declining.count} members dropped to a lower usage band.`;
-  } else {
-    trend = "steady";
-    text = "Usage is holding steady \u2014 no major shifts this period.";
-  }
-
-  return { periodDays, cohort, current, takeaway: { trend, text }, total };
+  return { periodDays, cohort, current, total };
 }
 
-// ── Sky3 Movement ──────────────────────────────────────────
+// ── Sky3 Movement (Churn-Risk Framing) ─────────────────────
+
+const RISK_BANDS = ["not_using", "barely_using"];
+const USING_BANDS = ["getting_there", "full_use", "wants_more"];
 
 export interface Sky3Transition {
   from: string;
@@ -1456,14 +1418,25 @@ export interface Sky3Transition {
 
 export interface Sky3MovementResponse {
   period_days: number;
-  improving: { count: number; transitions: Sky3Transition[] };
-  stable: { count: number; by_band: Record<string, number> };
-  declining: { count: number; transitions: Sky3Transition[] };
+  boundary_crossings: {
+    into_using: { count: number; transitions: Sky3Transition[] };
+    into_risk: { count: number; transitions: Sky3Transition[] };
+  };
+  within_risk: {
+    improving: { count: number; transitions: Sky3Transition[] };
+    declining: { count: number; transitions: Sky3Transition[] };
+  };
+  within_using: {
+    improving: { count: number; transitions: Sky3Transition[] };
+    declining: { count: number; transitions: Sky3Transition[] };
+  };
+  stable: { count: number };
   cohort_size: number;
 }
 
 /**
  * Compare each stable cohort member's current band to their prior band.
+ * Organized around the churn-risk boundary (between barely_using and getting_there).
  */
 export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResponse> {
   const pool = getPool();
@@ -1484,30 +1457,54 @@ export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResp
     if (stableEmails.has(r.member_email)) priorMap.set(r.member_email, r.tier);
   }
 
-  const improvingTransitions: Record<string, number> = {};
-  const decliningTransitions: Record<string, number> = {};
-  const stableBands: Record<string, number> = {};
-  let improvingCount = 0;
+  // Categorize each member's movement
+  const buckets: Record<string, Record<string, number>> = {
+    boundary_into_using: {},
+    boundary_into_risk: {},
+    within_risk_improving: {},
+    within_risk_declining: {},
+    within_using_improving: {},
+    within_using_declining: {},
+  };
   let stableCount = 0;
-  let decliningCount = 0;
 
   for (const email of stableEmails) {
     const curBand = currentMap.get(email) || "not_using";
     const priBand = priorMap.get(email) || "not_using";
+
+    if (curBand === priBand) {
+      stableCount++;
+      continue;
+    }
+
+    const priInRisk = RISK_BANDS.includes(priBand);
+    const curInRisk = RISK_BANDS.includes(curBand);
+    const priInUsing = USING_BANDS.includes(priBand);
+    const curInUsing = USING_BANDS.includes(curBand);
     const curIdx = SKY3_TIER_ORDER.indexOf(curBand);
     const priIdx = SKY3_TIER_ORDER.indexOf(priBand);
+    const key = `${priBand}|${curBand}`;
 
-    if (curIdx > priIdx) {
-      improvingCount++;
-      const key = `${priBand}|${curBand}`;
-      improvingTransitions[key] = (improvingTransitions[key] || 0) + 1;
-    } else if (curIdx < priIdx) {
-      decliningCount++;
-      const key = `${priBand}|${curBand}`;
-      decliningTransitions[key] = (decliningTransitions[key] || 0) + 1;
-    } else {
-      stableCount++;
-      stableBands[curBand] = (stableBands[curBand] || 0) + 1;
+    if (priInRisk && curInUsing) {
+      // Crossed UP into using zone
+      buckets.boundary_into_using[key] = (buckets.boundary_into_using[key] || 0) + 1;
+    } else if (priInUsing && curInRisk) {
+      // Crossed DOWN into risk zone
+      buckets.boundary_into_risk[key] = (buckets.boundary_into_risk[key] || 0) + 1;
+    } else if (priInRisk && curInRisk) {
+      // Within risk zone
+      if (curIdx > priIdx) {
+        buckets.within_risk_improving[key] = (buckets.within_risk_improving[key] || 0) + 1;
+      } else {
+        buckets.within_risk_declining[key] = (buckets.within_risk_declining[key] || 0) + 1;
+      }
+    } else if (priInUsing && curInUsing) {
+      // Within using zone
+      if (curIdx > priIdx) {
+        buckets.within_using_improving[key] = (buckets.within_using_improving[key] || 0) + 1;
+      } else {
+        buckets.within_using_declining[key] = (buckets.within_using_declining[key] || 0) + 1;
+      }
     }
   }
 
@@ -1519,20 +1516,42 @@ export async function getSky3Movement(periodWeeks = 4): Promise<Sky3MovementResp
       })
       .sort((a, b) => b.count - a.count);
 
+  const sumCounts = (map: Record<string, number>) => Object.values(map).reduce((s, c) => s + c, 0);
+
   return {
     period_days: periodWeeks * 7,
-    improving: { count: improvingCount, transitions: toTransitions(improvingTransitions) },
-    stable: { count: stableCount, by_band: stableBands },
-    declining: { count: decliningCount, transitions: toTransitions(decliningTransitions) },
+    boundary_crossings: {
+      into_using: { count: sumCounts(buckets.boundary_into_using), transitions: toTransitions(buckets.boundary_into_using) },
+      into_risk: { count: sumCounts(buckets.boundary_into_risk), transitions: toTransitions(buckets.boundary_into_risk) },
+    },
+    within_risk: {
+      improving: { count: sumCounts(buckets.within_risk_improving), transitions: toTransitions(buckets.within_risk_improving) },
+      declining: { count: sumCounts(buckets.within_risk_declining), transitions: toTransitions(buckets.within_risk_declining) },
+    },
+    within_using: {
+      improving: { count: sumCounts(buckets.within_using_improving), transitions: toTransitions(buckets.within_using_improving) },
+      declining: { count: sumCounts(buckets.within_using_declining), transitions: toTransitions(buckets.within_using_declining) },
+    },
+    stable: { count: stableCount },
     cohort_size: stableEmails.size,
   };
 }
 
+// Movement group types for the members endpoint
+type MovementGroup =
+  | "boundary_into_using"
+  | "boundary_into_risk"
+  | "within_risk_improving"
+  | "within_risk_declining"
+  | "within_using_improving"
+  | "within_using_declining";
+
 /**
  * Get Sky3 movement members for detail slide-out.
+ * Supports group parameter for churn-risk tier filtering.
  */
 export async function getSky3MovementMembers(params: {
-  direction: "improving" | "stable" | "declining";
+  group: MovementGroup;
   periodWeeks?: number;
   from?: string;
   to?: string;
@@ -1545,7 +1564,7 @@ export async function getSky3MovementMembers(params: {
   page: number;
 }> {
   const pool = getPool();
-  const { direction, periodWeeks = 4, from, to, fieldsOnly, page = 1, perPage = 25 } = params;
+  const { group, periodWeeks = 4, from, to, fieldsOnly, page = 1, perPage = 25 } = params;
   const periodStart = weeksAgo(periodWeeks);
   const priorPeriodStart = weeksAgo(periodWeeks * 2);
 
@@ -1562,19 +1581,30 @@ export async function getSky3MovementMembers(params: {
     if (stableEmails.has(r.member_email)) priorMap.set(r.member_email, { tier: r.tier, visits: r.total_visits });
   }
 
+  // Filter by group
   const matched: { email: string; priorBand: string; currentBand: string; priorVisits: number; currentVisits: number }[] = [];
   for (const email of stableEmails) {
     const cur = currentMap.get(email) || { tier: "not_using", visits: 0 };
     const pri = priorMap.get(email) || { tier: "not_using", visits: 0 };
+
+    if (cur.tier === pri.tier) continue; // stable, skip
+
+    const priInRisk = RISK_BANDS.includes(pri.tier);
+    const curInRisk = RISK_BANDS.includes(cur.tier);
+    const priInUsing = USING_BANDS.includes(pri.tier);
+    const curInUsing = USING_BANDS.includes(cur.tier);
     const curIdx = SKY3_TIER_ORDER.indexOf(cur.tier);
     const priIdx = SKY3_TIER_ORDER.indexOf(pri.tier);
 
-    let dir: string;
-    if (curIdx > priIdx) dir = "improving";
-    else if (curIdx < priIdx) dir = "declining";
-    else dir = "stable";
+    let memberGroup: MovementGroup | null = null;
+    if (priInRisk && curInUsing) memberGroup = "boundary_into_using";
+    else if (priInUsing && curInRisk) memberGroup = "boundary_into_risk";
+    else if (priInRisk && curInRisk && curIdx > priIdx) memberGroup = "within_risk_improving";
+    else if (priInRisk && curInRisk && curIdx < priIdx) memberGroup = "within_risk_declining";
+    else if (priInUsing && curInUsing && curIdx > priIdx) memberGroup = "within_using_improving";
+    else if (priInUsing && curInUsing && curIdx < priIdx) memberGroup = "within_using_declining";
 
-    if (dir !== direction) continue;
+    if (memberGroup !== group) continue;
     if (from && pri.tier !== from) continue;
     if (to && cur.tier !== to) continue;
 
