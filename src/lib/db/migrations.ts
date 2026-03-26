@@ -594,6 +594,66 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_passes_pass_type ON passes(pass_type_id);
     `,
   },
+  // Usage redesign: weekly visit snapshots for tier tracking
+  {
+    name: "016_member_weekly_visits",
+    up: `
+      CREATE TABLE IF NOT EXISTS member_weekly_visits (
+        id BIGSERIAL PRIMARY KEY,
+        member_email TEXT NOT NULL,
+        segment TEXT NOT NULL,
+        week_start DATE NOT NULL,
+        visit_count INTEGER NOT NULL DEFAULT 0,
+        tier TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mwv_email_seg_week
+        ON member_weekly_visits(member_email, segment, week_start);
+      CREATE INDEX IF NOT EXISTS idx_mwv_segment_week
+        ON member_weekly_visits(segment, week_start);
+      CREATE INDEX IF NOT EXISTS idx_mwv_email_week
+        ON member_weekly_visits(member_email, week_start);
+    `,
+  },
+  // Usage redesign: tier-to-tier transitions for migration tracking
+  {
+    name: "017_member_tier_transitions",
+    up: `
+      CREATE TABLE IF NOT EXISTS member_tier_transitions (
+        id BIGSERIAL PRIMARY KEY,
+        member_email TEXT NOT NULL,
+        member_name TEXT,
+        segment TEXT NOT NULL,
+        period_start DATE NOT NULL,
+        period_end DATE NOT NULL,
+        prior_tier TEXT NOT NULL,
+        current_tier TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        prior_visits INTEGER NOT NULL DEFAULT 0,
+        current_visits INTEGER NOT NULL DEFAULT 0,
+        subscribed_both BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mtt_email_seg_period
+        ON member_tier_transitions(member_email, segment, period_start);
+      CREATE INDEX IF NOT EXISTS idx_mtt_segment_period
+        ON member_tier_transitions(segment, period_start);
+      CREATE INDEX IF NOT EXISTS idx_mtt_direction_seg_period
+        ON member_tier_transitions(direction, segment, period_start);
+    `,
+  },
+  // Usage redesign: week annotations for marking holidays, weather, promos
+  {
+    name: "018_week_annotations",
+    up: `
+      CREATE TABLE IF NOT EXISTS week_annotations (
+        id SERIAL PRIMARY KEY,
+        week_start DATE NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `,
+  },
 ];
 
 /**

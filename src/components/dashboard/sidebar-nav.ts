@@ -43,6 +43,10 @@ export type SectionKey =
   | "churn-tv"
   | "churn-intro"
   | "usage"
+  | "usage-overview"
+  | "usage-members"
+  | "usage-sky3"
+  | "usage-tv"
   | "insights"
   | "data";
 
@@ -76,6 +80,10 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   "churn-tv":     "#A04040",
   "churn-intro":  "#A04040",
   usage:          "#7C6B8A",  // muted purple
+  "usage-overview": "#7C6B8A",
+  "usage-members":  "#7C6B8A",
+  "usage-sky3":     "#7C6B8A",
+  "usage-tv":       "#7C6B8A",
   insights:       "#D4A030",  // amber/gold
   data:           "#6B5B73",  // dusty purple
 };
@@ -130,7 +138,18 @@ export const NAV_ITEMS: NavItem[] = [
       { key: "churn-intro", label: "Intro Week", icon: CalendarWeek },
     ],
   },
-  { key: "usage", label: "Usage", icon: ActivityIcon, color: SECTION_COLORS.usage },
+  {
+    key: "usage-overview",
+    label: "Usage",
+    icon: ActivityIcon,
+    color: SECTION_COLORS.usage,
+    children: [
+      { key: "usage-overview", label: "Overview", icon: ActivityIcon },
+      { key: "usage-members", label: "Members", icon: ArrowBadgeDown },
+      { key: "usage-sky3", label: "Sky3", icon: BrandSky },
+      { key: "usage-tv", label: "Sky Ting TV", icon: DeviceTv },
+    ],
+  },
   { key: "insights", label: "Insights", icon: BulbIcon, color: SECTION_COLORS.insights },
   { key: "data", label: "Data", icon: Database, color: SECTION_COLORS.data },
 ];
@@ -154,6 +173,10 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "churn-tv": ["Retention & Churn", "Sky Ting TV"],
   "churn-intro": ["Retention & Churn", "Intro Week"],
   usage: ["Usage"],
+  "usage-overview": ["Usage", "Overview"],
+  "usage-members": ["Usage", "Members"],
+  "usage-sky3": ["Usage", "Sky3"],
+  "usage-tv": ["Usage", "Sky Ting TV"],
   insights: ["Insights"],
   data: ["Data"],
 };

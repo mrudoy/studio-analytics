@@ -238,6 +238,11 @@ export interface PacingData {
   memberCancellationsPaced: number;
   sky3CancellationsActual: number;
   sky3CancellationsPaced: number;
+  skyTingTvCancellationsActual: number;
+  skyTingTvCancellationsPaced: number;
+  /** Day of week for current week pacing (1=Mon..7=Sun) */
+  weekDaysElapsed: number;
+  weekDaysTotal: 7;
 }
 
 export interface ProjectionData {
@@ -799,4 +804,66 @@ export interface DailyMovementRow {
   churnedMembers: number;
   churnedSky3: number;
   churnedTv: number;
+}
+
+// ── Usage Redesign Types ────────────────────────────────────
+
+export interface UsageScorecardCard {
+  key: string;
+  label: string;
+  value: number;
+  format: "pct" | "count" | "signed_count" | "decimal";
+  sparkline: number[];
+  delta: number;
+  deltaType: "pct" | "count";
+  invertDirection: boolean;
+}
+
+export interface UsageTrendSeries {
+  segment: string;
+  data: { week: string; value: number }[];
+}
+
+export interface UsageSegmentRow {
+  segment: string;
+  subscribed: number;
+  healthMetric: number;
+  delta: number;
+  netMovement: number;
+}
+
+export interface UsageMovementData {
+  movedUp: number;
+  stayed: number;
+  slippedDown: number;
+  net: number;
+  topFlows: { from: string; to: string; count: number }[];
+}
+
+export interface UsageMemberRow {
+  email: string;
+  name: string;
+  currentTier: string;
+  priorTier: string;
+  direction: string;
+  currentVisits: number;
+  priorVisits: number;
+}
+
+export interface UsageAnnotation {
+  week: string;
+  label: string;
+}
+
+export interface Sky3TierRow {
+  tier: string;
+  count: number;
+  pct: number;
+}
+
+export interface TvEngagementRow {
+  tier: string;
+  count: number;
+  pct: number;
+  priorCount: number;
 }

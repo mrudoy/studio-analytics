@@ -73,6 +73,25 @@ async function runScheduledPipeline() {
       console.warn(`[scheduler] Backup failed:`, err instanceof Error ? err.message : err);
     }
 
+    // Recompute usage weekly visits and tier transitions (non-fatal)
+    if (successCount > 0) {
+      try {
+        const { computeWeeklyVisits, computeTierTransitions } = await import("./lib/db/usage-store");
+        // Get current ISO week start (Monday)
+        const now = new Date();
+        const day = now.getUTCDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        const weekStart = new Date(now);
+        weekStart.setUTCDate(weekStart.getUTCDate() + diff);
+        const ws = weekStart.toISOString().slice(0, 10);
+        const visitCount = await computeWeeklyVisits(ws);
+        const transCount = await computeTierTransitions(ws, 4);
+        console.log(`[scheduler] Usage: ${visitCount} weekly visit rows, ${transCount} tier transitions`);
+      } catch (err) {
+        console.warn(`[scheduler] Usage computation failed:`, err instanceof Error ? err.message : err);
+      }
+    }
+
     // Send digest email (non-fatal, once-per-day guard inside)
     if (successCount > 0) {
       try {

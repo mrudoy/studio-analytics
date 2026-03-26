@@ -50,6 +50,7 @@ import {
   Area,
   Bar,
   BarChart,
+  ComposedChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -59,6 +60,14 @@ import {
   ReferenceLine,
   Cell,
 } from "recharts";
+import {
+  getMonthlyGoal,
+  getWeeklyGoal,
+  getCurrentQuarterGoal,
+  getQuarterLabel,
+  daysRemainingInQuarter,
+  type ChurnTier,
+} from "@/lib/config/churn-goals";
 import {
   ChartContainer,
   ChartLegend,
@@ -142,6 +151,12 @@ import type {
   IntroWeekConversionData,
   DailyMovementRow,
 } from "@/types/dashboard";
+import {
+  UsageOverviewPage,
+  UsageMembersPage,
+  UsageSky3Page,
+  UsageTvPage,
+} from "./usage-section";
 
 // ─── Mobile detection ────────────────────────────────────────
 
@@ -2374,16 +2389,32 @@ function formatShortMonth(period: string): string {
 
 function RevenueSection({ data, trends }: { data: DashboardStats; trends?: TrendsData | null }) {
   const isMobile = useIsMobile();
+  const pacing = trends?.pacing || null;
   // Only show completed months (exclude current calendar month)
   const nowDate = new Date();
   const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}`;
-  const monthlyRevenue = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+  const completedMonthly = (data.monthlyRevenue || []).filter((m) => m.month < currentMonthKey);
+  const currentMonthEntry = (data.monthlyRevenue || []).find((m) => m.month === currentMonthKey);
 
-  // Bar chart data (last 12 months)
-  const revenueBarData = monthlyRevenue.slice(-12).map((m) => ({
+  // Bar chart data (last 12 months + paced current month)
+  const revenueBarData = completedMonthly.slice(-12).map((m) => ({
     month: formatShortMonth(m.month),
     gross: m.gross,
+    isPaced: false,
   }));
+
+  // Add paced current month if we have enough data
+  if (currentMonthEntry && pacing && pacing.daysElapsed >= 3) {
+    const pacedGross = Math.round(currentMonthEntry.gross * (pacing.daysInMonth / pacing.daysElapsed));
+    revenueBarData.push({
+      month: formatShortMonth(currentMonthKey),
+      gross: pacedGross,
+      isPaced: true,
+    });
+  }
+
+  // For MoM calculations, use completed months only
+  const monthlyRevenue = completedMonthly;
 
   // MoM delta from the last two months
   const lastTwo = monthlyRevenue.slice(-2);
@@ -2411,6 +2442,7 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
               <CardDescription>
                 {formatShortMonth(currentMonth.month)}: {formatCurrency(currentMonth.gross)}
                 {momDeltaPct != null && ` (${momDeltaPct > 0 ? "+" : ""}${momDeltaPct}%)`}
+                {currentMonthEntry && pacing && pacing.daysElapsed >= 3 && ` · Current month paced (day ${pacing.daysElapsed}/${pacing.daysInMonth})`}
               </CardDescription>
             )}
           </CardHeader>
@@ -2440,7 +2472,18 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
                   fillOpacity={0.4}
                   stroke="var(--color-gross)"
                   strokeWidth={2}
-                  dot={{ fill: "var(--color-gross)" }}
+                  dot={(props: Record<string, unknown>) => {
+                    const { cx, cy, index } = props as { cx: number; cy: number; index: number };
+                    const isPacedPt = revenueBarData[index]?.isPaced;
+                    if (isPacedPt) {
+                      return (
+                        <g key={`dot-${index}`}>
+                          <circle cx={cx} cy={cy} r={5} fill="white" stroke={COLORS.member} strokeWidth={2} strokeDasharray="3 2" />
+                        </g>
+                      );
+                    }
+                    return <circle key={`dot-${index}`} cx={cx} cy={cy} r={3} fill={COLORS.member} />;
+                  }}
                   activeDot={{ r: 6 }}
                 >
                   {!isMobile && (
@@ -4732,12 +4775,13 @@ function InsightsSection({ insights }: { insights: InsightRow[] | null }) {
 
 type ChurnSubsection = "members" | "sky3" | "tv" | "intro";
 
-function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConversion, subsection }: {
+function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConversion, subsection, pacing }: {
   churnRates?: ChurnRateData | null;
   weekly: TrendRowData[];
   expiringIntroWeeks?: ExpiringIntroWeekData | null;
   introWeekConversion?: IntroWeekConversionData | null;
   subsection: ChurnSubsection;
+  pacing?: PacingData | null;
 }) {
   if (!churnRates && subsection !== "intro") {
     return (
@@ -4774,6 +4818,35 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
     );
   }
 
+  // ── Pacing helpers ──
+  const monthPacingMultiplier = pacing && pacing.daysElapsed >= 3
+    ? pacing.daysInMonth / pacing.daysElapsed : null;
+  const weekPacingMultiplier = pacing && pacing.weekDaysElapsed >= 2
+    ? 7 / pacing.weekDaysElapsed : null;
+
+  /** Custom bar shape that renders a dashed border for paced (projected) bars */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const PacedBarShape = (props: any) => {
+    const { x, y, width, height, fill, payload } = props;
+    if (!payload?.isPaced) {
+      return <rect x={x} y={y} width={width} height={height} rx={8} fill={fill} />;
+    }
+    return (
+      <g>
+        <rect x={x} y={y} width={width} height={height} rx={8}
+          fill={`${payload.baseColor}18`} stroke={payload.baseColor}
+          strokeWidth={2} strokeDasharray="6 4" />
+        {/* Solid inner bar showing actual progress */}
+        {payload.actualRate != null && payload.actualRate > 0 && height > 0 && (
+          <rect x={x + 2} y={y + height * (1 - payload.actualRate / payload.rate)}
+            width={width - 4}
+            height={Math.max(0, height * (payload.actualRate / payload.rate) - 2)}
+            rx={6} fill={`${payload.baseColor}40`} />
+        )}
+      </g>
+    );
+  };
+
   // ── Members ──
   if (subsection === "members") {
   if (!churnRates || !mem) return <NoData label="Member churn data" />;
@@ -4792,19 +4865,34 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           if (last4.length === 0) return null;
           const weeklyChurnData = last4.map((w) => ({
             week: formatWeekShort(w.period),
+            rawMonth: w.period.slice(0, 7),
             pct: w.memberChurnPct ?? 0,
             count: w.memberChurn,
             active: w.activeMembersAtWeekStart ?? 0,
+            goal: getWeeklyGoal(w.period.slice(0, 7), "member"),
             fill: COLORS.member,
           }));
           if (currentWeek) {
+            const rawPct = currentWeek.memberChurnPct ?? 0;
+            const rawCount = currentWeek.memberChurn;
+            const pacedCount = weekPacingMultiplier ? Math.round(rawCount * weekPacingMultiplier) : rawCount;
+            const activeStart = currentWeek.activeMembersAtWeekStart ?? 0;
+            const pacedPct = weekPacingMultiplier && activeStart > 0
+              ? parseFloat((pacedCount / activeStart * 100).toFixed(1)) : rawPct;
             weeklyChurnData.push({
               week: formatWeekShort(currentWeek.period),
-              pct: currentWeek.memberChurnPct ?? 0,
-              count: currentWeek.memberChurn,
-              active: currentWeek.activeMembersAtWeekStart ?? 0,
+              rawMonth: currentWeek.period.slice(0, 7),
+              pct: weekPacingMultiplier ? pacedPct : rawPct,
+              count: weekPacingMultiplier ? pacedCount : rawCount,
+              active: activeStart,
+              goal: getWeeklyGoal(currentWeek.period.slice(0, 7), "member"),
               fill: `${COLORS.member}50`,
-            });
+              isPaced: !!weekPacingMultiplier,
+              baseColor: COLORS.member,
+              actualRate: rawPct,
+              actualCount: rawCount,
+              rate: weekPacingMultiplier ? pacedPct : rawPct,
+            } as typeof weeklyChurnData[0]);
           }
           // 6-month trimmed avg % (exclude migration-spike weeks)
           const baselineWeeks = (() => {
@@ -4817,6 +4905,9 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           })();
           const weeklyAvgPct = baselineWeeks.length > 0
             ? (baselineWeeks.reduce((s, w) => s + (w.memberChurnPct ?? 0), 0) / baselineWeeks.length) : 0;
+          const weeklyGoal = getCurrentQuarterGoal("member");
+          const weeklyGoalConverted = weeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - weeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
+          const weeklyOnTrack = weeklyGoalConverted !== null ? weeklyAvgPct <= weeklyGoalConverted : null;
           const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
@@ -4833,21 +4924,30 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                       <div className="text-right">
                         <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{weeklyAvgPct.toFixed(1)}%</div>
                         <div className="text-xs text-muted-foreground leading-tight">6-mo avg / week</div>
+                        {weeklyGoalConverted !== null && (
+                          <>
+                            <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{weeklyGoalConverted}%</div>
+                            <div className="text-xs leading-tight" style={{ color: weeklyOnTrack ? COLORS.member : "#DC2626" }}>
+                              {weeklyOnTrack ? "On Track" : `Behind (+${(weeklyAvgPct - weeklyGoalConverted).toFixed(1)}pp)`}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </CardAction>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
-                    <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                    <ComposedChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
                       <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                      <Bar dataKey="pct" radius={8}>
+                      <Bar dataKey="pct" radius={8} shape={PacedBarShape}>
                         <LabelList dataKey="pct" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                         <LabelList dataKey="count" position="inside" fontSize={11} fontWeight={500} fill="white" />
                       </Bar>
-                    </BarChart>
+                      <Line dataKey="goal" type="stepAfter" stroke="#E67E22" strokeWidth={2} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                    </ComposedChart>
                   </ChartContainer>
                 </CardContent>
               </DashboardCard>
@@ -4865,19 +4965,34 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           };
           const monthlyData = completedMonths.map((m) => ({
             month: fmtShort(m.month),
+            rawMonth: m.month,
             rate: parseFloat((m.eligibleChurnRate ?? 0).toFixed(1)),
+            goal: getMonthlyGoal(m.month, "member"),
             fill: COLORS.member,
           }));
           if (currentMonth) {
+            const rawRate = parseFloat((currentMonth.eligibleChurnRate ?? 0).toFixed(1));
+            const rawCount = currentMonth.canceledCount;
+            const activeStart = currentMonth.activeAtStart;
+            const pacedCount = monthPacingMultiplier ? Math.round(rawCount * monthPacingMultiplier) : rawCount;
+            const pacedRate = monthPacingMultiplier && activeStart > 0
+              ? parseFloat((pacedCount / activeStart * 100).toFixed(1)) : rawRate;
             monthlyData.push({
               month: fmtShort(currentMonth.month),
-              rate: parseFloat((currentMonth.eligibleChurnRate ?? 0).toFixed(1)),
-              fill: `${COLORS.member}50`,
-            });
+              rawMonth: currentMonth.month,
+              rate: monthPacingMultiplier ? pacedRate : rawRate,
+              goal: getMonthlyGoal(currentMonth.month, "member"),
+              fill: monthPacingMultiplier ? `${COLORS.member}18` : `${COLORS.member}50`,
+              isPaced: !!monthPacingMultiplier,
+              baseColor: COLORS.member,
+              actualRate: rawRate,
+            } as typeof monthlyData[0]);
           }
           const last6 = completedMonths.slice(-6);
           const avgMonthly = last6.length > 0
             ? last6.reduce((s, m) => s + (m.eligibleChurnRate ?? 0), 0) / last6.length : 0;
+          const monthlyGoal = getCurrentQuarterGoal("member");
+          const monthlyOnTrack = monthlyGoal !== null ? avgMonthly <= monthlyGoal : null;
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
@@ -4888,24 +5003,33 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                       Monthly Churn
                     </div>
                   </CardTitle>
-                  <CardDescription>Monthly-billed member churn rate</CardDescription>
+                  <CardDescription>Monthly-billed member churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}</CardDescription>
                   <CardAction>
                     <div className="text-right">
                       <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{avgMonthly.toFixed(1)}%</div>
                       <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                      {monthlyGoal !== null && (
+                        <>
+                          <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{monthlyGoal}%</div>
+                          <div className="text-xs leading-tight" style={{ color: monthlyOnTrack ? COLORS.member : "#DC2626" }}>
+                            {monthlyOnTrack ? "On Track" : `Behind (+${(avgMonthly - monthlyGoal).toFixed(1)}pp)`}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                    <BarChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                    <ComposedChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
                       <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                      <Bar dataKey="rate" radius={8}>
+                      <Bar dataKey="rate" radius={8} shape={PacedBarShape}>
                         <LabelList dataKey="rate" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                       </Bar>
-                    </BarChart>
+                      <Line dataKey="goal" type="stepAfter" stroke="#E67E22" strokeWidth={2} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                    </ComposedChart>
                   </ChartContainer>
                 </CardContent>
               </DashboardCard>
@@ -5302,22 +5426,40 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             if (last4.length === 0) return null;
             const weeklyChurnData = last4.map((w) => ({
               week: formatWeekShort(w.period),
+              rawMonth: w.period.slice(0, 7),
               pct: w.sky3ChurnPct ?? 0,
               count: w.sky3Churn,
               active: w.activeSky3AtWeekStart ?? 0,
+              goal: getWeeklyGoal(w.period.slice(0, 7), "sky3"),
               fill: COLORS.sky3,
             }));
             if (currentWeek) {
+              const rawPct = currentWeek.sky3ChurnPct ?? 0;
+              const rawCount = currentWeek.sky3Churn;
+              const pacedCount = weekPacingMultiplier ? Math.round(rawCount * weekPacingMultiplier) : rawCount;
+              const activeStart = currentWeek.activeSky3AtWeekStart ?? 0;
+              const pacedPct = weekPacingMultiplier && activeStart > 0
+                ? parseFloat((pacedCount / activeStart * 100).toFixed(1)) : rawPct;
               weeklyChurnData.push({
                 week: formatWeekShort(currentWeek.period),
-                pct: currentWeek.sky3ChurnPct ?? 0,
-                count: currentWeek.sky3Churn,
-                active: currentWeek.activeSky3AtWeekStart ?? 0,
+                rawMonth: currentWeek.period.slice(0, 7),
+                pct: weekPacingMultiplier ? pacedPct : rawPct,
+                count: weekPacingMultiplier ? pacedCount : rawCount,
+                active: activeStart,
+                goal: getWeeklyGoal(currentWeek.period.slice(0, 7), "sky3"),
                 fill: `${COLORS.sky3}50`,
-              });
+                isPaced: !!weekPacingMultiplier,
+                baseColor: COLORS.sky3,
+                actualRate: rawPct,
+                actualCount: rawCount,
+                rate: weekPacingMultiplier ? pacedPct : rawPct,
+              } as typeof weeklyChurnData[0]);
             }
             const weeklyAvgPct = last4.length > 0
               ? (last4.reduce((s, w) => s + (w.sky3ChurnPct ?? 0), 0) / last4.length) : 0;
+            const sky3WeeklyGoal = getCurrentQuarterGoal("sky3");
+            const sky3WeeklyGoalConverted = sky3WeeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - sky3WeeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
+            const sky3WeeklyOnTrack = sky3WeeklyGoalConverted !== null ? weeklyAvgPct <= sky3WeeklyGoalConverted : null;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5334,21 +5476,30 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <div className="text-right">
                           <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvgPct.toFixed(1)}%</div>
                           <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                          {sky3WeeklyGoalConverted !== null && (
+                            <>
+                              <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{sky3WeeklyGoalConverted}%</div>
+                              <div className="text-xs leading-tight" style={{ color: sky3WeeklyOnTrack ? COLORS.member : "#DC2626" }}>
+                                {sky3WeeklyOnTrack ? "On Track" : `Behind (+${(weeklyAvgPct - sky3WeeklyGoalConverted).toFixed(1)}pp)`}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </CardAction>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
-                      <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                      <ComposedChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} />
                         <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
                         <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                        <Bar dataKey="pct" radius={8}>
+                        <Bar dataKey="pct" radius={8} shape={PacedBarShape}>
                           <LabelList dataKey="pct" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                           <LabelList dataKey="count" position="inside" fontSize={11} fontWeight={500} fill="white" />
                         </Bar>
-                      </BarChart>
+                        <Line dataKey="goal" type="stepAfter" stroke="#E67E22" strokeWidth={2} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                      </ComposedChart>
                     </ChartContainer>
                   </CardContent>
                 </DashboardCard>
@@ -5366,19 +5517,34 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             };
             const monthlyData = completedMonths.map((m) => ({
               month: fmtShort(m.month),
+              rawMonth: m.month,
               rate: parseFloat(m.userChurnRate.toFixed(1)),
+              goal: getMonthlyGoal(m.month, "sky3"),
               fill: COLORS.sky3,
             }));
             if (currentMonth) {
+              const rawRate = parseFloat(currentMonth.userChurnRate.toFixed(1));
+              const rawCount = currentMonth.canceledCount;
+              const activeStart = currentMonth.activeAtStart;
+              const pacedCount = monthPacingMultiplier ? Math.round(rawCount * monthPacingMultiplier) : rawCount;
+              const pacedRate = monthPacingMultiplier && activeStart > 0
+                ? parseFloat((pacedCount / activeStart * 100).toFixed(1)) : rawRate;
               monthlyData.push({
                 month: fmtShort(currentMonth.month),
-                rate: parseFloat(currentMonth.userChurnRate.toFixed(1)),
-                fill: `${COLORS.sky3}50`,
-              });
+                rawMonth: currentMonth.month,
+                rate: monthPacingMultiplier ? pacedRate : rawRate,
+                goal: getMonthlyGoal(currentMonth.month, "sky3"),
+                fill: monthPacingMultiplier ? `${COLORS.sky3}18` : `${COLORS.sky3}50`,
+                isPaced: !!monthPacingMultiplier,
+                baseColor: COLORS.sky3,
+                actualRate: rawRate,
+              } as typeof monthlyData[0]);
             }
             const last6 = completedMonths.slice(-6);
             const avgMonthly = last6.length > 0
               ? last6.reduce((s, m) => s + m.userChurnRate, 0) / last6.length : 0;
+            const sky3MonthlyGoal = getCurrentQuarterGoal("sky3");
+            const sky3MonthlyOnTrack = sky3MonthlyGoal !== null ? avgMonthly <= sky3MonthlyGoal : null;
             const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5389,24 +5555,33 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         Monthly Churn
                       </div>
                     </CardTitle>
-                    <CardDescription>Sky3 subscriber churn rate</CardDescription>
+                    <CardDescription>Sky3 subscriber churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}</CardDescription>
                     <CardAction>
                       <div className="text-right">
                         <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
                         <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                        {sky3MonthlyGoal !== null && (
+                          <>
+                            <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{sky3MonthlyGoal}%</div>
+                            <div className="text-xs leading-tight" style={{ color: sky3MonthlyOnTrack ? COLORS.member : "#DC2626" }}>
+                              {sky3MonthlyOnTrack ? "On Track" : `Behind (+${(avgMonthly - sky3MonthlyGoal).toFixed(1)}pp)`}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </CardAction>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                      <BarChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                      <ComposedChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} />
                         <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
                         <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                        <Bar dataKey="rate" radius={8}>
+                        <Bar dataKey="rate" radius={8} shape={PacedBarShape}>
                           <LabelList dataKey="rate" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                         </Bar>
-                      </BarChart>
+                        <Line dataKey="goal" type="stepAfter" stroke="#E67E22" strokeWidth={2} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                      </ComposedChart>
                     </ChartContainer>
                   </CardContent>
                 </DashboardCard>
@@ -5502,22 +5677,40 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             if (last4.length === 0) return null;
             const weeklyChurnData = last4.map((w) => ({
               week: formatWeekShort(w.period),
+              rawMonth: w.period.slice(0, 7),
               pct: w.skyTingTvChurnPct ?? 0,
               count: w.skyTingTvChurn,
               active: w.activeSkyTingTvAtWeekStart ?? 0,
+              goal: getWeeklyGoal(w.period.slice(0, 7), "tv"),
               fill: COLORS.tv,
             }));
             if (currentWeek) {
+              const rawPct = currentWeek.skyTingTvChurnPct ?? 0;
+              const rawCount = currentWeek.skyTingTvChurn;
+              const pacedCount = weekPacingMultiplier ? Math.round(rawCount * weekPacingMultiplier) : rawCount;
+              const activeStart = currentWeek.activeSkyTingTvAtWeekStart ?? 0;
+              const pacedPct = weekPacingMultiplier && activeStart > 0
+                ? parseFloat((pacedCount / activeStart * 100).toFixed(1)) : rawPct;
               weeklyChurnData.push({
                 week: formatWeekShort(currentWeek.period),
-                pct: currentWeek.skyTingTvChurnPct ?? 0,
-                count: currentWeek.skyTingTvChurn,
-                active: currentWeek.activeSkyTingTvAtWeekStart ?? 0,
+                rawMonth: currentWeek.period.slice(0, 7),
+                pct: weekPacingMultiplier ? pacedPct : rawPct,
+                count: weekPacingMultiplier ? pacedCount : rawCount,
+                active: activeStart,
+                goal: getWeeklyGoal(currentWeek.period.slice(0, 7), "tv"),
                 fill: `${COLORS.tv}50`,
-              });
+                isPaced: !!weekPacingMultiplier,
+                baseColor: COLORS.tv,
+                actualRate: rawPct,
+                actualCount: rawCount,
+                rate: weekPacingMultiplier ? pacedPct : rawPct,
+              } as typeof weeklyChurnData[0]);
             }
             const weeklyAvgPct = last4.length > 0
               ? (last4.reduce((s, w) => s + (w.skyTingTvChurnPct ?? 0), 0) / last4.length) : 0;
+            const tvWeeklyGoal = getCurrentQuarterGoal("tv");
+            const tvWeeklyGoalConverted = tvWeeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - tvWeeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
+            const tvWeeklyOnTrack = tvWeeklyGoalConverted !== null ? weeklyAvgPct <= tvWeeklyGoalConverted : null;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.tv } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5534,21 +5727,30 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <div className="text-right">
                           <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.tv }}>{weeklyAvgPct.toFixed(1)}%</div>
                           <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                          {tvWeeklyGoalConverted !== null && (
+                            <>
+                              <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{tvWeeklyGoalConverted}%</div>
+                              <div className="text-xs leading-tight" style={{ color: tvWeeklyOnTrack ? COLORS.member : "#DC2626" }}>
+                                {tvWeeklyOnTrack ? "On Track" : `Behind (+${(weeklyAvgPct - tvWeeklyGoalConverted).toFixed(1)}pp)`}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </CardAction>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={weeklyChurnConfig} className="h-[200px] w-full">
-                      <BarChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                      <ComposedChart accessibilityLayer data={weeklyChurnData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} />
                         <XAxis dataKey="week" tickLine={false} tickMargin={10} axisLine={false} />
                         <ReferenceLine y={weeklyAvgPct} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                        <Bar dataKey="pct" radius={8}>
+                        <Bar dataKey="pct" radius={8} shape={PacedBarShape}>
                           <LabelList dataKey="pct" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                           <LabelList dataKey="count" position="inside" fontSize={11} fontWeight={500} fill="white" />
                         </Bar>
-                      </BarChart>
+                        <Line dataKey="goal" type="stepAfter" stroke="#E67E22" strokeWidth={2} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                      </ComposedChart>
                     </ChartContainer>
                   </CardContent>
                 </DashboardCard>
@@ -5567,19 +5769,34 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             };
             const monthlyData = completedMonths.map((m) => ({
               month: fmtShort(m.month),
+              rawMonth: m.month,
               rate: parseFloat(m.userChurnRate.toFixed(1)),
+              goal: getMonthlyGoal(m.month, "tv"),
               fill: COLORS.tv,
             }));
             if (currentMonth) {
+              const rawRate = parseFloat(currentMonth.userChurnRate.toFixed(1));
+              const rawCount = currentMonth.canceledCount;
+              const activeStart = currentMonth.activeAtStart;
+              const pacedCount = monthPacingMultiplier ? Math.round(rawCount * monthPacingMultiplier) : rawCount;
+              const pacedRate = monthPacingMultiplier && activeStart > 0
+                ? parseFloat((pacedCount / activeStart * 100).toFixed(1)) : rawRate;
               monthlyData.push({
                 month: fmtShort(currentMonth.month),
-                rate: parseFloat(currentMonth.userChurnRate.toFixed(1)),
-                fill: `${COLORS.tv}50`,
-              });
+                rawMonth: currentMonth.month,
+                rate: monthPacingMultiplier ? pacedRate : rawRate,
+                goal: getMonthlyGoal(currentMonth.month, "tv"),
+                fill: monthPacingMultiplier ? `${COLORS.tv}18` : `${COLORS.tv}50`,
+                isPaced: !!monthPacingMultiplier,
+                baseColor: COLORS.tv,
+                actualRate: rawRate,
+              } as typeof monthlyData[0]);
             }
             const last6 = completedMonths.slice(-6);
             const avgMonthly = last6.length > 0
               ? last6.reduce((s, m) => s + m.userChurnRate, 0) / last6.length : 0;
+            const tvMonthlyGoal = getCurrentQuarterGoal("tv");
+            const tvMonthlyOnTrack = tvMonthlyGoal !== null ? avgMonthly <= tvMonthlyGoal : null;
             const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.tv } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5590,26 +5807,35 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                           <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
                           <CardTitle>Monthly Churn</CardTitle>
                         </div>
-                        <CardDescription>Sky Ting TV monthly churn rate</CardDescription>
+                        <CardDescription>Sky Ting TV monthly churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}</CardDescription>
                       </div>
                       <CardAction>
                         <div className="text-right">
                           <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{avgMonthly.toFixed(1)}%</div>
                           <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                          {tvMonthlyGoal !== null && (
+                            <>
+                              <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{tvMonthlyGoal}%</div>
+                              <div className="text-xs leading-tight" style={{ color: tvMonthlyOnTrack ? COLORS.member : "#DC2626" }}>
+                                {tvMonthlyOnTrack ? "On Track" : `Behind (+${(avgMonthly - tvMonthlyGoal).toFixed(1)}pp)`}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </CardAction>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <ChartContainer config={monthlyConfig} className="h-[200px] w-full">
-                      <BarChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
+                      <ComposedChart accessibilityLayer data={monthlyData} margin={{ top: 28, left: 0, right: 0, bottom: 0 }}>
                         <CartesianGrid vertical={false} />
                         <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
                         <ReferenceLine y={avgMonthly} stroke="#4A90D9" strokeDasharray="6 3" strokeWidth={1.5} />
-                        <Bar dataKey="rate" radius={8}>
+                        <Bar dataKey="rate" radius={8} shape={PacedBarShape}>
                           <LabelList dataKey="rate" position="top" offset={12} fontSize={12} fontWeight={600} formatter={(v: number) => `${v}%`} style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 }} />
                         </Bar>
-                      </BarChart>
+                        <Line dataKey="goal" type="stepAfter" stroke="#E67E22" strokeWidth={2} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                      </ComposedChart>
                     </ChartContainer>
                   </CardContent>
                 </DashboardCard>
@@ -7087,8 +7313,9 @@ function RentalRevenueTab({ rental }: { rental: RentalRevenueData }) {
 //  DASHBOARD CONTENT — switches visible section based on sidebar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function DashboardContent({ activeSection, data, refreshData }: {
+function DashboardContent({ activeSection, setActiveSection, data, refreshData }: {
   activeSection: SectionKey;
+  setActiveSection: (key: SectionKey) => void;
   data: DashboardStats;
   refreshData: () => void;
 }) {
@@ -7498,7 +7725,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Retention metrics, churn trends, milestones, and at-risk members</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="members" />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="members" pacing={pacing} />
         </>
       )}
 
@@ -7512,7 +7739,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">User and MRR churn rates for Sky3 subscribers</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="sky3" />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="sky3" pacing={pacing} />
         </>
       )}
 
@@ -7526,7 +7753,7 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">User and MRR churn rates for Sky Ting TV subscribers</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="tv" />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} subsection="tv" pacing={pacing} />
         </>
       )}
 
@@ -7540,22 +7767,22 @@ function DashboardContent({ activeSection, data, refreshData }: {
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Expiring intro week passes and conversion tracking</p>
           </div>
-          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} introWeekConversion={trends?.introWeekConversion} subsection="intro" />
+          <ChurnSection churnRates={trends?.churnRates} weekly={weekly} expiringIntroWeeks={trends?.expiringIntroWeeks} introWeekConversion={trends?.introWeekConversion} subsection="intro" pacing={pacing} />
         </>
       )}
 
-      {/* ── USAGE ── */}
-      {activeSection === "usage" && (
-        <>
-          <div className="mb-2">
-            <div className="flex items-center gap-3">
-              <ActivityIcon className="size-7 shrink-0" style={{ color: SECTION_COLORS.usage }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Usage</h1>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Visit Frequency Segments by Plan Type</p>
-          </div>
-          <UsageSection usage={trends?.usage ?? null} />
-        </>
+      {/* ── USAGE (Redesigned) ── */}
+      {activeSection === "usage-overview" && (
+        <UsageOverviewPage onNavigate={setActiveSection} />
+      )}
+      {activeSection === "usage-members" && (
+        <UsageMembersPage />
+      )}
+      {activeSection === "usage-sky3" && (
+        <UsageSky3Page />
+      )}
+      {activeSection === "usage-tv" && (
+        <UsageTvPage />
       )}
 
       {/* ── INSIGHTS ── */}
@@ -7623,7 +7850,7 @@ function DashboardView() {
 
   return (
     <DashboardLayout>
-      {(activeSection) => {
+      {(activeSection, setActiveSection) => {
         if (loadState.state === "loading") {
           return (
             <div className="flex flex-col gap-6" style={{ fontFamily: FONT_SANS }}>
@@ -7682,7 +7909,7 @@ function DashboardView() {
           );
         }
 
-        return <DashboardContent activeSection={activeSection} data={loadState.data} refreshData={fetchStats} />;
+        return <DashboardContent activeSection={activeSection} setActiveSection={setActiveSection} data={loadState.data} refreshData={fetchStats} />;
       }}
     </DashboardLayout>
   );

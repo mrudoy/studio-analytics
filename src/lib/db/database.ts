@@ -19,7 +19,7 @@ export function getPool(): Pool {
     );
   }
 
-  const isRailway = connectionString.includes("railway");
+  const isRailway = connectionString.includes("railway") || connectionString.includes("rlwy.net");
 
   const pool = new Pool({
     connectionString,
