@@ -2,7 +2,8 @@ import { getIntroWeekConversionData } from "@/lib/db/registration-store";
 
 export async function GET() {
   try {
-    const rows = await getIntroWeekConversionData();
+    // Use 90-day lookback so late converters are properly excluded
+    const rows = await getIntroWeekConversionData(90);
     const nonConverters = rows.filter((r) => !r.converted);
 
     const lines: string[] = [

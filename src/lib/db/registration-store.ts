@@ -980,7 +980,7 @@ export interface IntroWeekConversionRow {
  *
  * Excludes people currently in their intro week (window hasn't ended yet).
  */
-export async function getIntroWeekConversionData(): Promise<IntroWeekConversionRow[]> {
+export async function getIntroWeekConversionData(lookbackDays = 14): Promise<IntroWeekConversionRow[]> {
   const pool = getPool();
 
   const query = `
@@ -1004,9 +1004,9 @@ export async function getIntroWeekConversionData(): Promise<IntroWeekConversionR
         COUNT(visit_date)::int AS classes_attended
       FROM intro_visits
       GROUP BY email
-      -- Expired in the last 14 days: end_date between (today - 14) and today
+      -- Expired in the last N days: end_date between (today - lookback) and today
       HAVING (MIN(visit_date) + INTERVAL '7 days')::date <= CURRENT_DATE
-        AND (MIN(visit_date) + INTERVAL '7 days')::date >= CURRENT_DATE - 14
+        AND (MIN(visit_date) + INTERVAL '7 days')::date >= CURRENT_DATE - ${lookbackDays}
     ),
     active_instudio AS (
       SELECT DISTINCT LOWER(customer_email) AS email
