@@ -1,0 +1,15 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSky3Distribution } from "@/lib/db/usage-store";
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+  const periodWeeks = Number(searchParams.get("period_weeks")) || 4;
+
+  try {
+    const data = await getSky3Distribution(periodWeeks);
+    return NextResponse.json(data);
+  } catch (err) {
+    console.error("[api/usage/sky3/distribution] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

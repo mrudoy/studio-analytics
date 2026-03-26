@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DownloadIcon, ActivityIcon, ArrowBadgeDown, BrandSky, DeviceTv } from "@/components/dashboard/icons";
+import { TrendingUp, TrendingDown, Minus, X as XIcon, Copy } from "lucide-react";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
 import type {
   UsageScorecardCard,
@@ -195,12 +196,12 @@ function TierBadge({ tier, muted = false }: { tier: string; muted?: boolean }) {
 
 // ─── Status Icon (replaces sparklines on scorecard cards) ───
 
-function getStatusIcon(delta: number, deltaType: "pct" | "count", invert: boolean): { char: string; color: string } {
+function StatusIcon({ delta, deltaType, invert, size = 18 }: { delta: number; deltaType: "pct" | "count"; invert: boolean; size?: number }) {
   const threshold = deltaType === "pct" ? 0.5 : 3;
-  if (Math.abs(delta) < threshold) return { char: "\u25b8", color: "#95A5A6" }; // ▸ gray
+  if (Math.abs(delta) < threshold) return <Minus size={size} color="#95A5A6" />;
   const isPositive = invert ? delta < 0 : delta > 0;
-  if (isPositive) return { char: "\u25b2", color: "#27AE60" }; // ▲ green
-  return { char: "\u25bc", color: "#C0392B" }; // ▼ red
+  if (isPositive) return <TrendingUp size={size} color="#27AE60" />;
+  return <TrendingDown size={size} color="#C0392B" />;
 }
 
 // ─── Time Window Control ────────────────────────────────────
@@ -226,13 +227,12 @@ function TimeWindowControl({ value, onChange }: { value: number; onChange: (v: n
 
 function ScorecardCard({ card, periodWeeks }: { card: UsageScorecardCard; periodWeeks: number }) {
   const color = deltaColor(card.delta, card.deltaType, card.invertDirection);
-  const icon = getStatusIcon(card.delta, card.deltaType, card.invertDirection);
   return (
     <DashboardCard>
       <CardContent className="p-3">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-muted-foreground uppercase tracking-wide">{card.label}</span>
-          <span style={{ color: icon.color, fontSize: 16, lineHeight: 1 }}>{icon.char}</span>
+          <StatusIcon delta={card.delta} deltaType={card.deltaType} invert={card.invertDirection} size={18} />
         </div>
         <div className="text-2xl font-semibold tabular-nums tracking-tight">
           {formatValue(card.value, card.format)}
@@ -917,32 +917,150 @@ export function UsageMembersPage() {
 
 // ─── Sky3 Detail Page ───────────────────────────────────────
 
-export function UsageSky3Page() {
-  const [periodWeeks, setPeriodWeeks] = useState(4);
-  const [filter, setFilter] = useState<ActionFilter>(null);
+// ─── Sky3 Side Panel ────────────────────────────────────────
+
+function Sky3SidePanel({ band, periodWeeks, onClose }: { band: string; periodWeeks: number; onClose: () => void }) {
   const [page, setPage] = useState(1);
+  const [copied, setCopied] = useState(false);
   const perPage = 25;
 
-  useEffect(() => setPage(1), [filter]);
+  const label = SKY3_BAND_LABELS[band] || band;
+  const { data } = useUsageData<{ members: { name: string; email: string }[]; total: number; page: number }>(
+    `/api/usage/sky3/members?band=${band}&period_weeks=${periodWeeks}&page=${page}&per_page=${perPage}`,
+    [band, periodWeeks, page]
+  );
 
-  const { data: scorecardData } = useUsageData<{ cards: UsageScorecardCard[] }>(
-    `/api/usage/scorecard?period_weeks=${periodWeeks}&segment=sky3`,
+  const handleCopyEmails = async () => {
+    const res = await fetch(`/api/usage/sky3/members?band=${band}&period_weeks=${periodWeeks}&fields=email&per_page=9999`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = () => {
+    window.location.href = `/api/usage/members/export?segment=sky3&filter=${band}&period_weeks=${periodWeeks}`;
+  };
+
+  const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      {/* Panel */}
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <div className="font-semibold text-base">{label}</div>
+            <div className="text-sm text-muted-foreground">{data?.total ?? 0} members</div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+        <div className="flex gap-2 p-4 border-b">
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+            <Copy size={14} /> {copied ? "Copied!" : "Copy All Emails"}
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleExport}>
+            <DownloadIcon className="size-3.5" /> Export CSV
+          </Button>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          {data?.members.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((m, i) => (
+                  <tr key={i} className="border-b border-muted/30">
+                    <td className="py-1.5 truncate max-w-[160px]">{m.name}</td>
+                    <td className="py-1.5 text-muted-foreground truncate max-w-[200px]">{m.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No members in this band.</p>
+          )}
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, data?.total ?? 0)} of {data?.total}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── Sky3 Constants ─────────────────────────────────────────
+
+const SKY3_BANDS = ["not_using", "barely_using", "getting_there", "full_use", "wants_more"] as const;
+
+const SKY3_BAND_LABELS: Record<string, string> = {
+  not_using: "Not Using (0 visits)",
+  barely_using: "Barely Using (1 visit)",
+  getting_there: "Getting There (2 visits)",
+  full_use: "Using All 3 Classes (3 visits)",
+  wants_more: "Wants More (4+ visits)",
+};
+
+const SKY3_BAR_COLORS: Record<string, string> = {
+  not_using: "#E8D5D0",
+  barely_using: "#F0DCC8",
+  getting_there: "#F5EAB8",
+  full_use: "#C8E6C9",
+  wants_more: "#A5D6A7",
+};
+
+// ─── Sky3 Page (Redesigned) ─────────────────────────────────
+
+interface Sky3BandData { count: number; pct: number }
+interface Sky3DistData {
+  periodDays: number;
+  current: Record<string, Sky3BandData>;
+  prior: Record<string, Sky3BandData>;
+  deltas: Record<string, { countChange: number; direction: string }>;
+  takeaway: { trend: string; text: string };
+  total: number;
+}
+
+export function UsageSky3Page() {
+  const [periodWeeks, setPeriodWeeks] = useState(4);
+  const [selectedBand, setSelectedBand] = useState<string | null>(null);
+  const periodDays = periodWeeks * 7;
+
+  const { data: distData } = useUsageData<Sky3DistData>(
+    `/api/usage/sky3/distribution?period_weeks=${periodWeeks}`,
     [periodWeeks]
   );
 
-  const { data: tiersData } = useUsageData<Sky3TierRow[]>(
-    `/api/usage/sky3-tiers`,
-    []
-  );
+  const maxCount = distData ? Math.max(...SKY3_BANDS.map(b => distData.current[b]?.count ?? 0), 1) : 1;
 
-  const filterParam = filter ? `&filter=${filter}` : "";
-  const { data: membersData } = useUsageData<{ members: UsageMemberRow[]; total: number; page: number }>(
-    `/api/usage/members?segment=sky3&period_weeks=${periodWeeks}&page=${page}&per_page=${perPage}${filterParam}`,
-    [periodWeeks, filter, page]
-  );
+  // Takeaway icon + color
+  const takeawayColor = distData?.takeaway.trend === "improving" || distData?.takeaway.trend === "slightly_improving"
+    ? "#27AE60"
+    : distData?.takeaway.trend === "declining" || distData?.takeaway.trend === "slightly_declining"
+    ? "#C0392B"
+    : "#95A5A6";
+  const TakeawayIcon = distData?.takeaway.trend === "improving" || distData?.takeaway.trend === "slightly_improving"
+    ? TrendingUp
+    : distData?.takeaway.trend === "declining" || distData?.takeaway.trend === "slightly_declining"
+    ? TrendingDown
+    : Minus;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
+      {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-3">
           <BrandSky className="size-7 shrink-0" style={{ color: SECTION_COLORS["usage-sky3"] }} />
@@ -950,37 +1068,110 @@ export function UsageSky3Page() {
         </div>
         <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
-      {(() => {
-        if (tiersData && Array.isArray(tiersData) && tiersData.length > 0) {
-          const breakageTiers = ["unused_pack", "save_candidate"];
-          const upgradeTiers = ["upgrade_candidate", "ready_to_upgrade"];
-          const breakageCount = tiersData.filter(t => breakageTiers.includes(t.tier)).reduce((s, t) => s + t.count, 0);
-          const upgradeCount = tiersData.filter(t => upgradeTiers.includes(t.tier)).reduce((s, t) => s + t.count, 0);
-          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{breakageCount.toLocaleString()} at risk of canceling — {upgradeCount.toLocaleString()} ready to upgrade</p>;
-        }
-        return <p className="text-sm text-muted-foreground ml-10 -mt-2">Class pack usage and upgrade opportunities</p>;
-      })()}
 
-      <AlertBanner segment="sky3" tierData={tiersData && Array.isArray(tiersData) ? tiersData : null} />
-
-      {scorecardData?.cards && (
-        <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />
+      {/* Section 1: Takeaway */}
+      {distData?.takeaway && (
+        <div className="flex items-start gap-2 mb-4 ml-1">
+          <TakeawayIcon size={18} color={takeawayColor} className="mt-0.5 shrink-0" />
+          <span className="text-base font-medium" style={{ color: takeawayColor }}>{distData.takeaway.text}</span>
+        </div>
       )}
 
-      {tiersData && Array.isArray(tiersData) && (
-        <Sky3RevenueOpportunityTable tiers={tiersData} />
-      )}
+      {/* Section 2: Where Members Are Now */}
+      <div>
+        <h2 className="text-lg font-bold mb-3">Where Members Are Now <span className="text-sm font-normal text-muted-foreground">(last {periodDays} days)</span></h2>
+        <div className="flex flex-col gap-2">
+          {distData && SKY3_BANDS.map(band => {
+            const d = distData.current[band];
+            if (!d) return null;
+            const barWidth = (d.count / maxCount) * 100;
+            return (
+              <div
+                key={band}
+                className="flex items-center gap-3 cursor-pointer group"
+                onClick={() => setSelectedBand(band)}
+              >
+                <div className="w-[220px] shrink-0 text-sm font-medium">{SKY3_BAND_LABELS[band]}</div>
+                <div className="flex-1 relative h-10 rounded bg-muted/20 group-hover:bg-muted/30 transition-colors">
+                  <div
+                    className="absolute top-0 left-0 h-full rounded transition-all"
+                    style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band] }}
+                  />
+                </div>
+                <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
+                <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
+                <div className="w-[20px] text-muted-foreground text-xs">&rsaquo;</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-      <UsageFilterBar activeFilter={filter} onFilterChange={setFilter} segment="sky3" periodWeeks={periodWeeks} />
+      {/* Section 3: How That's Changing */}
+      <div className="mt-4">
+        <h2 className="text-lg font-bold mb-3">How That&apos;s Changing <span className="text-sm font-normal text-muted-foreground">(vs. prior {periodDays} days)</span></h2>
+        <div className="flex flex-col gap-2">
+          {distData && SKY3_BANDS.map(band => {
+            const d = distData.current[band];
+            const delta = distData.deltas[band];
+            if (!d || !delta) return null;
+            const barWidth = (d.count / maxCount) * 100;
+            const isBadBand = band === "not_using" || band === "barely_using";
+            let deltaColor = "#95A5A6";
+            let deltaText = "\u2014 no change";
+            if (Math.abs(delta.countChange) >= 2) {
+              if (delta.countChange < 0) {
+                deltaColor = isBadBand ? "#27AE60" : "#C0392B";
+                deltaText = `${Math.abs(delta.countChange)} fewer`;
+              } else {
+                deltaColor = isBadBand ? "#C0392B" : "#27AE60";
+                deltaText = `${delta.countChange} more`;
+              }
+            }
+            const DeltaIcon = delta.countChange < 0
+              ? (isBadBand ? TrendingUp : TrendingDown)
+              : delta.countChange > 0
+              ? (isBadBand ? TrendingDown : TrendingUp)
+              : Minus;
 
-      {membersData && (
-        <UsageActionTable
-          members={membersData.members}
-          total={membersData.total}
-          page={page}
-          perPage={perPage}
-          onPageChange={setPage}
-        />
+            return (
+              <div key={band} className="flex items-center gap-3">
+                <div className="w-[220px] shrink-0 text-sm font-medium">{SKY3_BAND_LABELS[band]}</div>
+                <div className="flex-1 relative h-10 rounded bg-muted/20">
+                  <div
+                    className="absolute top-0 left-0 h-full rounded"
+                    style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: SKY3_BAR_COLORS[band] }}
+                  />
+                </div>
+                <div className="w-[50px] text-right tabular-nums text-sm font-medium">{d.count}</div>
+                <div className="w-[50px] text-right tabular-nums text-sm text-muted-foreground">{d.pct}%</div>
+                <div className="w-[120px] flex items-center gap-1 text-sm" style={{ color: deltaColor }}>
+                  <DeltaIcon size={14} /> {deltaText}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Footer: Export */}
+      <div className="mt-4 flex justify-end">
+        <div className="text-right">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1"
+            onClick={() => { window.location.href = `/api/usage/members/export?segment=sky3&period_weeks=${periodWeeks}`; }}
+          >
+            <DownloadIcon className="size-3.5" /> Export Full Member List
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1">Download a CSV with every Sky3 member's name, email, and current usage band.</p>
+        </div>
+      </div>
+
+      {/* Side Panel */}
+      {selectedBand && (
+        <Sky3SidePanel band={selectedBand} periodWeeks={periodWeeks} onClose={() => setSelectedBand(null)} />
       )}
     </div>
   );

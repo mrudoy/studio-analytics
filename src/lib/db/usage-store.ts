@@ -32,11 +32,11 @@ export function assignTier(segment: Segment, visitCount: number): string {
     return "power_user";
   }
   if (segment === "sky3") {
-    if (visitCount === 0) return "unused_pack";
-    if (visitCount === 1) return "save_candidate";
-    if (visitCount === 2) return "building_habit";
-    if (visitCount === 3) return "upgrade_candidate";
-    return "ready_to_upgrade";
+    if (visitCount === 0) return "not_using";
+    if (visitCount === 1) return "barely_using";
+    if (visitCount === 2) return "getting_there";
+    if (visitCount === 3) return "full_use";
+    return "wants_more";
   }
   // tv — based on sessions in trailing 14 days
   if (visitCount === 0) return "inactive";
@@ -46,7 +46,7 @@ export function assignTier(segment: Segment, visitCount: number): string {
 }
 
 export const MEMBERS_TIER_ORDER = ["dormant", "low", "target", "strong", "power_user"];
-export const SKY3_TIER_ORDER = ["unused_pack", "save_candidate", "building_habit", "upgrade_candidate", "ready_to_upgrade"];
+export const SKY3_TIER_ORDER = ["not_using", "barely_using", "getting_there", "full_use", "wants_more"];
 export const TV_TIER_ORDER = ["inactive", "light", "active", "engaged"];
 
 function getTierOrder(segment: Segment): string[] {
@@ -67,7 +67,7 @@ function computeDirection(segment: Segment, priorTier: string, currentTier: stri
 /** Tiers considered "at target" for % Hitting Target calculations */
 const TARGET_TIERS: Record<Segment, string[]> = {
   members: ["target", "strong", "power_user"],
-  sky3: ["upgrade_candidate", "ready_to_upgrade"],
+  sky3: ["full_use", "wants_more"],
   tv: ["light", "active", "engaged"],
 };
 
@@ -77,11 +77,19 @@ export const TIER_DISPLAY_LABELS: Record<string, string> = {
   target: "Target",
   strong: "Strong",
   power_user: "Power User",
-  unused_pack: "Unused Pack",
-  save_candidate: "Save Candidate",
-  building_habit: "Building Habit",
-  upgrade_candidate: "Upgrade Candidate",
-  ready_to_upgrade: "Ready to Upgrade",
+  // Sky3 (new bands)
+  not_using: "Not Using",
+  barely_using: "Barely Using",
+  getting_there: "Getting There",
+  full_use: "Using All 3 Classes",
+  wants_more: "Wants More",
+  // Legacy Sky3 keys (for transition compatibility)
+  unused_pack: "Not Using",
+  save_candidate: "Barely Using",
+  building_habit: "Getting There",
+  upgrade_candidate: "Using All 3 Classes",
+  ready_to_upgrade: "Wants More",
+  // TV
   inactive: "Inactive",
   light: "Light",
   active: "Active",
@@ -94,11 +102,19 @@ export const TIER_COLORS: Record<string, string> = {
   target: "#27AE60",
   strong: "#2ECC71",
   power_user: "#1ABC9C",
-  unused_pack: "#C0392B",
-  save_candidate: "#E67E22",
-  building_habit: "#F1C40F",
-  upgrade_candidate: "#27AE60",
-  ready_to_upgrade: "#1ABC9C",
+  // Sky3 (new warm-to-green gradient)
+  not_using: "#E8D5D0",
+  barely_using: "#F0DCC8",
+  getting_there: "#F5EAB8",
+  full_use: "#C8E6C9",
+  wants_more: "#A5D6A7",
+  // Legacy Sky3 keys
+  unused_pack: "#E8D5D0",
+  save_candidate: "#F0DCC8",
+  building_habit: "#F5EAB8",
+  upgrade_candidate: "#C8E6C9",
+  ready_to_upgrade: "#A5D6A7",
+  // TV
   inactive: "#C0392B",
   light: "#E67E22",
   active: "#27AE60",
@@ -340,11 +356,11 @@ export async function computeTierTransitions(currentPeriodStart: string, periodW
     }
     if (seg === "sky3") {
       return `CASE
-        WHEN ${visitExpr} = 0 THEN 'unused_pack'
-        WHEN ${visitExpr} = 1 THEN 'save_candidate'
-        WHEN ${visitExpr} = 2 THEN 'building_habit'
-        WHEN ${visitExpr} = 3 THEN 'upgrade_candidate'
-        ELSE 'ready_to_upgrade' END`;
+        WHEN ${visitExpr} = 0 THEN 'not_using'
+        WHEN ${visitExpr} = 1 THEN 'barely_using'
+        WHEN ${visitExpr} = 2 THEN 'getting_there'
+        WHEN ${visitExpr} = 3 THEN 'full_use'
+        ELSE 'wants_more' END`;
     }
     // tv
     return `CASE
@@ -455,11 +471,11 @@ async function getPeriodTiers(
           WHEN ROUND(total_visits / ${monthsInPeriod}) <= 8 THEN 'strong'
           ELSE 'power_user' END
         WHEN segment = 'sky3' THEN CASE
-          WHEN total_visits = 0 THEN 'unused_pack'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 1 THEN 'save_candidate'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 2 THEN 'building_habit'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 3 THEN 'upgrade_candidate'
-          ELSE 'ready_to_upgrade' END
+          WHEN total_visits = 0 THEN 'not_using'
+          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 1 THEN 'barely_using'
+          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 2 THEN 'getting_there'
+          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 3 THEN 'full_use'
+          ELSE 'wants_more' END
         WHEN segment = 'tv' THEN CASE
           WHEN total_visits = 0 THEN 'inactive'
           WHEN total_visits = 1 THEN 'light'
@@ -750,32 +766,34 @@ export async function getUsageScorecard(
     const currentTiers = await getPeriodTierCounts(pool, ["sky3"], periodStart, periodWeeks);
     const priorTiers = await getPeriodTierCounts(pool, ["sky3"], priorPeriodStart, periodWeeks);
 
-    // Card 1: % at Full Use (upgrade_candidate + ready_to_upgrade)
-    const fullUseTiers = ["upgrade_candidate", "ready_to_upgrade"];
+    // Card 1: % Using 3+ Classes (full_use + wants_more)
+    const fullUseTiers = ["full_use", "wants_more"];
     const curFullUse = fullUseTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
     const curFullUsePct = currentTiers.total > 0 ? Math.round((curFullUse / currentTiers.total) * 1000) / 10 : 0;
     const priFullUse = fullUseTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
     const priFullUsePct = priorTiers.total > 0 ? Math.round((priFullUse / priorTiers.total) * 1000) / 10 : 0;
     sky3Cards.push({
-      key: "pct_full_use", label: "% at Full Use", value: curFullUsePct, format: "pct",
+      key: "pct_full_use", label: "% Using 3+ Classes", value: curFullUsePct, format: "pct",
       sparkline: [], delta: Math.round((curFullUsePct - priFullUsePct) * 10) / 10, deltaType: "pct", invertDirection: false,
     });
 
-    // Card 2: % Breakage (unused_pack + save_candidate) — inverted
-    const breakageTiers = ["unused_pack", "save_candidate"];
-    const curBreakage = breakageTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
-    const curBreakagePct = currentTiers.total > 0 ? Math.round((curBreakage / currentTiers.total) * 1000) / 10 : 0;
-    const priBreakage = breakageTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
-    const priBreakagePct = priorTiers.total > 0 ? Math.round((priBreakage / priorTiers.total) * 1000) / 10 : 0;
+    // Card 2: % Not Using (0-1 visits) — inverted (lower is better)
+    const notUsingTiers = ["not_using", "barely_using"];
+    const curNotUsing = notUsingTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
+    const curNotUsingPct = currentTiers.total > 0 ? Math.round((curNotUsing / currentTiers.total) * 1000) / 10 : 0;
+    const priNotUsing = notUsingTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
+    const priNotUsingPct = priorTiers.total > 0 ? Math.round((priNotUsing / priorTiers.total) * 1000) / 10 : 0;
     sky3Cards.push({
-      key: "pct_breakage", label: "% Breakage", value: curBreakagePct, format: "pct",
-      sparkline: [], delta: Math.round((curBreakagePct - priBreakagePct) * 10) / 10, deltaType: "pct", invertDirection: true,
+      key: "pct_not_using", label: "% Not Using (0\u20131)", value: curNotUsingPct, format: "pct",
+      sparkline: [], delta: Math.round((curNotUsingPct - priNotUsingPct) * 10) / 10, deltaType: "pct", invertDirection: true,
     });
 
-    // Card 3: Upgrade Candidates (count)
+    // Card 3: Wants More (4+ visits — real upgrade signal)
+    const wantsMore = currentTiers.tierCounts["wants_more"] || 0;
+    const priWantsMore = priorTiers.tierCounts["wants_more"] || 0;
     sky3Cards.push({
-      key: "upgrade_candidates", label: "Upgrade Candidates", value: curFullUse, format: "count",
-      sparkline: [], delta: curFullUse - priFullUse, deltaType: "count", invertDirection: false,
+      key: "wants_more_count", label: "Wants More (4+)", value: wantsMore, format: "count",
+      sparkline: [], delta: wantsMore - priWantsMore, deltaType: "count", invertDirection: false,
     });
 
     // Card 4: Total Subscribed
@@ -1079,7 +1097,7 @@ export async function getUsageMembers(params: {
   } else if (filter === "newly_on_target") {
     filterClause = `AND prior_tier NOT IN (${targetTiers}) AND current_tier IN (${targetTiers})`;
   } else if (filter === "dormant") {
-    const dormantTiers = segment === "members" ? "'dormant'" : segment === "sky3" ? "'unused_pack'" : "'inactive'";
+    const dormantTiers = segment === "members" ? "'dormant'" : segment === "sky3" ? "'not_using'" : "'inactive'";
     filterClause = `AND current_tier IN (${dormantTiers})`;
   } else if (filter === "improving") {
     filterClause = `AND direction = 'up'`;
@@ -1278,4 +1296,164 @@ export async function createAnnotation(weekStart: string, label: string): Promis
     RETURNING id, week_start, label
   `, [weekStart, label]);
   return { id: rows[0].id, weekStart: rows[0].week_start, label: rows[0].label };
+}
+
+// ── Sky3 Distribution (redesigned page) ─────────────────────
+
+export interface Sky3BandData {
+  count: number;
+  pct: number;
+}
+
+export interface Sky3DistributionResponse {
+  periodDays: number;
+  current: Record<string, Sky3BandData>;
+  prior: Record<string, Sky3BandData>;
+  deltas: Record<string, { countChange: number; direction: string }>;
+  takeaway: { trend: string; text: string };
+  total: number;
+}
+
+/**
+ * Get Sky3 distribution data — current bands, prior bands, deltas, and takeaway.
+ * Computes tiers from visit_count at query time.
+ */
+export async function getSky3Distribution(periodWeeks = 4): Promise<Sky3DistributionResponse> {
+  const pool = getPool();
+  const periodDays = periodWeeks * 7;
+  const periodStart = weeksAgo(periodWeeks);
+  const priorPeriodStart = weeksAgo(periodWeeks * 2);
+
+  // Get current and prior period tier counts
+  const currentTiers = await getPeriodTierCounts(pool, ["sky3"], periodStart, periodWeeks);
+  const priorTiers = await getPeriodTierCounts(pool, ["sky3"], priorPeriodStart, periodWeeks);
+  const total = currentTiers.total;
+
+  // Build band data
+  const bands = SKY3_TIER_ORDER;
+  const current: Record<string, Sky3BandData> = {};
+  const prior: Record<string, Sky3BandData> = {};
+  const deltas: Record<string, { countChange: number; direction: string }> = {};
+
+  for (const band of bands) {
+    const curCount = currentTiers.tierCounts[band] || 0;
+    const priCount = priorTiers.tierCounts[band] || 0;
+    current[band] = { count: curCount, pct: total > 0 ? Math.round((curCount / total) * 1000) / 10 : 0 };
+    prior[band] = { count: priCount, pct: priorTiers.total > 0 ? Math.round((priCount / priorTiers.total) * 1000) / 10 : 0 };
+
+    const change = curCount - priCount;
+    // For bad bands (not_using, barely_using): decrease = improving
+    // For good bands (getting_there, full_use, wants_more): increase = improving
+    const isBadBand = band === "not_using" || band === "barely_using";
+    let direction = "steady";
+    if (Math.abs(change) >= 2) {
+      if (isBadBand) direction = change < 0 ? "improving" : "declining";
+      else direction = change > 0 ? "improving" : "declining";
+    }
+    deltas[band] = { countChange: change, direction };
+  }
+
+  // Takeaway logic (weighted scoring)
+  let score = 0;
+  const zeroChange = (current["not_using"]?.count ?? 0) - (prior["not_using"]?.count ?? 0);
+  if (zeroChange < 0) score += 3;
+  else if (zeroChange > 0) score -= 3;
+
+  const oneChange = (current["barely_using"]?.count ?? 0) - (prior["barely_using"]?.count ?? 0);
+  if (oneChange < 0) score += 1;
+  else if (oneChange > 0) score -= 1;
+
+  const twoPlusChange = (
+    (current["getting_there"]?.count ?? 0) + (current["full_use"]?.count ?? 0) + (current["wants_more"]?.count ?? 0)
+  ) - (
+    (prior["getting_there"]?.count ?? 0) + (prior["full_use"]?.count ?? 0) + (prior["wants_more"]?.count ?? 0)
+  );
+  if (twoPlusChange > 0) score += 2;
+  else if (twoPlusChange < 0) score -= 2;
+
+  let trend: string;
+  let text: string;
+  if (score >= 3) {
+    trend = "improving";
+    text = `Usage is improving: ${Math.abs(zeroChange)} fewer members at 0 visits, ${twoPlusChange > 0 ? `${twoPlusChange} more` : "no change in"} members using 2+ classes.`;
+  } else if (score <= -3) {
+    trend = "declining";
+    text = `Usage needs attention: ${Math.abs(zeroChange)} more members at 0 visits than last period.`;
+  } else if (score > 0) {
+    trend = "slightly_improving";
+    text = `Usage is moving in the right direction: ${Math.abs(zeroChange)} fewer members at 0 visits.`;
+  } else if (score < 0) {
+    trend = "slightly_declining";
+    const biggestDrop = Math.abs(zeroChange) > Math.abs(twoPlusChange) ? `${Math.abs(zeroChange)} more at 0 visits` : `${Math.abs(twoPlusChange)} fewer using 2+ classes`;
+    text = `Usage dipped slightly: ${biggestDrop}.`;
+  } else {
+    trend = "steady";
+    text = "Usage is holding steady \u2014 no major shifts this period.";
+  }
+
+  return { periodDays, current, prior, deltas, takeaway: { trend, text }, total };
+}
+
+/**
+ * Get Sky3 members by band (for side panel).
+ * Computes band from visit_count at query time.
+ */
+export async function getSky3MembersByBand(params: {
+  band: string;
+  periodWeeks?: number;
+  fieldsOnly?: "email";
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: { name: string; email: string }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { band, periodWeeks = 4, fieldsOnly, page = 1, perPage = 25 } = params;
+  const periodStart = weeksAgo(periodWeeks);
+
+  // Get all Sky3 members with their aggregated visits in the period
+  const rows = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
+
+  // Filter by band
+  const bandMembers = rows.filter(r => r.tier === band);
+  const total = bandMembers.length;
+
+  // Get names for paginated subset
+  const offset = (page - 1) * perPage;
+  const pageEmails = bandMembers.slice(offset, offset + perPage).map(r => r.member_email);
+
+  if (fieldsOnly === "email") {
+    // Return all emails (for Copy All Emails)
+    return {
+      members: bandMembers.map(r => ({ name: "", email: r.member_email })),
+      total,
+      page: 1,
+    };
+  }
+
+  // Fetch names
+  if (pageEmails.length === 0) return { members: [], total, page };
+
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email,
+      customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [pageEmails]);
+
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, nr.name as string);
+
+  return {
+    members: pageEmails.map(em => ({
+      name: nameMap.get(em) || em,
+      email: em,
+    })),
+    total,
+    page,
+  };
 }
