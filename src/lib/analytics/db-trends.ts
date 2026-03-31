@@ -261,7 +261,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     const catRows: CatRow[] = allAutoRenews.map((r: Record<string, unknown>) => {
       const name = r.plan_name as string;
       const annual = isAnnualPlan(name);
-      const price = (r.plan_price as number) || 0;
+      const price = Number(r.plan_price) || 0;
       const createdRaw = r.created_at as string | null;
       const canceledRaw = r.canceled_at as string | null;
       const createdDate = createdRaw ? parseDate(createdRaw) : null;
@@ -1069,9 +1069,16 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
    *   "Jan 28, 2024"               (other)
    * We use parseDate() from date-utils to handle all of these.
    */
-  function toDateStr(raw: string | null | undefined): string | null {
-    if (!raw || raw.trim() === "") return null;
-    const d = parseDate(raw);
+  function toDateStr(raw: unknown): string | null {
+    if (raw == null) return null;
+    // pg may return DATE columns as JS Date objects
+    if (raw instanceof Date) {
+      if (isNaN(raw.getTime())) return null;
+      return `${raw.getFullYear()}-${String(raw.getMonth() + 1).padStart(2, "0")}-${String(raw.getDate()).padStart(2, "0")}`;
+    }
+    const s = String(raw).trim();
+    if (s === "") return null;
+    const d = parseDate(s);
     if (!d) return null;
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
@@ -1079,7 +1086,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   const categorized = allRows.map((r: Record<string, unknown>) => {
     const name = r.plan_name as string;
     const annual = isAnnualPlan(name);
-    const price = (r.plan_price as number) || 0;
+    const price = Number(r.plan_price) || 0;
     return {
       plan_name: name,
       plan_state: r.plan_state as string,
