@@ -262,10 +262,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
       const name = r.plan_name as string;
       const annual = isAnnualPlan(name);
       const price = Number(r.plan_price) || 0;
-      const createdRaw = r.created_at as string | null;
-      const canceledRaw = r.canceled_at as string | null;
-      const createdDate = createdRaw ? parseDate(createdRaw) : null;
-      const canceledDate = canceledRaw ? parseDate(canceledRaw) : null;
+      // pg returns DATE columns as JS Date objects, not strings
+      const createdDate = r.created_at instanceof Date ? r.created_at
+        : (typeof r.created_at === "string" && r.created_at ? parseDate(r.created_at) : null);
+      const canceledDate = r.canceled_at instanceof Date ? r.canceled_at
+        : (typeof r.canceled_at === "string" && r.canceled_at ? parseDate(r.canceled_at) : null);
       return {
         category: getCategory(name),
         isAnnual: annual,
