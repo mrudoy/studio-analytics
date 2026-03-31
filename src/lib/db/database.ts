@@ -1,9 +1,12 @@
 import { Pool, types } from "pg";
 
-// Override DATE parser to return "YYYY-MM-DD" strings instead of Date objects.
-// This ensures existing code that does `.slice(0, 7)` etc. continues to work
-// after migrating date columns from TEXT to DATE type (migration 011).
+// Override date/timestamp parsers to return strings instead of Date objects.
+// This ensures existing code that does `.slice(0, 7)`, `.replace()`, etc.
+// continues to work after migrating date columns from TEXT to DATE type.
+// OID 1082 = DATE, 1114 = TIMESTAMP, 1184 = TIMESTAMPTZ
 types.setTypeParser(1082, (val: string) => val);
+types.setTypeParser(1114, (val: string) => val);
+types.setTypeParser(1184, (val: string) => val);
 
 // Singleton pool with HMR guard for Next.js dev mode
 const globalForDb = globalThis as unknown as { pgPool?: Pool };
