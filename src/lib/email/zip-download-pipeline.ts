@@ -43,7 +43,7 @@ import {
   type RawRefund,
   type RawTransfer,
 } from "./zip-schemas";
-import { saveAutoRenews } from "../db/auto-renew-store";
+import { saveAutoRenews, reconcileAutoRenews } from "../db/auto-renew-store";
 import { saveOrders } from "../db/order-store";
 import {
   saveRegistrations,
@@ -502,6 +502,22 @@ async function runZipImport(
     console.log(
       `[zip-pipeline] Auto-renews saved: ${result.inserted} new, ${result.updated} updated`
     );
+
+    // ── Reconcile: mark stale subscribers as Canceled ────
+    // The export contains ALL active subscribers. Anyone active in our DB
+    // but missing from this export has canceled/changed since the last pull.
+    progress("Reconciling subscriber states...", 44);
+    const exportEmails = new Set(
+      autoRenewRows
+        .filter((r) => r.planState !== "Canceled" && r.planState !== "Expired")
+        .map((r) => r.customerEmail.toLowerCase())
+    );
+    const reconcileResult = await reconcileAutoRenews(exportEmails);
+    if (reconcileResult.reconciled > 0) {
+      console.log(
+        `[zip-pipeline] Reconciliation: ${reconcileResult.reconciled} stale subscribers marked Canceled`
+      );
+    }
   }
 
   // ── Populate pass-email cache ──────────────────────────

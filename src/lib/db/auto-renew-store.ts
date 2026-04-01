@@ -165,6 +165,71 @@ export async function saveAutoRenews(
   return { inserted, updated };
 }
 
+/**
+ * Reconcile active auto-renews against a fresh export.
+ *
+ * Compares DB active subscribers against the emails present in the current
+ * export. Anyone active in DB but missing from the export has gone stale
+ * (canceled, changed plan, etc.) — update their plan_state to 'Canceled'.
+ *
+ * This fixes ghost subscribers whose plan_state was never updated by the
+ * daily export. Data is never deleted — only plan_state is updated.
+ */
+export async function reconcileAutoRenews(
+  exportEmails: Set<string>
+): Promise<{ reconciled: number; details: { email: string; planName: string; oldState: string }[] }> {
+  const pool = getPool();
+
+  // Get all currently "active" rows from DB
+  const { rows } = await pool.query(
+    `SELECT id, customer_email, plan_name, plan_state
+     FROM auto_renews
+     WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+       AND (canceled_at IS NULL OR canceled_at > NOW())`
+  );
+
+  // Find rows whose email is NOT in the export
+  const toReconcile: { id: number; email: string; planName: string; oldState: string }[] = [];
+  for (const row of rows) {
+    const email = (row.customer_email as string).toLowerCase();
+    if (!exportEmails.has(email)) {
+      toReconcile.push({
+        id: row.id as number,
+        email,
+        planName: row.plan_name as string,
+        oldState: row.plan_state as string,
+      });
+    }
+  }
+
+  if (toReconcile.length === 0) {
+    console.log("[auto-renew-store] Reconciliation: all DB active subscribers found in export");
+    return { reconciled: 0, details: [] };
+  }
+
+  // Update stale rows: set plan_state to 'Canceled' and canceled_at to now
+  const ids = toReconcile.map((r) => r.id);
+  await pool.query(
+    `UPDATE auto_renews
+     SET plan_state = 'Canceled',
+         canceled_at = COALESCE(canceled_at, NOW())
+     WHERE id = ANY($1)`,
+    [ids]
+  );
+
+  console.log(
+    `[auto-renew-store] Reconciliation: marked ${toReconcile.length} stale subscribers as Canceled`
+  );
+  for (const r of toReconcile) {
+    console.log(`  ${r.email} | ${r.planName} | was ${r.oldState}`);
+  }
+
+  return {
+    reconciled: toReconcile.length,
+    details: toReconcile.map((r) => ({ email: r.email, planName: r.planName, oldState: r.oldState })),
+  };
+}
+
 // ── Read Operations ──────────────────────────────────────────
 
 interface RawAutoRenewRow {
@@ -203,12 +268,22 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 
 /**
  * Get all active auto-renews.
- * Union.fit "Active" = Valid Now + Pending Cancel + Past Due + In Trial + Paused.
- * Excludes only: 'Canceled', 'Invalid'
+ * Active auto-renews = all non-canceled states, excluding anyone whose
+ * canceled_at date is in the past.
  *
- * Paused members are included because Union.fit counts them as active subscribers
- * (they still have an active commitment and will resume). Excluding them caused
- * the dashboard to under-count members vs Union's own reports (~380 vs ~424).
+ * States included:
+ *   - Valid Now: actively billing
+ *   - Paused: on hold but committed
+ *   - In Trial: trial period
+ *   - Invalid: used all passes (e.g. SKY3 used 3/3), still a subscriber
+ *   - Pending Cancel: canceling next cycle, currently active
+ *   - Past Due: payment failed, not formally canceled
+ *
+ * canceled_at guard: daily exports often don't update plan_state when
+ * someone cancels, but canceled_at IS set. Exclude anyone already canceled.
+ *
+ * Downstream callers (getActiveCounts, getAutoRenewStats) deduplicate by
+ * customer_email so duplicate rows from multiple imports don't inflate counts.
  */
 export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
   const pool = getPool();
@@ -216,7 +291,8 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
-     WHERE plan_state IN ('Valid Now', 'Paused')
+     WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+       AND (canceled_at IS NULL OR canceled_at > NOW())
      ORDER BY plan_name`
   );
 
