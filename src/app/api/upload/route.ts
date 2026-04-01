@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { saveUploadedData, saveRevenueCategories } from "@/lib/db/revenue-store";
-import { saveAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
+import { saveAutoRenews, reconcileAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
 import { saveFirstVisits, saveRegistrations, type RegistrationRow } from "@/lib/db/registration-store";
 import { saveFullCustomers, type FullCustomerRow } from "@/lib/db/customer-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
@@ -95,6 +95,51 @@ export async function POST(request: Request) {
         await saveAutoRenews(snapshotId, arRows);
         parsedCount = arRows.length;
         console.log(`[api/upload] Saved ${arRows.length} auto-renews from ${filename} (snapshot: ${snapshotId})`);
+      }
+      warnings.push(...result.warnings);
+    }
+
+    // ── Full subscriber sync (import + reconcile) ───────────
+    // Use type=subscriber_sync with a FULL subscriber export from Union.fit
+    // (e.g. "subscriptions changes" report). This:
+    //   1. Upserts all rows (restores wrongly-Canceled, adds missing people)
+    //   2. Reconciles: marks DB-active subscribers NOT in the CSV as Canceled
+    if (dataType === "subscriber_sync") {
+      const result = parseCSV<AutoRenew>(savedPath, AutoRenewSchema);
+      if (result.data.length > 0) {
+        const snapshotId = `sync-${Date.now()}`;
+        const arRows: AutoRenewRow[] = result.data.map((ar) => ({
+          planName: ar.name,
+          planState: ar.state,
+          planPrice: ar.price,
+          customerName: ar.customer,
+          customerEmail: ar.email || "",
+          createdAt: ar.created || "",
+          orderId: ar.orderId || undefined,
+          salesChannel: ar.salesChannel || undefined,
+          canceledAt: ar.canceledAt || undefined,
+          canceledBy: ar.canceledBy || undefined,
+          currentState: ar.currentState || undefined,
+          currentPlan: ar.currentPlan || undefined,
+        }));
+
+        // Step 1: Upsert all rows from the full export
+        await saveAutoRenews(snapshotId, arRows);
+        parsedCount = arRows.length;
+        console.log(`[api/upload] Subscriber sync: saved ${arRows.length} rows (snapshot: ${snapshotId})`);
+
+        // Step 2: Reconcile — build set of active emails from CSV
+        const activeEmails = new Set(
+          result.data
+            .filter((ar) => ar.currentState === "active")
+            .map((ar) => (ar.email || "").toLowerCase())
+            .filter(Boolean)
+        );
+        const reconcileResult = await reconcileAutoRenews(activeEmails);
+        if (reconcileResult.reconciled > 0) {
+          warnings.push(`Reconciled ${reconcileResult.reconciled} stale subscribers`);
+          console.log(`[api/upload] Reconciled ${reconcileResult.reconciled} stale subscribers`);
+        }
       }
       warnings.push(...result.warnings);
     }
