@@ -184,8 +184,7 @@ export async function reconcileAutoRenews(
   const { rows } = await pool.query(
     `SELECT id, customer_email, plan_name, plan_state
      FROM auto_renews
-     WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
-       AND (canceled_at IS NULL OR canceled_at > NOW())`
+     WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')`
   );
 
   // Find rows whose email is NOT in the export
@@ -268,8 +267,6 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 
 /**
  * Get all active auto-renews.
- * Active auto-renews = all non-canceled states, excluding anyone whose
- * canceled_at date is in the past.
  *
  * States included:
  *   - Valid Now: actively billing
@@ -279,8 +276,11 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
  *   - Pending Cancel: canceling next cycle, currently active
  *   - Past Due: payment failed, not formally canceled
  *
- * canceled_at guard: daily exports often don't update plan_state when
- * someone cancels, but canceled_at IS set. Exclude anyone already canceled.
+ * NOTE: canceled_at is NOT used as a filter. For active subscribers,
+ * Union.fit sets canceled_at to the next billing/renewal date, NOT the
+ * cancellation date. Using it as a guard would filter out nearly everyone.
+ * Instead, stale subscribers are cleaned up by reconcileAutoRenews() which
+ * compares against each fresh export.
  *
  * Downstream callers (getActiveCounts, getAutoRenewStats) deduplicate by
  * customer_email so duplicate rows from multiple imports don't inflate counts.
@@ -292,7 +292,6 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
      WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
-       AND (canceled_at IS NULL OR canceled_at > NOW())
      ORDER BY plan_name`
   );
 

@@ -89,13 +89,12 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 ## ACTIVE SUBSCRIBER COUNTING (PERMANENT RULE)
 
-**An active subscriber must satisfy BOTH conditions: `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')` AND `(canceled_at IS NULL OR canceled_at > NOW())`.**
+**An active subscriber = `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')`.**
 
 - **All 6 states are active.** Invalid = used all passes (still a subscriber). Pending Cancel = canceling next cycle (currently active). Past Due = payment failed (not formally canceled). Excluding any of these undercounts vs Union.fit's own numbers.
-- `plan_state` alone is NOT reliable. Daily exports often fail to update `plan_state` when someone cancels. The `canceled_at` guard catches some but not all stale records (some ghosts have `canceled_at = NULL`). Periodic reconciliation against a full Union.fit subscriber export is needed.
-- Any query that counts or lists active subscribers MUST include both the state filter AND the `canceled_at` guard. This applies to `getActiveAutoRenews()` and any new function.
+- **Do NOT use `canceled_at` as a filter for active subscribers.** For active subscribers, Union.fit sets `canceled_at` to the next billing/renewal date, NOT the cancellation date. Using `canceled_at <= NOW()` as a guard will filter out nearly everyone.
+- Stale subscribers (people who canceled but whose `plan_state` was never updated) are cleaned up by `reconcileAutoRenews()`, which runs after every pipeline import. It compares DB active subscribers against the export's email set and marks missing ones as 'Canceled'.
 - Subscriber counts are deduplicated by `customer_email` (one person = one count per category). A person paying for both Member and TV is counted in both categories, but only once in the total.
-- **Reconciliation runs every pipeline pull.** After saving auto-renews, `reconcileAutoRenews()` compares DB active subscribers against the export's email set. Anyone active in DB but missing from the export gets `plan_state` set to 'Canceled' and `canceled_at` set to now. No data is deleted.
 - This rule was set by Mike on 2026-04-01 after discovering the dashboard undercounted by ~75 people vs Union.fit's numbers. Verified against CSV export: Members 455 (exact match), Sky3 358, TV 1717.
 
 ## Architecture
