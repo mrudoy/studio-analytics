@@ -503,21 +503,11 @@ async function runZipImport(
       `[zip-pipeline] Auto-renews saved: ${result.inserted} new, ${result.updated} updated`
     );
 
-    // ── Reconcile: mark stale subscribers as Canceled ────
-    // The export contains ALL active subscribers. Anyone active in our DB
-    // but missing from this export has canceled/changed since the last pull.
-    progress("Reconciling subscriber states...", 44);
-    const exportEmails = new Set(
-      autoRenewRows
-        .filter((r) => r.planState !== "Canceled" && r.planState !== "Expired")
-        .map((r) => r.customerEmail.toLowerCase())
-    );
-    const reconcileResult = await reconcileAutoRenews(exportEmails);
-    if (reconcileResult.reconciled > 0) {
-      console.log(
-        `[zip-pipeline] Reconciliation: ${reconcileResult.reconciled} stale subscribers marked Canceled`
-      );
-    }
+    // NOTE: Reconciliation is NOT run here. Daily zip exports contain only
+    // recent changes (delta), NOT all active subscribers. Running reconciliation
+    // against a delta would mass-cancel everyone not in the delta.
+    // Reconciliation should only run against a FULL subscriber export
+    // (e.g. the "subscriptions changes" report from Union.fit admin).
   }
 
   // ── Populate pass-email cache ──────────────────────────

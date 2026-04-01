@@ -93,7 +93,8 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 - **All 6 states are active.** Invalid = used all passes (still a subscriber). Pending Cancel = canceling next cycle (currently active). Past Due = payment failed (not formally canceled). Excluding any of these undercounts vs Union.fit's own numbers.
 - **Do NOT use `canceled_at` as a filter for active subscribers.** For active subscribers, Union.fit sets `canceled_at` to the next billing/renewal date, NOT the cancellation date. Using `canceled_at <= NOW()` as a guard will filter out nearly everyone.
-- Stale subscribers (people who canceled but whose `plan_state` was never updated) are cleaned up by `reconcileAutoRenews()`, which runs after every pipeline import. It compares DB active subscribers against the export's email set and marks missing ones as 'Canceled'.
+- **Daily zip exports are DELTAS, not full snapshots.** They contain only recent changes — NOT all active subscribers. NEVER run reconciliation against a daily export or it will mass-cancel everyone.
+- `reconcileAutoRenews()` exists but must ONLY be called with a full subscriber list (e.g. the "subscriptions changes" report from Union.fit admin, or a manual CSV upload). It is NOT wired into the daily pipeline.
 - Subscriber counts are deduplicated by `customer_email` (one person = one count per category). A person paying for both Member and TV is counted in both categories, but only once in the total.
 - This rule was set by Mike on 2026-04-01 after discovering the dashboard undercounted by ~75 people vs Union.fit's numbers. Verified against CSV export: Members 455 (exact match), Sky3 358, TV 1717.
 
