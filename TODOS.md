@@ -4,7 +4,7 @@ Anything written here persists across sessions. Claude reads this at the start o
 
 ## Open
 
-- [x] **Define member groups within member number** — Active = all 6 non-canceled states (Valid Now, Paused, In Trial, Invalid, Pending Cancel, Past Due) + canceled_at guard + dedup by email. Multi-category people counted in each. Reconciliation runs every pipeline pull: compares DB against export, marks ghosts as Canceled. Verified against Union CSV: Members 455 exact, Sky3 358, TV 1717. Rule in CLAUDE.md as permanent.
+- [x] **Define member groups within member number** — Active = all 6 non-canceled states (Valid Now, Paused, In Trial, Invalid, Pending Cancel, Past Due). NO canceled_at filter (it's next billing date, not cancellation). Dedup by email. Multi-category people counted in each. Reconciliation only runs on full subscriber sync (never on daily deltas). Full sync completed 2026-04-01: 7,232 rows upserted, 31 stale reconciled. Verified exact match: Members 455, Sky3 358, TV 1717. Rule in CLAUDE.md as permanent. Upload path: `/api/upload` with `type=subscriber_sync`.
 
 - [x] ~~Fix stretched fonts~~ — `FONT_SANS` was overriding body's DM Sans with Helvetica Neue; `DS.weight.normal` was 500 (too heavy); DM Sans 700 wasn't loaded but used as bold. Fixed: FONT_SANS → DM Sans, weights → 400/500/600, loaded 700 in layout.tsx.
 - [x] ~~**Pipeline automation**: local pipeline server now always-on at `localhost:3099` via launchd (`com.skyting.pipeline-server`). Control panel at `localhost:3099/pipeline` — trigger, progress, freshness display. 6am auto-trigger via `com.skyting.pipeline` launchd agent curls the server with staleness guard (skips if <18h old). Env copied to `~/.local/skyting-pipeline.env` to bypass macOS TCC.~~

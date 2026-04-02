@@ -1680,11 +1680,14 @@ export async function getSky3MembersByBand(params: {
   const { band, periodWeeks = 4, fieldsOnly, page = 1, perPage = 25 } = params;
   const periodStart = weeksAgo(periodWeeks);
 
+  // Get the stable cohort (same filter as the distribution bars)
+  const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+
   // Get all Sky3 members with their aggregated visits in the period
   const rows = await getPeriodTiers(pool, ["sky3"], periodStart, periodWeeks);
 
-  // Filter by band
-  const bandMembers = rows.filter(r => r.tier === band);
+  // Filter by band AND stable cohort (matches what the bar chart shows)
+  const bandMembers = rows.filter(r => r.tier === band && stableEmails.has(r.member_email));
   const total = bandMembers.length;
 
   // Get names for paginated subset

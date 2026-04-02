@@ -287,12 +287,48 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
  */
 export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
   const pool = getPool();
+  // A person is active on a plan if ANY of their rows has current_state = 'active'.
+  // Daily deltas create rows with plan_state='Valid Now' but NULL current_state
+  // for people who are actually canceled — so plan_state alone is unreliable.
+  // Full exports and subscription-changes CSVs set current_state reliably.
+  //
+  // Strategy:
+  //   1. Find all person+plan combos that have current_state='active' in any row
+  //   2. For people with NO current_state data at all, fall back to plan_state
+  //   3. Return one row per person+plan (latest by id)
   const { rows } = await pool.query(
-    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
-            customer_name, customer_email, created_at, canceled_at
-     FROM auto_renews
-     WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
-     ORDER BY plan_name`
+    `WITH active_signals AS (
+       -- Person+plan combos with at least one current_state='active' row
+       SELECT DISTINCT LOWER(customer_email) AS email, plan_name
+       FROM auto_renews
+       WHERE current_state = 'active'
+     ),
+     has_any_cs AS (
+       -- Person+plan combos with any current_state set (to distinguish "no data" from "canceled")
+       SELECT DISTINCT LOWER(customer_email) AS email, plan_name
+       FROM auto_renews
+       WHERE current_state IS NOT NULL
+     ),
+     latest_rows AS (
+       SELECT DISTINCT ON (LOWER(customer_email), plan_name)
+              id, snapshot_id, plan_name, plan_state, plan_price,
+              customer_name, customer_email, created_at, canceled_at
+       FROM auto_renews
+       ORDER BY LOWER(customer_email), plan_name, id DESC
+     )
+     SELECT lr.id, lr.snapshot_id, lr.plan_name, lr.plan_state, lr.plan_price,
+            lr.customer_name, lr.customer_email, lr.created_at, lr.canceled_at
+     FROM latest_rows lr
+     WHERE (
+       -- Has current_state='active' in any row → active
+       EXISTS (SELECT 1 FROM active_signals a WHERE a.email = LOWER(lr.customer_email) AND a.plan_name = lr.plan_name)
+       OR (
+         -- No current_state data at all → fall back to plan_state
+         NOT EXISTS (SELECT 1 FROM has_any_cs h WHERE h.email = LOWER(lr.customer_email) AND h.plan_name = lr.plan_name)
+         AND lr.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+       )
+     )
+     ORDER BY lr.plan_name`
   );
 
   return (rows as RawAutoRenewRow[]).map(mapRow);
