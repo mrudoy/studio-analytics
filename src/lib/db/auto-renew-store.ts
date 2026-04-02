@@ -339,11 +339,15 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
  */
 export async function getNewAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
   const pool = getPool();
+  // Only count subscriptions that are currently active (not historical canceled rows
+  // that happen to have created_at in this range from daily delta imports).
   const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
      WHERE created_at >= $1 AND created_at < $2
+       AND (current_state = 'active' OR (current_state IS NULL
+            AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')))
      ORDER BY created_at`,
     [startDate, endDate]
   );
@@ -356,11 +360,16 @@ export async function getNewAutoRenews(startDate: string, endDate: string): Prom
  */
 export async function getCanceledAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
   const pool = getPool();
+  // Only count rows where plan_state is actually 'Canceled'.
+  // For active subscribers, canceled_at is the next billing date — NOT a cancellation.
+  // Daily deltas import active rows with canceled_at in recent ranges; filtering by
+  // plan_state='Canceled' ensures we only count real cancellations.
   const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
      FROM auto_renews
      WHERE canceled_at IS NOT NULL AND canceled_at >= $1 AND canceled_at < $2
+       AND plan_state = 'Canceled'
      ORDER BY canceled_at`,
     [startDate, endDate]
   );
@@ -399,7 +408,8 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
       FROM auto_renews
       WHERE created_at IS NOT NULL
         AND created_at >= CURRENT_DATE - ($1 || ' days')::interval
-        AND plan_state NOT IN ('Expired')
+        AND (current_state = 'active' OR (current_state IS NULL
+             AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')))
       GROUP BY created_at
     ),
     churned_by_day AS (
@@ -410,6 +420,7 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
       FROM auto_renews
       WHERE canceled_at IS NOT NULL
         AND canceled_at >= CURRENT_DATE - ($1 || ' days')::interval
+        AND plan_state = 'Canceled'
       GROUP BY canceled_at
     )
     SELECT
