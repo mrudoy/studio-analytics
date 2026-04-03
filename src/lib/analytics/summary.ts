@@ -37,13 +37,19 @@ export interface SummaryKPIs {
 
 export function computeSummary(activeAutoRenews: AutoRenew[], orders: Order[] = []): SummaryKPIs {
   let mrrMember = 0, mrrSky3 = 0, mrrSkyTingTv = 0, mrrUnknown = 0;
-  let activeMembers = 0, activeSky3 = 0, activeSkyTingTv = 0, activeUnknown = 0;
   const unknownPlanNames: Record<string, number> = {};
   const skippedStates: Record<string, number> = {};
   let annualPlanCount = 0;
 
+  // Deduplicate by email per category — one person counts once per category
+  // even if they appear in multiple CSV files (active + paused + trialing).
+  const seenMember = new Set<string>();
+  const seenSky3 = new Set<string>();
+  const seenTv = new Set<string>();
+  const seenUnknown = new Set<string>();
+
   for (const ar of activeAutoRenews) {
-    // Only count Active + Paused states; skip Pending Cancellation, Past Due, In Trial
+    // Only count these states; skip Pending Cancel, Past Due, etc.
     const normalizedState = ar.state.toLowerCase().trim();
     if (!COUNTABLE_STATES.has(normalizedState)) {
       skippedStates[normalizedState] = (skippedStates[normalizedState] || 0) + 1;
@@ -55,26 +61,34 @@ export function computeSummary(activeAutoRenews: AutoRenew[], orders: Order[] = 
     const monthlyPrice = annual ? ar.price / 12 : ar.price;
     if (annual) annualPlanCount++;
 
+    // Use email for deduplication; fall back to customer name if email missing
+    const key = (ar.email || ar.customer || "").toLowerCase().trim();
+
     switch (cat) {
       case "MEMBER":
         mrrMember += monthlyPrice;
-        activeMembers++;
+        seenMember.add(key);
         break;
       case "SKY3":
         mrrSky3 += monthlyPrice;
-        activeSky3++;
+        seenSky3.add(key);
         break;
       case "SKY_TING_TV":
         mrrSkyTingTv += monthlyPrice;
-        activeSkyTingTv++;
+        seenTv.add(key);
         break;
       default:
         mrrUnknown += monthlyPrice;
-        activeUnknown++;
+        seenUnknown.add(key);
         unknownPlanNames[ar.name] = (unknownPlanNames[ar.name] || 0) + 1;
         break;
     }
   }
+
+  const activeMembers = seenMember.size;
+  const activeSky3 = seenSky3.size;
+  const activeSkyTingTv = seenTv.size;
+  const activeUnknown = seenUnknown.size;
 
   // Log filtered-out states for visibility
   if (Object.keys(skippedStates).length > 0) {
