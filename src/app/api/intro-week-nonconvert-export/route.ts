@@ -2,7 +2,7 @@ import { getIntroWeekConversionData } from "@/lib/db/registration-store";
 
 export async function GET() {
   try {
-    const rows = await getIntroWeekConversionData(7);
+    const rows = await getIntroWeekConversionData(14);
     const nonConverters = rows.filter((r) => !r.converted);
 
     const lines: string[] = [

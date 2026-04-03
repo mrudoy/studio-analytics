@@ -3478,7 +3478,7 @@ function ExpiredIntroWeeksCard({ data }: { data: IntroWeekConversionData }) {
         <div className="flex items-center justify-between w-full">
           <div>
             <CardTitle>Expired Intro Weeks</CardTitle>
-            <CardDescription>Intro week passes that expired in the last 7 days</CardDescription>
+            <CardDescription>Intro week passes that expired in the last 14 days</CardDescription>
           </div>
           {notConverted > 0 && (
             <Button
