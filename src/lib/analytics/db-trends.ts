@@ -751,7 +751,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   }
 
   async function runIntroWeekConversion(): Promise<import("../../types/dashboard").IntroWeekConversionData | null> {
-    const convRows = await getIntroWeekConversionData();
+    const convRows = await getIntroWeekConversionData(7);
     if (convRows.length === 0) return null;
     const converted = convRows.filter((r) => r.converted).length;
     const notConverted = convRows.length - converted;
