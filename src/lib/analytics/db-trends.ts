@@ -242,7 +242,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   // ── 2. Convert to sorted arrays ──────────────────────────
   const allWeekKeys = Array.from(weeklyBuckets.keys()).sort();
   const allMonthKeys = Array.from(monthlyBuckets.keys()).sort();
-  const recentWeekKeys = allWeekKeys.slice(-8);
+  const recentWeekKeys = allWeekKeys.slice(-32);   // ~7.5 months; enough history for a real 6-month weekly average after Oct 2025 exclusion
   const recentMonthKeys = allMonthKeys.slice(-6);
 
   const weekly: TrendRowData[] = recentWeekKeys.map((wk, i) => {

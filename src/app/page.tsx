@@ -4894,17 +4894,14 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               rate: weekPacingMultiplier ? pacedPct : rawPct,
             } as typeof weeklyChurnData[0]);
           }
-          // 6-month trimmed avg % (exclude migration-spike weeks)
-          const baselineWeeks = (() => {
-            if (completedWeeks.length < 4) return completedWeeks;
-            const acts = completedWeeks.map(w => w.memberChurn + (w.newMembers ?? 0));
-            const sorted = [...acts].sort((a, b) => a - b);
-            const med = sorted[Math.floor(sorted.length / 2)];
-            const thresh = med * 3;
-            return completedWeeks.filter((_, i) => acts[i] <= thresh);
-          })();
-          const weeklyAvgPct = baselineWeeks.length > 0
-            ? (baselineWeeks.reduce((s, w) => s + (w.memberChurnPct ?? 0), 0) / baselineWeeks.length) : 0;
+          // 6-month weekly average: last 26 completed weeks, excluding Oct 2025 admin cleanup
+          // (mirrors the monthly card's Oct exclusion used elsewhere for members)
+          const sixMonthWeeks = completedWeeks
+            .filter(w => !w.period.startsWith("2025-10"))
+            .slice(-26);
+          const weeklyAvgPct = sixMonthWeeks.length > 0
+            ? (sixMonthWeeks.reduce((s, w) => s + (w.memberChurnPct ?? 0), 0) / sixMonthWeeks.length)
+            : 0;
           const weeklyGoal = getCurrentQuarterGoal("member");
           const weeklyGoalConverted = weeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - weeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
           const weeklyOnTrack = weeklyGoalConverted !== null ? weeklyAvgPct <= weeklyGoalConverted : null;
