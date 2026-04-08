@@ -292,7 +292,11 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
         const activeByEmail = new Map<string, CatRow>();
         for (const r of rows) {
           if (!r.created_at || r.created_at >= weekStart) continue;
-          if (!ACTIVE_STATES.includes(r.plan_state) && !(r.canceled_at && r.canceled_at >= weekStart)) continue;
+          // Active at week start = currently active, OR actually-canceled row whose
+          // cancel date is on/after the week start (they were still active at the boundary).
+          // NOTE: for active subscribers, canceled_at is the NEXT BILLING DATE, not a cancel
+          // date — so we must gate the second clause on plan_state='Canceled'.
+          if (!ACTIVE_STATES.includes(r.plan_state) && !(r.plan_state === "Canceled" && r.canceled_at && r.canceled_at >= weekStart)) continue;
           // For MEMBER: only count monthly-billed (annual can't meaningfully churn weekly)
           if (cat === "MEMBER" && r.isAnnual) continue;
           const existing = activeByEmail.get(r.email);
@@ -1158,8 +1162,10 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       if (r.created_at && r.created_at >= monthStart && r.created_at < monthEnd) {
         if (!newByCatEmail.has(email)) newByCatEmail.set(email, r.category);
       }
-      // Canceled in this month
-      if (r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd) {
+      // Canceled in this month — only count rows that are ACTUALLY in plan_state='Canceled'.
+      // For active subscribers, canceled_at is the next billing/renewal date (per CLAUDE.md),
+      // so without this filter we'd count ~330 active MEMBER renewals as "April cancellations".
+      if (r.plan_state === "Canceled" && r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd) {
         if (!canceledByCatEmail.has(email)) canceledByCatEmail.set(email, r.category);
       }
     }
@@ -1199,7 +1205,9 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       const activeByEmail = new Map<string, CategorizedRow>();
       for (const r of catRows) {
         if (!r.created_at || r.created_at >= monthStart) continue;
-        if (!ACTIVE_STATES.includes(r.plan_state) && !(r.canceled_at && r.canceled_at >= monthStart)) continue;
+        // Same guard as the weekly path: canceled_at for active subs = next renewal date,
+        // so we must require plan_state='Canceled' before trusting canceled_at as an end date.
+        if (!ACTIVE_STATES.includes(r.plan_state) && !(r.plan_state === "Canceled" && r.canceled_at && r.canceled_at >= monthStart)) continue;
         const email = r.customer_email.toLowerCase();
         const existing = activeByEmail.get(email);
         if (!existing || r.monthlyRate > existing.monthlyRate) {
@@ -1213,6 +1221,9 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       // Exclude plan changers (upgrades/downgrades) — not real churn
       const canceledByEmail = new Map<string, CategorizedRow>();
       for (const r of catRows) {
+        // Real cancellation only — plan_state='Canceled' + canceled_at in month.
+        // Without the plan_state gate, rows with canceled_at = next-billing-date get counted.
+        if (r.plan_state !== "Canceled") continue;
         if (!(r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd)) continue;
         const email = r.customer_email.toLowerCase();
         if (planChangers.has(email)) continue; // skip plan changers
