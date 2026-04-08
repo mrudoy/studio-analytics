@@ -39,45 +39,60 @@ async function batchUpsertRegistrations(pool: Pool, rows: any[]): Promise<number
   if (rows.length === 0) return 0;
   let total = 0;
 
-  // Delete by union_registration_id first (handles email/attendance changes)
-  const unionIds = rows.filter((r) => r.unionRegistrationId).map((r) => r.unionRegistrationId);
-  if (unionIds.length > 0) {
-    for (let i = 0; i < unionIds.length; i += 500) {
-      const chunk = unionIds.slice(i, i + 500);
-      const ph = chunk.map((_: string, j: number) => `$${j + 1}`).join(",");
-      const client = await pool.connect();
-      try {
-        await client.query(`SET statement_timeout = '60s'`);
-        await client.query(`DELETE FROM registrations WHERE union_registration_id IN (${ph})`, chunk);
-      } finally {
-        client.release();
-      }
-    }
-  }
+  // Pure upsert — no DELETE. For rows with a union_registration_id, try
+  // UPDATE-by-id first (handles (email, attended_at) drift across runs).
+  // If UPDATE hits 0 rows, fall through to INSERT ... ON CONFLICT.
+  // This preserves NEVER DELETE DATA (no rows ever removed).
+  const client = await pool.connect();
+  try {
+    await client.query(`SET statement_timeout = '120s'`);
 
-  // Batch INSERT with ON CONFLICT
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const values: any[] = [];
-    const placeholders: string[] = [];
-
-    for (let j = 0; j < batch.length; j++) {
-      const r = batch[j];
-      const o = j * 24;
-      placeholders.push(`($${o+1},$${o+2},$${o+3},$${o+4},$${o+5},$${o+6},$${o+7},$${o+8},$${o+9},$${o+10},$${o+11},$${o+12},$${o+13},$${o+14},$${o+15},$${o+16},$${o+17},$${o+18},$${o+19},$${o+20},$${o+21},$${o+22},$${o+23},$${o+24})`);
-      values.push(
+    for (const r of rows) {
+      const email = (r.email || "").toLowerCase();
+      const vals = [
         r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt || null,
         r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
-        r.firstName, r.lastName, r.email.toLowerCase(), r.phone || null, r.role || null,
+        r.firstName, r.lastName, email, r.phone || null, r.role || null,
         r.registeredAt || null, r.canceledAt || null, r.attendedAt || null,
         r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
         r.revenue, r.unionRegistrationId || null, r.passId || null,
-      );
-    }
+      ];
 
-    const client = await pool.connect();
-    try {
-      await client.query(`SET statement_timeout = '60s'`);
+      if (r.unionRegistrationId) {
+        const updated = await client.query(
+          `UPDATE registrations SET
+             event_name = COALESCE($1, event_name),
+             event_id = COALESCE($2, event_id),
+             performance_id = COALESCE($3, performance_id),
+             performance_starts_at = COALESCE($4, performance_starts_at),
+             location_name = COALESCE($5, location_name),
+             video_name = COALESCE($6, video_name),
+             video_id = COALESCE($7, video_id),
+             teacher_name = COALESCE($8, teacher_name),
+             first_name = COALESCE($9, first_name),
+             last_name = COALESCE($10, last_name),
+             email = COALESCE($11, email),
+             phone = COALESCE($12, phone),
+             role = COALESCE($13, role),
+             registered_at = COALESCE($14, registered_at),
+             canceled_at = COALESCE($15, canceled_at),
+             attended_at = COALESCE($16, attended_at),
+             registration_type = COALESCE($17, registration_type),
+             state = COALESCE($18, state),
+             pass = COALESCE($19, pass),
+             subscription = COALESCE($20, subscription),
+             revenue_state = COALESCE($21, revenue_state),
+             revenue = COALESCE($22, revenue),
+             pass_id = COALESCE(NULLIF($24, ''), pass_id)
+           WHERE union_registration_id = $23`,
+          vals
+        );
+        if (updated.rowCount && updated.rowCount > 0) {
+          total += updated.rowCount;
+          continue;
+        }
+      }
+
       const result = await client.query(
         `INSERT INTO registrations (
           event_name, event_id, performance_id, performance_starts_at,
@@ -86,7 +101,7 @@ async function batchUpsertRegistrations(pool: Pool, rows: any[]): Promise<number
           registered_at, canceled_at, attended_at,
           registration_type, state, pass, subscription, revenue_state, revenue,
           union_registration_id, pass_id
-        ) VALUES ${placeholders.join(",")}
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
         ON CONFLICT (email, attended_at) DO UPDATE SET
           event_name = COALESCE(EXCLUDED.event_name, registrations.event_name),
           event_id = COALESCE(EXCLUDED.event_id, registrations.event_id),
@@ -102,12 +117,12 @@ async function batchUpsertRegistrations(pool: Pool, rows: any[]): Promise<number
           revenue = COALESCE(EXCLUDED.revenue, registrations.revenue),
           union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id),
           pass_id = COALESCE(NULLIF(EXCLUDED.pass_id, ''), registrations.pass_id)`,
-        values
+        vals
       );
       total += result.rowCount ?? 0;
-    } finally {
-      client.release();
     }
+  } finally {
+    client.release();
   }
 
   return total;

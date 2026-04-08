@@ -5,7 +5,7 @@ import { runZipWebhookPipeline } from "../email/zip-download-pipeline";
 import { runShopifySync } from "../shopify/shopify-sync";
 import { cleanupDownloads } from "../scraper/download-manager";
 import type { PipelineResult } from "@/types/pipeline";
-import { getWatermark, buildDateRangeForReport } from "../db/watermark-store";
+import { getWatermark } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 import { invalidateStatsCache, bumpDataVersion } from "../cache/stats-cache";
@@ -88,65 +88,87 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
     }
   }
 
-  // Path 2: Union Data Exporter API — fetch and process ALL available exports.
-  // Daily exports are incremental (only recently changed records), so we must
-  // process every available export to build a complete dataset. DB upserts
-  // handle deduplication — processing the same record twice is safe.
+  // Path 2: Union Data Exporter API — incremental fetch.
+  // Daily exports are incremental deltas (only recently changed records).
+  // We filter against the "unionApiExport" watermark so already-processed
+  // exports are skipped on subsequent runs. DB upserts are still the safety
+  // net for the newest export that wins any conflicts.
+  let nothingNew = false;
   if (!result && hasApiKey) {
     try {
       updateProgress(job, "Checking Union Data Exporter API...", 5);
       console.log("[pipeline] Trying Union Data Exporter API");
 
       const allExports = await fetchAllExports(settings!.unionApiKey!);
-      if (allExports.length > 0) {
-        console.log(`[pipeline] Processing ${allExports.length} exports (newest first)`);
+      if (allExports.length === 0) {
+        console.log("[pipeline] No API exports available");
+      } else {
+        // Filter to exports newer than the last-processed watermark.
+        // First run (no watermark) processes everything.
+        const wm = await getWatermark("unionApiExport");
+        const lastProcessedAt = wm?.highWaterDate ?? null;
+        const newExports = lastProcessedAt
+          ? allExports.filter((e) => e.createdAt > lastProcessedAt)
+          : allExports;
 
-        // Process newest first so the latest data wins any upsert conflicts
-        for (let i = 0; i < allExports.length; i++) {
-          const exportInfo = allExports[i];
-          const pctBase = 5 + Math.round((i / allExports.length) * 80);
-          updateProgress(
-            job,
-            `Processing export ${i + 1}/${allExports.length} (${exportInfo.dataRange.start?.slice(0, 10) || "full"})...`,
-            pctBase
+        const skipped = allExports.length - newExports.length;
+        if (skipped > 0) {
+          console.log(
+            `[pipeline] Skipping ${skipped} already-processed exports (watermark: ${lastProcessedAt})`
           );
-          console.log(`[pipeline] Export ${i + 1}/${allExports.length}: ${exportInfo.createdAt}`);
+        }
 
-          try {
-            const zipResult = await runZipWebhookPipeline({
-              downloadUrl: exportInfo.downloadUrl,
-              dataRange: exportInfo.dataRange,
-              onProgress: (step, percent) => {
-                // Scale sub-progress within this export's slice
-                const scaledPct = pctBase + Math.round((percent / 100) * (80 / allExports.length));
-                updateProgress(job, step, Math.min(scaledPct, 90));
-              },
-            });
+        if (newExports.length === 0) {
+          console.log("[pipeline] No new exports since last run — nothing to process");
+          nothingNew = true;
+        } else {
+          console.log(`[pipeline] Processing ${newExports.length} new exports (newest first)`);
 
-            if (zipResult.success) {
-              const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
-                (a, b) => a + (typeof b === "number" ? b : 0), 0
-              );
-              console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
-              // Log this export for freshness tracking
-              await logExport(exportInfo, totalRecords, i, allExports.length);
-              // Mark the latest (first) export as the watermark
-              if (i === 0) {
-                await markExportProcessed(exportInfo.createdAt, totalRecords);
-                result = zipResult;
+          // Process newest first so the latest data wins any upsert conflicts
+          for (let i = 0; i < newExports.length; i++) {
+            const exportInfo = newExports[i];
+            const pctBase = 5 + Math.round((i / newExports.length) * 80);
+            updateProgress(
+              job,
+              `Processing export ${i + 1}/${newExports.length} (${exportInfo.dataRange.start?.slice(0, 10) || "full"})...`,
+              pctBase
+            );
+            console.log(`[pipeline] Export ${i + 1}/${newExports.length}: ${exportInfo.createdAt}`);
+
+            try {
+              const zipResult = await runZipWebhookPipeline({
+                downloadUrl: exportInfo.downloadUrl,
+                dataRange: exportInfo.dataRange,
+                onProgress: (step, percent) => {
+                  // Scale sub-progress within this export's slice
+                  const scaledPct = pctBase + Math.round((percent / 100) * (80 / newExports.length));
+                  updateProgress(job, step, Math.min(scaledPct, 90));
+                },
+              });
+
+              if (zipResult.success) {
+                const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
+                  (a, b) => a + (typeof b === "number" ? b : 0), 0
+                );
+                console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
+                // Log this export for freshness tracking
+                await logExport(exportInfo, totalRecords, i, newExports.length);
+                // Mark the latest (first) export as the watermark
+                if (i === 0) {
+                  await markExportProcessed(exportInfo.createdAt, totalRecords);
+                  result = zipResult;
+                }
               }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.warn(`[pipeline] Export ${i + 1} failed: ${msg} — continuing`);
             }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.warn(`[pipeline] Export ${i + 1} failed: ${msg} — continuing`);
+          }
+
+          if (result) {
+            console.log(`[pipeline] All new exports processed. Pipeline succeeded in ${result.duration}s`);
           }
         }
-
-        if (result) {
-          console.log(`[pipeline] All exports processed. Pipeline succeeded in ${result.duration}s`);
-        }
-      } else {
-        console.log("[pipeline] No API exports available");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -177,6 +199,27 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   cleanupDownloads();
 
   if (!result) {
+    if (nothingNew) {
+      // No new exports since last run — return a no-op success result
+      // so the worker job completes cleanly instead of failing.
+      const duration = (Date.now() - pipelineStartedAt) / 1000;
+      return {
+        success: true,
+        sheetUrl: "",
+        rawDataSheetUrl: "",
+        duration,
+        recordCounts: {
+          newCustomers: 0,
+          orders: 0,
+          firstVisits: 0,
+          registrations: 0,
+          canceledAutoRenews: 0,
+          activeAutoRenews: 0,
+          newAutoRenews: 0,
+        },
+        warnings: ["No new exports since last run"],
+      };
+    }
     throw new Error(
       "Pipeline could not fetch data from any source. " +
       "Check your Union API key or webhook configuration in Settings. " +
@@ -185,58 +228,6 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
   }
 
   return result;
-}
-
-/**
- * Build date range based on watermarks (incremental fetch).
- *
- * Checks watermarks for key report types and uses the oldest high-water mark
- * as the start date. If no watermarks exist, does a full backfill to 2024-01-01.
- */
-async function buildDateRange(): Promise<string> {
-  const reportTypes = [
-    "autoRenews",
-    "revenueCategories",
-    "registrations",
-    "orders",
-    "newCustomers",
-    "firstVisits",
-  ];
-
-  let oldestStart: string | null = null;
-
-  for (const rt of reportTypes) {
-    try {
-      const wm = await getWatermark(rt);
-      const range = buildDateRangeForReport(wm);
-      const startPart = range.split(" - ")[0];
-
-      // Parse to comparable format
-      const parts = startPart.split("/");
-      if (parts.length === 3) {
-        const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
-        if (!oldestStart || isoDate < oldestStart) {
-          oldestStart = isoDate;
-        }
-      }
-    } catch {
-      // Skip — watermark table might not exist yet
-    }
-  }
-
-  const now = new Date();
-  const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-
-  if (oldestStart) {
-    const d = new Date(oldestStart);
-    const startStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-    console.log(`[pipeline] Incremental mode: date range ${startStr} - ${endStr}`);
-    return `${startStr} - ${endStr}`;
-  }
-
-  // Full backfill
-  console.log(`[pipeline] First run: no watermarks, fetching from 1/1/2024`);
-  return `1/1/2024 - ${endStr}`;
 }
 
 // Store on globalThis so the singleton survives Next.js HMR reloads.

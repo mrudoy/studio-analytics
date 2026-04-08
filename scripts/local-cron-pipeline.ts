@@ -26,63 +26,13 @@ import { initDatabase } from "../src/lib/db/database";
 import { closePool } from "../src/lib/db/database";
 import { loadSettings } from "../src/lib/crypto/credentials";
 import { runZipDownloadPipeline } from "../src/lib/email/zip-download-pipeline";
-import { runEmailPipeline } from "../src/lib/queue/email-pipeline";
 import { runShopifySync } from "../src/lib/shopify/shopify-sync";
 import { uploadBackupToGitHub } from "../src/lib/db/backup-cloud";
-import { getWatermark, buildDateRangeForReport } from "../src/lib/db/watermark-store";
 import { sendDigestEmail } from "../src/lib/email/email-sender";
-
-const PIPELINE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function log(msg: string) {
   const ts = new Date().toISOString().slice(11, 19);
   console.log(`[${ts}] ${msg}`);
-}
-
-/**
- * Build date range from watermarks (same logic as pipeline-worker.ts).
- */
-async function buildDateRange(): Promise<string> {
-  const reportTypes = [
-    "autoRenews",
-    "revenueCategories",
-    "registrations",
-    "orders",
-    "newCustomers",
-    "firstVisits",
-  ];
-
-  let oldestStart: string | null = null;
-
-  for (const rt of reportTypes) {
-    try {
-      const wm = await getWatermark(rt);
-      const range = buildDateRangeForReport(wm);
-      const startPart = range.split(" - ")[0];
-      const parts = startPart.split("/");
-      if (parts.length === 3) {
-        const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
-        if (!oldestStart || isoDate < oldestStart) {
-          oldestStart = isoDate;
-        }
-      }
-    } catch {
-      // Skip — watermark table might not exist yet
-    }
-  }
-
-  const now = new Date();
-  const endStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-
-  if (oldestStart) {
-    const d = new Date(oldestStart);
-    const startStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-    log(`Incremental mode: ${startStr} - ${endStr}`);
-    return `${startStr} - ${endStr}`;
-  }
-
-  log(`First run: no watermarks, fetching from 1/1/2024`);
-  return `1/1/2024 - ${endStr}`;
 }
 
 async function main() {
@@ -106,51 +56,21 @@ async function main() {
   log(`Union.fit: ${settings.credentials.email}`);
   log(`Robot email: ${settings.robotEmail.address}`);
 
-  // 3. Try zip pipeline first (PRIMARY), fall back to email pipeline
-  let result: Awaited<ReturnType<typeof runZipDownloadPipeline>> | null = null;
+  // 3. Run the zip download pipeline (API-only — no Playwright, no scraping).
+  // Per the permanent NO SCRAPING rule in CLAUDE.md: if the zip pipeline
+  // fails, the script fails loudly — it does NOT fall back to browser
+  // automation.
+  log("Running zip download pipeline...");
+  const result = await runZipDownloadPipeline({
+    robotEmail: settings.robotEmail.address,
+    lookbackHours: 48,
+    onProgress: (step, percent) => {
+      log(`  ${percent}% — ${step}`);
+    },
+  });
 
-  // Path A: Zip download pipeline (Gmail → extract URL → download zip → import)
-  try {
-    log("Trying zip download pipeline...");
-    const zipResult = await runZipDownloadPipeline({
-      robotEmail: settings.robotEmail.address,
-      lookbackHours: 48,
-      onProgress: (step, percent) => {
-        log(`  ${percent}% — ${step}`);
-      },
-    });
-
-    if (zipResult.success) {
-      log(`Zip pipeline succeeded in ${zipResult.duration}s`);
-      result = zipResult;
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`Zip pipeline unavailable: ${msg}`);
-    log("Falling back to email pipeline (Playwright)...");
-  }
-
-  // Path B: Email pipeline fallback (Playwright + Gmail CSV delivery)
-  if (!result) {
-    const dateRange = await buildDateRange();
-    log("Starting email pipeline...");
-
-    const pipelinePromise = runEmailPipeline({
-      unionEmail: settings.credentials.email,
-      unionPassword: settings.credentials.password,
-      robotEmail: settings.robotEmail.address,
-      dateRange,
-      emailTimeoutMs: 1_500_000, // 25 min
-      onProgress: (step, percent) => {
-        log(`  ${percent}% — ${step}`);
-      },
-    });
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Pipeline timed out after 30 minutes")), PIPELINE_TIMEOUT_MS)
-    );
-
-    result = await Promise.race([pipelinePromise, timeoutPromise]);
+  if (!result.success) {
+    throw new Error("Zip download pipeline did not succeed (API-only mode — no fallback).");
   }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

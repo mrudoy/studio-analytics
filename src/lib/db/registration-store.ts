@@ -66,7 +66,17 @@ export interface AttendanceStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save registrations (additive — appends new rows, never deletes existing).
+ * Save registrations (pure upsert — never deletes existing rows).
+ *
+ * Strategy:
+ *  - If the row has a union_registration_id: first try UPDATE WHERE
+ *    union_registration_id = $id. This handles rows whose (email, attended_at)
+ *    changed since the last run. If UPDATE hits 0 rows, fall through to INSERT.
+ *  - INSERT path uses ON CONFLICT (email, attended_at) DO UPDATE with COALESCE
+ *    on every mutable field so existing non-NULL data is preserved.
+ *
+ * This removes the prior DELETE-then-INSERT pattern, which violated the
+ * permanent NEVER DELETE DATA rule.
  */
 export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> {
   const pool = getPool();
@@ -77,16 +87,54 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
   try {
     await client.query("BEGIN");
     for (const r of rows) {
-      // Remove any existing row with the same union_registration_id to prevent
-      // idx_reg_union_id constraint violation. This handles the case where
-      // attended_at is NULL (NULL != NULL in unique indexes, so ON CONFLICT
-      // on (email, attended_at) won't fire, but idx_reg_union_id still blocks).
+      const email = r.email.toLowerCase();
+      const vals = [
+        r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt || null,
+        r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
+        r.firstName, r.lastName, email, r.phone || null, r.role || null,
+        r.registeredAt || null, r.canceledAt || null, r.attendedAt || null,
+        r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
+        r.revenue, r.unionRegistrationId || null, r.passId || null,
+      ];
+
+      // Step 1: if we have a union_registration_id, try UPDATE by that id first.
+      // This catches rows whose (email, attended_at) changed since last seen —
+      // the partial unique index idx_reg_union_id prevents a duplicate INSERT,
+      // and UPDATE-in-place preserves the existing row's id without a DELETE.
       if (r.unionRegistrationId) {
-        await client.query(
-          `DELETE FROM registrations WHERE union_registration_id = $1`,
-          [r.unionRegistrationId]
+        const updated = await client.query(
+          `UPDATE registrations SET
+             event_name = COALESCE($1, event_name),
+             event_id = COALESCE($2, event_id),
+             performance_id = COALESCE($3, performance_id),
+             performance_starts_at = COALESCE($4, performance_starts_at),
+             location_name = COALESCE($5, location_name),
+             video_name = COALESCE($6, video_name),
+             video_id = COALESCE($7, video_id),
+             teacher_name = COALESCE($8, teacher_name),
+             first_name = COALESCE($9, first_name),
+             last_name = COALESCE($10, last_name),
+             email = COALESCE($11, email),
+             phone = COALESCE($12, phone),
+             role = COALESCE($13, role),
+             registered_at = COALESCE($14, registered_at),
+             canceled_at = COALESCE($15, canceled_at),
+             attended_at = COALESCE($16, attended_at),
+             registration_type = COALESCE($17, registration_type),
+             state = COALESCE($18, state),
+             pass = COALESCE($19, pass),
+             subscription = COALESCE($20, subscription),
+             revenue_state = COALESCE($21, revenue_state),
+             revenue = COALESCE($22, revenue),
+             pass_id = COALESCE(NULLIF($24, ''), pass_id)
+           WHERE union_registration_id = $23`,
+          vals
         );
+        if (updated.rowCount && updated.rowCount > 0) continue;
       }
+
+      // Step 2: no existing union_registration_id match (or no id at all) →
+      // INSERT with (email, attended_at) ON CONFLICT as the final dedup key.
       await client.query(
         `INSERT INTO registrations (
           event_name, event_id, performance_id, performance_starts_at,
@@ -111,14 +159,7 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           revenue = COALESCE(EXCLUDED.revenue, registrations.revenue),
           union_registration_id = COALESCE(EXCLUDED.union_registration_id, registrations.union_registration_id),
           pass_id = COALESCE(NULLIF(EXCLUDED.pass_id, ''), registrations.pass_id)`,
-        [
-          r.eventName, r.eventId || null, r.performanceId || null, r.performanceStartsAt || null,
-          r.locationName, r.videoName || null, r.videoId || null, r.teacherName,
-          r.firstName, r.lastName, r.email.toLowerCase(), r.phone || null, r.role || null,
-          r.registeredAt || null, r.canceledAt || null, r.attendedAt || null,
-          r.registrationType, r.state, r.pass, r.subscription, r.revenueState || null,
-          r.revenue, r.unionRegistrationId || null, r.passId || null,
-        ]
+        vals
       );
     }
     await client.query("COMMIT");
