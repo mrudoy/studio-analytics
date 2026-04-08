@@ -57,7 +57,19 @@ export interface OrderStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
- * Save orders (additive — appends new rows, never deletes existing).
+ * Save orders (pure upsert — never deletes existing rows).
+ *
+ * Strategy:
+ *  - If the row has a union_order_id: first try UPDATE WHERE union_order_id = $id.
+ *    This handles the case where the same order arrives with a different `code`
+ *    (Union.fit occasionally rewrites codes). If UPDATE hits 0 rows, fall
+ *    through to INSERT.
+ *  - INSERT path uses ON CONFLICT (code) DO UPDATE with COALESCE on every
+ *    mutable field so existing non-NULL data is preserved.
+ *
+ * This removes the prior DELETE-then-INSERT pattern (when a row with the same
+ * union_order_id but a different code existed), which violated the permanent
+ * NEVER DELETE DATA rule.
  */
 export async function saveOrders(rows: OrderRow[]): Promise<void> {
   const pool = getPool();
@@ -69,14 +81,53 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
   try {
     await client.query("BEGIN");
     for (const r of rows) {
-      // If union_order_id is provided, remove any stale row with the same ID but
-      // a different code — prevents idx_orders_union_id constraint violation.
+      const vals = [
+        r.created || null,
+        r.code,
+        r.customer,
+        (r.email || '').toLowerCase(),
+        r.type,
+        r.payment,
+        r.total,
+        r.unionOrderId || null,
+        r.state || null,
+        r.completedAt || null,
+        r.feeUnionTotal ?? null,
+        r.feePaymentTotal ?? null,
+        r.feesOutside ?? null,
+        r.subscriptionPassId || null,
+        r.revenueCategory || null,
+      ];
+
+      // Step 1: if we have a union_order_id, try UPDATE by that id first.
+      // This catches rows whose `code` changed since last seen — the partial
+      // unique index idx_orders_union_id prevents a duplicate INSERT, and
+      // UPDATE-in-place preserves the existing row id without a DELETE.
       if (r.unionOrderId) {
-        await client.query(
-          `DELETE FROM orders WHERE union_order_id = $1 AND code != $2`,
-          [r.unionOrderId, r.code]
+        const updated = await client.query(
+          `UPDATE orders SET
+             created_at = COALESCE($1, created_at),
+             code = $2,
+             customer = COALESCE($3, customer),
+             email = COALESCE(NULLIF($4, ''), email),
+             order_type = COALESCE($5, order_type),
+             payment = COALESCE($6, payment),
+             total = $7,
+             state = COALESCE($9, state),
+             completed_at = COALESCE($10, completed_at),
+             fee_union_total = COALESCE($11, fee_union_total),
+             fee_payment_total = COALESCE($12, fee_payment_total),
+             fees_outside = COALESCE($13, fees_outside),
+             subscription_pass_id = COALESCE($14, subscription_pass_id),
+             revenue_category = COALESCE($15, revenue_category)
+           WHERE union_order_id = $8`,
+          vals
         );
+        if (updated.rowCount && updated.rowCount > 0) continue;
       }
+
+      // Step 2: no existing row for this union_order_id — insert, with a
+      // final ON CONFLICT (code) safety net for rows without union_order_id.
       await client.query(
         `INSERT INTO orders (created_at, code, customer, email, order_type, payment, total, union_order_id,
            state, completed_at, fee_union_total, fee_payment_total, fees_outside, subscription_pass_id, revenue_category)
@@ -91,23 +142,7 @@ export async function saveOrders(rows: OrderRow[]): Promise<void> {
            fees_outside = COALESCE(EXCLUDED.fees_outside, orders.fees_outside),
            subscription_pass_id = COALESCE(EXCLUDED.subscription_pass_id, orders.subscription_pass_id),
            revenue_category = COALESCE(EXCLUDED.revenue_category, orders.revenue_category)`,
-        [
-          r.created || null,
-          r.code,
-          r.customer,
-          (r.email || '').toLowerCase(),
-          r.type,
-          r.payment,
-          r.total,
-          r.unionOrderId || null,
-          r.state || null,
-          r.completedAt || null,
-          r.feeUnionTotal ?? 0,
-          r.feePaymentTotal ?? 0,
-          r.feesOutside ?? false,
-          r.subscriptionPassId || null,
-          r.revenueCategory || null,
-        ]
+        vals
       );
     }
     await client.query("COMMIT");

@@ -258,7 +258,9 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     const { rows: allAutoRenews } = await pool.query(
       `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email FROM auto_renews`
     );
-    const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
+    // Per CLAUDE.md: all 6 states are active. "Invalid" = used all passes
+    // but still subscribed — must be counted.
+    const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial", "Invalid"];
     type CatRow = { category: string; isAnnual: boolean; plan_state: string; created_at: string | null; canceled_at: string | null; email: string; monthlyRate: number };
     const catRows: CatRow[] = allAutoRenews.map((r: Record<string, unknown>) => {
       const name = r.plan_name as string;
@@ -1126,7 +1128,9 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   console.log(`[churn] Annual plan names: ${JSON.stringify(annualPlanNames)}`);
   console.log(`[churn] Monthly plan names: ${JSON.stringify(monthlyPlanNames)}`);
 
-  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial"];
+  // Per CLAUDE.md: all 6 states are active. "Invalid" is both active
+  // (still a subscriber) AND at-risk (used all passes).
+  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial", "Invalid"];
   const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
   const CATEGORIES = ["MEMBER", "SKY3", "SKY_TING_TV"] as const;
 

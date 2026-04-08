@@ -107,16 +107,39 @@ export async function saveAutoRenews(
         getCategory(row.planName),
       ];
 
-      // If union_pass_id is provided, remove any stale row with the same ID but
-      // different business key — prevents idx_ar_union_pass_id constraint violation.
-      // Same pattern used in registration-store.ts.
+      // If union_pass_id is provided, try UPDATE-by-id first. This handles
+      // the case where the same subscription arrives with a different business
+      // key (email/plan_name/created_at drift), which would otherwise collide
+      // on the partial unique index idx_ar_union_pass_id.
+      //
+      // This replaces the old DELETE-then-INSERT workaround, which violated
+      // the permanent NEVER DELETE DATA rule. Same pattern as registration-store.ts.
       if (row.unionPassId) {
-        await client.query(
-          `DELETE FROM auto_renews
-           WHERE union_pass_id = $1
-             AND NOT (customer_email = $2 AND plan_name = $3 AND created_at IS NOT DISTINCT FROM $4)`,
-          [row.unionPassId, row.customerEmail.toLowerCase(), row.planName, row.createdAt || null]
+        const updated = await client.query(
+          `UPDATE auto_renews SET
+             snapshot_id = $1,
+             plan_name = $2,
+             plan_state = $3,
+             plan_price = $4,
+             customer_name = $5,
+             customer_email = $6,
+             created_at = COALESCE($7, created_at),
+             order_id = COALESCE($8, order_id),
+             sales_channel = COALESCE($9, sales_channel),
+             canceled_at = COALESCE($10, canceled_at),
+             canceled_by = COALESCE($11, canceled_by),
+             admin = COALESCE($12, admin),
+             current_state = COALESCE($13, current_state),
+             current_plan = COALESCE($14, current_plan),
+             plan_category = $16,
+             imported_at = NOW()
+           WHERE union_pass_id = $15`,
+          values
         );
+        if (updated.rowCount && updated.rowCount > 0) {
+          inserted += updated.rowCount;
+          continue;
+        }
       }
 
       const result = await client.query(
