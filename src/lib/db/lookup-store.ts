@@ -45,9 +45,9 @@ export async function savePassTypeLookups(
         `INSERT INTO pass_type_lookups (id, name, revenue_category_id, fees_outside, created_at)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (id) DO UPDATE SET
-           name = EXCLUDED.name,
-           revenue_category_id = EXCLUDED.revenue_category_id,
-           fees_outside = EXCLUDED.fees_outside,
+           name = COALESCE(EXCLUDED.name, pass_type_lookups.name),
+           revenue_category_id = COALESCE(EXCLUDED.revenue_category_id, pass_type_lookups.revenue_category_id),
+           fees_outside = COALESCE(EXCLUDED.fees_outside, pass_type_lookups.fees_outside),
            cached_at = NOW()`,
         [e.id, e.name, e.revenueCategoryId, e.feesOutside, e.createdAt]
       );

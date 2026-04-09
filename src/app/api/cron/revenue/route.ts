@@ -16,10 +16,10 @@ export const dynamic = "force-dynamic";
  * Auth: Bearer token from CRON_SECRET env var.
  */
 export async function POST(request: NextRequest) {
-  // Auth check
+  // Auth check — fail closed: reject if CRON_SECRET is unset OR token doesn't match.
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

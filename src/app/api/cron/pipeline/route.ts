@@ -19,10 +19,10 @@ export const maxDuration = 300; // 5 minutes
  * Auth: Bearer token from CRON_SECRET env var.
  */
 export async function POST(request: Request) {
-  // Auth check
+  // Auth check — fail closed: reject if CRON_SECRET is unset OR token doesn't match.
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

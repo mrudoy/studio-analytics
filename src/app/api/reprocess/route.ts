@@ -10,8 +10,15 @@ export const maxDuration = 300; // 5 minutes
 
 /**
  * GET /api/reprocess — List available exports with their date ranges.
+ * Auth: Bearer token from CRON_SECRET env var (required).
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const settings = loadSettings();
     if (!settings?.unionApiKey) {
@@ -34,8 +41,15 @@ export async function GET() {
 /**
  * POST /api/reprocess?limit=N&offset=M — Process Union API exports.
  * Default: limit=1, offset=0 (latest only).
+ * Auth: Bearer token from CRON_SECRET env var (required).
  */
 export async function POST(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const startTime = Date.now();
   const limit = Math.min(
     Number(request.nextUrl.searchParams.get("limit") || "1"),

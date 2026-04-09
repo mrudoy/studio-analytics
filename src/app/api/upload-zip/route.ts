@@ -17,7 +17,7 @@ const UPLOADS_DIR = join(process.cwd(), "data", "zip-uploads");
  * Extracts CSVs, runs the full import pipeline (passes, orders, refunds,
  * transfers, lookups → DB), then recomputes revenue.
  *
- * Auth: Bearer token from CRON_SECRET env var (or no auth if CRON_SECRET not set).
+ * Auth: Bearer token from CRON_SECRET env var (required — fails closed if unset).
  *
  * Usage:
  *   curl -X POST https://your-app.up.railway.app/api/upload-zip \
@@ -25,10 +25,10 @@ const UPLOADS_DIR = join(process.cwd(), "data", "zip-uploads");
  *     -F "file=@/path/to/union_data_export.zip"
  */
 export async function POST(request: NextRequest) {
-  // Auth check
+  // Auth check — fail closed: reject if CRON_SECRET is unset OR token doesn't match.
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

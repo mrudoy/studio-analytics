@@ -183,7 +183,7 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         customer_name AS name,
         plan_category
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused')
+      WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
         AND plan_category IN ('MEMBER', 'SKY3')
         AND customer_email IS NOT NULL
     ),

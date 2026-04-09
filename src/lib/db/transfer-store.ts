@@ -30,7 +30,7 @@ export async function saveTransfers(rows: TransferRow[]): Promise<void> {
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (id) DO UPDATE SET
            payout_total = EXCLUDED.payout_total,
-           description = EXCLUDED.description,
+           description = COALESCE(EXCLUDED.description, transfers.description),
            imported_at = NOW()`,
         [
           r.id,

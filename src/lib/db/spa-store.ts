@@ -225,19 +225,21 @@ export async function getSpaCustomerBehavior(): Promise<SpaCustomerBehavior | nu
   `, [spaEmails]);
   const classEmails = new Set(classCheckRes.rows.map((r: Record<string, unknown>) => r.email));
 
-  // 4. Subscriber overlap
+  // 4. Subscriber overlap — only count currently active subscribers
   const subRes = await pool.query(`
     SELECT COUNT(DISTINCT customer_email) AS cnt
     FROM auto_renews
     WHERE LOWER(customer_email) = ANY($1)
+      AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
   `, [spaEmails.map(e => e.toLowerCase())]);
   const areSubscribers = Number(subRes.rows[0].cnt);
 
-  // 5. Subscriber plan breakdown
+  // 5. Subscriber plan breakdown — only active subscribers
   const planRes = await pool.query(`
     SELECT plan_name, COUNT(DISTINCT customer_email) AS customers
     FROM auto_renews
     WHERE LOWER(customer_email) = ANY($1)
+      AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
     GROUP BY plan_name
     ORDER BY customers DESC
     LIMIT 15

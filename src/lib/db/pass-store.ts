@@ -54,17 +54,17 @@ export async function savePasses(rows: PassRow[]): Promise<void> {
         );
         values.push(
           r.id,
-          r.passCategoryName || "",
-          r.orderId || "",
-          r.refundId || "",
-          r.passTypeId || "",
-          r.name || "",
-          r.total || 0,
-          r.feeUnionTotal || 0,
-          r.feePaymentTotal || 0,
-          r.feesOutside ?? false,
-          r.membershipId || "",
-          r.state || ""
+          r.passCategoryName || null,
+          r.orderId || null,
+          r.refundId || null,
+          r.passTypeId || null,
+          r.name || null,
+          r.total ?? null,
+          r.feeUnionTotal ?? null,
+          r.feePaymentTotal ?? null,
+          r.feesOutside ?? null,
+          r.membershipId || null,
+          r.state || null
         );
       }
 
@@ -72,17 +72,17 @@ export async function savePasses(rows: PassRow[]): Promise<void> {
         `INSERT INTO passes (id, pass_category_name, order_id, refund_id, pass_type_id, name, total, fee_union_total, fee_payment_total, fees_outside, membership_id, state)
          VALUES ${placeholders.join(", ")}
          ON CONFLICT (id) DO UPDATE SET
-           pass_category_name = EXCLUDED.pass_category_name,
-           order_id = EXCLUDED.order_id,
-           refund_id = EXCLUDED.refund_id,
-           pass_type_id = EXCLUDED.pass_type_id,
-           name = EXCLUDED.name,
-           total = EXCLUDED.total,
-           fee_union_total = EXCLUDED.fee_union_total,
-           fee_payment_total = EXCLUDED.fee_payment_total,
-           fees_outside = EXCLUDED.fees_outside,
-           membership_id = EXCLUDED.membership_id,
-           state = EXCLUDED.state,
+           pass_category_name = COALESCE(NULLIF(EXCLUDED.pass_category_name, ''), passes.pass_category_name),
+           order_id = COALESCE(NULLIF(EXCLUDED.order_id, ''), passes.order_id),
+           refund_id = COALESCE(NULLIF(EXCLUDED.refund_id, ''), passes.refund_id),
+           pass_type_id = COALESCE(NULLIF(EXCLUDED.pass_type_id, ''), passes.pass_type_id),
+           name = COALESCE(NULLIF(EXCLUDED.name, ''), passes.name),
+           total = COALESCE(EXCLUDED.total, passes.total),
+           fee_union_total = COALESCE(EXCLUDED.fee_union_total, passes.fee_union_total),
+           fee_payment_total = COALESCE(EXCLUDED.fee_payment_total, passes.fee_payment_total),
+           fees_outside = COALESCE(EXCLUDED.fees_outside, passes.fees_outside),
+           membership_id = COALESCE(NULLIF(EXCLUDED.membership_id, ''), passes.membership_id),
+           state = COALESCE(NULLIF(EXCLUDED.state, ''), passes.state),
            imported_at = NOW()`,
         values
       );
