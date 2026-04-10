@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     "bullmq",
     "ioredis",
     "pg",
+    "adm-zip",
   ],
 };
 
