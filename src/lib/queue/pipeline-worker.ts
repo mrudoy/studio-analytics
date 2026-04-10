@@ -107,9 +107,20 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
         // First run (no watermark) processes everything.
         const wm = await getWatermark("unionApiExport");
         const lastProcessedAt = wm?.highWaterDate ?? null;
+        console.log(`[pipeline] Watermark: ${lastProcessedAt}, newest export: ${allExports[0]?.createdAt}`);
         const newExports = lastProcessedAt
-          ? allExports.filter((e) => e.createdAt > lastProcessedAt)
+          ? allExports.filter((e) => new Date(e.createdAt).getTime() > new Date(lastProcessedAt).getTime())
           : allExports;
+
+        // Safety fallback: if watermark is stale (>24h) but exports exist,
+        // force-process the latest to prevent silent data stalls.
+        if (newExports.length === 0 && allExports.length > 0 && wm?.lastFetchedAt) {
+          const hoursSinceLastRun = (Date.now() - wm.lastFetchedAt.getTime()) / (1000 * 60 * 60);
+          if (hoursSinceLastRun > 24) {
+            console.warn(`[pipeline] Watermark stale (${hoursSinceLastRun.toFixed(1)}h) — force-processing latest export`);
+            newExports.push(allExports[0]);
+          }
+        }
 
         const skipped = allExports.length - newExports.length;
         if (skipped > 0) {
