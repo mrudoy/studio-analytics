@@ -13,17 +13,40 @@ import type { OverviewData, TimeWindowMetrics, PlanChangeDetail } from "@/types/
 import type { StoredAutoRenew } from "./auto-renew-store";
 import type { AutoRenewCategory } from "@/types/union-data";
 
-// ── Date helpers ─────────────────────────────────────────
+// ── Date helpers (all dates computed in ET) ─────────────
+
+const ET = "America/New_York";
+
+/** Get today's date parts in ET timezone */
+function nowInET(): { year: number; month: number; day: number; dayOfWeek: number } {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ET,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    year: Number(get("year")),
+    month: Number(get("month")),
+    day: Number(get("day")),
+    dayOfWeek: dayMap[get("weekday")] ?? 0,
+  };
+}
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function getYesterday() {
-  const now = new Date();
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const { year, month, day } = nowInET();
+  const today = new Date(year, month - 1, day);
+  const yesterday = new Date(year, month - 1, day - 1);
   const sublabel = yesterday.toLocaleDateString("en-US", {
+    timeZone: ET,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -32,13 +55,13 @@ function getYesterday() {
 }
 
 function getThisWeek() {
-  const now = new Date();
-  const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // ISO: Mon=1, Sun=7
-  const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek + 1);
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const { year, month, day, dayOfWeek } = nowInET();
+  const isoDay = dayOfWeek === 0 ? 7 : dayOfWeek; // ISO: Mon=1, Sun=7
+  const today = new Date(year, month - 1, day);
+  const thisMonday = new Date(year, month - 1, day - isoDay + 1);
+  const tomorrow = new Date(year, month - 1, day + 1);
 
-  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { timeZone: ET, month: "short", day: "numeric" });
   return {
     start: toISO(thisMonday),
     end: toISO(tomorrow),
@@ -48,14 +71,14 @@ function getThisWeek() {
 }
 
 function getLastWeek() {
-  const now = new Date();
-  const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // ISO: Mon=1, Sun=7
-  const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek + 1);
+  const { year, month, day, dayOfWeek } = nowInET();
+  const isoDay = dayOfWeek === 0 ? 7 : dayOfWeek; // ISO: Mon=1, Sun=7
+  const thisMonday = new Date(year, month - 1, day - isoDay + 1);
   const lastMonday = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() - 7);
   const lastSunday = new Date(lastMonday.getFullYear(), lastMonday.getMonth(), lastMonday.getDate() + 6);
   const endExclusive = new Date(lastSunday.getFullYear(), lastSunday.getMonth(), lastSunday.getDate() + 1);
 
-  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { timeZone: ET, month: "short", day: "numeric" });
   return {
     start: toISO(lastMonday),
     end: toISO(endExclusive),
@@ -65,24 +88,24 @@ function getLastWeek() {
 }
 
 function getThisMonth() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  const monthName = now.toLocaleDateString("en-US", { month: "long" });
+  const { year, month, day } = nowInET();
+  const start = new Date(year, month - 1, 1);
+  const tomorrow = new Date(year, month - 1, day + 1);
+  const monthName = start.toLocaleDateString("en-US", { timeZone: ET, month: "long" });
   return {
     start: toISO(start),
     end: toISO(tomorrow),
     label: "This Month",
-    sublabel: `${monthName} 1 – ${now.getDate()}`,
+    sublabel: `${monthName} 1 – ${day}`,
   };
 }
 
 function getLastMonth() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+  const { year, month } = nowInET();
+  const start = new Date(year, month - 2, 1);
+  const end = new Date(year, month - 1, 1);
   const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
-  const monthName = start.toLocaleDateString("en-US", { month: "long" });
+  const monthName = start.toLocaleDateString("en-US", { timeZone: ET, month: "long" });
   return {
     start: toISO(start),
     end: toISO(end),
