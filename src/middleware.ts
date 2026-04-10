@@ -19,27 +19,8 @@ const PUBLIC_PATHS = new Set([
   "/api/webhook/union-export",    // Has own UNION_WEBHOOK_SECRET
 ]);
 
-/** Bearer token required — mutations and sensitive endpoints */
-const WRITE_PATHS = new Set([
-  "/api/pipeline",        // Trigger/clear pipeline
-  "/api/settings",        // View/modify settings
-  "/api/db-check",        // DB schema exposure + data ops
-  "/api/customer",        // PII: customer lookup by email
-  "/api/upload",          // CSV upload
-  "/api/upload-zip",      // Zip upload (has own auth too)
-  "/api/reprocess",       // Reprocess data (has own auth too)
-  "/api/migrate",         // Run migrations (has own auth too)
-  "/api/debug",           // Debug data
-  "/api/chat",            // AI chat with full data context
-  "/api/schedule",        // Pipeline schedule control
-]);
-
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname);
-}
-
-function isWritePath(pathname: string): boolean {
-  return WRITE_PATHS.has(pathname);
 }
 
 function hasBearerToken(request: NextRequest, secret: string): boolean {

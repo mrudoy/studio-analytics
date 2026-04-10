@@ -46,7 +46,6 @@ function getYesterday() {
   const today = new Date(year, month - 1, day);
   const yesterday = new Date(year, month - 1, day - 1);
   const sublabel = yesterday.toLocaleDateString("en-US", {
-    timeZone: ET,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -61,7 +60,7 @@ function getThisWeek() {
   const thisMonday = new Date(year, month - 1, day - isoDay + 1);
   const tomorrow = new Date(year, month - 1, day + 1);
 
-  const fmt = (d: Date) => d.toLocaleDateString("en-US", { timeZone: ET, month: "short", day: "numeric" });
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return {
     start: toISO(thisMonday),
     end: toISO(tomorrow),
@@ -78,7 +77,7 @@ function getLastWeek() {
   const lastSunday = new Date(lastMonday.getFullYear(), lastMonday.getMonth(), lastMonday.getDate() + 6);
   const endExclusive = new Date(lastSunday.getFullYear(), lastSunday.getMonth(), lastSunday.getDate() + 1);
 
-  const fmt = (d: Date) => d.toLocaleDateString("en-US", { timeZone: ET, month: "short", day: "numeric" });
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return {
     start: toISO(lastMonday),
     end: toISO(endExclusive),
@@ -91,7 +90,7 @@ function getThisMonth() {
   const { year, month, day } = nowInET();
   const start = new Date(year, month - 1, 1);
   const tomorrow = new Date(year, month - 1, day + 1);
-  const monthName = start.toLocaleDateString("en-US", { timeZone: ET, month: "long" });
+  const monthName = start.toLocaleDateString("en-US", { month: "long" });
   return {
     start: toISO(start),
     end: toISO(tomorrow),
@@ -105,7 +104,7 @@ function getLastMonth() {
   const start = new Date(year, month - 2, 1);
   const end = new Date(year, month - 1, 1);
   const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
-  const monthName = start.toLocaleDateString("en-US", { timeZone: ET, month: "long" });
+  const monthName = start.toLocaleDateString("en-US", { month: "long" });
   return {
     start: toISO(start),
     end: toISO(end),
