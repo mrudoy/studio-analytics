@@ -4910,11 +4910,14 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           const memWQRates = memWQWeeks.map((w) => w.memberChurnPct ?? 0);
           const memWPaced = currentWeek && currentWeek.period >= memWQStart ? weeklyChurnData.find((d) => (d as Record<string, unknown>).isPaced) : null;
           if (memWPaced) memWQRates.push(memWPaced.pct);
-          const memWQAvg = memWQRates.length > 0 ? memWQRates.reduce((a, b) => a + b, 0) / memWQRates.length : null;
+          const memWQAvgRaw = memWQRates.length > 0 ? memWQRates.reduce((a, b) => a + b, 0) / memWQRates.length : null;
+          const memWQAvg = memWQAvgRaw ?? (last4.length > 0 ? last4.reduce((s, w) => s + (w.memberChurnPct ?? 0), 0) / last4.length : 0);
+          const memWQAvgHasQData = memWQAvgRaw !== null;
           const weeklyGoal = getCurrentQuarterGoal("member");
           const weeklyGoalConverted = weeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - weeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
-          const weeklyOnTrack = weeklyGoalConverted !== null && memWQAvg !== null ? memWQAvg <= weeklyGoalConverted : null;
-          const memWQAvgLabel = memWQRates.length === 1 && memWPaced ? `${memWQLabel} paced` : `${memWQLabel} avg / week`;
+          const weeklyOnTrack = weeklyGoalConverted !== null ? memWQAvg <= weeklyGoalConverted : null;
+          const memWQAvgLabel = !memWQAvgHasQData ? "avg / week"
+            : memWQRates.length === 1 && memWPaced ? `${memWQLabel} paced` : `${memWQLabel} avg / week`;
           const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
@@ -5504,11 +5507,15 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             const sky3WQRates = sky3WQWeeks.map((w) => w.sky3ChurnPct ?? 0);
             const sky3WPaced = currentWeek && currentWeek.period >= sky3WQStart ? weeklyChurnData.find((d) => (d as Record<string, unknown>).isPaced) : null;
             if (sky3WPaced) sky3WQRates.push(sky3WPaced.pct);
-            const sky3WQAvg = sky3WQRates.length > 0 ? sky3WQRates.reduce((a, b) => a + b, 0) / sky3WQRates.length : null;
+            const sky3WQAvgRaw = sky3WQRates.length > 0 ? sky3WQRates.reduce((a, b) => a + b, 0) / sky3WQRates.length : null;
+            // Fall back to visible-window avg when no Q2 weeks exist yet
+            const sky3WQAvg = sky3WQAvgRaw ?? (last4.length > 0 ? last4.reduce((s, w) => s + (w.sky3ChurnPct ?? 0), 0) / last4.length : 0);
+            const sky3WQAvgHasQData = sky3WQAvgRaw !== null;
             const sky3WeeklyGoal = getCurrentQuarterGoal("sky3");
             const sky3WeeklyGoalConverted = sky3WeeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - sky3WeeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
-            const sky3WeeklyOnTrack = sky3WeeklyGoalConverted !== null && sky3WQAvg !== null ? sky3WQAvg <= sky3WeeklyGoalConverted : null;
-            const sky3WQAvgLabel = sky3WQRates.length === 1 && sky3WPaced ? `${sky3WQLabel} paced` : `${sky3WQLabel} avg / week`;
+            const sky3WeeklyOnTrack = sky3WeeklyGoalConverted !== null ? sky3WQAvg <= sky3WeeklyGoalConverted : null;
+            const sky3WQAvgLabel = !sky3WQAvgHasQData ? "avg / week"
+              : sky3WQRates.length === 1 && sky3WPaced ? `${sky3WQLabel} paced` : `${sky3WQLabel} avg / week`;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5799,11 +5806,14 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             const tvWQRates = tvWQWeeks.map((w) => w.skyTingTvChurnPct ?? 0);
             const tvWPaced = currentWeek && currentWeek.period >= tvWQStart ? weeklyChurnData.find((d) => (d as Record<string, unknown>).isPaced) : null;
             if (tvWPaced) tvWQRates.push(tvWPaced.pct);
-            const tvWQAvg = tvWQRates.length > 0 ? tvWQRates.reduce((a, b) => a + b, 0) / tvWQRates.length : null;
+            const tvWQAvgRaw = tvWQRates.length > 0 ? tvWQRates.reduce((a, b) => a + b, 0) / tvWQRates.length : null;
+            const tvWQAvg = tvWQAvgRaw ?? (last4.length > 0 ? last4.reduce((s, w) => s + (w.skyTingTvChurnPct ?? 0), 0) / last4.length : 0);
+            const tvWQAvgHasQData = tvWQAvgRaw !== null;
             const tvWeeklyGoal = getCurrentQuarterGoal("tv");
             const tvWeeklyGoalConverted = tvWeeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - tvWeeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
-            const tvWeeklyOnTrack = tvWeeklyGoalConverted !== null && tvWQAvg !== null ? tvWQAvg <= tvWeeklyGoalConverted : null;
-            const tvWQAvgLabel = tvWQRates.length === 1 && tvWPaced ? `${tvWQLabel} paced` : `${tvWQLabel} avg / week`;
+            const tvWeeklyOnTrack = tvWeeklyGoalConverted !== null ? tvWQAvg <= tvWeeklyGoalConverted : null;
+            const tvWQAvgLabel = !tvWQAvgHasQData ? "avg / week"
+              : tvWQRates.length === 1 && tvWPaced ? `${tvWQLabel} paced` : `${tvWQLabel} avg / week`;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.tv } } satisfies ChartConfig;
             return (
                 <DashboardCard>
