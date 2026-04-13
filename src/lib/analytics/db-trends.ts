@@ -1210,9 +1210,11 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       const activeByEmail = new Map<string, CategorizedRow>();
       for (const r of catRows) {
         if (!r.created_at || r.created_at >= monthStart) continue;
-        // Same guard as the weekly path: canceled_at for active subs = next renewal date,
-        // so we must require plan_state='Canceled' before trusting canceled_at as an end date.
-        if (!ACTIVE_STATES.includes(r.plan_state) && !(r.plan_state === "Canceled" && r.canceled_at && r.canceled_at >= monthStart)) continue;
+        // Active at start: either currently in an active state, OR was active but
+        // has since left (canceled/expired/failed payment) with an end date on/after month start.
+        // "Valid Now" and "Paused" with canceled_at = next billing date are already captured
+        // by the ACTIVE_STATES check, so the second clause is for non-active states only.
+        if (!ACTIVE_STATES.includes(r.plan_state) && !(r.canceled_at && r.canceled_at >= monthStart)) continue;
         const email = r.customer_email.toLowerCase();
         const existing = activeByEmail.get(email);
         if (!existing || r.monthlyRate > existing.monthlyRate) {
@@ -1224,11 +1226,19 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
 
       // Canceled during this month — deduplicate by email
       // Exclude plan changers (upgrades/downgrades) — not real churn
+      //
+      // Gate: skip "Valid Now" and "Paused" rows — for those states,
+      // canceled_at is the NEXT BILLING DATE, not a cancellation date.
+      // All other states with canceled_at in the window are real cancellations:
+      //   Canceled — actually canceled
+      //   Pending Cancel — chose to cancel, takes effect at canceled_at
+      //   Invalid — used all passes, subscription ended
+      //   In Trial — trial expired
+      //   Past Due — payment failed, effectively churned
+      const STILL_PAYING_STATES = ["Valid Now", "Paused"];
       const canceledByEmail = new Map<string, CategorizedRow>();
       for (const r of catRows) {
-        // Real cancellation only — plan_state='Canceled' + canceled_at in month.
-        // Without the plan_state gate, rows with canceled_at = next-billing-date get counted.
-        if (r.plan_state !== "Canceled") continue;
+        if (STILL_PAYING_STATES.includes(r.plan_state)) continue;
         if (!(r.canceled_at && r.canceled_at >= monthStart && r.canceled_at < monthEnd)) continue;
         const email = r.customer_email.toLowerCase();
         if (planChangers.has(email)) continue; // skip plan changers
