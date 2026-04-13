@@ -16,7 +16,7 @@
  *  8. Mark email as read + set watermark
  */
 
-import { GmailClient } from "./gmail-client";
+import type { GmailClient } from "./gmail-client";
 import { extractCSVsFromZip, type ExtractedFile } from "./zip-extract";
 import { ZipTransformer, type RawZipTables } from "./zip-transformer";
 import {
@@ -193,6 +193,7 @@ export async function runZipDownloadPipeline(
   const lookbackTime = new Date(
     Date.now() - lookbackHours * 60 * 60 * 1000
   );
+  const { GmailClient } = await import("./gmail-client");
   const gmail = new GmailClient({ robotEmail });
   const exportEmails = await gmail.findExportEmails(lookbackTime);
 

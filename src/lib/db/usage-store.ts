@@ -183,7 +183,7 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         customer_name AS name,
         plan_category
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+      WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')
         AND plan_category IN ('MEMBER', 'SKY3')
         AND customer_email IS NOT NULL
     ),
@@ -222,7 +222,7 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         LOWER(customer_email) AS email,
         customer_name AS name
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused')
+      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
         AND plan_category = 'SKY_TING_TV'
         AND customer_email IS NOT NULL
     ),
@@ -580,7 +580,7 @@ export async function getUsageScorecard(
     const { rows } = await pool.query(`
       SELECT COUNT(DISTINCT LOWER(customer_email)) AS cnt
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused')
+      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
         AND plan_category IN (${cats})
         AND customer_email IS NOT NULL
     `);
@@ -927,7 +927,7 @@ export async function getUsageSegments(periodWeeks = 4): Promise<{
     const { rows: subRows } = await pool.query(`
       SELECT COUNT(DISTINCT LOWER(customer_email)) AS cnt
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused')
+      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
         AND plan_category = $1
         AND customer_email IS NOT NULL
     `, [cat]);
@@ -1332,7 +1332,7 @@ async function getStableSky3Cohort(
     SELECT DISTINCT ON (LOWER(customer_email))
       LOWER(customer_email) AS email, plan_state, created_at
     FROM auto_renews
-    WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel')
+    WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
       AND plan_category = 'SKY3'
       AND customer_email IS NOT NULL
     ORDER BY LOWER(customer_email), id DESC

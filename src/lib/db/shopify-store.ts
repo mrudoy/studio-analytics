@@ -537,7 +537,7 @@ export async function getShopifyCustomerBreakdown(): Promise<{
         CASE WHEN EXISTS (
           SELECT 1 FROM auto_renews ar
           WHERE LOWER(ar.customer_email) = LOWER(so.email)
-            AND ar.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+            AND ar.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')
         ) THEN true ELSE false END AS is_subscriber
       FROM shopify_orders so
       WHERE so.financial_status NOT IN ('voided', 'refunded')
