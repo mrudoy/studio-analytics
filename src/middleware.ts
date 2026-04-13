@@ -75,9 +75,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Same-origin browser requests are allowed for all endpoints.
+  // This covers the dashboard UI calling /api/pipeline, /api/settings, etc.
+  // The threat model is external scrapers and CSRF, not the dashboard user.
+  // Checked BEFORE CRON_SECRET so the dashboard works even if the secret
+  // isn't configured yet.
+  if (isSameOrigin(request)) {
+    return NextResponse.next();
+  }
+
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
-    // Fail closed: if CRON_SECRET is not set, reject all API requests
+    // Fail closed: if CRON_SECRET is not set, reject non-same-origin API requests
     return NextResponse.json(
       { error: "Server misconfigured: auth secret not set" },
       { status: 500 },
@@ -86,13 +95,6 @@ export function middleware(request: NextRequest) {
 
   // Bearer token always works for any endpoint
   if (hasBearerToken(request, cronSecret)) {
-    return NextResponse.next();
-  }
-
-  // Same-origin browser requests are allowed for all endpoints.
-  // This covers the dashboard UI calling /api/pipeline, /api/settings, etc.
-  // The threat model is external scrapers and CSRF, not the dashboard user.
-  if (isSameOrigin(request)) {
     return NextResponse.next();
   }
 
