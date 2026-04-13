@@ -4988,8 +4988,19 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
           const last6 = completedMonths.slice(-6);
           const avgMonthly = last6.length > 0
             ? last6.reduce((s, m) => s + (m.eligibleChurnRate ?? 0), 0) / last6.length : 0;
+          // Current-quarter average for goal comparison
+          const memNowQ = new Date();
+          const memCurrentQ = Math.ceil((memNowQ.getMonth() + 1) / 3);
+          const memQStart = `${memNowQ.getFullYear()}-${String((memCurrentQ - 1) * 3 + 1).padStart(2, "0")}`;
+          const memQLabel = getQuarterLabel(memQStart);
+          const memQCompleted = completedMonths.filter((m) => m.month >= memQStart);
+          const memQRates = memQCompleted.map((m) => m.eligibleChurnRate ?? 0);
+          const memPacedEntry = monthlyData.find((m) => m.rawMonth >= memQStart && (m as Record<string, unknown>).isPaced);
+          if (memPacedEntry) memQRates.push(memPacedEntry.rate);
+          const memQAvg = memQRates.length > 0 ? memQRates.reduce((a, b) => a + b, 0) / memQRates.length : null;
           const monthlyGoal = getCurrentQuarterGoal("member");
-          const monthlyOnTrack = monthlyGoal !== null ? avgMonthly <= monthlyGoal : null;
+          const monthlyOnTrack = monthlyGoal !== null && memQAvg !== null ? memQAvg <= monthlyGoal : null;
+          const memQAvgLabel = memQRates.length === 1 && memPacedEntry ? `${memQLabel} paced` : `${memQLabel} avg`;
           const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
@@ -5000,16 +5011,26 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                       Monthly Churn
                     </div>
                   </CardTitle>
-                  <CardDescription>Monthly-billed member churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}</CardDescription>
+                  <CardDescription>
+                    Monthly-billed member churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}
+                    <span className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                      <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px dashed #4A90D9", display: "inline-block" }} />avg</span>
+                      <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px solid #E67E22", display: "inline-block" }} />goal</span>
+                    </span>
+                  </CardDescription>
                   <CardAction>
                     <div className="text-right">
-                      <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{avgMonthly.toFixed(1)}%</div>
-                      <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                      {memQAvg !== null && (
+                        <>
+                          <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{memQAvg.toFixed(1)}%</div>
+                          <div className="text-xs text-muted-foreground leading-tight">{memQAvgLabel}</div>
+                        </>
+                      )}
                       {monthlyGoal !== null && (
                         <>
                           <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{monthlyGoal}%</div>
                           <div className="text-xs leading-tight" style={{ color: monthlyOnTrack ? COLORS.member : "#DC2626" }}>
-                            {monthlyOnTrack ? "On Track" : `Behind (+${(avgMonthly - monthlyGoal).toFixed(1)}pp)`}
+                            {monthlyOnTrack ? "On Track" : `Behind (+${((memQAvg ?? 0) - monthlyGoal).toFixed(1)}pp)`}
                           </div>
                         </>
                       )}
@@ -5540,8 +5561,21 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             const last6 = completedMonths.slice(-6);
             const avgMonthly = last6.length > 0
               ? last6.reduce((s, m) => s + m.userChurnRate, 0) / last6.length : 0;
+            // Current-quarter average for goal comparison
+            const nowQ = new Date();
+            const sky3CurrentQ = Math.ceil((nowQ.getMonth() + 1) / 3);
+            const sky3QStart = `${nowQ.getFullYear()}-${String((sky3CurrentQ - 1) * 3 + 1).padStart(2, "0")}`;
+            const sky3QLabel = getQuarterLabel(sky3QStart);
+            // Completed months in the current quarter
+            const sky3QCompleted = completedMonths.filter((m) => m.month >= sky3QStart);
+            // Include paced current month if available
+            const sky3QRates = sky3QCompleted.map((m) => m.userChurnRate);
+            const sky3PacedEntry = monthlyData.find((m) => m.rawMonth >= sky3QStart && (m as Record<string, unknown>).isPaced);
+            if (sky3PacedEntry) sky3QRates.push(sky3PacedEntry.rate);
+            const sky3QAvg = sky3QRates.length > 0 ? sky3QRates.reduce((a, b) => a + b, 0) / sky3QRates.length : null;
             const sky3MonthlyGoal = getCurrentQuarterGoal("sky3");
-            const sky3MonthlyOnTrack = sky3MonthlyGoal !== null ? avgMonthly <= sky3MonthlyGoal : null;
+            const sky3MonthlyOnTrack = sky3MonthlyGoal !== null && sky3QAvg !== null ? sky3QAvg <= sky3MonthlyGoal : null;
+            const sky3QAvgLabel = sky3QRates.length === 1 && sky3PacedEntry ? `${sky3QLabel} paced` : `${sky3QLabel} avg`;
             const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5552,16 +5586,26 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         Monthly Churn
                       </div>
                     </CardTitle>
-                    <CardDescription>Sky3 subscriber churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}</CardDescription>
+                    <CardDescription>
+                      Sky3 subscriber churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}
+                      <span className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                        <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px dashed #4A90D9", display: "inline-block" }} />avg</span>
+                        <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px solid #E67E22", display: "inline-block" }} />goal</span>
+                      </span>
+                    </CardDescription>
                     <CardAction>
                       <div className="text-right">
-                        <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(avgMonthly) }}>{avgMonthly.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                        {sky3QAvg !== null && (
+                          <>
+                            <div className="text-lg font-semibold tabular-nums" style={{ color: churnBenchmarkColor(sky3QAvg) }}>{sky3QAvg.toFixed(1)}%</div>
+                            <div className="text-xs text-muted-foreground leading-tight">{sky3QAvgLabel}</div>
+                          </>
+                        )}
                         {sky3MonthlyGoal !== null && (
                           <>
                             <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{sky3MonthlyGoal}%</div>
                             <div className="text-xs leading-tight" style={{ color: sky3MonthlyOnTrack ? COLORS.member : "#DC2626" }}>
-                              {sky3MonthlyOnTrack ? "On Track" : `Behind (+${(avgMonthly - sky3MonthlyGoal).toFixed(1)}pp)`}
+                              {sky3MonthlyOnTrack ? "On Track" : `Behind (+${((sky3QAvg ?? 0) - sky3MonthlyGoal).toFixed(1)}pp)`}
                             </div>
                           </>
                         )}
@@ -5792,8 +5836,19 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             const last6 = completedMonths.slice(-6);
             const avgMonthly = last6.length > 0
               ? last6.reduce((s, m) => s + m.userChurnRate, 0) / last6.length : 0;
+            // Current-quarter average for goal comparison
+            const tvNowQ = new Date();
+            const tvCurrentQ = Math.ceil((tvNowQ.getMonth() + 1) / 3);
+            const tvQStart = `${tvNowQ.getFullYear()}-${String((tvCurrentQ - 1) * 3 + 1).padStart(2, "0")}`;
+            const tvQLabel = getQuarterLabel(tvQStart);
+            const tvQCompleted = completedMonths.filter((m) => m.month >= tvQStart);
+            const tvQRates = tvQCompleted.map((m) => m.userChurnRate);
+            const tvPacedEntry = monthlyData.find((m) => m.rawMonth >= tvQStart && (m as Record<string, unknown>).isPaced);
+            if (tvPacedEntry) tvQRates.push(tvPacedEntry.rate);
+            const tvQAvg = tvQRates.length > 0 ? tvQRates.reduce((a, b) => a + b, 0) / tvQRates.length : null;
             const tvMonthlyGoal = getCurrentQuarterGoal("tv");
-            const tvMonthlyOnTrack = tvMonthlyGoal !== null ? avgMonthly <= tvMonthlyGoal : null;
+            const tvMonthlyOnTrack = tvMonthlyGoal !== null && tvQAvg !== null ? tvQAvg <= tvMonthlyGoal : null;
+            const tvQAvgLabel = tvQRates.length === 1 && tvPacedEntry ? `${tvQLabel} paced` : `${tvQLabel} avg`;
             const monthlyConfig = { rate: { label: "Monthly churn", color: COLORS.tv } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5804,17 +5859,27 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                           <DeviceTv className="size-5 shrink-0" style={{ color: COLORS.tv }} />
                           <CardTitle>Monthly Churn</CardTitle>
                         </div>
-                        <CardDescription>Sky Ting TV monthly churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}</CardDescription>
+                        <CardDescription>
+                          Sky Ting TV monthly churn rate{pacing && monthPacingMultiplier ? ` · Day ${pacing.daysElapsed}/${pacing.daysInMonth}` : ""}
+                          <span className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px dashed #4A90D9", display: "inline-block" }} />avg</span>
+                            <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px solid #E67E22", display: "inline-block" }} />goal</span>
+                          </span>
+                        </CardDescription>
                       </div>
                       <CardAction>
                         <div className="text-right">
-                          <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{avgMonthly.toFixed(1)}%</div>
-                          <div className="text-xs text-muted-foreground leading-tight">6-mo avg</div>
+                          {tvQAvg !== null && (
+                            <>
+                              <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{tvQAvg.toFixed(1)}%</div>
+                              <div className="text-xs text-muted-foreground leading-tight">{tvQAvgLabel}</div>
+                            </>
+                          )}
                           {tvMonthlyGoal !== null && (
                             <>
                               <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{tvMonthlyGoal}%</div>
                               <div className="text-xs leading-tight" style={{ color: tvMonthlyOnTrack ? COLORS.member : "#DC2626" }}>
-                                {tvMonthlyOnTrack ? "On Track" : `Behind (+${(avgMonthly - tvMonthlyGoal).toFixed(1)}pp)`}
+                                {tvMonthlyOnTrack ? "On Track" : `Behind (+${((tvQAvg ?? 0) - tvMonthlyGoal).toFixed(1)}pp)`}
                               </div>
                             </>
                           )}
