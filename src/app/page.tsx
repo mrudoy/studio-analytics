@@ -4894,17 +4894,27 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
               rate: weekPacingMultiplier ? pacedPct : rawPct,
             } as typeof weeklyChurnData[0]);
           }
-          // 6-month weekly average: last 26 completed weeks, excluding Oct 2025 admin cleanup
-          // (mirrors the monthly card's Oct exclusion used elsewhere for members)
+          // 6-month weekly average for chart reference line
           const sixMonthWeeks = completedWeeks
             .filter(w => !w.period.startsWith("2025-10"))
             .slice(-26);
           const weeklyAvgPct = sixMonthWeeks.length > 0
             ? (sixMonthWeeks.reduce((s, w) => s + (w.memberChurnPct ?? 0), 0) / sixMonthWeeks.length)
             : 0;
+          // Current-quarter weekly average for goal comparison
+          const memWNow = new Date();
+          const memWQ = Math.ceil((memWNow.getMonth() + 1) / 3);
+          const memWQStart = `${memWNow.getFullYear()}-${String((memWQ - 1) * 3 + 1).padStart(2, "0")}`;
+          const memWQLabel = getQuarterLabel(memWQStart);
+          const memWQWeeks = completedWeeks.filter((w) => w.period >= memWQStart);
+          const memWQRates = memWQWeeks.map((w) => w.memberChurnPct ?? 0);
+          const memWPaced = currentWeek && currentWeek.period >= memWQStart ? weeklyChurnData.find((d) => (d as Record<string, unknown>).isPaced) : null;
+          if (memWPaced) memWQRates.push(memWPaced.pct);
+          const memWQAvg = memWQRates.length > 0 ? memWQRates.reduce((a, b) => a + b, 0) / memWQRates.length : null;
           const weeklyGoal = getCurrentQuarterGoal("member");
           const weeklyGoalConverted = weeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - weeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
-          const weeklyOnTrack = weeklyGoalConverted !== null ? weeklyAvgPct <= weeklyGoalConverted : null;
+          const weeklyOnTrack = weeklyGoalConverted !== null && memWQAvg !== null ? memWQAvg <= weeklyGoalConverted : null;
+          const memWQAvgLabel = memWQRates.length === 1 && memWPaced ? `${memWQLabel} paced` : `${memWQLabel} avg / week`;
           const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.member } } satisfies ChartConfig;
           return (
               <DashboardCard>
@@ -4915,17 +4925,27 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                         <Recycle className="size-5 shrink-0" style={{ color: COLORS.member }} />
                         <CardTitle>Weekly Churn</CardTitle>
                       </div>
-                      <CardDescription>Monthly-billed member churn rate per week</CardDescription>
+                      <CardDescription>
+                        Monthly-billed member churn rate per week
+                        <span className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                          <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px dashed #4A90D9", display: "inline-block" }} />avg</span>
+                          <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px solid #E67E22", display: "inline-block" }} />goal</span>
+                        </span>
+                      </CardDescription>
                     </div>
                     <CardAction>
                       <div className="text-right">
-                        <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{weeklyAvgPct.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground leading-tight">6-mo avg / week</div>
+                        {memWQAvg !== null && (
+                          <>
+                            <div className="text-lg font-semibold tabular-nums" style={{ color: "#4A90D9" }}>{memWQAvg.toFixed(1)}%</div>
+                            <div className="text-xs text-muted-foreground leading-tight">{memWQAvgLabel}</div>
+                          </>
+                        )}
                         {weeklyGoalConverted !== null && (
                           <>
                             <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{weeklyGoalConverted}%</div>
                             <div className="text-xs leading-tight" style={{ color: weeklyOnTrack ? COLORS.member : "#DC2626" }}>
-                              {weeklyOnTrack ? "On Track" : `Behind (+${(weeklyAvgPct - weeklyGoalConverted).toFixed(1)}pp)`}
+                              {weeklyOnTrack ? "On Track" : `Behind (+${((memWQAvg ?? 0) - weeklyGoalConverted).toFixed(1)}pp)`}
                             </div>
                           </>
                         )}
@@ -5475,9 +5495,20 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             }
             const weeklyAvgPct = last4.length > 0
               ? (last4.reduce((s, w) => s + (w.sky3ChurnPct ?? 0), 0) / last4.length) : 0;
+            // Current-quarter weekly average for goal comparison
+            const sky3WNow = new Date();
+            const sky3WQ = Math.ceil((sky3WNow.getMonth() + 1) / 3);
+            const sky3WQStart = `${sky3WNow.getFullYear()}-${String((sky3WQ - 1) * 3 + 1).padStart(2, "0")}`;
+            const sky3WQLabel = getQuarterLabel(sky3WQStart);
+            const sky3WQWeeks = completedWeeks.filter((w) => w.period >= sky3WQStart);
+            const sky3WQRates = sky3WQWeeks.map((w) => w.sky3ChurnPct ?? 0);
+            const sky3WPaced = currentWeek && currentWeek.period >= sky3WQStart ? weeklyChurnData.find((d) => (d as Record<string, unknown>).isPaced) : null;
+            if (sky3WPaced) sky3WQRates.push(sky3WPaced.pct);
+            const sky3WQAvg = sky3WQRates.length > 0 ? sky3WQRates.reduce((a, b) => a + b, 0) / sky3WQRates.length : null;
             const sky3WeeklyGoal = getCurrentQuarterGoal("sky3");
             const sky3WeeklyGoalConverted = sky3WeeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - sky3WeeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
-            const sky3WeeklyOnTrack = sky3WeeklyGoalConverted !== null ? weeklyAvgPct <= sky3WeeklyGoalConverted : null;
+            const sky3WeeklyOnTrack = sky3WeeklyGoalConverted !== null && sky3WQAvg !== null ? sky3WQAvg <= sky3WeeklyGoalConverted : null;
+            const sky3WQAvgLabel = sky3WQRates.length === 1 && sky3WPaced ? `${sky3WQLabel} paced` : `${sky3WQLabel} avg / week`;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.sky3 } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5488,17 +5519,27 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                           <Recycle className="size-5 shrink-0" style={{ color: COLORS.sky3 }} />
                           <CardTitle>Weekly Churn</CardTitle>
                         </div>
-                        <CardDescription>Sky3 churn rate per week</CardDescription>
+                        <CardDescription>
+                          Sky3 churn rate per week
+                          <span className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px dashed #4A90D9", display: "inline-block" }} />avg</span>
+                            <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px solid #E67E22", display: "inline-block" }} />goal</span>
+                          </span>
+                        </CardDescription>
                       </div>
                       <CardAction>
                         <div className="text-right">
-                          <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{weeklyAvgPct.toFixed(1)}%</div>
-                          <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                          {sky3WQAvg !== null && (
+                            <>
+                              <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.error }}>{sky3WQAvg.toFixed(1)}%</div>
+                              <div className="text-xs text-muted-foreground leading-tight">{sky3WQAvgLabel}</div>
+                            </>
+                          )}
                           {sky3WeeklyGoalConverted !== null && (
                             <>
                               <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{sky3WeeklyGoalConverted}%</div>
                               <div className="text-xs leading-tight" style={{ color: sky3WeeklyOnTrack ? COLORS.member : "#DC2626" }}>
-                                {sky3WeeklyOnTrack ? "On Track" : `Behind (+${(weeklyAvgPct - sky3WeeklyGoalConverted).toFixed(1)}pp)`}
+                                {sky3WeeklyOnTrack ? "On Track" : `Behind (+${((sky3WQAvg ?? 0) - sky3WeeklyGoalConverted).toFixed(1)}pp)`}
                               </div>
                             </>
                           )}
@@ -5749,9 +5790,20 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
             }
             const weeklyAvgPct = last4.length > 0
               ? (last4.reduce((s, w) => s + (w.skyTingTvChurnPct ?? 0), 0) / last4.length) : 0;
+            // Current-quarter weekly average for goal comparison
+            const tvWNow = new Date();
+            const tvWQ = Math.ceil((tvWNow.getMonth() + 1) / 3);
+            const tvWQStart = `${tvWNow.getFullYear()}-${String((tvWQ - 1) * 3 + 1).padStart(2, "0")}`;
+            const tvWQLabel = getQuarterLabel(tvWQStart);
+            const tvWQWeeks = completedWeeks.filter((w) => w.period >= tvWQStart);
+            const tvWQRates = tvWQWeeks.map((w) => w.skyTingTvChurnPct ?? 0);
+            const tvWPaced = currentWeek && currentWeek.period >= tvWQStart ? weeklyChurnData.find((d) => (d as Record<string, unknown>).isPaced) : null;
+            if (tvWPaced) tvWQRates.push(tvWPaced.pct);
+            const tvWQAvg = tvWQRates.length > 0 ? tvWQRates.reduce((a, b) => a + b, 0) / tvWQRates.length : null;
             const tvWeeklyGoal = getCurrentQuarterGoal("tv");
             const tvWeeklyGoalConverted = tvWeeklyGoal !== null ? parseFloat((((1 - Math.pow(1 - tvWeeklyGoal / 100, 7 / 30)) * 100)).toFixed(1)) : null;
-            const tvWeeklyOnTrack = tvWeeklyGoalConverted !== null ? weeklyAvgPct <= tvWeeklyGoalConverted : null;
+            const tvWeeklyOnTrack = tvWeeklyGoalConverted !== null && tvWQAvg !== null ? tvWQAvg <= tvWeeklyGoalConverted : null;
+            const tvWQAvgLabel = tvWQRates.length === 1 && tvWPaced ? `${tvWQLabel} paced` : `${tvWQLabel} avg / week`;
             const weeklyChurnConfig = { pct: { label: "Churn Rate", color: COLORS.tv } } satisfies ChartConfig;
             return (
                 <DashboardCard>
@@ -5762,17 +5814,27 @@ function ChurnSection({ churnRates, weekly, expiringIntroWeeks, introWeekConvers
                           <Recycle className="size-5 shrink-0" style={{ color: COLORS.tv }} />
                           <CardTitle>Weekly Churn</CardTitle>
                         </div>
-                        <CardDescription>Sky Ting TV churn rate per week</CardDescription>
+                        <CardDescription>
+                          Sky Ting TV churn rate per week
+                          <span className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px dashed #4A90D9", display: "inline-block" }} />avg</span>
+                            <span className="flex items-center gap-1"><span style={{ width: 16, height: 0, borderTop: "2px solid #E67E22", display: "inline-block" }} />goal</span>
+                          </span>
+                        </CardDescription>
                       </div>
                       <CardAction>
                         <div className="text-right">
-                          <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.tv }}>{weeklyAvgPct.toFixed(1)}%</div>
-                          <div className="text-xs text-muted-foreground leading-tight">avg / week</div>
+                          {tvWQAvg !== null && (
+                            <>
+                              <div className="text-lg font-semibold tabular-nums" style={{ color: COLORS.tv }}>{tvWQAvg.toFixed(1)}%</div>
+                              <div className="text-xs text-muted-foreground leading-tight">{tvWQAvgLabel}</div>
+                            </>
+                          )}
                           {tvWeeklyGoalConverted !== null && (
                             <>
                               <div className="text-sm font-semibold tabular-nums mt-1" style={{ color: "#E67E22" }}>{tvWeeklyGoalConverted}%</div>
                               <div className="text-xs leading-tight" style={{ color: tvWeeklyOnTrack ? COLORS.member : "#DC2626" }}>
-                                {tvWeeklyOnTrack ? "On Track" : `Behind (+${(weeklyAvgPct - tvWeeklyGoalConverted).toFixed(1)}pp)`}
+                                {tvWeeklyOnTrack ? "On Track" : `Behind (+${((tvWQAvg ?? 0) - tvWeeklyGoalConverted).toFixed(1)}pp)`}
                               </div>
                             </>
                           )}
