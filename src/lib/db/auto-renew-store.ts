@@ -348,7 +348,7 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
        OR (
          -- No current_state data at all → fall back to plan_state
          NOT EXISTS (SELECT 1 FROM has_any_cs h WHERE h.email = LOWER(lr.customer_email) AND h.plan_name = lr.plan_name)
-         AND lr.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+         AND lr.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')
        )
      )
      ORDER BY lr.plan_name`

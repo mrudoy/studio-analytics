@@ -258,9 +258,9 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     const { rows: allAutoRenews } = await pool.query(
       `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email FROM auto_renews`
     );
-    // Per CLAUDE.md: all 6 states are active. "Invalid" = used all passes
-    // but still subscribed — must be counted.
-    const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial", "Invalid"];
+    // "Invalid" = used all passes but still subscribed — must be counted.
+    // "Past Due" excluded per project definition of active.
+    const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "In Trial", "Invalid"];
     type CatRow = { category: string; isAnnual: boolean; plan_state: string; created_at: string | null; canceled_at: string | null; email: string; monthlyRate: number };
     const catRows: CatRow[] = allAutoRenews.map((r: Record<string, unknown>) => {
       const name = r.plan_name as string;
@@ -1128,16 +1128,17 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   console.log(`[churn] Annual plan names: ${JSON.stringify(annualPlanNames)}`);
   console.log(`[churn] Monthly plan names: ${JSON.stringify(monthlyPlanNames)}`);
 
-  // Per CLAUDE.md: all 6 states are active. "Invalid" is both active
-  // (still a subscriber) AND at-risk (used all passes).
-  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "Past Due", "In Trial", "Invalid"];
+  // "Invalid" is both active (still a subscriber) AND at-risk (used all passes).
+  // "Past Due" excluded per project definition of active.
+  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "In Trial", "Invalid"];
   const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
   const CATEGORIES = ["MEMBER", "SKY3", "SKY_TING_TV"] as const;
 
-  // Generate last 6 completed months + current month
+  // Generate last 7 completed months + current month (extra month so
+  // that after excluding Oct 2025 we still have 6 completed months)
   const now = new Date();
   const months: string[] = [];
-  for (let i = 6; i >= 0; i--) {
+  for (let i = 7; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     months.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
   }
