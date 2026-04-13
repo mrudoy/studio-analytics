@@ -2405,7 +2405,9 @@ function RevenueSection({ data, trends }: { data: DashboardStats; trends?: Trend
 
   // Add paced current month if we have enough data
   if (currentMonthEntry && pacing && pacing.daysElapsed >= 3) {
-    const pacedGross = Math.round(currentMonthEntry.gross * (pacing.daysInMonth / pacing.daysElapsed));
+    // Use curve-based fraction when available, fall back to linear
+    const revFraction = pacing.revenueCurveFraction ?? (pacing.daysElapsed / pacing.daysInMonth);
+    const pacedGross = revFraction > 0 ? Math.round(currentMonthEntry.gross / revFraction) : currentMonthEntry.gross;
     revenueBarData.push({
       month: formatShortMonth(currentMonthKey),
       gross: pacedGross,

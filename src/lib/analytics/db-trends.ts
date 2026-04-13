@@ -333,11 +333,19 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     return bucketToTrendRow(mo, "Monthly", bucket, prevBucket);
   });
 
-  // ── 3. Current month pacing ──────────────────────────────
+  // ── 3. Current month pacing (curve-based) ────────────────
   const currentBucket = monthlyBuckets.get(currentMonthKey) || emptyBucket();
   const daysElapsed = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const pacingMultiplier = daysElapsed > 0 ? daysInMonth / daysElapsed : 1;
+  // Build historical day-of-month revenue curve for smarter projection
+  const revenueCurve = await getDayOfMonthRevenueCurve(6);
+  const curveFraction = revenueCurve.length >= daysElapsed
+    ? revenueCurve[daysElapsed - 1]
+    : null;
+  // Use curve-based fraction when available, fall back to linear
+  const linearFraction = daysElapsed / daysInMonth;
+  const pacingFraction = curveFraction ?? linearFraction;
+  const pacingMultiplier = pacingFraction > 0 ? 1 / pacingFraction : 1;
 
   const pacing: PacingData = {
     month: currentMonthKey,
@@ -357,6 +365,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     skyTingTvCancellationsPaced: Math.round(currentBucket.skyTingTvChurn * pacingMultiplier),
     weekDaysElapsed: (() => { const d = now.getDay(); return d === 0 ? 7 : d; })(), // 1=Mon..7=Sun
     weekDaysTotal: 7,
+    revenueCurveFraction: curveFraction ?? undefined,
   };
 
   // ── 4. Annual projection ─────────────────────────────────
@@ -1061,6 +1070,74 @@ function computeMemberAlerts(
  * "Active at start of month M" = created before M AND
  *   (still currently active OR canceled on/after month M start).
  */
+/**
+ * Build a historical day-of-month revenue curve from order data.
+ * Returns a 31-element array where curve[d-1] = cumulative fraction (0–1)
+ * of monthly revenue earned through day d, averaged across the last N months.
+ * Used for curve-based pacing (smarter than linear daysElapsed/daysInMonth).
+ */
+async function getDayOfMonthRevenueCurve(lookbackMonths = 6): Promise<number[]> {
+  const pool = getPool();
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() - lookbackMonths, 1);
+  const endDate = new Date(now.getFullYear(), now.getMonth(), 1); // current month start
+  const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-01`;
+  const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}-01`;
+
+  try {
+    const { rows } = await pool.query(`
+      WITH daily AS (
+        SELECT TO_CHAR(COALESCE(completed_at, created_at), 'YYYY-MM') AS month,
+               EXTRACT(DAY FROM COALESCE(completed_at, created_at))::int AS dom,
+               SUM(total) AS daily_rev
+        FROM orders
+        WHERE COALESCE(completed_at, created_at) >= $1::date
+          AND COALESCE(completed_at, created_at) < $2::date
+        GROUP BY 1, 2
+      ),
+      monthly_totals AS (
+        SELECT month, SUM(daily_rev) AS month_total
+        FROM daily GROUP BY month
+        HAVING SUM(daily_rev) > 0
+      ),
+      daily_pct AS (
+        SELECT d.dom, d.daily_rev / m.month_total AS frac
+        FROM daily d JOIN monthly_totals m USING (month)
+      )
+      SELECT dom,
+             SUM(AVG(frac)) OVER (ORDER BY dom) AS cumulative_frac
+      FROM daily_pct
+      GROUP BY dom
+      ORDER BY dom
+    `, [startStr, endStr]);
+
+    if (rows.length === 0) return [];
+
+    // Fill a 31-element array; carry forward for missing days
+    const curve: number[] = new Array(31).fill(0);
+    let lastFrac = 0;
+    for (const row of rows) {
+      const dom = parseInt(row.dom);
+      const frac = parseFloat(row.cumulative_frac);
+      // Fill any gaps (e.g., day 31 may not exist in all months)
+      for (let d = (lastFrac === 0 ? 1 : dom); d <= dom; d++) {
+        curve[d - 1] = frac;
+      }
+      lastFrac = frac;
+    }
+    // Fill remaining days with the last known fraction
+    for (let d = rows.length > 0 ? parseInt(rows[rows.length - 1].dom) : 0; d < 31; d++) {
+      curve[d] = lastFrac;
+    }
+
+    console.log(`[pacing] Revenue curve built from ${rows.length} day-of-month buckets (${startStr} to ${endStr}), day ${now.getDate()} fraction: ${(curve[now.getDate() - 1] * 100).toFixed(1)}%`);
+    return curve;
+  } catch (err) {
+    console.warn("[pacing] Failed to build revenue curve, falling back to linear:", err);
+    return [];
+  }
+}
+
 async function computeChurnRates(): Promise<ChurnRateData | null> {
   const pool = getPool();
 

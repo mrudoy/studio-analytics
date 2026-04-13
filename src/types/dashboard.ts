@@ -243,6 +243,8 @@ export interface PacingData {
   /** Day of week for current week pacing (1=Mon..7=Sun) */
   weekDaysElapsed: number;
   weekDaysTotal: 7;
+  /** Historical cumulative fraction of revenue earned through daysElapsed (curve-based pacing) */
+  revenueCurveFraction?: number;
 }
 
 export interface ProjectionData {
