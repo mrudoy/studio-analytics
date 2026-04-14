@@ -472,6 +472,16 @@ export async function GET(request: Request) {
         tw.newMembers = mv.member.new;
         tw.newSky3 = mv.sky3.new;
         tw.newSkyTingTv = mv.skyTingTv.new;
+        // Override weekly rate + active-at-start fields with canonical values
+        tw.activeMembersAtWeekStart = mv.member.activeAtStart;
+        tw.activeSky3AtWeekStart = mv.sky3.activeAtStart;
+        tw.activeSkyTingTvAtWeekStart = mv.skyTingTv.activeAtStart;
+        tw.memberChurnPct = mv.member.activeAtStart > 0
+          ? Math.round((mv.member.canceled / mv.member.activeAtStart) * 1000) / 10 : 0;
+        tw.sky3ChurnPct = mv.sky3.activeAtStart > 0
+          ? Math.round((mv.sky3.canceled / mv.sky3.activeAtStart) * 1000) / 10 : 0;
+        tw.skyTingTvChurnPct = mv.skyTingTv.activeAtStart > 0
+          ? Math.round((mv.skyTingTv.canceled / mv.skyTingTv.activeAtStart) * 1000) / 10 : 0;
       }
       const movementMonthlyByPeriod = new Map(movementResult.monthly.map((m) => [m.period, m]));
       for (const tm of trends.monthly) {
@@ -489,11 +499,9 @@ export async function GET(request: Request) {
       // monthly churn cards read. We override canceledCount and activeAtStart
       // and recompute userChurnRate + mrrChurnRate accordingly.
       if (trends.churnRates?.byCategory) {
-        const catMap: Record<"member" | "sky3" | "skyTingTv", "MEMBER" | "SKY3" | "SKY_TING_TV"> = {
-          member: "MEMBER", sky3: "SKY3", skyTingTv: "SKY_TING_TV",
-        };
-        for (const [key, _catName] of Object.entries(catMap) as [keyof typeof catMap, string][]) {
-          const catData = trends.churnRates.byCategory[key === "skyTingTv" ? "skyTingTv" : key];
+        const catKeys = ["member", "sky3", "skyTingTv"] as const;
+        for (const key of catKeys) {
+          const catData = trends.churnRates.byCategory[key];
           if (!catData) continue;
           for (const m of catData.monthly) {
             const mv = movementMonthlyByPeriod.get(m.month);
@@ -508,7 +516,20 @@ export async function GET(request: Request) {
             m.mrrChurnRate = mvCat.activeMrrAtStart > 0
               ? Math.round((mvCat.canceledMrr / mvCat.activeMrrAtStart) * 1000) / 10 : 0;
           }
+          // Recompute the 6-mo averages (exclude current partial month + Oct 2025 cleanup)
+          const completed = catData.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+          if (completed.length > 0) {
+            catData.avgUserChurnRate = Math.round(
+              (completed.reduce((s, m) => s + m.userChurnRate, 0) / completed.length) * 10,
+            ) / 10;
+            catData.avgMrrChurnRate = Math.round(
+              (completed.reduce((s, m) => s + m.mrrChurnRate, 0) / completed.length) * 10,
+            ) / 10;
+          }
         }
+        // Update legacy flat averages
+        trends.churnRates.avgMemberRate = trends.churnRates.byCategory.member?.avgUserChurnRate ?? 0;
+        trends.churnRates.avgSky3Rate = trends.churnRates.byCategory.sky3?.avgUserChurnRate ?? 0;
       }
     }
 
