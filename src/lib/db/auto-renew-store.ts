@@ -84,7 +84,40 @@ export async function saveAutoRenews(
   try {
     await client.query("BEGIN");
 
-    for (const row of rows) {
+    // Dedupe input rows by conflict key before writing.
+    //
+    // Union.fit can have multiple pass records for the same subscription
+    // (different union_pass_id, same customer + plan_name + created_at).
+    // Without dedup, each row writes the DB sequentially and whichever is
+    // processed LAST wins the plan_state — and order varies between runs.
+    // Result: identical rows flip states every pipeline import, generating
+    // fake churn+resume events and inflating the overview cancellation count.
+    //
+    // Fix: for each (email, plan_name, created_at) key, keep ONE row — the
+    // one with the highest union_pass_id (newer Union.fit record = more
+    // authoritative). Rows without union_pass_id fall back to last-seen order.
+    const dedupedRows = (() => {
+      const byKey = new Map<string, AutoRenewRow>();
+      for (const row of rows) {
+        if (!row.customerEmail) continue;
+        const key = `${row.customerEmail.toLowerCase()}|${row.planName}|${row.createdAt || ""}`;
+        const existing = byKey.get(key);
+        if (!existing) {
+          byKey.set(key, row);
+          continue;
+        }
+        // Prefer the row with the higher union_pass_id (numeric compare)
+        const existingId = existing.unionPassId ? parseInt(existing.unionPassId) : 0;
+        const newId = row.unionPassId ? parseInt(row.unionPassId) : 0;
+        if (newId > existingId) byKey.set(key, row);
+      }
+      return Array.from(byKey.values());
+    })();
+    if (dedupedRows.length < rows.length) {
+      console.log(`[auto-renew-store] Deduped ${rows.length - dedupedRows.length} duplicate pass rows before save`);
+    }
+
+    for (const row of dedupedRows) {
       // Skip rows without email — they can't be deduped
       if (!row.customerEmail) continue;
 
