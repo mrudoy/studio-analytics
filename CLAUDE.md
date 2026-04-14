@@ -93,6 +93,32 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - This rule applies to ALL tables, not just `revenue_categories`. The DB is the single source of truth and historical archive. Pipeline operations are additive only.
 - If you need to "fix" data, upsert the correct values. Never delete the old ones.
 
+## QUERYING REVENUE (PERMANENT RULE)
+
+**Never write a bare `SUM(revenue) FROM revenue_categories WHERE ...` query.** Because the table is append-only, multiple period slices can coexist for the same month, and a raw SUM will double-count.
+
+- **Prefer canonical functions** in `src/lib/db/revenue-store.ts`:
+  - `getAllMonthlyRevenue()` — per-month totals
+  - `getMonthlyRetreatRevenue()` — per-month retreat gross/net
+  - `getMonthlyMerchRevenue()` — per-month merch gross/net
+  - `getMonthlySubscriptionBilling()` — per-month subscription (Member + Sky3 + TV) gross/net
+  - `getRevenueForPeriod(start, end)` — single-period category breakdown
+- **If you must write ad-hoc SQL**, use the same dedup pattern every canonical function uses:
+  ```sql
+  WITH deduped AS (
+    SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+      TRIM(category) AS category, revenue, net_revenue, period_start
+    FROM revenue_categories
+    WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+    ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
+  )
+  SELECT ... FROM deduped ...
+  ```
+- **TRIM category names** — the raw data contains trailing-whitespace variants ("SKY UNLIMITED" vs "SKY UNLIMITED "). Always `TRIM(category)` or `GROUP BY TRIM(category)`.
+- **Before reporting a revenue number to the user**, sanity-check it against `/api/stats` — if they disagree, the ad-hoc query is wrong, not the dashboard.
+
+Reason: 2026-04-13 investigation showed a bare `SUM` query inflated March subscription billing from the correct $153,525 to $176,727 because duplicate period slices were summed twice.
+
 ## ACTIVE SUBSCRIBER COUNTING (PERMANENT RULE)
 
 **An active subscriber = `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')`.**
