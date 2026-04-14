@@ -4,6 +4,7 @@
  */
 
 import { getPool } from "./database";
+import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import type {
   ShopifyOrder,
   ShopifyProduct,
@@ -537,7 +538,7 @@ export async function getShopifyCustomerBreakdown(): Promise<{
         CASE WHEN EXISTS (
           SELECT 1 FROM auto_renews ar
           WHERE LOWER(ar.customer_email) = LOWER(so.email)
-            AND ar.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')
+            AND ar.plan_state IN (${ACTIVE_STATES_SQL})
         ) THEN true ELSE false END AS is_subscriber
       FROM shopify_orders so
       WHERE so.financial_status NOT IN ('voided', 'refunded')

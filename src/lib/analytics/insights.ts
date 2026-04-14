@@ -14,6 +14,7 @@
 
 import type { Pool } from "pg";
 import type { InsightInput } from "../db/insights-store";
+import { ACTIVE_STATES_SQL, STILL_PAYING_STATES_SQL } from "./metrics/filters";
 
 type Detector = (pool: Pool) => Promise<InsightInput | null>;
 
@@ -27,7 +28,7 @@ const detectDropInConverter: Detector = async (pool) => {
         FROM registrations r
         LEFT JOIN auto_renews ar
           ON LOWER(r.email) = LOWER(ar.customer_email)
-          AND ar.plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid')
+          AND ar.plan_state IN (${ACTIVE_STATES_SQL})
         WHERE r.attended_at >= (CURRENT_DATE - INTERVAL '90 days')
           AND r.email IS NOT NULL
           AND ar.customer_email IS NULL
@@ -80,7 +81,7 @@ const detectSky3EarlyChurn: Detector = async (pool) => {
     const totalRes = await pool.query(`
       SELECT COUNT(*) AS total
       FROM auto_renews
-      WHERE plan_state NOT IN ('Valid Now', 'Paused')
+      WHERE plan_state NOT IN (${STILL_PAYING_STATES_SQL})
         AND plan_category = 'SKY3'
         AND canceled_at >= (CURRENT_DATE - INTERVAL '90 days')
     `);
@@ -92,7 +93,7 @@ const detectSky3EarlyChurn: Detector = async (pool) => {
     const earlyRes = await pool.query(`
       SELECT COUNT(*) AS early
       FROM auto_renews
-      WHERE plan_state NOT IN ('Valid Now', 'Paused')
+      WHERE plan_state NOT IN (${STILL_PAYING_STATES_SQL})
         AND plan_category = 'SKY3'
         AND canceled_at >= (CURRENT_DATE - INTERVAL '90 days')
         AND created_at IS NOT NULL

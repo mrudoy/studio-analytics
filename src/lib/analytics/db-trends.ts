@@ -13,6 +13,7 @@
 
 import { getCategory, isAnnualPlan } from "./categories";
 import { parseDate, getWeekKey, getMonthKey } from "./date-utils";
+import { ACTIVE_STATES, STILL_PAYING_STATES } from "./metrics/filters";
 import {
   getNewAutoRenews,
   getCanceledAutoRenews,
@@ -258,9 +259,6 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     const { rows: allAutoRenews } = await pool.query(
       `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email FROM auto_renews`
     );
-    // "Invalid" = used all passes but still subscribed — must be counted.
-    // "Past Due" excluded per project definition of active.
-    const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "In Trial", "Invalid"];
     type CatRow = { category: string; isAnnual: boolean; plan_state: string; created_at: string | null; canceled_at: string | null; email: string; monthlyRate: number };
     const catRows: CatRow[] = allAutoRenews.map((r: Record<string, unknown>) => {
       const name = r.plan_name as string;
@@ -984,7 +982,7 @@ function getNextRenewalDate(createdAt: string, isAnnual: boolean): Date {
  */
 function computeMemberAlerts(
   allRows: CategorizedRow[],
-  activeStates: string[]
+  activeStates: readonly string[]
 ): MemberAlerts {
   const now = new Date();
   const nowMs = now.getTime();
@@ -1205,9 +1203,6 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   console.log(`[churn] Annual plan names: ${JSON.stringify(annualPlanNames)}`);
   console.log(`[churn] Monthly plan names: ${JSON.stringify(monthlyPlanNames)}`);
 
-  // "Invalid" is both active (still a subscriber) AND at-risk (used all passes).
-  // "Past Due" excluded per project definition of active.
-  const ACTIVE_STATES = ["Valid Now", "Pending Cancel", "Paused", "In Trial", "Invalid"];
   const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"];
   const CATEGORIES = ["MEMBER", "SKY3", "SKY_TING_TV"] as const;
 
@@ -1312,7 +1307,6 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       //   Invalid — used all passes, subscription ended
       //   In Trial — trial expired
       //   Past Due — payment failed, effectively churned
-      const STILL_PAYING_STATES = ["Valid Now", "Paused"];
       const canceledByEmail = new Map<string, CategorizedRow>();
       for (const r of catRows) {
         if (STILL_PAYING_STATES.includes(r.plan_state)) continue;

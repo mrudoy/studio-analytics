@@ -1,5 +1,6 @@
 import { getPool } from "./database";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
+import { BILLING_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import type { AutoRenewCategory } from "@/types/union-data";
 
 // ── Types ────────────────────────────────────────────────────
@@ -236,7 +237,10 @@ export async function reconcileAutoRenews(
 ): Promise<{ reconciled: number; details: { email: string; planName: string; oldState: string }[] }> {
   const pool = getPool();
 
-  // Get all currently "active" rows from DB
+  // Get all currently "active" rows from DB.
+  // NOTE: filter intentionally broader than canonical ACTIVE_STATES — includes
+  // 'Past Due' so reconciliation can mark Past Due rows as Canceled when they
+  // disappear from the export.
   const { rows } = await pool.query(
     `SELECT id, customer_email, plan_name, plan_state
      FROM auto_renews
@@ -381,7 +385,7 @@ export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
        OR (
          -- No current_state data at all → fall back to plan_state
          NOT EXISTS (SELECT 1 FROM has_any_cs h WHERE h.email = LOWER(lr.customer_email) AND h.plan_name = lr.plan_name)
-         AND lr.plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')
+         AND lr.plan_state IN (${ACTIVE_STATES_SQL})
        )
      )
      ORDER BY lr.plan_name`
@@ -397,6 +401,9 @@ export async function getNewAutoRenews(startDate: string, endDate: string): Prom
   const pool = getPool();
   // Only count subscriptions that are currently active (not historical canceled rows
   // that happen to have created_at in this range from daily delta imports).
+  // NOTE: filter intentionally broader than canonical ACTIVE_STATES — includes
+  // 'Past Due' so we still count signups whose first payment failed.
+  // Stage 2 will replace this function with getSubscriberMovement().
   const { rows } = await pool.query(
     `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
@@ -464,6 +471,7 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
       FROM auto_renews
       WHERE created_at IS NOT NULL
         AND created_at >= CURRENT_DATE - ($1 || ' days')::interval
+        -- Filter intentionally broader than canonical ACTIVE_STATES (includes Past Due)
         AND (current_state = 'active' OR (current_state IS NULL
              AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')))
       GROUP BY created_at
@@ -578,7 +586,7 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   //   - Invalid: passes used up, revenue already recognized at purchase/use
   //   - In Trial: plan_price shows full post-trial rate, not trial rate
   // Excluding these keeps MRR aligned with actual cash being collected.
-  const BILLING_STATES = new Set(["Valid Now", "Pending Cancel"]);
+  const BILLING_SET = new Set<string>(BILLING_STATES);
 
   // Deduplicate MRR by email per category — keep highest monthlyRate per person
   const mrrByEmail: Record<string, Map<string, number>> = {
@@ -589,7 +597,7 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   };
 
   for (const ar of active) {
-    if (!BILLING_STATES.has(ar.planState)) continue;
+    if (!BILLING_SET.has(ar.planState)) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"

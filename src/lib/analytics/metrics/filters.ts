@@ -20,13 +20,13 @@
  * Use this for: counting active subscribers, computing active-at-period-start
  * for churn rates, anywhere the dashboard says "active subscribers".
  */
-export const ACTIVE_STATES = [
+export const ACTIVE_STATES: readonly string[] = [
   "Valid Now",
   "Paused",
   "Pending Cancel",
   "In Trial",
   "Invalid",
-] as const;
+];
 
 /**
  * A subscriber is "billing this month" if they're actively having money
@@ -36,7 +36,7 @@ export const ACTIVE_STATES = [
  * no future billing until they renew), In Trial (full price not being
  * charged — trial price is different from list price stored in plan_price).
  */
-export const BILLING_STATES = ["Valid Now", "Pending Cancel"] as const;
+export const BILLING_STATES: readonly string[] = ["Valid Now", "Pending Cancel"];
 
 /**
  * For a row with a non-null `canceled_at`, these states mean the
@@ -48,10 +48,30 @@ export const BILLING_STATES = ["Valid Now", "Pending Cancel"] as const;
  *
  * Equivalently: a "real cancellation" filter is `plan_state NOT IN STILL_PAYING_STATES`.
  */
-export const STILL_PAYING_STATES = ["Valid Now", "Paused"] as const;
+export const STILL_PAYING_STATES: readonly string[] = ["Valid Now", "Paused"];
 
 /**
  * At-risk states — subscribers who haven't formally canceled but are
  * showing signals of imminent loss. Used by alert/insight detectors.
  */
-export const AT_RISK_STATES = ["Past Due", "Invalid", "Pending Cancel"] as const;
+export const AT_RISK_STATES: readonly string[] = ["Past Due", "Invalid", "Pending Cancel"];
+
+// ─── SQL fragment helpers ────────────────────────────────────────
+// Use these in raw SQL queries instead of inline arrays. They produce
+// a comma-separated quoted list suitable for use inside `IN (...)`.
+
+function asSqlList(states: readonly string[]): string {
+  return states.map((s) => `'${s}'`).join(", ");
+}
+
+/** SQL fragment: `'Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid'` */
+export const ACTIVE_STATES_SQL = asSqlList(ACTIVE_STATES);
+
+/** SQL fragment: `'Valid Now', 'Pending Cancel'` */
+export const BILLING_STATES_SQL = asSqlList(BILLING_STATES);
+
+/** SQL fragment: `'Valid Now', 'Paused'` (used in `NOT IN` for canceled_at gating) */
+export const STILL_PAYING_STATES_SQL = asSqlList(STILL_PAYING_STATES);
+
+/** SQL fragment: `'Past Due', 'Invalid', 'Pending Cancel'` */
+export const AT_RISK_STATES_SQL = asSqlList(AT_RISK_STATES);

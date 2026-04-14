@@ -6,6 +6,7 @@
  */
 
 import { getPool } from "./database";
+import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 
 // ── Tier Assignment ─────────────────────────────────────────
 
@@ -183,7 +184,7 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         customer_name AS name,
         plan_category
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')
+      WHERE plan_state IN (${ACTIVE_STATES_SQL})
         AND plan_category IN ('MEMBER', 'SKY3')
         AND customer_email IS NOT NULL
     ),

@@ -1,5 +1,6 @@
 import { getPool } from "./database";
 import { isDropInOrIntro } from "../analytics/categories";
+import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -1055,7 +1056,7 @@ export async function getIntroWeekConversionData(lookbackDays = 14): Promise<Int
       -- of the dashboard). Past Due is excluded — payment failed = not active.
       SELECT DISTINCT LOWER(customer_email) AS email
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid')
+      WHERE plan_state IN (${ACTIVE_STATES_SQL})
         ${IN_STUDIO_PLAN_FILTER}
     )
     SELECT
