@@ -75,6 +75,13 @@ export interface DashboardStats {
     unknown: number;
     total: number;
   };
+  subscriptionBilling?: {
+    currentMonth: string;         // YYYY-MM
+    currentMonthActual: number;   // Subscription billing collected so far this month
+    currentMonthProjected: number; // Full-month projection (curve-based)
+    lastMonth: string;            // YYYY-MM
+    lastMonthTotal: number;       // Full-month subscription billing for the prior month
+  };
   activeSubscribers: {
     member: number;
     sky3: number;

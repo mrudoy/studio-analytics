@@ -336,6 +336,56 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
 }
 
 /**
+ * Get per-month subscription billing revenue (Member + Sky3 + Sky Ting TV categories).
+ * This is the cash actually collected from subscription payments in each month —
+ * different from MRR (run-rate) because annual prepays hit as lump sums here.
+ */
+export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gross: number; net: number }>> {
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    WITH deduped AS (
+      SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+        TRIM(category) AS category, revenue, net_revenue, period_start
+      FROM revenue_categories
+      WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+      ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
+    )
+    SELECT
+      TO_CHAR(period_start, 'YYYY-MM') AS month,
+      SUM(revenue) AS gross,
+      SUM(net_revenue) AS net
+    FROM deduped
+    WHERE category IN (
+      -- Member plans
+      'SKY UNLIMITED','SKY UNLIMITED - NEW','10MEMBER','Founding Member Annual',
+      'TING FAM','friends of sky ting','All Access Auto Renew Monthly',
+      'SKY TING Monthly Membership','SKY VIRGIN - MEMBERSHIP','ALL ACCESS MONTHLY',
+      'ALL ACCESS YEARLY',
+      -- Sky3 plans
+      'SKY3','SKY3 NEW','SKYHIGH3','SKY5','SKY5 NEW','Welcome SKY3','SKY3 RETURNING',
+      -- Sky Ting TV plans
+      'SKY TING TV','SKY TING TV 2025','SKY TING TV ANNUAL','SKY TING TV NEW',
+      'SKY TING TV YEARLY','SKY TING TV VIRGIN','Limited Edition SKY TING TV',
+      'SKY WEEK TV','Digital All Inclusive Monthly','A la carte SKY TING TV',
+      'Founding Member Annual SKY TING TV','SKY TING TV On Demand',
+      'SKY TING TV - Unlimited Monthly','SKY TING TV Unlimited Yearly',
+      'SKY TING TV (VIRGIN)'
+    )
+    GROUP BY TO_CHAR(period_start, 'YYYY-MM')
+    ORDER BY month
+  `);
+
+  const map = new Map<string, { gross: number; net: number }>();
+  for (const r of rows) {
+    map.set(r.month as string, {
+      gross: Number(r.gross) || 0,
+      net: Number(r.net) || 0,
+    });
+  }
+  return map;
+}
+
+/**
  * Get per-month sum of Union.fit "Merch" + "Products" revenue categories.
  * Used for deduplication: when Shopify data exists for a month, we subtract
  * Union.fit's merch revenue from the overall total to avoid double-counting.

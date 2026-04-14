@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown, getMonthlyRentalRevenue, getAnnualRentalRevenue, getMonthlyRetreatRevenue } from "@/lib/db/revenue-store";
+import { getLatestPeriod, getRevenueForPeriod, getAllMonthlyRevenue, getAnnualRevenueBreakdown, getMonthlyRentalRevenue, getAnnualRentalRevenue, getMonthlyRetreatRevenue, getMonthlySubscriptionBilling } from "@/lib/db/revenue-store";
 import { analyzeRevenueCategories } from "@/lib/analytics/revenue-categories";
 import { computeStatsFromDB } from "@/lib/analytics/db-stats";
 import { computeTrendsFromDB } from "@/lib/analytics/db-trends";
@@ -70,8 +70,8 @@ export async function GET(request: Request) {
       safe(computeTrendsFromDB()),
       // 3. Latest revenue period
       safe(getLatestPeriod()),
-      // 4. Monthly revenue + retreat
-      safe(Promise.all([getAllMonthlyRevenue(), getMonthlyRetreatRevenue()])),
+      // 4. Monthly revenue + retreat + subscription billing
+      safe(Promise.all([getAllMonthlyRevenue(), getMonthlyRetreatRevenue(), getMonthlySubscriptionBilling()])),
       // 5. All 9 Shopify queries
       safe(Promise.all([
         getShopifyStats(),
@@ -177,7 +177,7 @@ export async function GET(request: Request) {
     // ── Build monthly revenue timeline ──
     let monthlyRevenue: { month: string; gross: number; net: number; retreatGross?: number; retreatNet?: number }[] = [];
     if (monthlyRevenueResult) {
-      const [allMonthly, retreatByMonth] = monthlyRevenueResult;
+      const [allMonthly, retreatByMonth, subBillingByMonth] = monthlyRevenueResult;
       monthlyRevenue = allMonthly.map((m) => {
         const mKey = m.periodStart.slice(0, 7);
         const retreat = retreatByMonth.get(mKey);
@@ -202,6 +202,25 @@ export async function GET(request: Request) {
       const prevEntry = monthlyRevenue.find((m) => m.month === prevMonthKey);
       if (currentEntry) stats.currentMonthRevenue = currentEntry.net;
       if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
+
+      // Subscription billing: current month (actual + projected) + last month total
+      const currentSubBilling = subBillingByMonth.get(currentMonthKey);
+      const lastSubBilling = subBillingByMonth.get(prevMonthKey);
+      const pacing = trends?.pacing;
+      const curveFrac = pacing?.revenueCurveFraction;
+      const linearFrac = pacing ? pacing.daysElapsed / pacing.daysInMonth : null;
+      const frac = curveFrac ?? linearFrac ?? null;
+      const currentActual = Math.round((currentSubBilling?.gross ?? 0) * 100) / 100;
+      const currentProjected = frac && frac > 0
+        ? Math.round((currentActual / frac) * 100) / 100
+        : currentActual;
+      stats.subscriptionBilling = {
+        currentMonth: currentMonthKey,
+        currentMonthActual: currentActual,
+        currentMonthProjected: currentProjected,
+        lastMonth: prevMonthKey,
+        lastMonthTotal: Math.round((lastSubBilling?.gross ?? 0) * 100) / 100,
+      };
     }
 
     // ── Shopify stats + merch ──

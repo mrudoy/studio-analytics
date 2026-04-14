@@ -2876,6 +2876,14 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
   const now = new Date();
   const currentMonthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
+  // Build short month labels for the subscription billing footer
+  const billing = data.subscriptionBilling;
+  const monthShortLabel = (ym: string): string => {
+    const [y, m] = ym.split("-").map(Number);
+    if (!y || !m) return ym;
+    return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short" });
+  };
+
   return (
     <DashboardCard>
       <CardHeader>
@@ -2903,6 +2911,32 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
             </div>
           ))}
         </div>
+
+        {billing && (
+          <div className="mt-4 pt-3 border-t border-border">
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">
+              Subscription billing
+            </div>
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground">
+                  {monthShortLabel(billing.currentMonth)} projection
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatCurrency(billing.currentMonthProjected)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-sm text-muted-foreground">
+                  {monthShortLabel(billing.lastMonth)} total
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatCurrency(billing.lastMonthTotal)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </DashboardCard>
   );
