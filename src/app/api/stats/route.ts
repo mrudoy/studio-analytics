@@ -484,6 +484,32 @@ export async function GET(request: Request) {
         tm.newSky3 = mv.sky3.new;
         tm.newSkyTingTv = mv.skyTingTv.new;
       }
+
+      // Also override churnRates.byCategory[*].monthly[*] — that's what the
+      // monthly churn cards read. We override canceledCount and activeAtStart
+      // and recompute userChurnRate + mrrChurnRate accordingly.
+      if (trends.churnRates?.byCategory) {
+        const catMap: Record<"member" | "sky3" | "skyTingTv", "MEMBER" | "SKY3" | "SKY_TING_TV"> = {
+          member: "MEMBER", sky3: "SKY3", skyTingTv: "SKY_TING_TV",
+        };
+        for (const [key, _catName] of Object.entries(catMap) as [keyof typeof catMap, string][]) {
+          const catData = trends.churnRates.byCategory[key === "skyTingTv" ? "skyTingTv" : key];
+          if (!catData) continue;
+          for (const m of catData.monthly) {
+            const mv = movementMonthlyByPeriod.get(m.month);
+            if (!mv) continue;
+            const mvCat = mv[key];
+            m.canceledCount = mvCat.canceled;
+            m.activeAtStart = mvCat.activeAtStart;
+            m.canceledMrr = mvCat.canceledMrr;
+            m.activeMrrAtStart = mvCat.activeMrrAtStart;
+            m.userChurnRate = mvCat.activeAtStart > 0
+              ? Math.round((mvCat.canceled / mvCat.activeAtStart) * 1000) / 10 : 0;
+            m.mrrChurnRate = mvCat.activeMrrAtStart > 0
+              ? Math.round((mvCat.canceledMrr / mvCat.activeMrrAtStart) * 1000) / 10 : 0;
+          }
+        }
+      }
     }
 
     // ── Return response ──
