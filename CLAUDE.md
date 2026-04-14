@@ -119,11 +119,46 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 
 Reason: 2026-04-13 investigation showed a bare `SUM` query inflated March subscription billing from the correct $153,525 to $176,727 because duplicate period slices were summed twice.
 
+## METRIC SOURCES (PERMANENT RULE)
+
+**Every dashboard metric has exactly one canonical function that owns it. Never recompute a dashboard metric inline; always consume from the canonical function or the API field it produces.**
+
+### plan_state filter constants — `src/lib/analytics/metrics/filters.ts`
+
+Always import these. Never inline the state strings in a new SQL query or TypeScript filter. The constants are paired with `*_SQL` versions (e.g., `ACTIVE_STATES_SQL`) for use inside `IN (...)` clauses.
+
+| Constant | States | Use for |
+|---|---|---|
+| `ACTIVE_STATES` | Valid Now, Paused, Pending Cancel, In Trial, Invalid | Counting active subscribers; active-at-start denominator for churn rates |
+| `BILLING_STATES` | Valid Now, Pending Cancel | MRR (revenue being recognized this month, ASC 606-aligned) |
+| `STILL_PAYING_STATES` | Valid Now, Paused | For canceled_at gating: rows in these states have `canceled_at = next billing date`, NOT a real cancellation. Real cancels = `plan_state NOT IN STILL_PAYING_STATES` |
+| `AT_RISK_STATES` | Past Due, Invalid, Pending Cancel | Churn-risk alerts and insight detectors |
+
+### Canonical function map (TBD entries fill in during Stage 2-5 of the metrics refactor)
+
+| Metric | Canonical function | File |
+|---|---|---|
+| Active subscriber counts | `getActiveCounts()` → `getAutoRenewStats()` | `src/lib/db/auto-renew-store.ts` |
+| MRR (run-rate) | `getAutoRenewStats()` (uses `BILLING_STATES`) | `src/lib/db/auto-renew-store.ts` |
+| Subscription billing per month | `getMonthlySubscriptionBilling()` | `src/lib/db/revenue-store.ts` |
+| Monthly gross revenue | `getAllMonthlyRevenue()` + `getMonthlyRetreatRevenue()` | `src/lib/db/revenue-store.ts` |
+| Cancellations by window | `getSubscriberMovement()` (TBD Stage 2) | `src/lib/analytics/metrics/subscriber-movement.ts` |
+| New signups by window | `getSubscriberMovement()` (TBD Stage 2) | `src/lib/analytics/metrics/subscriber-movement.ts` |
+| Weekly + monthly churn rates | `getChurnRates()` (TBD Stage 3) | `src/lib/analytics/metrics/churn-rates.ts` |
+
+### Anti-patterns
+
+- **Don't** inline `plan_state IN ('Valid Now', ...)` in new SQL — import `ACTIVE_STATES_SQL`.
+- **Don't** write a new function that recomputes cancellations or MRR from scratch — consume the canonical one or its API output.
+- **Don't** add a new variant of "active" with one extra/missing state without first updating the canonical filter and checking every consumer.
+
+`grep -rE "'(Valid Now|Paused|Pending Cancel|In Trial|Invalid|Canceled|Past Due)'" src/` should return matches only inside `filters.ts`, `migrations.ts` (DB-level SQL/triggers), the upload route's parser, and bespoke filters explicitly commented as broader/narrower than canonical.
+
 ## ACTIVE SUBSCRIBER COUNTING (PERMANENT RULE)
 
-**An active subscriber = `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')`.**
+**An active subscriber = `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')`.** (5 states. Past Due is **NOT** active — payment failed.)
 
-- **All 6 states are active.** Invalid = used all passes (still a subscriber). Pending Cancel = canceling next cycle (currently active). Past Due = payment failed (not formally canceled). Excluding any of these undercounts vs Union.fit's own numbers.
+- **5 states are active.** Invalid = used all passes (still a subscriber). Pending Cancel = canceling next cycle (currently active). Past Due is NOT included — payment failed = not actively subscribed.
 - **Do NOT use `canceled_at` as a filter for active subscribers.** For active subscribers, Union.fit sets `canceled_at` to the next billing/renewal date, NOT the cancellation date. Using `canceled_at <= NOW()` as a guard will filter out nearly everyone.
 - **Daily zip exports are DELTAS, not full snapshots.** They contain only recent changes — NOT all active subscribers. NEVER run reconciliation against a daily export or it will mass-cancel everyone.
 - `reconcileAutoRenews()` exists but must ONLY be called with a full subscriber list (e.g. the "subscriptions changes" report from Union.fit admin, or a manual CSV upload). It is NOT wired into the daily pipeline.
