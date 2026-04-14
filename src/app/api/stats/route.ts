@@ -63,6 +63,7 @@ export async function GET(request: Request) {
       insightsResult,
       overviewResult,
       unionRentalResult,
+      movementResult,
     ] = await Promise.all([
       // 1. Core stats
       safe(computeStatsFromDB()),
@@ -110,6 +111,8 @@ export async function GET(request: Request) {
           AND DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
         GROUP BY TO_CHAR(period_start, 'YYYY-MM')
       `)),
+      // 13. Subscriber movement (canonical source for new + canceled counts per window/period)
+      safe(import("@/lib/analytics/metrics/subscriber-movement").then((m) => m.getSubscriberMovement())),
     ]);
 
     const t1 = Date.now();
@@ -471,6 +474,7 @@ export async function GET(request: Request) {
       spa,
       insights: insightsResult,
       overviewData: overviewResult,
+      movement: movementResult,
       dataSource: "database",
     };
 

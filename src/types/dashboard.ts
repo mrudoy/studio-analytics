@@ -107,6 +107,7 @@ export interface DashboardStats {
   annualBreakdown?: AnnualRevenueBreakdown[] | null;
   rentalRevenue?: RentalRevenueData | null;
   overviewData?: OverviewData | null;
+  movement?: import("@/lib/analytics/metrics/subscriber-movement").SubscriberMovement | null;
 }
 
 export interface RentalMonthRow {
