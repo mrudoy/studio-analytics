@@ -537,6 +537,16 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
 
   const counts = await getActiveCounts();
 
+  // MRR reflects revenue being recognized per ASC 606 — only Valid Now and
+  // Pending Cancel subscribers are actively billing. Paused, Invalid (passes
+  // used up), and In Trial are "active" in the subscriber sense but don't
+  // contribute to recognized revenue this month:
+  //   - Paused: no money flowing (user paused their subscription)
+  //   - Invalid: passes used up, revenue already recognized at purchase/use
+  //   - In Trial: plan_price shows full post-trial rate, not trial rate
+  // Excluding these keeps MRR aligned with actual cash being collected.
+  const BILLING_STATES = new Set(["Valid Now", "Pending Cancel"]);
+
   // Deduplicate MRR by email per category — keep highest monthlyRate per person
   const mrrByEmail: Record<string, Map<string, number>> = {
     member: new Map(),
@@ -546,6 +556,7 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
   };
 
   for (const ar of active) {
+    if (!BILLING_STATES.has(ar.planState)) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
