@@ -278,21 +278,41 @@ export async function getOverviewData(): Promise<OverviewData> {
   const tm = getThisMonth();
   const lm = getLastMonth();
 
-  const [yesterday, thisWeek, lastWeek, thisMonth, lastMonth, arStats] = await Promise.all([
+  // Fetch subscriber movement from the canonical source. We overwrite the
+  // subscription counts in each window with these values so both the API
+  // and the digest email path get the same numbers as the Overview table.
+  // getSubscriberMovement uses STILL_PAYING_STATES exclusion and plan-changer
+  // detection; its counts match the monthly churn card and weekly trends.
+  const { getSubscriberMovement } = await import("../analytics/metrics/subscriber-movement");
+
+  const [yesterday, thisWeek, lastWeek, thisMonth, lastMonth, arStats, movement] = await Promise.all([
     computeWindow(y.start, y.end, y.label, y.sublabel),
     computeWindow(tw.start, tw.end, tw.label, tw.sublabel),
     computeWindow(lw.start, lw.end, lw.label, lw.sublabel),
     computeWindow(tm.start, tm.end, tm.label, tm.sublabel),
     computeWindow(lm.start, lm.end, lm.label, lm.sublabel),
     getAutoRenewStats(),
+    getSubscriberMovement(),
   ]);
 
+  // Apply canonical subscription counts to each window
+  const catFromMovement = (m: { new: number; canceled: number }) => ({ new: m.new, churned: m.canceled });
+  const overrideSubs = (win: TimeWindowMetrics, mv: typeof movement.byWindow["yesterday"]): TimeWindowMetrics => ({
+    ...win,
+    subscriptions: {
+      ...win.subscriptions,
+      member: catFromMovement(mv.member),
+      sky3: catFromMovement(mv.sky3),
+      skyTingTv: catFromMovement(mv.skyTingTv),
+    },
+  });
+
   return {
-    yesterday,
-    thisWeek,
-    lastWeek,
-    thisMonth,
-    lastMonth,
+    yesterday: overrideSubs(yesterday, movement.byWindow.yesterday),
+    thisWeek: overrideSubs(thisWeek, movement.byWindow.thisWeek),
+    lastWeek: overrideSubs(lastWeek, movement.byWindow.lastWeek),
+    thisMonth: overrideSubs(thisMonth, movement.byWindow.thisMonth),
+    lastMonth: overrideSubs(lastMonth, movement.byWindow.lastMonth),
     currentActive: {
       member: arStats?.active.member ?? 0,
       sky3: arStats?.active.sky3 ?? 0,
