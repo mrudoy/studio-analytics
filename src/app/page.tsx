@@ -2126,6 +2126,39 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 
 // ─── Overview Section ─────────────────────────────────────────
 
+/**
+ * Replace the subscription counts in OverviewData with values from the
+ * canonical getSubscriberMovement() output. All other fields (activity
+ * counts, planChanges, currentActive) pass through from overviewData.
+ *
+ * This migrates the Overview table's Auto-Renews row to the single source
+ * of truth, fixing the previous inflation from broken event-log state-flapping.
+ */
+function mergeMovementIntoOverview(
+  overview: OverviewData,
+  movement: DashboardStats["movement"] | null | undefined,
+): OverviewData {
+  if (!movement) return overview;
+  const catFromMovement = (m: { new: number; canceled: number }) => ({ new: m.new, churned: m.canceled });
+  const mergeWindow = (win: OverviewData["yesterday"], mv: typeof movement.byWindow["yesterday"]): OverviewData["yesterday"] => ({
+    ...win,
+    subscriptions: {
+      member: catFromMovement(mv.member),
+      sky3: catFromMovement(mv.sky3),
+      skyTingTv: catFromMovement(mv.skyTingTv),
+      planChanges: win.subscriptions.planChanges,
+    },
+  });
+  return {
+    ...overview,
+    yesterday: mergeWindow(overview.yesterday, movement.byWindow.yesterday),
+    thisWeek: mergeWindow(overview.thisWeek, movement.byWindow.thisWeek),
+    lastWeek: mergeWindow(overview.lastWeek, movement.byWindow.lastWeek),
+    thisMonth: mergeWindow(overview.thisMonth, movement.byWindow.thisMonth),
+    lastMonth: mergeWindow(overview.lastMonth, movement.byWindow.lastMonth),
+  };
+}
+
 function OverviewSection({ data }: { data: OverviewData }) {
   const isMobile = useIsMobile();
   const windowMap = {
@@ -7514,7 +7547,7 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
             <UnionSyncStatus lastUpdated={data.lastUpdated} onSyncComplete={refreshData} />
           </div>
           {data.overviewData ? (
-            <OverviewSection data={data.overviewData} />
+            <OverviewSection data={mergeMovementIntoOverview(data.overviewData, data.movement)} />
           ) : (
             <NoData label="Overview data not available" />
           )}
