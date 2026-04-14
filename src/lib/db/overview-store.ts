@@ -2,19 +2,20 @@
  * Overview store — computes time-window metrics for the Overview page.
  *
  * Returns data for 5 windows: Yesterday, This Week, Last Week, This Month, Last Month.
- * Each window has subscription changes, activity counts (including guests), and merch revenue.
- * Also returns current active subscriber counts by tier.
+ * Each window has:
+ *   - subscription changes + planChanges (from getSubscriberMovement — canonical)
+ *   - activity counts (drop-ins, intro weeks, guests from registrations table)
+ *   - merch revenue (from Shopify)
+ *
+ * The subscription portion is overridden from getSubscriberMovement() so the
+ * Overview table's numbers always match the monthly/weekly churn cards and
+ * every other consumer of subscriber counts.
  */
 
 import { getAutoRenewStats } from "./auto-renew-store";
-import {
-  getSignupEventsInWindow,
-  getChurnEventsInWindow,
-} from "./auto-renew-events-store";
-import type { AutoRenewEvent } from "./auto-renew-events-store";
 import { getDropInCountForRange, getIntroWeekCountForRange, getGuestCountForRange } from "./registration-store";
 import { getShopifyRevenueForRange } from "./shopify-store";
-import type { OverviewData, TimeWindowMetrics, PlanChangeDetail } from "@/types/dashboard";
+import type { OverviewData, TimeWindowMetrics } from "@/types/dashboard";
 
 // ── Date helpers (all dates computed in ET) ─────────────
 
@@ -116,136 +117,20 @@ function getLastMonth() {
   };
 }
 
-// ── Tier ranking for upgrade / downgrade classification ──
-
-const TIER_RANK: Record<string, number> = {
-  SKY_TING_TV: 1,
-  SKY3: 2,
-  MEMBER: 3,
-};
-
-/**
- * Detect plan changes: emails that appear in BOTH the new and canceled arrays
- * with different categories in the same time window.
- *
- * When someone upgrades (e.g. Sky3 → Member), Union.fit cancels the old plan
- * and creates a new one. Without this filter those show as +1 new Member
- * AND -1 churned Sky3 — inflating both growth and churn.
- *
- * Returns the counts and the filtered arrays with plan-changers removed.
- */
-type KnownCategory = "MEMBER" | "SKY3" | "SKY_TING_TV";
-
-function detectPlanChanges(
-  newAR: AutoRenewEvent[],
-  canceledAR: AutoRenewEvent[],
-): {
-  filteredNew: AutoRenewEvent[];
-  filteredCanceled: AutoRenewEvent[];
-  planChanges: PlanChangeDetail[];
-} {
-  // Build email → category map from each list (dedup by email, take first match)
-  const newByEmail = new Map<string, KnownCategory>();
-  for (const r of newAR) {
-    const email = r.customerEmail?.toLowerCase() || "";
-    if (!email || r.category === "UNKNOWN") continue;
-    if (!newByEmail.has(email)) newByEmail.set(email, r.category as KnownCategory);
-  }
-
-  const canceledByEmail = new Map<string, KnownCategory>();
-  for (const r of canceledAR) {
-    const email = r.customerEmail?.toLowerCase() || "";
-    if (!email || r.category === "UNKNOWN") continue;
-    if (!canceledByEmail.has(email)) canceledByEmail.set(email, r.category as KnownCategory);
-  }
-
-  // Find emails in BOTH lists with DIFFERENT categories.
-  // Group by (from → to) pair so we can report "3 people: Sky3 → Member".
-  const planChangeEmails = new Set<string>();
-  const moveCounts = new Map<string, { from: KnownCategory; to: KnownCategory; count: number }>();
-
-  for (const [email, newCat] of newByEmail) {
-    const oldCat = canceledByEmail.get(email);
-    if (!oldCat || oldCat === newCat) continue;
-
-    const oldRank = TIER_RANK[oldCat] ?? 0;
-    const newRank = TIER_RANK[newCat] ?? 0;
-    if (oldRank === 0 || newRank === 0) continue;
-
-    planChangeEmails.add(email);
-    const key = `${oldCat}→${newCat}`;
-    const existing = moveCounts.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      moveCounts.set(key, { from: oldCat, to: newCat, count: 1 });
-    }
-  }
-
-  if (planChangeEmails.size === 0) {
-    return { filteredNew: newAR, filteredCanceled: canceledAR, planChanges: [] };
-  }
-
-  // Build detailed plan change list
-  const planChanges: PlanChangeDetail[] = [];
-  for (const move of moveCounts.values()) {
-    const direction = (TIER_RANK[move.to] ?? 0) > (TIER_RANK[move.from] ?? 0) ? "upgrade" : "downgrade";
-    planChanges.push({ from: move.from, to: move.to, direction, count: move.count });
-  }
-  // Sort: upgrades first, then by count descending
-  planChanges.sort((a, b) => {
-    if (a.direction !== b.direction) return a.direction === "upgrade" ? -1 : 1;
-    return b.count - a.count;
-  });
-
-  // Filter out plan-change emails from both arrays
-  const filteredNew = newAR.filter(
-    (r) => !planChangeEmails.has(r.customerEmail?.toLowerCase() || ""),
-  );
-  const filteredCanceled = canceledAR.filter(
-    (r) => !planChangeEmails.has(r.customerEmail?.toLowerCase() || ""),
-  );
-
-  return { filteredNew, filteredCanceled, planChanges };
-}
-
-// ── Aggregation ──────────────────────────────────────────
-
-function countByCategory(rows: AutoRenewEvent[]): Record<"MEMBER" | "SKY3" | "SKY_TING_TV", number> {
-  // Deduplicate by email per category — same person with multiple subscription rows counts once
-  const seen = { MEMBER: new Set<string>(), SKY3: new Set<string>(), SKY_TING_TV: new Set<string>() };
-  for (const r of rows) {
-    const email = r.customerEmail?.toLowerCase() || "";
-    if (!email) continue;
-    if (r.category === "MEMBER") seen.MEMBER.add(email);
-    else if (r.category === "SKY3") seen.SKY3.add(email);
-    else if (r.category === "SKY_TING_TV") seen.SKY_TING_TV.add(email);
-  }
-  return { MEMBER: seen.MEMBER.size, SKY3: seen.SKY3.size, SKY_TING_TV: seen.SKY_TING_TV.size };
-}
-
 async function computeWindow(
   start: string,
   end: string,
   label: string,
   sublabel: string,
 ): Promise<TimeWindowMetrics> {
-  const [newAR, canceledAR, dropIns, introWeeks, guests, merchRevenue] = await Promise.all([
-    getSignupEventsInWindow(start, end),
-    getChurnEventsInWindow(start, end),
+  // Non-subscription fields only — subscription counts + planChanges are
+  // overridden in getOverviewData() from getSubscriberMovement (canonical).
+  const [dropIns, introWeeks, guests, merchRevenue] = await Promise.all([
     getDropInCountForRange(start, end),
     getIntroWeekCountForRange(start, end),
     getGuestCountForRange(start, end),
     getShopifyRevenueForRange(start, end).catch(() => 0),
   ]);
-
-  // Detect cross-category plan changes (upgrades/downgrades) and remove them
-  // from the new/canceled arrays so category rows show only organic movement.
-  const { filteredNew, filteredCanceled, planChanges } =
-    detectPlanChanges(newAR, canceledAR);
-
-  const newCounts = countByCategory(filteredNew);
-  const canceledCounts = countByCategory(filteredCanceled);
 
   return {
     label,
@@ -253,10 +138,10 @@ async function computeWindow(
     startDate: start,
     endDate: end,
     subscriptions: {
-      member:    { new: newCounts.MEMBER,      churned: canceledCounts.MEMBER },
-      sky3:      { new: newCounts.SKY3,        churned: canceledCounts.SKY3 },
-      skyTingTv: { new: newCounts.SKY_TING_TV, churned: canceledCounts.SKY_TING_TV },
-      planChanges,
+      member:    { new: 0, churned: 0 },  // overridden in getOverviewData
+      sky3:      { new: 0, churned: 0 },  // overridden in getOverviewData
+      skyTingTv: { new: 0, churned: 0 },  // overridden in getOverviewData
+      planChanges: [],                    // overridden in getOverviewData
     },
     activity: {
       dropIns,
@@ -295,15 +180,15 @@ export async function getOverviewData(): Promise<OverviewData> {
     getSubscriberMovement(),
   ]);
 
-  // Apply canonical subscription counts to each window
+  // Apply canonical subscription counts + planChanges to each window
   const catFromMovement = (m: { new: number; canceled: number }) => ({ new: m.new, churned: m.canceled });
   const overrideSubs = (win: TimeWindowMetrics, mv: typeof movement.byWindow["yesterday"]): TimeWindowMetrics => ({
     ...win,
     subscriptions: {
-      ...win.subscriptions,
       member: catFromMovement(mv.member),
       sky3: catFromMovement(mv.sky3),
       skyTingTv: catFromMovement(mv.skyTingTv),
+      planChanges: mv.planChanges,
     },
   });
 

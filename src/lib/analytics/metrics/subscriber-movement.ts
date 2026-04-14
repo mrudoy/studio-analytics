@@ -32,12 +32,20 @@ export interface CategoryMovement {
   activeMrrAtStart: number;
 }
 
+export interface PlanChangeDetail {
+  from: "MEMBER" | "SKY3" | "SKY_TING_TV";
+  to: "MEMBER" | "SKY3" | "SKY_TING_TV";
+  direction: "upgrade" | "downgrade";
+  count: number;
+}
+
 export interface WindowMovement {
   windowStart: string; // YYYY-MM-DD inclusive
   windowEnd: string;   // YYYY-MM-DD exclusive
   member: CategoryMovement;
   sky3: CategoryMovement;
   skyTingTv: CategoryMovement;
+  planChanges: PlanChangeDetail[];
 }
 
 export interface PeriodMovement extends WindowMovement {
@@ -130,11 +138,35 @@ function computeWindow(
       if (!canceledByEmail.has(email)) canceledByEmail.set(email, ck);
     }
   }
+  // Plan changers: emails that appear as new in one category AND canceled
+  // in a DIFFERENT category within this window.
   const planChangers = new Set<string>();
+  const planChangePairs = new Map<string, { fromKey: CategoryKey; toKey: CategoryKey; count: number }>();
+  const cat2upper: Record<CategoryKey, "MEMBER" | "SKY3" | "SKY_TING_TV"> = {
+    member: "MEMBER", sky3: "SKY3", skyTingTv: "SKY_TING_TV",
+  };
+  // Tier rank for upgrade/downgrade direction (higher = more valuable tier)
+  const tierRank: Record<CategoryKey, number> = { skyTingTv: 1, sky3: 2, member: 3 };
   for (const [email, canceledCat] of canceledByEmail) {
     const newCat = newByEmail.get(email);
-    if (newCat && newCat !== canceledCat) planChangers.add(email);
+    if (!newCat || newCat === canceledCat) continue;
+    planChangers.add(email);
+    const key = `${canceledCat}→${newCat}`;
+    const existing = planChangePairs.get(key);
+    if (existing) existing.count++;
+    else planChangePairs.set(key, { fromKey: canceledCat, toKey: newCat, count: 1 });
   }
+  const planChanges: PlanChangeDetail[] = Array.from(planChangePairs.values())
+    .map((p) => ({
+      from: cat2upper[p.fromKey],
+      to: cat2upper[p.toKey],
+      direction: (tierRank[p.toKey] > tierRank[p.fromKey] ? "upgrade" : "downgrade") as "upgrade" | "downgrade",
+      count: p.count,
+    }))
+    .sort((a, b) => {
+      if (a.direction !== b.direction) return a.direction === "upgrade" ? -1 : 1;
+      return b.count - a.count;
+    });
 
   // Second pass: count new + canceled + active-at-start, deduped by email per category
   // For active-at-start: max monthlyRate per email. For new/canceled: any rate is fine
@@ -200,6 +232,7 @@ function computeWindow(
     member: mkCategoryMetrics("member"),
     sky3: mkCategoryMetrics("sky3"),
     skyTingTv: mkCategoryMetrics("skyTingTv"),
+    planChanges,
   };
 }
 

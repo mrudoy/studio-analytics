@@ -134,7 +134,7 @@ Always import these. Never inline the state strings in a new SQL query or TypeSc
 | `STILL_PAYING_STATES` | Valid Now, Paused | For canceled_at gating: rows in these states have `canceled_at = next billing date`, NOT a real cancellation. Real cancels = `plan_state NOT IN STILL_PAYING_STATES` |
 | `AT_RISK_STATES` | Past Due, Invalid, Pending Cancel | Churn-risk alerts and insight detectors |
 
-### Canonical function map (TBD entries fill in during Stage 2-5 of the metrics refactor)
+### Canonical function map
 
 | Metric | Canonical function | File |
 |---|---|---|
@@ -142,9 +142,14 @@ Always import these. Never inline the state strings in a new SQL query or TypeSc
 | MRR (run-rate) | `getAutoRenewStats()` (uses `BILLING_STATES`) | `src/lib/db/auto-renew-store.ts` |
 | Subscription billing per month | `getMonthlySubscriptionBilling()` | `src/lib/db/revenue-store.ts` |
 | Monthly gross revenue | `getAllMonthlyRevenue()` + `getMonthlyRetreatRevenue()` | `src/lib/db/revenue-store.ts` |
-| Cancellations by window | `getSubscriberMovement()` (TBD Stage 2) | `src/lib/analytics/metrics/subscriber-movement.ts` |
-| New signups by window | `getSubscriberMovement()` (TBD Stage 2) | `src/lib/analytics/metrics/subscriber-movement.ts` |
-| Weekly + monthly churn rates | `getChurnRates()` (TBD Stage 3) | `src/lib/analytics/metrics/churn-rates.ts` |
+| Cancellations by window (yesterday / week / month) | `getSubscriberMovement()` | `src/lib/analytics/metrics/subscriber-movement.ts` |
+| New signups by window | `getSubscriberMovement()` | `src/lib/analytics/metrics/subscriber-movement.ts` |
+| Plan changes (upgrades/downgrades) | `getSubscriberMovement()` → `WindowMovement.planChanges` | `src/lib/analytics/metrics/subscriber-movement.ts` |
+| Weekly + monthly churn rates | Derived from `getSubscriberMovement()` at API layer (route.ts override) | `src/app/api/stats/route.ts` |
+| 6-month avg churn rate | Computed at API layer from the canonical per-month rates | `src/app/api/stats/route.ts` |
+| Active-at-period-start (for rate denominator) | `getSubscriberMovement()` → `CategoryMovement.activeAtStart` | `src/lib/analytics/metrics/subscriber-movement.ts` |
+
+**API output shape:** Every consumer reads from `data.movement.*` (per-window/period canonical output) OR from `data.trends.*` (which has the same values overwritten at API assembly in route.ts). Never recompute inline.
 
 ### Anti-patterns
 
