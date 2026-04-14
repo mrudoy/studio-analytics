@@ -3,6 +3,17 @@ import { getPool } from "@/lib/db/database";
 
 export const dynamic = "force-dynamic";
 
+// Canonical "active subscriber" definition — see CLAUDE.md.
+// Every query in this file uses this set so overlap and email-lookup agree.
+const ACTIVE_STATES = [
+  "Valid Now",
+  "Paused",
+  "In Trial",
+  "Invalid",
+  "Pending Cancel",
+  "Past Due",
+];
+
 export async function GET(request: NextRequest) {
   try {
     const pool = getPool();
@@ -30,18 +41,9 @@ export async function GET(request: NextRequest) {
           `SELECT plan_name, plan_state
            FROM auto_renews
            WHERE LOWER(customer_email) = LOWER($1)
-             AND plan_state NOT IN ('Canceled', 'Invalid', 'Paused')
-             AND (
-               UPPER(plan_name) LIKE '%SKY3%' OR UPPER(plan_name) LIKE '%SKY5%'
-               OR UPPER(plan_name) LIKE '%SKYHIGH%' OR UPPER(plan_name) LIKE '%5 PACK%'
-               OR UPPER(plan_name) LIKE '%5-PACK%'
-               OR UPPER(plan_name) LIKE '%UNLIMITED%' OR UPPER(plan_name) LIKE '%MEMBER%'
-               OR UPPER(plan_name) LIKE '%ALL ACCESS%' OR UPPER(plan_name) LIKE '%TING FAM%'
-               OR UPPER(plan_name) LIKE '%WELCOME SKY3%'
-             )
-             AND UPPER(plan_name) NOT LIKE '%SKY TING TV%'
-             AND UPPER(plan_name) NOT LIKE '%SKYTING TV%'`,
-          [email],
+             AND plan_state = ANY($2)
+             AND plan_category IN ('MEMBER', 'SKY3')`,
+          [email, ACTIVE_STATES],
         ),
       ]);
       return NextResponse.json({
@@ -52,17 +54,18 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const res = await pool.query(`
-      SELECT LOWER(customer_email) AS email,
-             array_agg(DISTINCT plan_category ORDER BY plan_category) AS categories,
-             array_agg(DISTINCT plan_name ORDER BY plan_name) AS plans
-      FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused')
-        AND plan_category IN ('MEMBER', 'SKY3')
-      GROUP BY LOWER(customer_email)
-      HAVING COUNT(DISTINCT plan_category) > 1
-      ORDER BY email
-    `);
+    const res = await pool.query(
+      `SELECT LOWER(customer_email) AS email,
+              array_agg(DISTINCT plan_category ORDER BY plan_category) AS categories,
+              array_agg(DISTINCT plan_name ORDER BY plan_name) AS plans
+       FROM auto_renews
+       WHERE plan_state = ANY($1)
+         AND plan_category IN ('MEMBER', 'SKY3')
+       GROUP BY LOWER(customer_email)
+       HAVING COUNT(DISTINCT plan_category) > 1
+       ORDER BY email`,
+      [ACTIVE_STATES],
+    );
 
     return NextResponse.json({
       count: res.rows.length,
