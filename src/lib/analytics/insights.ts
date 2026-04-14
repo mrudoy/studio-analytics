@@ -27,7 +27,7 @@ const detectDropInConverter: Detector = async (pool) => {
         FROM registrations r
         LEFT JOIN auto_renews ar
           ON LOWER(r.email) = LOWER(ar.customer_email)
-          AND ar.plan_state IN ('Active', 'In Trial')
+          AND ar.plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid')
         WHERE r.attended_at >= (CURRENT_DATE - INTERVAL '90 days')
           AND r.email IS NOT NULL
           AND ar.customer_email IS NULL
@@ -72,11 +72,15 @@ const detectDropInConverter: Detector = async (pool) => {
 
 const detectSky3EarlyChurn: Detector = async (pool) => {
   try {
-    // Count SKY3 cancellations in the last 90 days
+    // Count SKY3 cancellations in the last 90 days.
+    // Filter is plan_state NOT IN ('Valid Now','Paused') rather than
+    // plan_state = 'Canceled' — the latter undercounts because Pending
+    // Cancel / Invalid / In Trial / Past Due are also real cancellations
+    // (for active subscribers, canceled_at = next billing date, not a cancel).
     const totalRes = await pool.query(`
       SELECT COUNT(*) AS total
       FROM auto_renews
-      WHERE plan_state = 'Canceled'
+      WHERE plan_state NOT IN ('Valid Now', 'Paused')
         AND plan_category = 'SKY3'
         AND canceled_at >= (CURRENT_DATE - INTERVAL '90 days')
     `);
@@ -88,7 +92,7 @@ const detectSky3EarlyChurn: Detector = async (pool) => {
     const earlyRes = await pool.query(`
       SELECT COUNT(*) AS early
       FROM auto_renews
-      WHERE plan_state = 'Canceled'
+      WHERE plan_state NOT IN ('Valid Now', 'Paused')
         AND plan_category = 'SKY3'
         AND canceled_at >= (CURRENT_DATE - INTERVAL '90 days')
         AND created_at IS NOT NULL
