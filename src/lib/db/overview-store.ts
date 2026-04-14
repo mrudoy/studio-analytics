@@ -6,12 +6,15 @@
  * Also returns current active subscriber counts by tier.
  */
 
-import { getNewAutoRenews, getCanceledAutoRenews, getAutoRenewStats } from "./auto-renew-store";
+import { getAutoRenewStats } from "./auto-renew-store";
+import {
+  getSignupEventsInWindow,
+  getChurnEventsInWindow,
+} from "./auto-renew-events-store";
+import type { AutoRenewEvent } from "./auto-renew-events-store";
 import { getDropInCountForRange, getIntroWeekCountForRange, getGuestCountForRange } from "./registration-store";
 import { getShopifyRevenueForRange } from "./shopify-store";
 import type { OverviewData, TimeWindowMetrics, PlanChangeDetail } from "@/types/dashboard";
-import type { StoredAutoRenew } from "./auto-renew-store";
-import type { AutoRenewCategory } from "@/types/union-data";
 
 // ── Date helpers (all dates computed in ET) ─────────────
 
@@ -134,11 +137,11 @@ const TIER_RANK: Record<string, number> = {
 type KnownCategory = "MEMBER" | "SKY3" | "SKY_TING_TV";
 
 function detectPlanChanges(
-  newAR: StoredAutoRenew[],
-  canceledAR: StoredAutoRenew[],
+  newAR: AutoRenewEvent[],
+  canceledAR: AutoRenewEvent[],
 ): {
-  filteredNew: StoredAutoRenew[];
-  filteredCanceled: StoredAutoRenew[];
+  filteredNew: AutoRenewEvent[];
+  filteredCanceled: AutoRenewEvent[];
   planChanges: PlanChangeDetail[];
 } {
   // Build email → category map from each list (dedup by email, take first match)
@@ -208,7 +211,7 @@ function detectPlanChanges(
 
 // ── Aggregation ──────────────────────────────────────────
 
-function countByCategory(rows: StoredAutoRenew[]): Record<"MEMBER" | "SKY3" | "SKY_TING_TV", number> {
+function countByCategory(rows: AutoRenewEvent[]): Record<"MEMBER" | "SKY3" | "SKY_TING_TV", number> {
   // Deduplicate by email per category — same person with multiple subscription rows counts once
   const seen = { MEMBER: new Set<string>(), SKY3: new Set<string>(), SKY_TING_TV: new Set<string>() };
   for (const r of rows) {
@@ -228,8 +231,8 @@ async function computeWindow(
   sublabel: string,
 ): Promise<TimeWindowMetrics> {
   const [newAR, canceledAR, dropIns, introWeeks, guests, merchRevenue] = await Promise.all([
-    getNewAutoRenews(start, end),
-    getCanceledAutoRenews(start, end),
+    getSignupEventsInWindow(start, end),
+    getChurnEventsInWindow(start, end),
     getDropInCountForRange(start, end),
     getIntroWeekCountForRange(start, end),
     getGuestCountForRange(start, end),

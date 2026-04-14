@@ -654,6 +654,146 @@ const migrations: Migration[] = [
       );
     `,
   },
+  // Append-only event log for subscription state changes.
+  //
+  // Problem: auto_renews is UPSERT'd in place, so state-change history is
+  // overwritten. The overview dashboard's churn counts miss most cancellations
+  // because Union.fit leaves users in 'Pending Cancel' until their paid period
+  // ends and sets canceled_at to the period-end date, not the cancel-click date.
+  //
+  // Fix: a DB trigger on auto_renews writes one event row per state change.
+  // Dashboard counts churn/signups by window on this log instead of static
+  // columns. Trigger-based so every code path that modifies auto_renews
+  // (saveAutoRenews UPDATE-by-pass-id path, INSERT ... ON CONFLICT DO UPDATE,
+  // reconcileAutoRenews bulk cancel) is captured uniformly.
+  //
+  // Semantic change: churn counts are higher than before because Pending Cancel
+  // transitions now count as churn. Pending Cancel → Canceled is logged as
+  // 'final_cancel' and excluded from the dashboard so it's not double-counted.
+  {
+    name: "019_auto_renew_events_log",
+    up: `
+      CREATE TABLE IF NOT EXISTS auto_renew_events (
+        id BIGSERIAL PRIMARY KEY,
+        auto_renew_id INTEGER,
+        customer_email TEXT NOT NULL,
+        plan_name TEXT,
+        plan_category TEXT,
+        prev_state TEXT,
+        new_state TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN
+          ('signup','churn','final_cancel','resume','transition','backfill_signup','backfill_churn')),
+        snapshot_id TEXT,
+        observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        is_backfill BOOLEAN NOT NULL DEFAULT FALSE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_are_observed
+        ON auto_renew_events(observed_at);
+      CREATE INDEX IF NOT EXISTS idx_are_type_observed
+        ON auto_renew_events(event_type, observed_at);
+      CREATE INDEX IF NOT EXISTS idx_are_cat_type_observed
+        ON auto_renew_events(plan_category, event_type, observed_at);
+      CREATE INDEX IF NOT EXISTS idx_are_email_observed
+        ON auto_renew_events(customer_email, observed_at DESC);
+
+      -- Makes backfill idempotent: re-running the migration block won't dupe.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_are_backfill_dedup
+        ON auto_renew_events(auto_renew_id, event_type)
+        WHERE is_backfill = TRUE;
+
+      -- ── Trigger function: log state transitions ────────────
+      CREATE OR REPLACE FUNCTION auto_renew_log_event() RETURNS TRIGGER AS $fn$
+      DECLARE
+        churned_states CONSTANT TEXT[] := ARRAY['Canceled','Pending Cancel'];
+        old_churned BOOLEAN;
+        new_churned BOOLEAN;
+        ev_type TEXT;
+      BEGIN
+        IF TG_OP = 'INSERT' THEN
+          new_churned := NEW.plan_state = ANY(churned_states);
+          ev_type := CASE WHEN new_churned THEN 'churn' ELSE 'signup' END;
+          INSERT INTO auto_renew_events (
+            auto_renew_id, customer_email, plan_name, plan_category,
+            prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+          ) VALUES (
+            NEW.id, NEW.customer_email, NEW.plan_name, NEW.plan_category,
+            NULL, NEW.plan_state, ev_type, NEW.snapshot_id, NOW(), FALSE
+          );
+          RETURN NEW;
+        END IF;
+
+        -- UPDATE: only log on actual state change
+        IF OLD.plan_state IS NOT DISTINCT FROM NEW.plan_state THEN
+          RETURN NEW;
+        END IF;
+
+        old_churned := OLD.plan_state = ANY(churned_states);
+        new_churned := NEW.plan_state = ANY(churned_states);
+
+        IF new_churned AND NOT old_churned THEN
+          ev_type := 'churn';
+        ELSIF old_churned AND NOT new_churned THEN
+          ev_type := 'resume';
+        ELSIF OLD.plan_state = 'Pending Cancel' AND NEW.plan_state = 'Canceled' THEN
+          ev_type := 'final_cancel';
+        ELSE
+          ev_type := 'transition';
+        END IF;
+
+        INSERT INTO auto_renew_events (
+          auto_renew_id, customer_email, plan_name, plan_category,
+          prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+        ) VALUES (
+          NEW.id, NEW.customer_email, NEW.plan_name, NEW.plan_category,
+          OLD.plan_state, NEW.plan_state, ev_type, NEW.snapshot_id, NOW(), FALSE
+        );
+        RETURN NEW;
+      END;
+      $fn$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_auto_renew_log_event ON auto_renews;
+      CREATE TRIGGER trg_auto_renew_log_event
+        AFTER INSERT OR UPDATE ON auto_renews
+        FOR EACH ROW
+        EXECUTE FUNCTION auto_renew_log_event();
+
+      -- ── Backfill from existing data ────────────────────────
+      -- Signup event per row with a known created_at. Treats created_at (DATE)
+      -- as ET local midnight. ON CONFLICT uses the partial unique index.
+      INSERT INTO auto_renew_events (
+        auto_renew_id, customer_email, plan_name, plan_category,
+        prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+      )
+      SELECT
+        id, customer_email, plan_name, plan_category,
+        NULL, plan_state, 'backfill_signup', snapshot_id,
+        (created_at::timestamp AT TIME ZONE 'America/New_York'),
+        TRUE
+      FROM auto_renews
+      WHERE created_at IS NOT NULL
+        AND customer_email IS NOT NULL
+      ON CONFLICT (auto_renew_id, event_type) WHERE is_backfill = TRUE DO NOTHING;
+
+      -- Churn event per currently-churned row with a known canceled_at.
+      -- Rows with NULL canceled_at are intentionally skipped to avoid piling
+      -- synthetic events on migration day.
+      INSERT INTO auto_renew_events (
+        auto_renew_id, customer_email, plan_name, plan_category,
+        prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+      )
+      SELECT
+        id, customer_email, plan_name, plan_category,
+        NULL, plan_state, 'backfill_churn', snapshot_id,
+        (canceled_at::timestamp AT TIME ZONE 'America/New_York'),
+        TRUE
+      FROM auto_renews
+      WHERE plan_state IN ('Canceled','Pending Cancel')
+        AND canceled_at IS NOT NULL
+        AND customer_email IS NOT NULL
+      ON CONFLICT (auto_renew_id, event_type) WHERE is_backfill = TRUE DO NOTHING;
+    `,
+  },
 ];
 
 /**

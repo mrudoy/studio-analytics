@@ -1,5 +1,11 @@
 # Studio Analytics — Style Guide & Rules
 
+## Active Subscriber Definition
+
+**"Active" means `plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')`.**
+
+All queries that filter for active subscribers must use this exact set of states. Do not use `NOT IN ('Canceled', 'Invalid')` — that includes states like `Past Due` which are not considered active. This rule applies to all files that query the `auto_renews` table.
+
 ## Fonts
 
 - **Body font**: `FONT_SANS` = `'Helvetica Neue', Helvetica, Arial, sans-serif`
@@ -97,6 +103,17 @@ Labels use honest data terminology matching Union.fit. Not marketing names.
 - `reconcileAutoRenews()` exists but must ONLY be called with a full subscriber list (e.g. the "subscriptions changes" report from Union.fit admin, or a manual CSV upload). It is NOT wired into the daily pipeline.
 - Subscriber counts are deduplicated by `customer_email` (one person = one count per category). A person paying for both Member and TV is counted in both categories, but only once in the total.
 - This rule was set by Mike on 2026-04-01 after discovering the dashboard undercounted by ~75 people vs Union.fit's numbers. Verified against CSV export: Members 455 (exact match), Sky3 358, TV 1717.
+
+## CHURN / SIGNUP EVENTS (PERMANENT RULE)
+
+**All churn and signup counts for time-window cards come from `auto_renew_events`, not from static columns on `auto_renews`.**
+
+- `auto_renew_events` is an append-only log written by a Postgres trigger on every `plan_state` change in `auto_renews`. See migration `019_auto_renew_events_log`.
+- **Churn = entering a churned state (`Canceled` or `Pending Cancel`) from any other state.** This is when the user clicked cancel — NOT when their paid period ends. Dashboard queries filter `event_type IN ('churn','backfill_churn')`.
+- **`final_cancel`** events (Pending Cancel → Canceled) are logged for audit but EXCLUDED from churn counts so the same cancellation isn't counted twice.
+- **Backfill events** (`backfill_signup`, `backfill_churn`) were synthesized from `created_at` / `canceled_at` at migration time. They count identically to live events in dashboard queries. The `is_backfill` flag exists for audit only.
+- Do NOT add new consumers that compute churn from `canceled_at + plan_state='Canceled'`. That pattern is semantically broken (misses Pending Cancel + wrong timing). Use `getChurnEventsInWindow()` in `src/lib/db/auto-renew-events-store.ts`.
+- Follow-up: `src/lib/analytics/db-trends.ts` still uses the legacy `getCanceledAutoRenews` for weekly/monthly churn rollups. Migrate those next.
 
 ## Architecture
 
