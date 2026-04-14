@@ -1050,9 +1050,12 @@ export async function getIntroWeekConversionData(lookbackDays = 14): Promise<Int
         AND (MIN(visit_date) + INTERVAL '7 days')::date >= CURRENT_DATE - ${lookbackDays}
     ),
     active_instudio AS (
+      -- "Converted" = has an active in-studio subscription. Use the canonical
+      -- active-subscriber definition (matches getActiveAutoRenews and the rest
+      -- of the dashboard). Past Due is excluded — payment failed = not active.
       SELECT DISTINCT LOWER(customer_email) AS email
       FROM auto_renews
-      WHERE plan_state NOT IN ('Canceled', 'Invalid', 'Paused')
+      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid')
         ${IN_STUDIO_PLAN_FILTER}
     )
     SELECT
