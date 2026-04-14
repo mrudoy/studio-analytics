@@ -458,6 +458,34 @@ export async function GET(request: Request) {
     const t2 = Date.now();
     console.log(`[api/stats] Phase 2 (assembly): ${t2 - t1}ms | Total: ${t2 - t0}ms`);
 
+    // ── Overwrite churn/new counts in trends.weekly and trends.monthly from the
+    //    canonical movement source. This ensures every card reading from trends.*
+    //    sees the same numbers as the Overview table (single source of truth).
+    if (trends && movementResult) {
+      const movementWeeklyByPeriod = new Map(movementResult.weekly.map((w) => [w.period, w]));
+      for (const tw of trends.weekly) {
+        const mv = movementWeeklyByPeriod.get(tw.period);
+        if (!mv) continue;
+        tw.memberChurn = mv.member.canceled;
+        tw.sky3Churn = mv.sky3.canceled;
+        tw.skyTingTvChurn = mv.skyTingTv.canceled;
+        tw.newMembers = mv.member.new;
+        tw.newSky3 = mv.sky3.new;
+        tw.newSkyTingTv = mv.skyTingTv.new;
+      }
+      const movementMonthlyByPeriod = new Map(movementResult.monthly.map((m) => [m.period, m]));
+      for (const tm of trends.monthly) {
+        const mv = movementMonthlyByPeriod.get(tm.period);
+        if (!mv) continue;
+        tm.memberChurn = mv.member.canceled;
+        tm.sky3Churn = mv.sky3.canceled;
+        tm.skyTingTvChurn = mv.skyTingTv.canceled;
+        tm.newMembers = mv.member.new;
+        tm.newSky3 = mv.sky3.new;
+        tm.newSkyTingTv = mv.skyTingTv.new;
+      }
+    }
+
     // ── Return response ──
     stats.dataFreshness = dataFreshness;
     stats.annualBreakdown = annualBreakdown;
