@@ -60,6 +60,10 @@ export interface DataFreshness {
   lastPipelineRun: string | null;    // MAX(ran_at) from pipeline_runs
   overall: string | null;            // most recent of all sources
   isPartial: boolean;                // true if sources have different timestamps (partial update)
+  // From export_log — same check used in the digest email
+  isFresh?: boolean;
+  daysStale?: number;
+  latestDataDate?: string;
 }
 
 export interface DashboardStats {

@@ -2126,7 +2126,7 @@ function KPIHeroStrip({ tiles }: { tiles: HeroTile[] }) {
 
 // ─── Overview Section ─────────────────────────────────────────
 
-function OverviewSection({ data }: { data: OverviewData }) {
+function OverviewSection({ data, freshness }: { data: OverviewData; freshness?: import("@/types/dashboard").DataFreshness | null }) {
   const isMobile = useIsMobile();
   const windowMap = {
     yesterday: data.yesterday,
@@ -2269,6 +2269,16 @@ function OverviewSection({ data }: { data: OverviewData }) {
             {LABELS.autoRenews}
           </CardTitle>
         </CardHeader>
+        {freshness && freshness.isFresh === false && freshness.latestDataDate && freshness.daysStale != null && (
+          <div style={{ borderBottom: "1px solid #f59e0b", backgroundColor: "#fef3c7", padding: "10px 16px" }}>
+            <p style={{ fontSize: "0.9rem", fontWeight: 500, color: "#92400e", margin: 0 }}>
+              Union data incomplete since {new Date(freshness.latestDataDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </p>
+            <p style={{ fontSize: "0.75rem", color: "#a16207", margin: "2px 0 0" }}>
+              Latest export covers through {new Date(freshness.latestDataDate + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" })} ({freshness.daysStale} day{freshness.daysStale === 1 ? "" : "s"} behind). Numbers below may be understated.
+            </p>
+          </div>
+        )}
         <CardContent>
           <Table style={{ tableLayout: "fixed", fontFamily: FONT_SANS }}>
             <TableHeader>
@@ -7514,7 +7524,7 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
             <UnionSyncStatus lastUpdated={data.lastUpdated} onSyncComplete={refreshData} />
           </div>
           {data.overviewData ? (
-            <OverviewSection data={data.overviewData} />
+            <OverviewSection data={data.overviewData} freshness={data.dataFreshness} />
           ) : (
             <NoData label="Overview data not available" />
           )}

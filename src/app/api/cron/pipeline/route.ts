@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
 import { fetchAllExports, markExportProcessed, logExport } from "@/lib/union-api/fetch-export";
+import { getWatermark } from "@/lib/db/watermark-store";
 import { runZipWebhookPipeline } from "@/lib/email/zip-download-pipeline";
 import { bumpDataVersion, invalidateStatsCache } from "@/lib/cache/stats-cache";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "@/lib/db/backup";
@@ -41,14 +42,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "No exports available", duration: 0 });
     }
 
-    console.log(`[cron/pipeline] Processing ${allExports.length} exports...`);
+    const wm = await getWatermark("unionApiExport");
+    const lastProcessedAt = wm?.highWaterDate ?? null;
+    console.log(`[cron/pipeline] Watermark: ${lastProcessedAt}, newest export: ${allExports[0]?.createdAt}`);
+    const newExports = lastProcessedAt
+      ? allExports.filter((e) => new Date(e.createdAt).getTime() > new Date(lastProcessedAt).getTime())
+      : allExports;
+
+    if (newExports.length === 0 && allExports.length > 0 && wm?.lastFetchedAt) {
+      const hoursSince = (Date.now() - wm.lastFetchedAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSince > 24) {
+        console.warn(`[cron/pipeline] Watermark stale (${hoursSince.toFixed(1)}h) — force-processing latest export`);
+        newExports.push(allExports[0]);
+      }
+    }
+
+    if (newExports.length === 0) {
+      console.log("[cron/pipeline] No new exports since last run — nothing to process");
+      return NextResponse.json({ message: "No new exports", duration: 0 });
+    }
+
+    console.log(`[cron/pipeline] Processing ${newExports.length} new exports (skipping ${allExports.length - newExports.length} already processed)...`);
 
     let successCount = 0;
     let lastResult: Awaited<ReturnType<typeof runZipWebhookPipeline>> | null = null;
 
-    for (let i = 0; i < allExports.length; i++) {
-      const exp = allExports[i];
-      console.log(`[cron/pipeline] Export ${i + 1}/${allExports.length}: ${exp.createdAt}`);
+    for (let i = 0; i < newExports.length; i++) {
+      const exp = newExports[i];
+      console.log(`[cron/pipeline] Export ${i + 1}/${newExports.length}: ${exp.createdAt}`);
 
       try {
         const zipResult = await runZipWebhookPipeline({
@@ -64,7 +85,7 @@ export async function POST(request: Request) {
             (a, b) => a + (typeof b === "number" ? b : 0), 0
           );
           console.log(`[cron/pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
-          await logExport(exp, totalRecords, i, allExports.length);
+          await logExport(exp, totalRecords, i, newExports.length);
           if (i === 0) {
             await markExportProcessed(exp.createdAt, totalRecords);
             lastResult = zipResult;
@@ -114,12 +135,12 @@ export async function POST(request: Request) {
     }
 
     const duration = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[cron/pipeline] Done in ${duration}s. ${successCount}/${allExports.length} exports succeeded.`);
+    console.log(`[cron/pipeline] Done in ${duration}s. ${successCount}/${newExports.length} exports succeeded.`);
 
     return NextResponse.json({
       success: successCount > 0,
       duration,
-      exportsProcessed: allExports.length,
+      exportsProcessed: newExports.length,
       exportsSucceeded: successCount,
     });
   } catch (e: unknown) {

@@ -20,6 +20,7 @@ async function runScheduledPipeline() {
     const startTime = Date.now();
 
     const { fetchAllExports, markExportProcessed, logExport } = await import("./lib/union-api/fetch-export");
+    const { getWatermark } = await import("./lib/db/watermark-store");
     const { runZipWebhookPipeline } = await import("./lib/email/zip-download-pipeline");
     const { bumpDataVersion, invalidateStatsCache } = await import("./lib/cache/stats-cache");
 
@@ -29,11 +30,34 @@ async function runScheduledPipeline() {
       return;
     }
 
-    console.log(`[scheduler] Processing ${allExports.length} exports...`);
+    // Filter to only exports newer than the last-processed watermark so we
+    // don't re-download the full history on every run (causes Railway timeouts).
+    const wm = await getWatermark("unionApiExport");
+    const lastProcessedAt = wm?.highWaterDate ?? null;
+    console.log(`[scheduler] Watermark: ${lastProcessedAt}, newest export: ${allExports[0]?.createdAt}`);
+    const newExports = lastProcessedAt
+      ? allExports.filter((e) => new Date(e.createdAt).getTime() > new Date(lastProcessedAt).getTime())
+      : allExports;
+
+    // Safety fallback: if watermark is stale (>24h) but exports exist, force the latest.
+    if (newExports.length === 0 && allExports.length > 0 && wm?.lastFetchedAt) {
+      const hoursSince = (Date.now() - wm.lastFetchedAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSince > 24) {
+        console.warn(`[scheduler] Watermark stale (${hoursSince.toFixed(1)}h) — force-processing latest export`);
+        newExports.push(allExports[0]);
+      }
+    }
+
+    if (newExports.length === 0) {
+      console.log("[scheduler] No new exports since last run — nothing to process");
+      return;
+    }
+
+    console.log(`[scheduler] Processing ${newExports.length} new exports (skipping ${allExports.length - newExports.length} already processed)...`);
     let successCount = 0;
 
-    for (let i = 0; i < allExports.length; i++) {
-      const exp = allExports[i];
+    for (let i = 0; i < newExports.length; i++) {
+      const exp = newExports[i];
       try {
         const zipResult = await runZipWebhookPipeline({
           downloadUrl: exp.downloadUrl,
@@ -48,7 +72,7 @@ async function runScheduledPipeline() {
             (a, b) => a + (typeof b === "number" ? b : 0), 0
           );
           console.log(`[scheduler] Export ${i + 1} succeeded: ${totalRecords} records`);
-          await logExport(exp, totalRecords, i, allExports.length);
+          await logExport(exp, totalRecords, i, newExports.length);
           if (i === 0) await markExportProcessed(exp.createdAt, totalRecords);
           successCount++;
         }

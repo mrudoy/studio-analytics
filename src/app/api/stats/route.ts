@@ -15,6 +15,7 @@ import {
   getShopifyDailySales,
 } from "@/lib/db/shopify-store";
 import { getSpaStats } from "@/lib/db/spa-store";
+import { getDataFreshness } from "@/lib/union-api/fetch-export";
 import { getPool } from "@/lib/db/database";
 import { getStatsCache, setStatsCache, getStatsCacheAge } from "@/lib/cache/stats-cache";
 import type { RevenueCategory } from "@/types/union-data";
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
       overviewResult,
       unionRentalResult,
       movementResult,
+      exportFreshnessResult,
     ] = await Promise.all([
       // 1. Core stats
       safe(computeStatsFromDB()),
@@ -113,6 +115,8 @@ export async function GET(request: Request) {
       `)),
       // 13. Subscriber movement (canonical source for new + canceled counts per window/period)
       safe(import("@/lib/analytics/metrics/subscriber-movement").then((m) => m.getSubscriberMovement())),
+      // 14. Export-log freshness (same check as digest email)
+      safe(getDataFreshness()),
     ]);
 
     const t1 = Date.now();
@@ -452,6 +456,11 @@ export async function GET(request: Request) {
         lastPipelineRun: pipeRes.rows[0].ts ? new Date(pipeRes.rows[0].ts).toISOString() : null,
         overall,
         isPartial,
+        ...(exportFreshnessResult && {
+          isFresh: exportFreshnessResult.isFresh,
+          daysStale: exportFreshnessResult.daysStale,
+          latestDataDate: exportFreshnessResult.latestDataDate,
+        }),
       };
     }
 
