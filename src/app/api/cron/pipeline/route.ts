@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
-import { fetchAllExports, markExportProcessed, logExport } from "@/lib/union-api/fetch-export";
+import { fetchAllExports, markExportProcessed, logExport, filterNewExports } from "@/lib/union-api/fetch-export";
 import { getWatermark } from "@/lib/db/watermark-store";
 import { runZipWebhookPipeline } from "@/lib/email/zip-download-pipeline";
 import { bumpDataVersion, invalidateStatsCache } from "@/lib/cache/stats-cache";
@@ -43,19 +43,8 @@ export async function POST(request: Request) {
     }
 
     const wm = await getWatermark("unionApiExport");
-    const lastProcessedAt = wm?.highWaterDate ?? null;
-    console.log(`[cron/pipeline] Watermark: ${lastProcessedAt}, newest export: ${allExports[0]?.createdAt}`);
-    const newExports = lastProcessedAt
-      ? allExports.filter((e) => new Date(e.createdAt).getTime() > new Date(lastProcessedAt).getTime())
-      : allExports;
-
-    if (newExports.length === 0 && allExports.length > 0 && wm?.lastFetchedAt) {
-      const hoursSince = (Date.now() - wm.lastFetchedAt.getTime()) / (1000 * 60 * 60);
-      if (hoursSince > 24) {
-        console.warn(`[cron/pipeline] Watermark stale (${hoursSince.toFixed(1)}h) — force-processing latest export`);
-        newExports.push(allExports[0]);
-      }
-    }
+    console.log(`[cron/pipeline] Watermark: ${wm?.highWaterDate ?? null}, newest export: ${allExports[0]?.createdAt}`);
+    const newExports = filterNewExports(allExports, wm, "cron/pipeline");
 
     if (newExports.length === 0) {
       console.log("[cron/pipeline] No new exports since last run — nothing to process");

@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/shopify-store";
 import { getSpaStats } from "@/lib/db/spa-store";
 import { getDataFreshness } from "@/lib/union-api/fetch-export";
+import { computeAvgChurnRates } from "@/lib/analytics/metrics/subscriber-movement";
 import { getPool } from "@/lib/db/database";
 import { getStatsCache, setStatsCache, getStatsCacheAge } from "@/lib/cache/stats-cache";
 import type { RevenueCategory } from "@/types/union-data";
@@ -525,16 +526,10 @@ export async function GET(request: Request) {
             m.mrrChurnRate = mvCat.activeMrrAtStart > 0
               ? Math.round((mvCat.canceledMrr / mvCat.activeMrrAtStart) * 1000) / 10 : 0;
           }
-          // Recompute the 6-mo averages (exclude current partial month + Oct 2025 cleanup)
-          const completed = catData.monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
-          if (completed.length > 0) {
-            catData.avgUserChurnRate = Math.round(
-              (completed.reduce((s, m) => s + m.userChurnRate, 0) / completed.length) * 10,
-            ) / 10;
-            catData.avgMrrChurnRate = Math.round(
-              (completed.reduce((s, m) => s + m.mrrChurnRate, 0) / completed.length) * 10,
-            ) / 10;
-          }
+          // Recompute the 6-mo averages via canonical helper
+          const avgs = computeAvgChurnRates(catData.monthly);
+          catData.avgUserChurnRate = avgs.avgUserChurnRate;
+          catData.avgMrrChurnRate = avgs.avgMrrChurnRate;
         }
         // Update legacy flat averages
         trends.churnRates.avgMemberRate = trends.churnRates.byCategory.member?.avgUserChurnRate ?? 0;

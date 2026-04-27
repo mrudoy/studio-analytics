@@ -1,4 +1,5 @@
 import { getWatermark, setWatermark } from "../db/watermark-store";
+import type { Watermark } from "../db/watermark-store";
 import { getPool } from "../db/database";
 
 const UNION_API_URL = "https://www.union.fit/api/v1/data_exporters.json";
@@ -62,6 +63,31 @@ export async function fetchAllExports(apiKey: string): Promise<FetchExportResult
       end: exp.data_updated_ends_at,
     },
   }));
+}
+
+/**
+ * Filter exports to only those newer than the watermark.
+ * If the watermark is stale (>24h) and no new exports exist, forces the latest.
+ * Always returns a fresh array — never aliases the input.
+ */
+export function filterNewExports(
+  allExports: FetchExportResult[],
+  wm: Watermark | null,
+  logPrefix: string,
+): FetchExportResult[] {
+  const lastProcessedAt = wm?.highWaterDate ?? null;
+  let result = lastProcessedAt
+    ? allExports.filter((e) => new Date(e.createdAt).getTime() > new Date(lastProcessedAt).getTime())
+    : allExports.slice();
+
+  if (result.length === 0 && allExports.length > 0 && wm?.lastFetchedAt) {
+    const hoursSince = (Date.now() - wm.lastFetchedAt.getTime()) / (1000 * 60 * 60);
+    if (hoursSince > 24) {
+      console.warn(`[${logPrefix}] Watermark stale (${hoursSince.toFixed(1)}h) — force-processing latest export`);
+      result = [allExports[0]];
+    }
+  }
+  return result;
 }
 
 /**

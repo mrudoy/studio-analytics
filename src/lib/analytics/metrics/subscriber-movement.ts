@@ -259,6 +259,25 @@ function startOfMonth(year: number, monthIndex: number): Date {
   return new Date(year, monthIndex, 1);
 }
 
+/**
+ * Compute 6-month average churn rates from a completed monthly array.
+ * Excludes the current partial month (last entry) and Oct 2025 bulk cleanup.
+ */
+export function computeAvgChurnRates(
+  monthly: Array<{ userChurnRate: number; mrrChurnRate: number; month: string }>,
+): { avgUserChurnRate: number; avgMrrChurnRate: number } {
+  const completed = monthly.slice(0, -1).filter((m) => m.month !== "2025-10");
+  if (completed.length === 0) return { avgUserChurnRate: 0, avgMrrChurnRate: 0 };
+  return {
+    avgUserChurnRate: Math.round(
+      (completed.reduce((s, m) => s + m.userChurnRate, 0) / completed.length) * 10,
+    ) / 10,
+    avgMrrChurnRate: Math.round(
+      (completed.reduce((s, m) => s + m.mrrChurnRate, 0) / completed.length) * 10,
+    ) / 10,
+  };
+}
+
 export async function getSubscriberMovement(): Promise<SubscriberMovement> {
   const pool = getPool();
   const { rows: allRows } = await pool.query(

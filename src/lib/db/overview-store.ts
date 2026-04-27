@@ -17,6 +17,8 @@ import { getDropInCountForRange, getIntroWeekCountForRange, getGuestCountForRang
 import { getShopifyRevenueForRange } from "./shopify-store";
 import type { OverviewData, TimeWindowMetrics } from "@/types/dashboard";
 
+type WindowActivity = Omit<TimeWindowMetrics, "subscriptions">;
+
 // ── Date helpers (all dates computed in ET) ─────────────
 
 const ET = "America/New_York";
@@ -122,9 +124,7 @@ async function computeWindow(
   end: string,
   label: string,
   sublabel: string,
-): Promise<TimeWindowMetrics> {
-  // Non-subscription fields only — subscription counts + planChanges are
-  // overridden in getOverviewData() from getSubscriberMovement (canonical).
+): Promise<WindowActivity> {
   const [dropIns, introWeeks, guests, merchRevenue] = await Promise.all([
     getDropInCountForRange(start, end),
     getIntroWeekCountForRange(start, end),
@@ -137,20 +137,8 @@ async function computeWindow(
     sublabel,
     startDate: start,
     endDate: end,
-    subscriptions: {
-      member:    { new: 0, churned: 0 },  // overridden in getOverviewData
-      sky3:      { new: 0, churned: 0 },  // overridden in getOverviewData
-      skyTingTv: { new: 0, churned: 0 },  // overridden in getOverviewData
-      planChanges: [],                    // overridden in getOverviewData
-    },
-    activity: {
-      dropIns,
-      introWeeks,
-      guests,
-    },
-    revenue: {
-      merch: Math.round(merchRevenue * 100) / 100,
-    },
+    activity: { dropIns, introWeeks, guests },
+    revenue: { merch: Math.round(merchRevenue * 100) / 100 },
   };
 }
 
@@ -180,9 +168,8 @@ export async function getOverviewData(): Promise<OverviewData> {
     getSubscriberMovement(),
   ]);
 
-  // Apply canonical subscription counts + planChanges to each window
   const catFromMovement = (m: { new: number; canceled: number }) => ({ new: m.new, churned: m.canceled });
-  const overrideSubs = (win: TimeWindowMetrics, mv: typeof movement.byWindow["yesterday"]): TimeWindowMetrics => ({
+  const overrideSubs = (win: WindowActivity, mv: typeof movement.byWindow["yesterday"]): TimeWindowMetrics => ({
     ...win,
     subscriptions: {
       member: catFromMovement(mv.member),

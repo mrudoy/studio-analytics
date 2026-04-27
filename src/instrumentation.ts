@@ -19,7 +19,7 @@ async function runScheduledPipeline() {
     console.log("[scheduler] Starting scheduled pipeline run...");
     const startTime = Date.now();
 
-    const { fetchAllExports, markExportProcessed, logExport } = await import("./lib/union-api/fetch-export");
+    const { fetchAllExports, markExportProcessed, logExport, filterNewExports } = await import("./lib/union-api/fetch-export");
     const { getWatermark } = await import("./lib/db/watermark-store");
     const { runZipWebhookPipeline } = await import("./lib/email/zip-download-pipeline");
     const { bumpDataVersion, invalidateStatsCache } = await import("./lib/cache/stats-cache");
@@ -30,23 +30,9 @@ async function runScheduledPipeline() {
       return;
     }
 
-    // Filter to only exports newer than the last-processed watermark so we
-    // don't re-download the full history on every run (causes Railway timeouts).
     const wm = await getWatermark("unionApiExport");
-    const lastProcessedAt = wm?.highWaterDate ?? null;
-    console.log(`[scheduler] Watermark: ${lastProcessedAt}, newest export: ${allExports[0]?.createdAt}`);
-    const newExports = lastProcessedAt
-      ? allExports.filter((e) => new Date(e.createdAt).getTime() > new Date(lastProcessedAt).getTime())
-      : allExports;
-
-    // Safety fallback: if watermark is stale (>24h) but exports exist, force the latest.
-    if (newExports.length === 0 && allExports.length > 0 && wm?.lastFetchedAt) {
-      const hoursSince = (Date.now() - wm.lastFetchedAt.getTime()) / (1000 * 60 * 60);
-      if (hoursSince > 24) {
-        console.warn(`[scheduler] Watermark stale (${hoursSince.toFixed(1)}h) — force-processing latest export`);
-        newExports.push(allExports[0]);
-      }
-    }
+    console.log(`[scheduler] Watermark: ${wm?.highWaterDate ?? null}, newest export: ${allExports[0]?.createdAt}`);
+    const newExports = filterNewExports(allExports, wm, "scheduler");
 
     if (newExports.length === 0) {
       console.log("[scheduler] No new exports since last run — nothing to process");
