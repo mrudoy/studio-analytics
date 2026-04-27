@@ -118,32 +118,35 @@ export async function getDataFreshness(): Promise<DataFreshness | null> {
   try {
     const pool = getPool();
 
-    // Get the most recent export log entry (newest data_range_end)
+    // Use export_created_at (when Union generated the export) as the freshness signal.
+    // data_updated_ends_at / data_range_end can be stuck at a stale date even when
+    // Union keeps generating new daily exports — it's unreliable metadata.
     const { rows } = await pool.query(
-      `SELECT data_range_end, created_at, total_exports
+      `SELECT data_range_end, export_created_at, created_at, total_exports
        FROM export_log
-       WHERE data_range_end IS NOT NULL AND data_range_end != ''
-       ORDER BY data_range_end DESC
+       WHERE export_created_at IS NOT NULL AND export_created_at != ''
+       ORDER BY export_created_at DESC
        LIMIT 1`,
     );
 
     if (rows.length === 0) return null;
 
-    const row = rows[0] as { data_range_end: string; created_at: string; total_exports: number };
-    const latestEnd = row.data_range_end;
+    const row = rows[0] as { data_range_end: string; export_created_at: string; created_at: string; total_exports: number };
 
-    // Parse the end date — could be ISO datetime like "2026-03-08T07:00:44Z"
-    const endDate = new Date(latestEnd);
+    // Staleness = how long since Union last generated an export file
+    const exportDate = new Date(row.export_created_at);
+    const dataRangeEnd = new Date(row.data_range_end);
     const now = new Date();
 
     // Compare in ET
-    const endDay = new Date(endDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
+    const exportEndDay = new Date(exportDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
+    const dataEndDay = new Date(dataRangeEnd.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
     const todayET = new Date(now.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
-    const daysStale = Math.floor((todayET.getTime() - endDay.getTime()) / (24 * 60 * 60 * 1000));
+    const daysStale = Math.floor((todayET.getTime() - exportEndDay.getTime()) / (24 * 60 * 60 * 1000));
 
     return {
-      isFresh: daysStale <= 2, // Allow 2 days lag (export generated day-of covers through yesterday)
-      latestDataDate: endDay.toISOString().slice(0, 10),
+      isFresh: daysStale <= 2,
+      latestDataDate: dataEndDay.toISOString().slice(0, 10),
       daysStale,
       lastProcessedAt: row.created_at,
       exportsProcessed: row.total_exports,
