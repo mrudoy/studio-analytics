@@ -422,6 +422,12 @@ function formatMonthLabel(period: string): string {
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
+function formatMonthShort(period: string): string {
+  const d = new Date(period + "-01T00:00:00");
+  if (isNaN(d.getTime())) return period;
+  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+}
+
 // ─── Shared Components ──────────────────────────────────────
 // SkyTingLogo + SkyTingSwirl imported from @/components/dashboard/sky-ting-logo
 
@@ -4166,7 +4172,7 @@ function ConversionPoolModule({ pool }: { pool: ConversionPoolModuleData }) {
 // ─── Category Detail Card (Members / SKY3 / TV) ─────────────
 // Clean card: big count, simple metric rows, no chart clutter
 
-function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, pacingNew, pacingChurn, churnData, dailyMovement, dailyKeyNew, dailyKeyChurn }: {
+function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, pacing, weeklyKeyNew, weeklyKeyChurn, weeklyKeyNet, monthlyKeyNew, monthlyKeyChurn, monthlyKeyNet, pacingNew, pacingChurn, churnData, dailyMovement, dailyKeyNew, dailyKeyChurn }: {
   title: string;
   color: string;
   icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
@@ -4177,6 +4183,9 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
   weeklyKeyNew: (r: TrendRowData) => number;
   weeklyKeyChurn: (r: TrendRowData) => number;
   weeklyKeyNet: (r: TrendRowData) => number;
+  monthlyKeyNew?: (r: TrendRowData) => number;
+  monthlyKeyChurn?: (r: TrendRowData) => number;
+  monthlyKeyNet?: (r: TrendRowData) => number;
   pacingNew?: (p: PacingData) => { actual: number; paced: number };
   pacingChurn?: (p: PacingData) => { actual: number; paced: number };
   churnData?: CategoryChurnData;
@@ -4222,6 +4231,30 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
     reversed.reverse();
     barData.push(...reversed);
   }
+
+  // ── Monthly bar/table data ──
+  const hasMonthly = !!(monthlyKeyNew && monthlyKeyChurn && monthlyKeyNet);
+  const completedMonthly = monthly.length > 1 ? monthly.slice(0, -1) : monthly;
+  const latestM = completedMonthly.at(-1) ?? null;
+  const prevM = completedMonthly.at(-2) ?? null;
+  const last6M = completedMonthly.slice(-6);
+
+  const monthBarData = hasMonthly
+    ? last6M.map((r) => ({ month: formatMonthShort(r.period), newAdds: monthlyKeyNew!(r) }))
+    : [];
+
+  const monthNetVal = latestM && monthlyKeyNet ? monthlyKeyNet(latestM) : 0;
+  const monthNetLabel = monthNetVal > 0 ? `+${monthNetVal}` : String(monthNetVal || "0");
+  const monthNetColor = monthNetVal > 0 ? "text-emerald-600" : monthNetVal < 0 ? "text-red-500" : "text-muted-foreground";
+  const mPeriodLabel = latestM ? formatMonthShort(latestM.period) : "";
+
+  const monthMetrics: { label: string; value: string; priorValue?: string | null; color?: string }[] =
+    hasMonthly && latestM ? [
+      { label: "New",        value: `+${monthlyKeyNew!(latestM)}`,      priorValue: prevM ? `+${monthlyKeyNew!(prevM)}` : null,      color: COLORS.success },
+      { label: "Churned",    value: `-${monthlyKeyChurn!(latestM)}`,     priorValue: prevM ? `-${monthlyKeyChurn!(prevM)}` : null,     color: COLORS.error },
+      { label: "Net Change", value: formatDelta(monthlyKeyNet!(latestM)) || "0", priorValue: prevM ? (formatDelta(monthlyKeyNet!(prevM)) || "0") : null,
+        color: monthNetVal > 0 ? COLORS.success : monthNetVal < 0 ? COLORS.error : undefined },
+    ] : [];
 
   // Build metric rows
   // Columnar rows: label | count | change # | change %
@@ -4301,8 +4334,8 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
         </DashboardCard>
       </div>
 
-      {/* ── Bottom: 50/50 charts ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+      {/* ── Bottom: movement cards ── */}
+      <div className={`grid grid-cols-1 gap-3 items-start ${dailyData.length > 0 && hasMonthly ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
       {/* ── Left card: Daily Movement ── */}
       {dailyData.length > 0 && (
         <DashboardCard>
@@ -4480,6 +4513,62 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
           </table>
         </div>
       </DashboardCard>
+
+      {/* ── Monthly Movement card ── */}
+      {hasMonthly && (
+        <DashboardCard>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              {Icon ? (
+                <Icon className="size-4 shrink-0" style={{ color }} />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, opacity: 0.85 }} />
+              )}
+              <CardTitle>Monthly Movement</CardTitle>
+            </div>
+            <CardDescription>New adds per month</CardDescription>
+            <CardAction>
+              <span className={`text-lg font-semibold tracking-tight tabular-nums ${monthNetColor}`}>{monthNetLabel} {mPeriodLabel}</span>
+            </CardAction>
+          </CardHeader>
+
+          {monthBarData.length > 0 && (
+            <CardContent>
+              <ChartContainer config={{ newAdds: { label: "New Adds", color } }} className="h-[220px] w-full">
+                <BarChart accessibilityLayer data={monthBarData} margin={{ top: 28 }}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="month" tickLine={false} tickMargin={10} axisLine={false} />
+                  <YAxis hide />
+                  <Bar dataKey="newAdds" fill="var(--color-newAdds)" radius={8}>
+                    <LabelList position="top" offset={12} className="fill-foreground" fontSize={12} formatter={(v: number) => `+${v}`} />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          )}
+
+          <div className="border-t">
+            <table className="w-full caption-bottom text-sm" style={{ fontFamily: FONT_SANS }}>
+              <thead className="bg-muted [&_tr]:border-b">
+                <tr>
+                  <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap"></th>
+                  <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Last Month</th>
+                  <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground whitespace-nowrap">Prior Month</th>
+                </tr>
+              </thead>
+              <tbody className="[&_tr:last-child]:border-0">
+                {monthMetrics.map((m, i) => (
+                  <tr key={i} className="border-b">
+                    <td className="px-4 py-2 align-middle text-muted-foreground whitespace-nowrap">{m.label}</td>
+                    <td className="px-4 py-2 align-middle text-right font-medium tabular-nums whitespace-nowrap" style={m.color ? { color: m.color } : undefined}>{m.value}</td>
+                    <td className="px-4 py-2 align-middle text-right tabular-nums whitespace-nowrap text-muted-foreground">{m.priorValue ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DashboardCard>
+      )}
     </div>
     </div>
   );
@@ -7752,6 +7841,9 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
             weeklyKeyNew={(r) => r.newMembers}
             weeklyKeyChurn={(r) => r.memberChurn}
             weeklyKeyNet={(r) => r.netMemberGrowth}
+            monthlyKeyNew={(r) => r.newMembers}
+            monthlyKeyChurn={(r) => r.memberChurn}
+            monthlyKeyNet={(r) => r.netMemberGrowth}
             pacingNew={(p) => ({ actual: p.newMembersActual, paced: p.newMembersPaced })}
             pacingChurn={(p) => ({ actual: p.memberCancellationsActual, paced: p.memberCancellationsPaced })}
             dailyMovement={dailyMovement}
@@ -7782,6 +7874,9 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
             weeklyKeyNew={(r) => r.newSky3}
             weeklyKeyChurn={(r) => r.sky3Churn}
             weeklyKeyNet={(r) => r.netSky3Growth}
+            monthlyKeyNew={(r) => r.newSky3}
+            monthlyKeyChurn={(r) => r.sky3Churn}
+            monthlyKeyNet={(r) => r.netSky3Growth}
             pacingNew={(p) => ({ actual: p.newSky3Actual, paced: p.newSky3Paced })}
             pacingChurn={(p) => ({ actual: p.sky3CancellationsActual, paced: p.sky3CancellationsPaced })}
             dailyMovement={dailyMovement}
@@ -7812,6 +7907,9 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
             weeklyKeyNew={(r) => r.newSkyTingTv}
             weeklyKeyChurn={(r) => r.skyTingTvChurn}
             weeklyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
+            monthlyKeyNew={(r) => r.newSkyTingTv}
+            monthlyKeyChurn={(r) => r.skyTingTvChurn}
+            monthlyKeyNet={(r) => r.newSkyTingTv - r.skyTingTvChurn}
             dailyMovement={dailyMovement}
             dailyKeyNew={(d) => d.newTv}
             dailyKeyChurn={(d) => d.churnedTv}
