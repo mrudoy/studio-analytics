@@ -19,7 +19,7 @@ async function runScheduledPipeline() {
     console.log("[scheduler] Starting scheduled pipeline run...");
     const startTime = Date.now();
 
-    const { fetchAllExports, markExportProcessed, logExport, filterNewExports } = await import("./lib/union-api/fetch-export");
+    const { fetchAllExports, logExport, filterNewExports, WatermarkTracker } = await import("./lib/union-api/fetch-export");
     const { getWatermark } = await import("./lib/db/watermark-store");
     const { runZipWebhookPipeline } = await import("./lib/email/zip-download-pipeline");
     const { bumpDataVersion, invalidateStatsCache } = await import("./lib/cache/stats-cache");
@@ -41,6 +41,7 @@ async function runScheduledPipeline() {
 
     console.log(`[scheduler] Processing ${newExports.length} new exports (skipping ${allExports.length - newExports.length} already processed)...`);
     let successCount = 0;
+    const tracker = new WatermarkTracker();
 
     for (let i = 0; i < newExports.length; i++) {
       const exp = newExports[i];
@@ -57,14 +58,25 @@ async function runScheduledPipeline() {
           const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
             (a, b) => a + (typeof b === "number" ? b : 0), 0
           );
-          console.log(`[scheduler] Export ${i + 1} succeeded: ${totalRecords} records`);
+          console.log(`[scheduler] Export ${i + 1} succeeded: ${totalRecords} records (createdAt=${exp.createdAt})`);
           await logExport(exp, totalRecords, i, newExports.length);
-          if (i === 0) await markExportProcessed(exp.createdAt, totalRecords);
+          tracker.observe(exp.createdAt, totalRecords);
           successCount++;
+        } else {
+          console.warn(`[scheduler] Export ${i + 1} returned success=false (createdAt=${exp.createdAt})`);
         }
       } catch (err) {
-        console.warn(`[scheduler] Export ${i + 1} failed: ${err instanceof Error ? err.message : err}`);
+        console.warn(`[scheduler] Export ${i + 1} failed (createdAt=${exp.createdAt}): ${err instanceof Error ? err.message : err}`);
       }
+    }
+
+    // Advance watermark to the newest *successfully processed* export, even if
+    // earlier (newer) exports in the list failed.
+    const advanced = await tracker.commit();
+    if (advanced) {
+      console.log(`[scheduler] Watermark advanced to ${advanced.createdAt} (${advanced.recordCount} records)`);
+    } else if (successCount === 0 && newExports.length > 0) {
+      console.warn(`[scheduler] All ${newExports.length} exports failed — watermark NOT advanced`);
     }
 
     await bumpDataVersion();

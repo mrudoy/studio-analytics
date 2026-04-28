@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadSettings } from "@/lib/crypto/credentials";
-import { fetchAllExports, markExportProcessed, logExport, filterNewExports } from "@/lib/union-api/fetch-export";
+import { fetchAllExports, logExport, filterNewExports, WatermarkTracker } from "@/lib/union-api/fetch-export";
 import { getWatermark } from "@/lib/db/watermark-store";
 import { runZipWebhookPipeline } from "@/lib/email/zip-download-pipeline";
 import { bumpDataVersion, invalidateStatsCache } from "@/lib/cache/stats-cache";
@@ -55,6 +55,7 @@ export async function POST(request: Request) {
 
     let successCount = 0;
     let lastResult: Awaited<ReturnType<typeof runZipWebhookPipeline>> | null = null;
+    const tracker = new WatermarkTracker();
 
     for (let i = 0; i < newExports.length; i++) {
       const exp = newExports[i];
@@ -73,18 +74,28 @@ export async function POST(request: Request) {
           const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
             (a, b) => a + (typeof b === "number" ? b : 0), 0
           );
-          console.log(`[cron/pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
+          console.log(`[cron/pipeline] Export ${i + 1} succeeded: ${totalRecords} records (createdAt=${exp.createdAt})`);
           await logExport(exp, totalRecords, i, newExports.length);
-          if (i === 0) {
-            await markExportProcessed(exp.createdAt, totalRecords);
-            lastResult = zipResult;
-          }
+          tracker.observe(exp.createdAt, totalRecords);
+          if (!lastResult) lastResult = zipResult;
           successCount++;
+        } else {
+          console.warn(`[cron/pipeline] Export ${i + 1} returned success=false (createdAt=${exp.createdAt})`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[cron/pipeline] Export ${i + 1} failed: ${msg} — continuing`);
+        console.warn(`[cron/pipeline] Export ${i + 1} failed (createdAt=${exp.createdAt}): ${msg} — continuing`);
       }
+    }
+
+    // Advance the watermark to the newest *successful* export. If newer
+    // exports failed but older ones succeeded, the watermark still moves
+    // forward to the latest one we actually processed.
+    const advanced = await tracker.commit();
+    if (advanced) {
+      console.log(`[cron/pipeline] Watermark advanced to ${advanced.createdAt} (${advanced.recordCount} records)`);
+    } else if (newExports.length > 0) {
+      console.warn(`[cron/pipeline] All ${newExports.length} exports failed — watermark NOT advanced`);
     }
 
     // Bump cache

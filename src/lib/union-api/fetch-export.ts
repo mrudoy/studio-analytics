@@ -98,6 +98,37 @@ export async function markExportProcessed(createdAt: string, recordCount: number
 }
 
 /**
+ * Track the newest successfully-processed export across a pipeline run.
+ *
+ * Use this instead of gating `markExportProcessed` on `i === 0` of the loop:
+ * if the newest Union export fails (expired URL, transient parse error, etc.)
+ * but an older one succeeds, the watermark must still advance to that older
+ * one. Otherwise, on every subsequent run, the same newest export keeps
+ * failing and the watermark stays pinned forever.
+ *
+ * Compare on `new Date(...).getTime()` — Union's createdAt is an ISO string,
+ * but this is robust against any sort-order quirks if format ever changes.
+ */
+export class WatermarkTracker {
+  private newest: { createdAt: string; recordCount: number } | null = null;
+
+  observe(createdAt: string, recordCount: number): void {
+    if (!createdAt) return;
+    const t = new Date(createdAt).getTime();
+    if (!Number.isFinite(t)) return;
+    if (!this.newest || t > new Date(this.newest.createdAt).getTime()) {
+      this.newest = { createdAt, recordCount };
+    }
+  }
+
+  async commit(): Promise<{ createdAt: string; recordCount: number } | null> {
+    if (!this.newest) return null;
+    await markExportProcessed(this.newest.createdAt, this.newest.recordCount);
+    return this.newest;
+  }
+}
+
+/**
  * Log a processed export to the export_log table for freshness tracking.
  */
 export async function logExport(
@@ -155,39 +186,41 @@ export async function getDataFreshness(): Promise<DataFreshness | null> {
          FROM fetch_watermarks
          WHERE report_type = 'unionApiExport'`,
       ),
-      // Display date only: data_range_end tells us what coverage period Union reported.
-      // NOT used for isFresh — this field can be stuck at a stale date even when
-      // Union keeps generating new daily export files.
+      // For display only: take the MAX coverage end date Union has ever reported.
+      // data_range_end is non-monotonic — different exports report different
+      // coverage windows, so picking "the latest row" gives misleading results.
+      // MAX(data_range_end) reflects the furthest point in time our data covers.
       pool.query(
-        `SELECT data_range_end, created_at, total_exports
+        `SELECT MAX(data_range_end) AS max_data_range_end,
+                MAX(created_at) AS last_logged_at,
+                COUNT(*) AS total_rows
          FROM export_log
-         WHERE data_range_end IS NOT NULL AND data_range_end != ''
-         ORDER BY created_at DESC
-         LIMIT 1`,
+         WHERE data_range_end IS NOT NULL AND data_range_end != ''`,
       ),
     ]);
 
     const wm = wmResult.rows[0] as { high_water_date: string | null; last_fetched_at: string } | undefined;
-    const logRow = logResult.rows[0] as { data_range_end: string; created_at: string; total_exports: number } | undefined;
+    const logAgg = logResult.rows[0] as { max_data_range_end: string | null; last_logged_at: string | null; total_rows: string } | undefined;
 
     // Need at least one signal to report freshness
-    if (!wm?.high_water_date && !logRow) return null;
+    if (!wm?.high_water_date && !logAgg?.max_data_range_end) return null;
 
     const now = new Date();
     const todayET = new Date(now.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
 
-    // Staleness = how long since the pipeline last processed a Union export (watermark).
-    // Fall back to export_log if no watermark exists yet (first-run edge case).
-    const freshnessDateStr = wm?.high_water_date ?? logRow?.created_at ?? "";
+    // Staleness = how long since the pipeline last successfully processed a Union
+    // export (watermark.high_water_date is the createdAt of that newest export).
+    // Fall back to MAX(data_range_end) only if no watermark exists yet.
+    const freshnessDateStr = wm?.high_water_date ?? logAgg?.max_data_range_end ?? "";
     if (!freshnessDateStr) return null;
 
     const freshnessDate = new Date(freshnessDateStr);
     const freshnessDay = new Date(freshnessDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
     const daysStale = Math.floor((todayET.getTime() - freshnessDay.getTime()) / (24 * 60 * 60 * 1000));
 
-    // Display date: data_range_end from export_log (the coverage period Union reported).
-    // Falls back to the freshness date if no export_log entry exists.
-    const displayDateStr = logRow?.data_range_end ?? freshnessDateStr;
+    // Display date for the "covers through X" line: the furthest data point we
+    // have. Prefer MAX(data_range_end); fall back to the watermark date.
+    const displayDateStr = logAgg?.max_data_range_end ?? freshnessDateStr;
     const displayDate = new Date(displayDateStr);
     const displayDay = new Date(displayDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
 
@@ -195,8 +228,8 @@ export async function getDataFreshness(): Promise<DataFreshness | null> {
       isFresh: daysStale <= 2,
       latestDataDate: displayDay.toISOString().slice(0, 10),
       daysStale,
-      lastProcessedAt: logRow?.created_at ?? wm?.last_fetched_at ?? "",
-      exportsProcessed: logRow?.total_exports ?? 0,
+      lastProcessedAt: logAgg?.last_logged_at ?? wm?.last_fetched_at ?? "",
+      exportsProcessed: logAgg?.total_rows ? Number(logAgg.total_rows) : 0,
     };
   } catch (err) {
     console.warn("[union-api] Freshness check failed:", err instanceof Error ? err.message : err);

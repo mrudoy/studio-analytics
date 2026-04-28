@@ -9,7 +9,7 @@ import { getWatermark } from "../db/watermark-store";
 import { createBackup, saveBackupToDisk, saveBackupMetadata, pruneBackups } from "../db/backup";
 import { uploadBackupToGitHub } from "../db/backup-cloud";
 import { invalidateStatsCache, bumpDataVersion } from "../cache/stats-cache";
-import { fetchAllExports, markExportProcessed, logExport } from "../union-api/fetch-export";
+import { fetchAllExports, logExport, WatermarkTracker } from "../union-api/fetch-export";
 import { sendPipelineAlert } from "../email/pipeline-alerts";
 
 /** Maximum total time the pipeline is allowed to run before being killed.
@@ -134,6 +134,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
           nothingNew = true;
         } else {
           console.log(`[pipeline] Processing ${newExports.length} new exports (newest first)`);
+          const tracker = new WatermarkTracker();
 
           // Process newest first so the latest data wins any upsert conflicts
           for (let i = 0; i < newExports.length; i++) {
@@ -161,19 +162,27 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
                 const totalRecords = Object.values(zipResult.recordCounts ?? {}).reduce(
                   (a, b) => a + (typeof b === "number" ? b : 0), 0
                 );
-                console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records`);
-                // Log this export for freshness tracking
+                console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records (createdAt=${exportInfo.createdAt})`);
                 await logExport(exportInfo, totalRecords, i, newExports.length);
-                // Mark the latest (first) export as the watermark
-                if (i === 0) {
-                  await markExportProcessed(exportInfo.createdAt, totalRecords);
-                  result = zipResult;
-                }
+                tracker.observe(exportInfo.createdAt, totalRecords);
+                // Hold onto any successful zipResult so the worker has a result to return
+                if (!result) result = zipResult;
+              } else {
+                console.warn(`[pipeline] Export ${i + 1} returned success=false (createdAt=${exportInfo.createdAt})`);
               }
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              console.warn(`[pipeline] Export ${i + 1} failed: ${msg} — continuing`);
+              console.warn(`[pipeline] Export ${i + 1} failed (createdAt=${exportInfo.createdAt}): ${msg} — continuing`);
             }
+          }
+
+          // Advance watermark to the newest *successful* export, regardless of
+          // whether the literal first iteration of the loop succeeded.
+          const advanced = await tracker.commit();
+          if (advanced) {
+            console.log(`[pipeline] Watermark advanced to ${advanced.createdAt} (${advanced.recordCount} records)`);
+          } else if (newExports.length > 0) {
+            console.warn(`[pipeline] All ${newExports.length} exports failed — watermark NOT advanced`);
           }
 
           if (result) {
