@@ -98,33 +98,43 @@ export async function markExportProcessed(createdAt: string, recordCount: number
 }
 
 /**
- * Track the newest successfully-processed export across a pipeline run.
+ * Track + advance the watermark as exports succeed within a pipeline run.
  *
- * Use this instead of gating `markExportProcessed` on `i === 0` of the loop:
- * if the newest Union export fails (expired URL, transient parse error, etc.)
- * but an older one succeeds, the watermark must still advance to that older
- * one. Otherwise, on every subsequent run, the same newest export keeps
- * failing and the watermark stays pinned forever.
+ * Why this exists: all three pipeline entry points used to gate
+ * `markExportProcessed` on `i === 0`. Loops are newest-first, so if Union's
+ * newest export failed (expired URL, parse error, etc.) but an older one
+ * succeeded, data landed in the DB but the watermark never advanced. Every
+ * subsequent run hit the same wall and the watermark stayed pinned forever.
  *
- * Compare on `new Date(...).getTime()` — Union's createdAt is an ISO string,
- * but this is robust against any sort-order quirks if format ever changes.
+ * Behavior:
+ * - `observe(createdAt, n)` advances the in-memory + DB watermark
+ *   IMMEDIATELY if `createdAt` is newer than what we've already committed
+ *   in this run. This way, even if the loop is killed mid-flight (zombie
+ *   cleanup, OOM, container restart), every successfully-processed export
+ *   is still durably reflected in the watermark.
+ * - The newer-than guard prevents regression if observations arrive out of
+ *   order.
+ *
+ * `await observe(...)` after each successful export. No `commit()` step needed.
  */
 export class WatermarkTracker {
-  private newest: { createdAt: string; recordCount: number } | null = null;
+  private committedCreatedAt: string | null = null;
 
-  observe(createdAt: string, recordCount: number): void {
+  async observe(createdAt: string, recordCount: number): Promise<void> {
     if (!createdAt) return;
     const t = new Date(createdAt).getTime();
     if (!Number.isFinite(t)) return;
-    if (!this.newest || t > new Date(this.newest.createdAt).getTime()) {
-      this.newest = { createdAt, recordCount };
+    if (this.committedCreatedAt && t <= new Date(this.committedCreatedAt).getTime()) {
+      // Older than what we already committed — don't regress.
+      return;
     }
+    await markExportProcessed(createdAt, recordCount);
+    this.committedCreatedAt = createdAt;
   }
 
-  async commit(): Promise<{ createdAt: string; recordCount: number } | null> {
-    if (!this.newest) return null;
-    await markExportProcessed(this.newest.createdAt, this.newest.recordCount);
-    return this.newest;
+  /** Returns the newest createdAt this tracker has committed, or null. */
+  get committed(): string | null {
+    return this.committedCreatedAt;
   }
 }
 
@@ -151,13 +161,16 @@ export async function logExport(
 }
 
 /**
- * Data freshness check — returns null if data is fresh (within 2 days),
- * or the date string since which data has been incomplete.
+ * Data freshness check — returns null if no signal, otherwise reports
+ * how many days behind today the most-recently-processed Union export is.
  *
- * Uses the unionApiExport watermark's high_water_date as the primary freshness
- * signal. The watermark is updated via UPSERT by markExportProcessed() on every
- * successful pipeline run, so it is reliable even if logExport() fails silently.
- * export_log is consulted only for the display date (data_range_end coverage).
+ * Uses ONE signal end-to-end: the unionApiExport watermark's high_water_date,
+ * which is set to Union's `created_at` of the newest export this pipeline
+ * has successfully processed. Both `daysStale` and `latestDataDate` derive
+ * from it, so the banner can't say contradictory things ("April 7 / 7 days
+ * behind"). data_range_end was tried as the freshness signal previously and
+ * abandoned — Union reports it non-monotonically across exports, so it's
+ * unreliable as a freshness indicator even though it sounds like one.
  */
 export interface DataFreshness {
   /** True if data is current (within acceptable lag) */
@@ -176,59 +189,38 @@ export async function getDataFreshness(): Promise<DataFreshness | null> {
   try {
     const pool = getPool();
 
-    // Run both queries in parallel
     const [wmResult, logResult] = await Promise.all([
-      // Primary signal: when did the pipeline last successfully process a Union export?
-      // markExportProcessed() uses an UPSERT, so this is always current even if
-      // logExport()'s plain INSERT fails silently.
       pool.query(
         `SELECT high_water_date, last_fetched_at
          FROM fetch_watermarks
          WHERE report_type = 'unionApiExport'`,
       ),
-      // For display only: take the MAX coverage end date Union has ever reported.
-      // data_range_end is non-monotonic — different exports report different
-      // coverage windows, so picking "the latest row" gives misleading results.
-      // MAX(data_range_end) reflects the furthest point in time our data covers.
+      // export_log is informational only — we use it for the row count and the
+      // last-logged timestamp, but it does NOT drive isFresh / daysStale.
       pool.query(
-        `SELECT MAX(data_range_end) AS max_data_range_end,
-                MAX(created_at) AS last_logged_at,
-                COUNT(*) AS total_rows
-         FROM export_log
-         WHERE data_range_end IS NOT NULL AND data_range_end != ''`,
+        `SELECT MAX(created_at) AS last_logged_at, COUNT(*) AS total_rows
+         FROM export_log`,
       ),
     ]);
 
     const wm = wmResult.rows[0] as { high_water_date: string | null; last_fetched_at: string } | undefined;
-    const logAgg = logResult.rows[0] as { max_data_range_end: string | null; last_logged_at: string | null; total_rows: string } | undefined;
+    const logAgg = logResult.rows[0] as { last_logged_at: string | null; total_rows: string } | undefined;
 
-    // Need at least one signal to report freshness
-    if (!wm?.high_water_date && !logAgg?.max_data_range_end) return null;
+    // No watermark = no signal. Return null so the banner doesn't render.
+    if (!wm?.high_water_date) return null;
 
     const now = new Date();
     const todayET = new Date(now.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
 
-    // Staleness = how long since the pipeline last successfully processed a Union
-    // export (watermark.high_water_date is the createdAt of that newest export).
-    // Fall back to MAX(data_range_end) only if no watermark exists yet.
-    const freshnessDateStr = wm?.high_water_date ?? logAgg?.max_data_range_end ?? "";
-    if (!freshnessDateStr) return null;
-
-    const freshnessDate = new Date(freshnessDateStr);
+    const freshnessDate = new Date(wm.high_water_date);
     const freshnessDay = new Date(freshnessDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
     const daysStale = Math.floor((todayET.getTime() - freshnessDay.getTime()) / (24 * 60 * 60 * 1000));
 
-    // Display date for the "covers through X" line: the furthest data point we
-    // have. Prefer MAX(data_range_end); fall back to the watermark date.
-    const displayDateStr = logAgg?.max_data_range_end ?? freshnessDateStr;
-    const displayDate = new Date(displayDateStr);
-    const displayDay = new Date(displayDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
-
     return {
       isFresh: daysStale <= 2,
-      latestDataDate: displayDay.toISOString().slice(0, 10),
+      latestDataDate: freshnessDay.toISOString().slice(0, 10),
       daysStale,
-      lastProcessedAt: logAgg?.last_logged_at ?? wm?.last_fetched_at ?? "",
+      lastProcessedAt: logAgg?.last_logged_at ?? wm.last_fetched_at ?? "",
       exportsProcessed: logAgg?.total_rows ? Number(logAgg.total_rows) : 0,
     };
   } catch (err) {

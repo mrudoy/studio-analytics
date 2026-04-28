@@ -164,7 +164,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
                 );
                 console.log(`[pipeline] Export ${i + 1} succeeded: ${totalRecords} records (createdAt=${exportInfo.createdAt})`);
                 await logExport(exportInfo, totalRecords, i, newExports.length);
-                tracker.observe(exportInfo.createdAt, totalRecords);
+                await tracker.observe(exportInfo.createdAt, totalRecords);
                 // Hold onto any successful zipResult so the worker has a result to return
                 if (!result) result = zipResult;
               } else {
@@ -172,15 +172,12 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
               }
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              console.warn(`[pipeline] Export ${i + 1} failed (createdAt=${exportInfo.createdAt}): ${msg} — continuing`);
+              console.warn(`[pipeline] Export ${i + 1} failed (createdAt=${exportInfo.createdAt}, url=${exportInfo.downloadUrl?.slice(0, 80)}): ${msg} — continuing`);
             }
           }
 
-          // Advance watermark to the newest *successful* export, regardless of
-          // whether the literal first iteration of the loop succeeded.
-          const advanced = await tracker.commit();
-          if (advanced) {
-            console.log(`[pipeline] Watermark advanced to ${advanced.createdAt} (${advanced.recordCount} records)`);
+          if (tracker.committed) {
+            console.log(`[pipeline] Watermark now at ${tracker.committed}`);
           } else if (newExports.length > 0) {
             console.warn(`[pipeline] All ${newExports.length} exports failed — watermark NOT advanced`);
           }

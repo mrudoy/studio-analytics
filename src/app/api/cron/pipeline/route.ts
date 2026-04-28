@@ -76,7 +76,7 @@ export async function POST(request: Request) {
           );
           console.log(`[cron/pipeline] Export ${i + 1} succeeded: ${totalRecords} records (createdAt=${exp.createdAt})`);
           await logExport(exp, totalRecords, i, newExports.length);
-          tracker.observe(exp.createdAt, totalRecords);
+          await tracker.observe(exp.createdAt, totalRecords);
           if (!lastResult) lastResult = zipResult;
           successCount++;
         } else {
@@ -84,16 +84,12 @@ export async function POST(request: Request) {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[cron/pipeline] Export ${i + 1} failed (createdAt=${exp.createdAt}): ${msg} — continuing`);
+        console.warn(`[cron/pipeline] Export ${i + 1} failed (createdAt=${exp.createdAt}, url=${exp.downloadUrl?.slice(0, 80)}): ${msg} — continuing`);
       }
     }
 
-    // Advance the watermark to the newest *successful* export. If newer
-    // exports failed but older ones succeeded, the watermark still moves
-    // forward to the latest one we actually processed.
-    const advanced = await tracker.commit();
-    if (advanced) {
-      console.log(`[cron/pipeline] Watermark advanced to ${advanced.createdAt} (${advanced.recordCount} records)`);
+    if (tracker.committed) {
+      console.log(`[cron/pipeline] Watermark now at ${tracker.committed}`);
     } else if (newExports.length > 0) {
       console.warn(`[cron/pipeline] All ${newExports.length} exports failed — watermark NOT advanced`);
     }

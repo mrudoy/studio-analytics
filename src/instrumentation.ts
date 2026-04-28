@@ -60,22 +60,19 @@ async function runScheduledPipeline() {
           );
           console.log(`[scheduler] Export ${i + 1} succeeded: ${totalRecords} records (createdAt=${exp.createdAt})`);
           await logExport(exp, totalRecords, i, newExports.length);
-          tracker.observe(exp.createdAt, totalRecords);
+          await tracker.observe(exp.createdAt, totalRecords);
           successCount++;
         } else {
           console.warn(`[scheduler] Export ${i + 1} returned success=false (createdAt=${exp.createdAt})`);
         }
       } catch (err) {
-        console.warn(`[scheduler] Export ${i + 1} failed (createdAt=${exp.createdAt}): ${err instanceof Error ? err.message : err}`);
+        console.warn(`[scheduler] Export ${i + 1} failed (createdAt=${exp.createdAt}, url=${exp.downloadUrl?.slice(0, 80)}): ${err instanceof Error ? err.message : err}`);
       }
     }
 
-    // Advance watermark to the newest *successfully processed* export, even if
-    // earlier (newer) exports in the list failed.
-    const advanced = await tracker.commit();
-    if (advanced) {
-      console.log(`[scheduler] Watermark advanced to ${advanced.createdAt} (${advanced.recordCount} records)`);
-    } else if (successCount === 0 && newExports.length > 0) {
+    if (tracker.committed) {
+      console.log(`[scheduler] Watermark now at ${tracker.committed}`);
+    } else if (newExports.length > 0) {
       console.warn(`[scheduler] All ${newExports.length} exports failed — watermark NOT advanced`);
     }
 
