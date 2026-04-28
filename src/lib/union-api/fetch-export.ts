@@ -123,9 +123,10 @@ export async function logExport(
  * Data freshness check — returns null if data is fresh (within 2 days),
  * or the date string since which data has been incomplete.
  *
- * Looks at the most recent export's data_range_end to determine the last
- * date Union.fit actually covered. If that's more than 2 calendar days
- * behind today (ET), data is incomplete.
+ * Uses the unionApiExport watermark's high_water_date as the primary freshness
+ * signal. The watermark is updated via UPSERT by markExportProcessed() on every
+ * successful pipeline run, so it is reliable even if logExport() fails silently.
+ * export_log is consulted only for the display date (data_range_end coverage).
  */
 export interface DataFreshness {
   /** True if data is current (within acceptable lag) */
@@ -144,38 +145,58 @@ export async function getDataFreshness(): Promise<DataFreshness | null> {
   try {
     const pool = getPool();
 
-    // Use export_created_at (when Union generated the export) as the freshness signal.
-    // data_updated_ends_at / data_range_end can be stuck at a stale date even when
-    // Union keeps generating new daily exports — it's unreliable metadata.
-    const { rows } = await pool.query(
-      `SELECT data_range_end, export_created_at, created_at, total_exports
-       FROM export_log
-       WHERE export_created_at IS NOT NULL AND export_created_at != ''
-       ORDER BY export_created_at DESC
-       LIMIT 1`,
-    );
+    // Run both queries in parallel
+    const [wmResult, logResult] = await Promise.all([
+      // Primary signal: when did the pipeline last successfully process a Union export?
+      // markExportProcessed() uses an UPSERT, so this is always current even if
+      // logExport()'s plain INSERT fails silently.
+      pool.query(
+        `SELECT high_water_date, last_fetched_at
+         FROM fetch_watermarks
+         WHERE report_type = 'unionApiExport'`,
+      ),
+      // Display date only: data_range_end tells us what coverage period Union reported.
+      // NOT used for isFresh — this field can be stuck at a stale date even when
+      // Union keeps generating new daily export files.
+      pool.query(
+        `SELECT data_range_end, created_at, total_exports
+         FROM export_log
+         WHERE data_range_end IS NOT NULL AND data_range_end != ''
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      ),
+    ]);
 
-    if (rows.length === 0) return null;
+    const wm = wmResult.rows[0] as { high_water_date: string | null; last_fetched_at: string } | undefined;
+    const logRow = logResult.rows[0] as { data_range_end: string; created_at: string; total_exports: number } | undefined;
 
-    const row = rows[0] as { data_range_end: string; export_created_at: string; created_at: string; total_exports: number };
+    // Need at least one signal to report freshness
+    if (!wm?.high_water_date && !logRow) return null;
 
-    // Staleness = how long since Union last generated an export file
-    const exportDate = new Date(row.export_created_at);
-    const dataRangeEnd = new Date(row.data_range_end);
     const now = new Date();
-
-    // Compare in ET
-    const exportEndDay = new Date(exportDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
-    const dataEndDay = new Date(dataRangeEnd.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
     const todayET = new Date(now.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
-    const daysStale = Math.floor((todayET.getTime() - exportEndDay.getTime()) / (24 * 60 * 60 * 1000));
+
+    // Staleness = how long since the pipeline last processed a Union export (watermark).
+    // Fall back to export_log if no watermark exists yet (first-run edge case).
+    const freshnessDateStr = wm?.high_water_date ?? logRow?.created_at ?? "";
+    if (!freshnessDateStr) return null;
+
+    const freshnessDate = new Date(freshnessDateStr);
+    const freshnessDay = new Date(freshnessDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
+    const daysStale = Math.floor((todayET.getTime() - freshnessDay.getTime()) / (24 * 60 * 60 * 1000));
+
+    // Display date: data_range_end from export_log (the coverage period Union reported).
+    // Falls back to the freshness date if no export_log entry exists.
+    const displayDateStr = logRow?.data_range_end ?? freshnessDateStr;
+    const displayDate = new Date(displayDateStr);
+    const displayDay = new Date(displayDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
 
     return {
       isFresh: daysStale <= 2,
-      latestDataDate: dataEndDay.toISOString().slice(0, 10),
+      latestDataDate: displayDay.toISOString().slice(0, 10),
       daysStale,
-      lastProcessedAt: row.created_at,
-      exportsProcessed: row.total_exports,
+      lastProcessedAt: logRow?.created_at ?? wm?.last_fetched_at ?? "",
+      exportsProcessed: logRow?.total_exports ?? 0,
     };
   } catch (err) {
     console.warn("[union-api] Freshness check failed:", err instanceof Error ? err.message : err);
