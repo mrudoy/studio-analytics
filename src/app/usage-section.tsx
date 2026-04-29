@@ -1003,6 +1003,89 @@ function Sky3SidePanel({ band, periodWeeks, onClose }: { band: string; periodWee
   );
 }
 
+// ─── TV Side Panel ──────────────────────────────────────────
+
+function TvSidePanel({ band, onClose }: { band: string; onClose: () => void }) {
+  const [page, setPage] = useState(1);
+  const [copied, setCopied] = useState(false);
+  const perPage = 25;
+
+  const label = TV_BAND_LABELS[band] || band;
+  const { data } = useUsageData<{ members: { name: string; email: string }[]; total: number; page: number }>(
+    `/api/usage/tv/members?band=${band}&page=${page}&per_page=${perPage}`,
+    [band, page]
+  );
+
+  const handleCopyEmails = async () => {
+    const res = await fetch(`/api/usage/tv/members?band=${band}&fields=email&per_page=9999`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = () => {
+    window.location.href = `/api/usage/members/export?segment=tv&filter=${band}`;
+  };
+
+  const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <div className="font-semibold text-base">{label}</div>
+            <div className="text-sm text-muted-foreground">{data?.total ?? 0} members</div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+        <div className="flex gap-2 p-4 border-b">
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+            <Copy size={14} /> {copied ? "Copied!" : "Copy All Emails"}
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleExport}>
+            <DownloadIcon className="size-3.5" /> Export CSV
+          </Button>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          {data?.members.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((m, i) => (
+                  <tr key={i} className="border-b border-muted/30">
+                    <td className="py-1.5 truncate max-w-[160px]">{m.name}</td>
+                    <td className="py-1.5 text-muted-foreground truncate max-w-[200px]">{m.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No members in this band.</p>
+          )}
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, data?.total ?? 0)} of {data?.total}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── Sky3 Constants ─────────────────────────────────────────
 
 const SKY3_BANDS = ["not_using", "barely_using", "getting_there", "full_use", "wants_more"] as const;
@@ -1029,6 +1112,24 @@ const SKY3_BAR_COLORS: Record<string, string> = {
   getting_there: "#EDE09E",
   full_use: "#C8E6C9",
   wants_more: "#A5D6A7",
+};
+
+// ─── TV Constants ───────────────────────────────────────────
+
+const TV_BANDS = ["inactive", "light", "active", "engaged"] as const;
+
+const TV_BAND_LABELS: Record<string, string> = {
+  inactive: "Inactive (0 visits)",
+  light: "Light (1-2 visits)",
+  active: "Active (3-7 visits)",
+  engaged: "Engaged (8+ visits)",
+};
+
+const TV_BAR_COLORS: Record<string, string> = {
+  inactive: "#E8D5D0",
+  light: "#E8CBAF",
+  active: "#C8E6C9",
+  engaged: "#A5D6A7",
 };
 
 // ─── Sky3 Types ─────────────────────────────────────────────
@@ -1584,75 +1685,98 @@ interface TvDistData {
 
 export function UsageTvPage() {
   // periodWeeks is fixed at 4 — TV distribution is anchored to each member's
-  // own billing cycle, not a calendar window, so the segment toggle was removed.
+  // own billing cycle, not a calendar window.
   const periodWeeks = 4;
-  const [filter, setFilter] = useState<ActionFilter>(null);
-  const [page, setPage] = useState(1);
-  const perPage = 25;
-
-  useEffect(() => setPage(1), [filter]);
-
-  const { data: scorecardData } = useUsageData<{ cards: UsageScorecardCard[] }>(
-    `/api/usage/scorecard?period_weeks=${periodWeeks}&segment=tv`,
-    [periodWeeks]
-  );
+  const [selectedBand, setSelectedBand] = useState<string | null>(null);
 
   const { data: pageData } = useUsageData<{ distribution: TvDistData }>(
     `/api/usage/tv/page-data?period_weeks=${periodWeeks}`,
     [periodWeeks]
   );
   const distData = pageData?.distribution;
-  const engagementTiers = distData?.tiers ?? null;
 
-  const filterParam = filter ? `&filter=${filter}` : "";
-  const { data: membersData } = useUsageData<{ members: UsageMemberRow[]; total: number; page: number }>(
-    `/api/usage/members?segment=tv&period_weeks=${periodWeeks}&page=${page}&per_page=${perPage}${filterParam}`,
-    [periodWeeks, filter, page]
-  );
+  const maxCount = distData ? Math.max(...TV_BANDS.map(b => distData.current[b]?.count ?? 0), 1) : 1;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
+      {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-3">
           <DeviceTv className="size-7 shrink-0" style={{ color: SECTION_COLORS["usage-tv"] }} />
           <h1 className="text-3xl font-semibold tracking-tight">Sky Ting TV</h1>
         </div>
       </div>
-      {(() => {
-        if (engagementTiers && engagementTiers.length > 0) {
-          const inactiveCount = engagementTiers.find(t => t.tier === "inactive")?.count ?? 0;
-          const activeCount = engagementTiers.filter(t => t.tier !== "inactive").reduce((s, t) => s + t.count, 0);
-          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{inactiveCount.toLocaleString()} inactive — {activeCount.toLocaleString()} active in last completed billing cycle</p>;
-        }
-        return <p className="text-sm text-muted-foreground ml-10 -mt-2">Digital subscription engagement</p>;
-      })()}
 
-      <AlertBanner segment="tv" tierData={engagementTiers} />
+      {/* Section 1: Where Members Are Now */}
+      <div>
+        <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
+          Where Members Are Now{" "}
+          <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last completed billing cycle)</span>
+        </h2>
+        <div className="flex flex-col">
+          {distData && TV_BANDS.map((band) => {
+            const d = distData.current[band];
+            if (!d) return null;
+            const barWidth = (d.count / maxCount) * 100;
 
-      {scorecardData?.cards && (
-        <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />
-      )}
+            return (
+              <React.Fragment key={band}>
+                {/* Churn-risk boundary line between light and active */}
+                {band === "active" && (
+                  <div className="relative" style={{ margin: "12px 0" }}>
+                    <div style={{ borderTop: "1px dashed #D5D5D5" }} />
+                    <span
+                      className="absolute right-0 px-2 bg-white"
+                      style={{ fontSize: "11px", color: "#B0A8A0", letterSpacing: "0.5px", textTransform: "uppercase", top: "-8px" }}
+                    >
+                      Churn Risk Threshold
+                    </span>
+                  </div>
+                )}
+                <div
+                  className="flex items-center gap-3 cursor-pointer group"
+                  style={{ height: "40px", marginBottom: "8px", transition: "background-color 150ms ease" }}
+                  onClick={() => setSelectedBand(band)}
+                >
+                  <div className="shrink-0" style={{ width: "220px", fontSize: "15px", fontWeight: 400, color: "#333333" }}>{TV_BAND_LABELS[band]}</div>
+                  <div className="flex-1 relative rounded" style={{ height: "40px", backgroundColor: "rgba(0,0,0,0.03)" }}>
+                    <div
+                      className="absolute top-0 left-0 h-full rounded"
+                      style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: TV_BAR_COLORS[band], transition: "width 300ms ease" }}
+                    />
+                  </div>
+                  <div className="tabular-nums" style={{ width: "50px", textAlign: "right", fontSize: "15px", fontWeight: 700, color: "#333333" }}>{d.count}</div>
+                  <div className="tabular-nums" style={{ width: "50px", textAlign: "right", fontSize: "13px", fontWeight: 400, color: "#95A5A6" }}>{d.pct}%</div>
+                  <Sky3DownloadButton count={d.count} onClick={() => setSelectedBand(band)} />
+                </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
 
-      {engagementTiers && (
-        <TvEngagementBars tiers={engagementTiers} />
-      )}
+      {/* Footer: Export + cohort blurb */}
+      <div className="mt-4 flex justify-end">
+        <div className="text-right">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1"
+            onClick={() => { window.location.href = `/api/usage/members/export?segment=tv&period_weeks=${periodWeeks}`; }}
+          >
+            <DownloadIcon className="size-3.5" /> Export Full Member List
+          </Button>
+          {distData?.cohort && (
+            <p style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", marginTop: "8px" }}>
+              Based on {distData.cohort.stable_count} TV members with a completed billing cycle. Excludes {distData.cohort.excluded.partial_cycle} too new or no billing record, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
+            </p>
+          )}
+        </div>
+      </div>
 
-      {distData?.cohort && (
-        <p style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", marginTop: "4px" }}>
-          Based on {distData.cohort.stable_count} TV members with a completed billing cycle. Excludes {distData.cohort.excluded.partial_cycle} too new or no billing record, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
-        </p>
-      )}
-
-      <UsageFilterBar activeFilter={filter} onFilterChange={setFilter} segment="tv" periodWeeks={periodWeeks} />
-
-      {membersData && (
-        <UsageActionTable
-          members={membersData.members}
-          total={membersData.total}
-          page={page}
-          perPage={perPage}
-          onPageChange={setPage}
-        />
+      {/* Distribution band slide-out */}
+      {selectedBand && (
+        <TvSidePanel band={selectedBand} onClose={() => setSelectedBand(null)} />
       )}
     </div>
   );

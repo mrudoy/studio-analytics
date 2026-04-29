@@ -2359,3 +2359,61 @@ export async function getTvPageData(periodWeeks = 4): Promise<TvPageData> {
     distribution: { periodDays, cohort: enrichedCohort, current, total, tiers },
   };
 }
+
+/**
+ * TV members in a specific band, used by the band-detail slide-out.
+ * Same cycle-anchored cohort as the bars.
+ */
+export async function getTvMembersByBand(params: {
+  band: string;
+  fieldsOnly?: "email";
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: { name: string; email: string }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { band, fieldsOnly, page = 1, perPage = 25 } = params;
+
+  const { stableEmails } = await getStableTvCohort(pool);
+  const rows = await getTvCycleTiers(pool, stableEmails);
+
+  const bandMembers = rows.filter(r => r.tier === band);
+  const total = bandMembers.length;
+
+  const offset = (page - 1) * perPage;
+  const pageEmails = bandMembers.slice(offset, offset + perPage).map(r => r.member_email);
+
+  if (fieldsOnly === "email") {
+    return {
+      members: bandMembers.map(r => ({ name: "", email: r.member_email })),
+      total,
+      page: 1,
+    };
+  }
+
+  if (pageEmails.length === 0) return { members: [], total, page };
+
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email,
+      customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [pageEmails]);
+
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, nr.name as string);
+
+  return {
+    members: pageEmails.map(em => ({
+      name: nameMap.get(em) || em,
+      email: em,
+    })),
+    total,
+    page,
+  };
+}
