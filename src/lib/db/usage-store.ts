@@ -2611,3 +2611,520 @@ export async function getTvMembersByBand(params: {
     page,
   };
 }
+
+// ── Members Distribution (cycle-anchored) ───────────────────
+
+export interface MembersCohortInfo {
+  stable_count: number;
+  excluded: { partial_cycle: number; paused: number; pending_cancel: number };
+}
+
+export interface MembersBandData {
+  count: number;
+  pct: number;
+  priorCount: number;
+}
+
+export interface MembersDistributionResponse {
+  periodDays: number;
+  cohort: MembersCohortInfo;
+  current: Record<string, MembersBandData>;
+  total: number;
+  tiers: { tier: string; count: number; pct: number; priorCount: number }[];
+}
+
+export interface MembersTransition {
+  from: string;
+  to: string;
+  count: number;
+}
+
+export interface MembersMovementResponse {
+  period_days: number;
+  boundary_crossings: {
+    into_success: { count: number; transitions: MembersTransition[] };
+    into_risk: { count: number; transitions: MembersTransition[] };
+  };
+  within_risk: {
+    improving: { count: number; transitions: MembersTransition[] };
+    declining: { count: number; transitions: MembersTransition[] };
+  };
+  within_success: {
+    improving: { count: number; transitions: MembersTransition[] };
+    declining: { count: number; transitions: MembersTransition[] };
+  };
+  stable: { count: number };
+  cohort_size: number;
+}
+
+export interface MembersPageData {
+  distribution: MembersDistributionResponse;
+  movement: MembersMovementResponse;
+}
+
+const MEMBERS_RISK_BANDS = ["dormant", "low"];
+const MEMBERS_SUCCESS_BANDS = ["target", "strong", "power_user"];
+
+/**
+ * Active Members eligible for usage measurement, excluding paused and
+ * pending-cancel. Cycle-eligibility is enforced downstream in
+ * `getMembersCycleTiers`.
+ */
+async function getStableMembersCohort(
+  pool: import("pg").Pool
+): Promise<{ stableEmails: Set<string>; cohort: MembersCohortInfo }> {
+  const { rows: activeRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(a.customer_email))
+      LOWER(a.customer_email) AS email, a.plan_state
+    FROM auto_renews a
+    WHERE a.plan_state IN (${ACTIVE_STATES_SQL})
+      AND a.plan_category = 'MEMBER'
+      AND a.customer_email IS NOT NULL
+      AND (a.canceled_at IS NULL OR a.canceled_at::date > CURRENT_DATE)
+    ORDER BY LOWER(a.customer_email), a.id DESC
+  `);
+
+  const pausedEmails = new Set<string>();
+  const pendingCancelEmails = new Set<string>();
+  const allActiveEmails = new Set<string>();
+  for (const r of activeRows) {
+    const email = r.email as string;
+    allActiveEmails.add(email);
+    if (r.plan_state === "Paused") pausedEmails.add(email);
+    if (r.plan_state === "Pending Cancel") pendingCancelEmails.add(email);
+  }
+
+  const stableEmails = new Set<string>();
+  for (const email of allActiveEmails) {
+    if (!pausedEmails.has(email) && !pendingCancelEmails.has(email)) {
+      stableEmails.add(email);
+    }
+  }
+
+  return {
+    stableEmails,
+    cohort: {
+      stable_count: stableEmails.size,
+      excluded: {
+        partial_cycle: 0,
+        paused: pausedEmails.size,
+        pending_cancel: pendingCancelEmails.size,
+      },
+    },
+  };
+}
+
+/**
+ * Resolve each Member's last completed billing cycle and the cycle before it,
+ * then count in-studio visits in each window.
+ *
+ * Joins on `auto_renews.union_pass_id ↔ orders.subscription_pass_id` (the
+ * canonical Union subscription identifier) instead of `revenue_category`
+ * strings — robust to the same trailing-whitespace / Uncategorized variants
+ * that affect TV.
+ *
+ * Members are nearly all monthly billed (~79% of the cohort has a 21-45d
+ * cycle, <1% are annual), so the same adaptive-window logic from TV catches
+ * the few annual edge cases without special-casing.
+ *
+ * Visits exclude TV-pass registrations (`pass NOT ILIKE '%TV%'`) — the chart
+ * measures in-studio class consumption, not TV streaming.
+ */
+interface MembersCycleTierRow {
+  member_email: string;
+  segment: "members";
+  last_cycle_start: string;
+  last_cycle_end: string;
+  total_visits: number;
+  tier: string;
+  prior_cycle_start: string | null;
+  prior_cycle_end: string | null;
+  prior_visits: number | null;
+  prior_tier: string | null;
+}
+
+async function getMembersCycleTiers(
+  pool: import("pg").Pool,
+  emailSet: Set<string>
+): Promise<MembersCycleTierRow[]> {
+  if (emailSet.size === 0) return [];
+  const emailList = Array.from(emailSet);
+
+  const { rows } = await pool.query(`
+    WITH cohort AS (SELECT DISTINCT UNNEST($1::text[]) AS email),
+    member_pass_ids AS (
+      SELECT DISTINCT LOWER(a.customer_email) AS email, a.union_pass_id
+      FROM auto_renews a
+      JOIN cohort c ON LOWER(a.customer_email) = c.email
+      WHERE a.plan_category = 'MEMBER'
+        AND a.union_pass_id IS NOT NULL AND a.union_pass_id <> ''
+    ),
+    billings AS (
+      SELECT m.email, o.created_at AS billing_date,
+        ROW_NUMBER() OVER (
+          PARTITION BY m.email
+          ORDER BY o.created_at DESC, o.id DESC
+        ) AS rn
+      FROM member_pass_ids m
+      JOIN orders o ON o.subscription_pass_id = m.union_pass_id
+      WHERE o.total > 0
+    ),
+    sub_anchor AS (
+      SELECT DISTINCT ON (LOWER(customer_email))
+        LOWER(customer_email) AS email,
+        created_at AS sub_created_at
+      FROM auto_renews
+      WHERE plan_category = 'MEMBER' AND customer_email IS NOT NULL
+      ORDER BY LOWER(customer_email), id DESC
+    ),
+    cycles AS (
+      SELECT
+        c.email,
+        b1.billing_date AS last_cycle_end,
+        CASE
+          WHEN b2.billing_date IS NOT NULL
+               AND (b1.billing_date - b2.billing_date) BETWEEN 21 AND 90
+            THEN b2.billing_date
+          WHEN b2.billing_date IS NOT NULL
+               AND (b1.billing_date - b2.billing_date) > 90
+            THEN (b1.billing_date - INTERVAL '28 days')::date
+          WHEN b2.billing_date IS NULL AND b1.billing_date IS NOT NULL
+            THEN GREATEST(s.sub_created_at, (b1.billing_date - INTERVAL '28 days')::date)
+          ELSE NULL
+        END AS last_cycle_start,
+        CASE
+          WHEN b3.billing_date IS NOT NULL
+               AND b2.billing_date IS NOT NULL
+               AND (b2.billing_date - b3.billing_date) BETWEEN 21 AND 90
+            THEN b3.billing_date
+          WHEN b2.billing_date IS NOT NULL
+               AND (
+                 b3.billing_date IS NULL
+                 OR (b2.billing_date - b3.billing_date) > 90
+               )
+            THEN (b2.billing_date - INTERVAL '28 days')::date
+          ELSE NULL
+        END AS prior_cycle_start,
+        b2.billing_date AS prior_cycle_end
+      FROM cohort c
+      LEFT JOIN billings b1 ON b1.email = c.email AND b1.rn = 1
+      LEFT JOIN billings b2 ON b2.email = c.email AND b2.rn = 2
+      LEFT JOIN billings b3 ON b3.email = c.email AND b3.rn = 3
+      LEFT JOIN sub_anchor s ON s.email = c.email
+      WHERE b1.billing_date IS NOT NULL
+    ),
+    qualified_cycles AS (
+      SELECT * FROM cycles
+      WHERE last_cycle_start IS NOT NULL
+        AND (last_cycle_end - last_cycle_start) >= 21
+    )
+    SELECT
+      cy.email AS member_email,
+      cy.last_cycle_start::text AS last_cycle_start,
+      cy.last_cycle_end::text AS last_cycle_end,
+      cy.prior_cycle_start::text AS prior_cycle_start,
+      cy.prior_cycle_end::text AS prior_cycle_end,
+      COALESCE((
+        SELECT COUNT(*)
+        FROM registrations r
+        WHERE LOWER(r.email) = cy.email
+          AND r.attended_at >= cy.last_cycle_start
+          AND r.attended_at < cy.last_cycle_end
+          AND r.state IN ('redeemed', 'confirmed')
+          AND (r.pass IS NULL OR r.pass NOT ILIKE '%TV%')
+      ), 0)::int AS last_visits,
+      CASE
+        WHEN cy.prior_cycle_start IS NOT NULL AND cy.prior_cycle_end IS NOT NULL THEN
+          COALESCE((
+            SELECT COUNT(*)
+            FROM registrations r
+            WHERE LOWER(r.email) = cy.email
+              AND r.attended_at >= cy.prior_cycle_start
+              AND r.attended_at < cy.prior_cycle_end
+              AND r.state IN ('redeemed', 'confirmed')
+              AND (r.pass IS NULL OR r.pass NOT ILIKE '%TV%')
+          ), 0)::int
+        ELSE NULL
+      END AS prior_visits
+    FROM qualified_cycles cy
+  `, [emailList]);
+
+  return rows.map((r: Record<string, unknown>) => {
+    const lastVisits = Number(r.last_visits ?? 0);
+    const priorVisitsRaw = r.prior_visits;
+    const priorVisits = priorVisitsRaw === null || priorVisitsRaw === undefined
+      ? null
+      : Number(priorVisitsRaw);
+    return {
+      member_email: r.member_email as string,
+      segment: "members" as const,
+      last_cycle_start: r.last_cycle_start as string,
+      last_cycle_end: r.last_cycle_end as string,
+      total_visits: lastVisits,
+      tier: assignTier("members", lastVisits),
+      prior_cycle_start: (r.prior_cycle_start as string | null) ?? null,
+      prior_cycle_end: (r.prior_cycle_end as string | null) ?? null,
+      prior_visits: priorVisits,
+      prior_tier: priorVisits === null ? null : assignTier("members", priorVisits),
+    };
+  });
+}
+
+/**
+ * Members page data — distribution + movement, both cycle-anchored.
+ */
+export async function getMembersPageData(periodWeeks = 4): Promise<MembersPageData> {
+  const pool = getPool();
+  const periodDays = periodWeeks * 7;
+
+  const { stableEmails, cohort } = await getStableMembersCohort(pool);
+  const cycleTiers = await getMembersCycleTiers(pool, stableEmails);
+
+  const partialCycle = stableEmails.size - cycleTiers.length;
+  const enrichedCohort: MembersCohortInfo = {
+    stable_count: cycleTiers.length,
+    excluded: { ...cohort.excluded, partial_cycle: partialCycle },
+  };
+
+  // ── Distribution ──
+  const total = cycleTiers.length;
+  const tierCounts: Record<string, number> = {};
+  const priorTierCounts: Record<string, number> = {};
+  for (const r of cycleTiers) {
+    tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
+    if (r.prior_tier) priorTierCounts[r.prior_tier] = (priorTierCounts[r.prior_tier] || 0) + 1;
+  }
+  const current: Record<string, MembersBandData> = {};
+  const tiers: { tier: string; count: number; pct: number; priorCount: number }[] = [];
+  for (const band of MEMBERS_TIER_ORDER) {
+    const count = tierCounts[band] || 0;
+    const priorCount = priorTierCounts[band] || 0;
+    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    current[band] = { count, pct, priorCount };
+    tiers.push({ tier: band, count, pct, priorCount });
+  }
+
+  // ── Movement (vs prior cycle) ──
+  const buckets: Record<string, Record<string, number>> = {
+    boundary_into_success: {},
+    boundary_into_risk: {},
+    within_risk_improving: {},
+    within_risk_declining: {},
+    within_success_improving: {},
+    within_success_declining: {},
+  };
+  let stableCount = 0;
+  let movementCohortSize = 0;
+
+  for (const r of cycleTiers) {
+    const curBand = r.tier;
+    const priBand = r.prior_tier;
+    if (priBand === null) continue;
+    movementCohortSize++;
+
+    if (curBand === priBand) {
+      stableCount++;
+      continue;
+    }
+
+    const priInRisk = MEMBERS_RISK_BANDS.includes(priBand);
+    const curInRisk = MEMBERS_RISK_BANDS.includes(curBand);
+    const priInSuccess = MEMBERS_SUCCESS_BANDS.includes(priBand);
+    const curInSuccess = MEMBERS_SUCCESS_BANDS.includes(curBand);
+    const curIdx = MEMBERS_TIER_ORDER.indexOf(curBand);
+    const priIdx = MEMBERS_TIER_ORDER.indexOf(priBand);
+    const key = `${priBand}|${curBand}`;
+
+    if (priInRisk && curInSuccess) {
+      buckets.boundary_into_success[key] = (buckets.boundary_into_success[key] || 0) + 1;
+    } else if (priInSuccess && curInRisk) {
+      buckets.boundary_into_risk[key] = (buckets.boundary_into_risk[key] || 0) + 1;
+    } else if (priInRisk && curInRisk) {
+      if (curIdx > priIdx) buckets.within_risk_improving[key] = (buckets.within_risk_improving[key] || 0) + 1;
+      else buckets.within_risk_declining[key] = (buckets.within_risk_declining[key] || 0) + 1;
+    } else if (priInSuccess && curInSuccess) {
+      if (curIdx > priIdx) buckets.within_success_improving[key] = (buckets.within_success_improving[key] || 0) + 1;
+      else buckets.within_success_declining[key] = (buckets.within_success_declining[key] || 0) + 1;
+    }
+  }
+
+  const toTransitions = (map: Record<string, number>): MembersTransition[] =>
+    Object.entries(map)
+      .map(([key, count]) => {
+        const [from, to] = key.split("|");
+        return { from, to, count };
+      })
+      .sort((a, b) => b.count - a.count);
+
+  const sumCounts = (map: Record<string, number>) => Object.values(map).reduce((s, c) => s + c, 0);
+
+  const movement: MembersMovementResponse = {
+    period_days: periodWeeks * 7,
+    boundary_crossings: {
+      into_success: { count: sumCounts(buckets.boundary_into_success), transitions: toTransitions(buckets.boundary_into_success) },
+      into_risk: { count: sumCounts(buckets.boundary_into_risk), transitions: toTransitions(buckets.boundary_into_risk) },
+    },
+    within_risk: {
+      improving: { count: sumCounts(buckets.within_risk_improving), transitions: toTransitions(buckets.within_risk_improving) },
+      declining: { count: sumCounts(buckets.within_risk_declining), transitions: toTransitions(buckets.within_risk_declining) },
+    },
+    within_success: {
+      improving: { count: sumCounts(buckets.within_success_improving), transitions: toTransitions(buckets.within_success_improving) },
+      declining: { count: sumCounts(buckets.within_success_declining), transitions: toTransitions(buckets.within_success_declining) },
+    },
+    stable: { count: stableCount },
+    cohort_size: movementCohortSize,
+  };
+
+  return {
+    distribution: { periodDays, cohort: enrichedCohort, current, total, tiers },
+    movement,
+  };
+}
+
+/**
+ * Members in a specific band, used by the band-detail slide-out.
+ */
+export async function getMembersByBand(params: {
+  band: string;
+  fieldsOnly?: "email";
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: { name: string; email: string }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { band, fieldsOnly, page = 1, perPage = 25 } = params;
+
+  const { stableEmails } = await getStableMembersCohort(pool);
+  const rows = await getMembersCycleTiers(pool, stableEmails);
+
+  const bandMembers = rows.filter(r => r.tier === band);
+  const total = bandMembers.length;
+
+  const offset = (page - 1) * perPage;
+  const pageEmails = bandMembers.slice(offset, offset + perPage).map(r => r.member_email);
+
+  if (fieldsOnly === "email") {
+    return {
+      members: bandMembers.map(r => ({ name: "", email: r.member_email })),
+      total,
+      page: 1,
+    };
+  }
+
+  if (pageEmails.length === 0) return { members: [], total, page };
+
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email,
+      customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [pageEmails]);
+
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, nr.name as string);
+
+  return {
+    members: pageEmails.map(em => ({
+      name: nameMap.get(em) || em,
+      email: em,
+    })),
+    total,
+    page,
+  };
+}
+
+/**
+ * Members movement-detail rows for the boundary/all-movement slide-outs.
+ */
+export async function getMembersMovementMembers(params: {
+  group: MovementGroup;
+  from?: string;
+  to?: string;
+  fieldsOnly?: "email";
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: { name: string; email: string; prior_band: string; current_band: string; prior_visits: number; current_visits: number }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { group, from, to, fieldsOnly, page = 1, perPage = 25 } = params;
+
+  const { stableEmails } = await getStableMembersCohort(pool);
+  const cycleTiers = await getMembersCycleTiers(pool, stableEmails);
+
+  const matched: { email: string; priorBand: string; currentBand: string; priorVisits: number; currentVisits: number }[] = [];
+  for (const r of cycleTiers) {
+    if (r.prior_tier === null || r.prior_visits === null) continue;
+    const cur = { tier: r.tier, visits: r.total_visits };
+    const pri = { tier: r.prior_tier, visits: r.prior_visits };
+    if (cur.tier === pri.tier) continue;
+
+    const priInRisk = MEMBERS_RISK_BANDS.includes(pri.tier);
+    const curInRisk = MEMBERS_RISK_BANDS.includes(cur.tier);
+    const priInSuccess = MEMBERS_SUCCESS_BANDS.includes(pri.tier);
+    const curInSuccess = MEMBERS_SUCCESS_BANDS.includes(cur.tier);
+    const curIdx = MEMBERS_TIER_ORDER.indexOf(cur.tier);
+    const priIdx = MEMBERS_TIER_ORDER.indexOf(pri.tier);
+
+    let memberGroup: MovementGroup | null = null;
+    if (priInRisk && curInSuccess) memberGroup = "boundary_into_success";
+    else if (priInSuccess && curInRisk) memberGroup = "boundary_into_risk";
+    else if (priInRisk && curInRisk && curIdx > priIdx) memberGroup = "within_risk_improving";
+    else if (priInRisk && curInRisk && curIdx < priIdx) memberGroup = "within_risk_declining";
+    else if (priInSuccess && curInSuccess && curIdx > priIdx) memberGroup = "within_success_improving";
+    else if (priInSuccess && curInSuccess && curIdx < priIdx) memberGroup = "within_success_declining";
+
+    if (memberGroup !== group) continue;
+    if (from && pri.tier !== from) continue;
+    if (to && cur.tier !== to) continue;
+
+    matched.push({ email: r.member_email, priorBand: pri.tier, currentBand: cur.tier, priorVisits: pri.visits, currentVisits: cur.visits });
+  }
+
+  const total = matched.length;
+
+  if (fieldsOnly === "email") {
+    return {
+      members: matched.map(m => ({ name: "", email: m.email, prior_band: m.priorBand, current_band: m.currentBand, prior_visits: m.priorVisits, current_visits: m.currentVisits })),
+      total,
+      page: 1,
+    };
+  }
+
+  const offset = (page - 1) * perPage;
+  const pageItems = matched.slice(offset, offset + perPage);
+  if (pageItems.length === 0) return { members: [], total, page };
+
+  const emails = pageItems.map(m => m.email);
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email,
+      customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [emails]);
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, nr.name as string);
+
+  return {
+    members: pageItems.map(m => ({
+      name: nameMap.get(m.email) || m.email,
+      email: m.email,
+      prior_band: m.priorBand,
+      current_band: m.currentBand,
+      prior_visits: m.priorVisits,
+      current_visits: m.currentVisits,
+    })),
+    total,
+    page,
+  };
+}

@@ -839,77 +839,194 @@ export function UsageOverviewPage({ onNavigate }: { onNavigate: (section: Sectio
 
 // ─── Members Detail Page ────────────────────────────────────
 
+interface MembersDistData {
+  periodDays: number;
+  cohort: { stable_count: number; excluded: { partial_cycle: number; paused: number; pending_cancel: number } };
+  current: Record<string, { count: number; pct: number; priorCount: number }>;
+  total: number;
+  tiers: { tier: string; count: number; pct: number; priorCount: number }[];
+}
+
 export function UsageMembersPage() {
-  const [periodWeeks, setPeriodWeeks] = useState(4);
-  const [filter, setFilter] = useState<ActionFilter>(null);
-  const [page, setPage] = useState(1);
-  const perPage = 25;
+  // periodWeeks fixed at 4 — Members distribution is anchored to each member's
+  // own billing cycle, not a calendar window.
+  const periodWeeks = 4;
+  const [selectedBand, setSelectedBand] = useState<string | null>(null);
+  const [selectedBoundary, setSelectedBoundary] = useState<{ key: "boundary_into_success" | "boundary_into_risk"; title: string; transitions: MembersTransition[] } | null>(null);
+  const [showAllMovement, setShowAllMovement] = useState(false);
 
-  // Reset page when filter changes
-  useEffect(() => setPage(1), [filter]);
-
-  const { data: scorecardData } = useUsageData<{ cards: UsageScorecardCard[] }>(
-    `/api/usage/scorecard?period_weeks=${periodWeeks}&segment=members`,
+  const { data: pageData } = useUsageData<{ distribution: MembersDistData; movement: MembersMovementData }>(
+    `/api/usage/members/page-data?period_weeks=${periodWeeks}`,
     [periodWeeks]
   );
+  const distData = pageData?.distribution;
+  const movementData = pageData?.movement;
 
-  const filterParam = filter ? `&filter=${filter}` : "";
-  const { data: membersData } = useUsageData<{ members: UsageMemberRow[]; total: number; page: number }>(
-    `/api/usage/members?segment=members&period_weeks=${periodWeeks}&page=${page}&per_page=${perPage}${filterParam}`,
-    [periodWeeks, filter, page]
-  );
+  const maxCount = distData ? Math.max(...MEMBERS_BANDS.map(b => distData.current[b]?.count ?? 0), 1) : 1;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
+      {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-3">
           <ArrowBadgeDown className="size-7 shrink-0" style={{ color: SECTION_COLORS["usage-members"] }} />
           <h1 className="text-3xl font-semibold tracking-tight">Members</h1>
         </div>
-        <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
-      {(() => {
-        if (scorecardData?.cards) {
-          const dormant = scorecardData.cards.find(c => c.key === "dormant_count")?.value ?? 0;
-          const netMov = scorecardData.cards.find(c => c.key === "net_movement")?.value ?? 0;
-          const atRisk = netMov < 0 ? Math.abs(netMov) : 0;
-          const improving = netMov > 0 ? netMov : 0;
-          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{atRisk} at risk — {improving} improving — {dormant} dormant</p>;
-        }
-        return <p className="text-sm text-muted-foreground ml-10 -mt-2">Unlimited membership usage deep dive</p>;
-      })()}
 
-      {(() => {
-        // Members alert banner: check dormant %
-        if (scorecardData?.cards) {
-          const dormant = scorecardData.cards.find(c => c.key === "dormant_count")?.value ?? 0;
-          const total = scorecardData.cards.find(c => c.key === "total_subscribed")?.value ?? 1;
-          const dormantPct = Math.round((dormant / total) * 1000) / 10;
-          if (dormantPct > ALERT_THRESHOLDS.members_dormant_pct) {
+      {/* Section 1: Where Members Are Now */}
+      <div>
+        <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
+          Where Members Are Now{" "}
+          <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last completed billing cycle)</span>
+        </h2>
+        <div className="flex flex-col">
+          {distData && MEMBERS_BANDS.map((band) => {
+            const d = distData.current[band];
+            if (!d) return null;
+            const barWidth = (d.count / maxCount) * 100;
+
             return (
-              <div style={{ padding: "16px 20px", borderLeft: "4px solid #C0392B", backgroundColor: "#FDF2F2", borderRadius: 4, marginBottom: 4 }}>
-                <span style={{ color: "#C0392B", marginRight: 8 }}>{"\u26a0"}</span>
-                <span className="text-sm">{dormant} members are subscribed but haven't visited. That's {dormantPct}% of all Members.</span>
-              </div>
+              <React.Fragment key={band}>
+                {/* Churn-risk boundary line between low and target */}
+                {band === "target" && (
+                  <div className="relative" style={{ margin: "12px 0" }}>
+                    <div style={{ borderTop: "1px dashed #D5D5D5" }} />
+                    <span
+                      className="absolute right-0 px-2 bg-white"
+                      style={{ fontSize: "11px", color: "#B0A8A0", letterSpacing: "0.5px", textTransform: "uppercase", top: "-8px" }}
+                    >
+                      Churn Risk Threshold
+                    </span>
+                  </div>
+                )}
+                <div
+                  className="flex items-center gap-3 cursor-pointer group"
+                  style={{ height: "40px", marginBottom: "8px", transition: "background-color 150ms ease" }}
+                  onClick={() => setSelectedBand(band)}
+                >
+                  <div className="shrink-0" style={{ width: "220px", fontSize: "15px", fontWeight: 400, color: "#333333" }}>{MEMBERS_BAND_LABELS[band]}</div>
+                  <div className="flex-1 relative rounded" style={{ height: "40px", backgroundColor: "rgba(0,0,0,0.03)" }}>
+                    <div
+                      className="absolute top-0 left-0 h-full rounded"
+                      style={{ width: `${Math.max(barWidth, 2)}%`, backgroundColor: MEMBERS_BAR_COLORS[band], transition: "width 300ms ease" }}
+                    />
+                  </div>
+                  <div className="tabular-nums" style={{ width: "50px", textAlign: "right", fontSize: "15px", fontWeight: 700, color: "#333333" }}>{d.count}</div>
+                  <div className="tabular-nums" style={{ width: "50px", textAlign: "right", fontSize: "13px", fontWeight: 400, color: "#95A5A6" }}>{d.pct}%</div>
+                  <Sky3DownloadButton count={d.count} onClick={() => setSelectedBand(band)} />
+                </div>
+              </React.Fragment>
             );
-          }
-        }
-        return null;
-      })()}
+          })}
+        </div>
+      </div>
 
-      {scorecardData?.cards && (
-        <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />
+      {/* Section 2: Churn Risk Movement */}
+      {movementData && (
+        <div style={{ marginTop: "8px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
+            Churn Risk Movement{" "}
+            <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(vs. previous billing cycle)</span>
+          </h2>
+
+          <div className="flex flex-col" style={{ gap: "16px", paddingTop: "8px" }}>
+            <button
+              className="flex items-center gap-3 text-left rounded transition-colors"
+              style={{ height: "48px", padding: "0 8px" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#F9F7F5")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={() => setSelectedBoundary({
+                key: "boundary_into_success",
+                title: `Crossed into Target or higher (${movementData.boundary_crossings.into_success.count})`,
+                transitions: movementData.boundary_crossings.into_success.transitions,
+              })}
+            >
+              <TrendingUp size={16} color="#27AE60" className="shrink-0" />
+              <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#27AE60" }}>{movementData.boundary_crossings.into_success.count}</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Target or higher</span>
+              <span className="ml-auto">
+                <Sky3DownloadButton count={movementData.boundary_crossings.into_success.count} onClick={() => setSelectedBoundary({
+                  key: "boundary_into_success",
+                  title: `Crossed into Target or higher (${movementData.boundary_crossings.into_success.count})`,
+                  transitions: movementData.boundary_crossings.into_success.transitions,
+                })} />
+              </span>
+            </button>
+
+            <button
+              className="flex items-center gap-3 text-left rounded transition-colors"
+              style={{ height: "48px", padding: "0 8px" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#F9F7F5")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={() => setSelectedBoundary({
+                key: "boundary_into_risk",
+                title: `Fell into Low or Dormant (${movementData.boundary_crossings.into_risk.count})`,
+                transitions: movementData.boundary_crossings.into_risk.transitions,
+              })}
+            >
+              <TrendingDown size={16} color="#C0392B" className="shrink-0" />
+              <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#C0392B" }}>{movementData.boundary_crossings.into_risk.count}</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell into Low or Dormant</span>
+              <span className="ml-auto">
+                <Sky3DownloadButton count={movementData.boundary_crossings.into_risk.count} onClick={() => setSelectedBoundary({
+                  key: "boundary_into_risk",
+                  title: `Fell into Low or Dormant (${movementData.boundary_crossings.into_risk.count})`,
+                  transitions: movementData.boundary_crossings.into_risk.transitions,
+                })} />
+              </span>
+            </button>
+          </div>
+
+          <button
+            className="mt-3 cursor-pointer"
+            style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", background: "none", border: "none", padding: "0 8px" }}
+            onMouseEnter={e => { e.currentTarget.style.textDecoration = "underline"; e.currentTarget.style.color = "#666666"; }}
+            onMouseLeave={e => { e.currentTarget.style.textDecoration = "none"; e.currentTarget.style.color = "#95A5A6"; }}
+            onClick={() => setShowAllMovement(true)}
+          >
+            See all movement detail →
+          </button>
+        </div>
       )}
 
-      <UsageFilterBar activeFilter={filter} onFilterChange={setFilter} segment="members" periodWeeks={periodWeeks} />
+      {/* Footer: Export + cohort blurb */}
+      <div className="mt-4 flex justify-end">
+        <div className="text-right">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1"
+            onClick={() => { window.location.href = `/api/usage/members/export?segment=members&period_weeks=${periodWeeks}`; }}
+          >
+            <DownloadIcon className="size-3.5" /> Export Full Member List
+          </Button>
+          {distData?.cohort && (
+            <p style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", marginTop: "8px" }}>
+              Based on {distData.cohort.stable_count} Members with a completed billing cycle. Excludes {distData.cohort.excluded.partial_cycle} too new or no billing record, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
+            </p>
+          )}
+        </div>
+      </div>
 
-      {membersData && (
-        <UsageActionTable
-          members={membersData.members}
-          total={membersData.total}
-          page={page}
-          perPage={perPage}
-          onPageChange={setPage}
+      {selectedBand && (
+        <MembersSidePanel band={selectedBand} onClose={() => setSelectedBand(null)} />
+      )}
+
+      {selectedBoundary && (
+        <MembersBoundaryPanel
+          groupKey={selectedBoundary.key}
+          title={selectedBoundary.title}
+          transitions={selectedBoundary.transitions}
+          onClose={() => setSelectedBoundary(null)}
+        />
+      )}
+
+      {showAllMovement && movementData && (
+        <MembersAllMovementPanel
+          movementData={movementData}
+          cohortSize={movementData.cohort_size}
+          onClose={() => setShowAllMovement(false)}
         />
       )}
     </div>
@@ -1390,6 +1507,386 @@ function TvSidePanel({ band, onClose }: { band: string; onClose: () => void }) {
   );
 }
 
+// ─── Members Movement Types ─────────────────────────────────
+
+interface MembersTransition { from: string; to: string; count: number }
+interface MembersMovementGroup { count: number; transitions: MembersTransition[] }
+interface MembersMovementData {
+  period_days: number;
+  boundary_crossings: { into_success: MembersMovementGroup; into_risk: MembersMovementGroup };
+  within_risk: { improving: MembersMovementGroup; declining: MembersMovementGroup };
+  within_success: { improving: MembersMovementGroup; declining: MembersMovementGroup };
+  stable: { count: number };
+  cohort_size: number;
+}
+
+// ─── Members Boundary-Crossing Slide-Out ────────────────────
+
+function MembersBoundaryPanel({
+  groupKey, title, transitions, onClose
+}: {
+  groupKey: "boundary_into_success" | "boundary_into_risk";
+  title: string;
+  transitions: MembersTransition[];
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [filterTransition, setFilterTransition] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const perPage = 25;
+
+  const params = new URLSearchParams({ group: groupKey, page: String(page), per_page: String(perPage) });
+  if (filterTransition) {
+    const [from, to] = filterTransition.split("|");
+    params.set("from", from);
+    params.set("to", to);
+  }
+
+  const { data } = useUsageData<{
+    members: { name: string; email: string; prior_band: string; current_band: string; prior_visits: number; current_visits: number }[];
+    total: number; page: number;
+  }>(`/api/usage/members/movement/members?${params}`, [groupKey, page, filterTransition]);
+
+  const totalCount = data?.total ?? 0;
+  const totalPages = Math.ceil(totalCount / perPage);
+
+  const handleCopyEmails = async () => {
+    const p = new URLSearchParams({ group: groupKey, fields: "email", per_page: "9999" });
+    if (filterTransition) {
+      const [from, to] = filterTransition.split("|");
+      p.set("from", from);
+      p.set("to", to);
+    }
+    const res = await fetch(`/api/usage/members/movement/members?${p}`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleToggleFilter = (from: string, to: string) => {
+    const key = `${from}|${to}`;
+    setFilterTransition(prev => prev === key ? null : key);
+    setPage(1);
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="font-semibold text-base">{title}</div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+
+        {transitions.length > 0 && (
+          <div className="px-4 pt-3 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-2">Breakdown:</div>
+            {transitions.map(t => {
+              const key = `${t.from}|${t.to}`;
+              const isActive = filterTransition === key;
+              return (
+                <button
+                  key={key}
+                  className={`flex items-center justify-between w-full py-1.5 px-2 rounded text-sm hover:bg-muted/30 ${isActive ? "bg-muted/40 font-medium" : ""}`}
+                  onClick={() => handleToggleFilter(t.from, t.to)}
+                >
+                  <span>{MEMBERS_VISIT_LABELS[t.from]} → {MEMBERS_VISIT_LABELS[t.to]}</span>
+                  <span className="text-muted-foreground tabular-nums">{t.count} member{t.count !== 1 ? "s" : ""}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex gap-2 px-4 py-3 border-b">
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+            <Copy size={14} /> {copied ? "Copied!" : `Copy All ${totalCount} Emails`}
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4">
+          {data?.members.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                  <th className="text-right py-1.5 text-xs text-muted-foreground font-medium">Movement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((m, i) => (
+                  <tr key={i} className="border-b border-muted/30">
+                    <td className="py-1.5 truncate max-w-[140px]">{m.name}</td>
+                    <td className="py-1.5 text-muted-foreground truncate max-w-[180px]">{m.email}</td>
+                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{m.prior_visits} → {m.current_visits}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No members.</p>
+          )}
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, totalCount)} of {totalCount}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── Members All Movement Detail Slide-Out ──────────────────
+
+function MembersAllMovementPanel({
+  movementData, cohortSize, onClose
+}: {
+  movementData: MembersMovementData;
+  cohortSize: number;
+  onClose: () => void;
+}) {
+  const [selectedTransition, setSelectedTransition] = useState<{ from: string; to: string; group: MovementGroupKey } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [page, setPage] = useState(1);
+  const perPage = 25;
+
+  const memberUrl = selectedTransition
+    ? `/api/usage/members/movement/members?${new URLSearchParams({ group: selectedTransition.group, from: selectedTransition.from, to: selectedTransition.to, page: String(page), per_page: String(perPage) })}`
+    : null;
+  const { data: memberData } = useUsageData<{
+    members: { name: string; email: string; prior_visits: number; current_visits: number }[];
+    total: number; page: number;
+  }>(memberUrl, [selectedTransition, page]);
+
+  const totalCount = memberData?.total ?? 0;
+  const totalPages = Math.ceil(totalCount / perPage);
+
+  const handleClickTransition = (from: string, to: string, group: MovementGroupKey) => {
+    if (selectedTransition?.from === from && selectedTransition?.to === to) {
+      setSelectedTransition(null);
+    } else {
+      setSelectedTransition({ from, to, group });
+      setPage(1);
+    }
+  };
+
+  const handleCopyEmails = async () => {
+    if (!selectedTransition) return;
+    const p = new URLSearchParams({ group: selectedTransition.group, from: selectedTransition.from, to: selectedTransition.to, fields: "email", per_page: "9999" });
+    const res = await fetch(`/api/usage/members/movement/members?${p}`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const renderTransitionRows = (transitions: MembersTransition[], group: MovementGroupKey) =>
+    transitions.map(t => {
+      const isActive = selectedTransition?.from === t.from && selectedTransition?.to === t.to;
+      return (
+        <button
+          key={`${t.from}|${t.to}`}
+          className={`flex items-center justify-between w-full py-1.5 px-3 text-sm hover:bg-muted/30 transition-colors ${isActive ? "bg-muted/40 font-medium" : ""}`}
+          onClick={() => handleClickTransition(t.from, t.to, group)}
+        >
+          <span>{MEMBERS_VISIT_LABELS[t.from]} → {MEMBERS_VISIT_LABELS[t.to]}</span>
+          <span className="text-muted-foreground tabular-nums">{t.count} member{t.count !== 1 ? "s" : ""}</span>
+        </button>
+      );
+    });
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <div className="font-semibold" style={{ fontSize: "15px" }}>All Movement Detail <span className="font-normal text-muted-foreground" style={{ fontSize: "13px" }}>(vs. previous billing cycle)</span></div>
+            <div className="text-muted-foreground" style={{ fontSize: "13px" }}>{cohortSize} stable members</div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          <div className="px-4 pt-3 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Target or higher ({movementData.boundary_crossings.into_success.count})</div>
+            {renderTransitionRows(movementData.boundary_crossings.into_success.transitions, "boundary_into_success")}
+          </div>
+
+          <div className="px-4 pt-2 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell into Low or Dormant ({movementData.boundary_crossings.into_risk.count})</div>
+            {renderTransitionRows(movementData.boundary_crossings.into_risk.transitions, "boundary_into_risk")}
+          </div>
+
+          <div className="px-4 pt-2 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (0-2 visits)</div>
+            {renderTransitionRows([...movementData.within_risk.improving.transitions, ...movementData.within_risk.declining.transitions].sort((a, b) => b.count - a.count), "within_risk_improving")}
+          </div>
+
+          <div className="px-4 pt-2 pb-1">
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the success zone (3+ visits)</div>
+            {renderTransitionRows([...movementData.within_success.improving.transitions, ...movementData.within_success.declining.transitions].sort((a, b) => b.count - a.count), "within_success_improving")}
+          </div>
+
+          <div className="px-4 pt-2 pb-3">
+            <div className="text-sm text-muted-foreground">Stable (same band): <span className="tabular-nums font-medium">{movementData.stable.count} members</span></div>
+          </div>
+
+          <div className="px-4 pb-3 border-b">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1"
+              onClick={() => { window.location.href = `/api/usage/members/export?segment=members`; }}
+            >
+              <DownloadIcon className="size-3.5" /> Export Full Movement CSV
+            </Button>
+          </div>
+
+          <div className="p-4">
+            {!selectedTransition ? (
+              <p className="text-sm text-muted-foreground italic">Click a transition row above to see members.</p>
+            ) : (
+              <>
+                <div className="flex gap-2 mb-3">
+                  <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+                    <Copy size={14} /> {copied ? "Copied!" : `Copy All ${totalCount} Emails`}
+                  </Button>
+                </div>
+                {memberData?.members.length ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                        <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                        <th className="text-right py-1.5 text-xs text-muted-foreground font-medium">Movement</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memberData.members.map((m, i) => (
+                        <tr key={i} className="border-b border-muted/30">
+                          <td className="py-1.5 truncate max-w-[140px]">{m.name}</td>
+                          <td className="py-1.5 text-muted-foreground truncate max-w-[180px]">{m.email}</td>
+                          <td className="py-1.5 text-right text-muted-foreground tabular-nums">{m.prior_visits} → {m.current_visits}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No members.</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {selectedTransition && totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, totalCount)} of {totalCount}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── Members Side Panel (band detail) ───────────────────────
+
+function MembersSidePanel({ band, onClose }: { band: string; onClose: () => void }) {
+  const [page, setPage] = useState(1);
+  const [copied, setCopied] = useState(false);
+  const perPage = 25;
+
+  const label = MEMBERS_BAND_LABELS[band] || band;
+  const { data } = useUsageData<{ members: { name: string; email: string }[]; total: number; page: number }>(
+    `/api/usage/members/by-band?band=${band}&page=${page}&per_page=${perPage}`,
+    [band, page]
+  );
+
+  const handleCopyEmails = async () => {
+    const res = await fetch(`/api/usage/members/by-band?band=${band}&fields=email&per_page=9999`);
+    const d = await res.json();
+    const emails = d.members.map((m: { email: string }) => m.email).join(", ");
+    await navigator.clipboard.writeText(emails);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = () => {
+    window.location.href = `/api/usage/members/export?segment=members&filter=${band}`;
+  };
+
+  const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <div className="font-semibold text-base">{label}</div>
+            <div className="text-sm text-muted-foreground">{data?.total ?? 0} members</div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
+        </div>
+        <div className="flex gap-2 p-4 border-b">
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleCopyEmails}>
+            <Copy size={14} /> {copied ? "Copied!" : "Copy All Emails"}
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs gap-1" onClick={handleExport}>
+            <DownloadIcon className="size-3.5" /> Export CSV
+          </Button>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          {data?.members.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Name</th>
+                  <th className="text-left py-1.5 text-xs text-muted-foreground font-medium">Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((m, i) => (
+                  <tr key={i} className="border-b border-muted/30">
+                    <td className="py-1.5 truncate max-w-[160px]">{m.name}</td>
+                    <td className="py-1.5 text-muted-foreground truncate max-w-[200px]">{m.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No members in this band.</p>
+          )}
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t text-xs text-muted-foreground">
+            <span>Showing {((page - 1) * perPage) + 1}–{Math.min(page * perPage, data?.total ?? 0)} of {data?.total}</span>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="text-xs h-7 px-2">Prev</Button>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="text-xs h-7 px-2">Next</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── Sky3 Constants ─────────────────────────────────────────
 
 const SKY3_BANDS = ["not_using", "barely_using", "getting_there", "full_use", "wants_more"] as const;
@@ -1434,6 +1931,34 @@ const TV_BAR_COLORS: Record<string, string> = {
   light: "#E8CBAF",
   active: "#C8E6C9",
   engaged: "#A5D6A7",
+};
+
+// ─── Members Constants ──────────────────────────────────────
+
+const MEMBERS_BANDS = ["dormant", "low", "target", "strong", "power_user"] as const;
+
+const MEMBERS_BAND_LABELS: Record<string, string> = {
+  dormant: "Dormant (0 visits)",
+  low: "Low (1-2 visits)",
+  target: "Target (3-4 visits)",
+  strong: "Strong (5-8 visits)",
+  power_user: "Power User (9+ visits)",
+};
+
+const MEMBERS_VISIT_LABELS: Record<string, string> = {
+  dormant: "0 visits",
+  low: "1-2 visits",
+  target: "3-4 visits",
+  strong: "5-8 visits",
+  power_user: "9+ visits",
+};
+
+const MEMBERS_BAR_COLORS: Record<string, string> = {
+  dormant: "#E8D5D0",
+  low: "#E8CBAF",
+  target: "#C8E6C9",
+  strong: "#A5D6A7",
+  power_user: "#7DBF80",
 };
 
 // ─── Sky3 Types ─────────────────────────────────────────────
