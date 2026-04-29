@@ -85,6 +85,7 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
   const before = Number(beforeResult.rows[0].count);
 
   const client = await pool.connect();
+  let skipped = 0;
   try {
     await client.query("BEGIN");
     for (const r of rows) {
@@ -98,10 +99,20 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
         r.revenue, r.unionRegistrationId || null, r.passId || null,
       ];
 
+      // Per-row savepoint: a single row that violates idx_reg_dedup (e.g. an
+      // UPDATE-by-id step would shift this row's (email, attended_at) onto a
+      // pair already held by another row) must NOT abort the whole batch.
+      // Without this, ONE bad row caused the entire export to fail with
+      // `duplicate key value violates unique constraint "idx_reg_dedup"`,
+      // which is exactly how the pipeline got stuck.
+      await client.query("SAVEPOINT row_save");
+      try {
+
       // Step 1: if we have a union_registration_id, try UPDATE by that id first.
       // This catches rows whose (email, attended_at) changed since last seen —
       // the partial unique index idx_reg_union_id prevents a duplicate INSERT,
       // and UPDATE-in-place preserves the existing row's id without a DELETE.
+      let updatedExisting = false;
       if (r.unionRegistrationId) {
         const updated = await client.query(
           `UPDATE registrations SET
@@ -131,12 +142,12 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
            WHERE union_registration_id = $23`,
           vals
         );
-        if (updated.rowCount && updated.rowCount > 0) continue;
+        if (updated.rowCount && updated.rowCount > 0) updatedExisting = true;
       }
 
       // Step 2: no existing union_registration_id match (or no id at all) →
       // INSERT with (email, attended_at) ON CONFLICT as the final dedup key.
-      await client.query(
+      if (!updatedExisting) await client.query(
         `INSERT INTO registrations (
           event_name, event_id, performance_id, performance_starts_at,
           location_name, video_name, video_id, teacher_name,
@@ -162,6 +173,16 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
           pass_id = COALESCE(NULLIF(EXCLUDED.pass_id, ''), registrations.pass_id)`,
         vals
       );
+
+        await client.query("RELEASE SAVEPOINT row_save");
+      } catch (rowErr) {
+        await client.query("ROLLBACK TO SAVEPOINT row_save");
+        skipped++;
+        const msg = rowErr instanceof Error ? rowErr.message : String(rowErr);
+        console.warn(
+          `[registration-store] Skipped row email=${email} attended_at=${r.attendedAt ?? "null"} union_id=${r.unionRegistrationId ?? "null"}: ${msg}`,
+        );
+      }
     }
     await client.query("COMMIT");
   } catch (e) {
@@ -169,6 +190,10 @@ export async function saveRegistrations(rows: RegistrationRow[]): Promise<void> 
     throw e;
   } finally {
     client.release();
+  }
+
+  if (skipped > 0) {
+    console.warn(`[registration-store] Skipped ${skipped}/${rows.length} rows due to per-row errors (others were saved)`);
   }
 
   const afterResult = await pool.query("SELECT COUNT(*) as count FROM registrations");

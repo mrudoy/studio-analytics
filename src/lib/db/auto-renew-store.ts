@@ -118,9 +118,20 @@ export async function saveAutoRenews(
       console.log(`[auto-renew-store] Deduped ${rows.length - dedupedRows.length} duplicate pass rows before save`);
     }
 
+    let skipped = 0;
     for (const row of dedupedRows) {
       // Skip rows without email — they can't be deduped
       if (!row.customerEmail) continue;
+
+      // Per-row savepoint: a single row that violates idx_ar_dedup (e.g. an
+      // UPDATE-by-union_pass_id step would shift this row's
+      // (customer_email, plan_name, created_at) onto a triple already held
+      // by another row) must NOT abort the whole batch. Without this, ONE
+      // bad row caused the entire export to fail with `duplicate key value
+      // violates unique constraint "idx_ar_dedup"`.
+      await client.query("SAVEPOINT row_save");
+      let updatedExisting = false;
+      try {
 
       const values = [
         snapshotId,
@@ -172,39 +183,55 @@ export async function saveAutoRenews(
         );
         if (updated.rowCount && updated.rowCount > 0) {
           inserted += updated.rowCount;
-          continue;
+          updatedExisting = true;
         }
       }
 
-      const result = await client.query(
-        `INSERT INTO auto_renews (
-          snapshot_id, plan_name, plan_state, plan_price,
-          customer_name, customer_email, created_at, order_id, sales_channel,
-          canceled_at, canceled_by, admin, current_state, current_plan,
-          union_pass_id, plan_category
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        ON CONFLICT (customer_email, plan_name, created_at)
-        DO UPDATE SET
-          snapshot_id = EXCLUDED.snapshot_id,
-          plan_state = EXCLUDED.plan_state,
-          plan_price = EXCLUDED.plan_price,
-          customer_name = EXCLUDED.customer_name,
-          order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
-          sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
-          canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
-          canceled_by = COALESCE(EXCLUDED.canceled_by, auto_renews.canceled_by),
-          admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
-          current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
-          current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
-          union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
-          plan_category = EXCLUDED.plan_category,
-          imported_at = NOW()`,
-        values
-      );
+      if (!updatedExisting) {
+        const result = await client.query(
+          `INSERT INTO auto_renews (
+            snapshot_id, plan_name, plan_state, plan_price,
+            customer_name, customer_email, created_at, order_id, sales_channel,
+            canceled_at, canceled_by, admin, current_state, current_plan,
+            union_pass_id, plan_category
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          ON CONFLICT (customer_email, plan_name, created_at)
+          DO UPDATE SET
+            snapshot_id = EXCLUDED.snapshot_id,
+            plan_state = EXCLUDED.plan_state,
+            plan_price = EXCLUDED.plan_price,
+            customer_name = EXCLUDED.customer_name,
+            order_id = COALESCE(EXCLUDED.order_id, auto_renews.order_id),
+            sales_channel = COALESCE(EXCLUDED.sales_channel, auto_renews.sales_channel),
+            canceled_at = COALESCE(EXCLUDED.canceled_at, auto_renews.canceled_at),
+            canceled_by = COALESCE(EXCLUDED.canceled_by, auto_renews.canceled_by),
+            admin = COALESCE(EXCLUDED.admin, auto_renews.admin),
+            current_state = COALESCE(EXCLUDED.current_state, auto_renews.current_state),
+            current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
+            union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
+            plan_category = EXCLUDED.plan_category,
+            imported_at = NOW()`,
+          values
+        );
 
-      if (result.rowCount === 1) {
-        inserted++;
+        if (result.rowCount === 1) {
+          inserted++;
+        }
       }
+
+        await client.query("RELEASE SAVEPOINT row_save");
+      } catch (rowErr) {
+        await client.query("ROLLBACK TO SAVEPOINT row_save");
+        skipped++;
+        const msg = rowErr instanceof Error ? rowErr.message : String(rowErr);
+        console.warn(
+          `[auto-renew-store] Skipped row email=${row.customerEmail} plan=${row.planName} created_at=${row.createdAt ?? "null"} union_pass_id=${row.unionPassId ?? "null"}: ${msg}`,
+        );
+      }
+    }
+
+    if (skipped > 0) {
+      console.warn(`[auto-renew-store] Skipped ${skipped}/${dedupedRows.length} rows due to per-row errors (others were saved)`);
     }
 
     await client.query("COMMIT");
