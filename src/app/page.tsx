@@ -3094,8 +3094,8 @@ function useNewCustomerData(volume: NewCustomerVolumeData | null, cohorts: NewCu
   }
 
   const allCohorts = cohorts?.cohorts ?? [];
-  const completeCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) >= 21);
-  const incompleteCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) < 21);
+  const completeCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) >= 42);
+  const incompleteCohorts = allCohorts.filter((c) => daysElapsed(c.cohortStart) < 42);
   const displayComplete = completeCohorts.slice(-5);
 
   const avgRate = cohorts?.avgConversionRate ?? null;
@@ -3103,9 +3103,9 @@ function useNewCustomerData(volume: NewCustomerVolumeData | null, cohorts: NewCu
   const expectedAutoRenews = (currentCohortCount !== null && currentCohortCount !== undefined && avgRate !== null)
     ? Math.round(currentCohortCount * avgRate / 100) : null;
 
-  const insightCohorts = displayComplete.filter((c) => c.total3Week > 0);
+  const insightCohorts = displayComplete.filter((c) => c.total6Week > 0);
   const totalWk1 = insightCohorts.reduce((s, c) => s + c.week1, 0);
-  const totalConv = insightCohorts.reduce((s, c) => s + c.total3Week, 0);
+  const totalConv = insightCohorts.reduce((s, c) => s + c.total6Week, 0);
   const sameWeekPct = totalConv > 0 ? Math.round((totalWk1 / totalConv) * 100) : null;
 
   const convTooltip = avgRate !== null
@@ -3189,7 +3189,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
   const { completeCohorts, incompleteCohorts, displayComplete, daysElapsed } = useNewCustomerData(volume, cohorts);
   const mostRecentComplete = displayComplete.length > 0 ? displayComplete[displayComplete.length - 1].cohortStart : null;
 
-  const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total3Week }));
+  const lineData = completeCohorts.slice(-8).map((c) => ({ date: formatWeekShort(c.cohortStart), newCustomers: c.newCustomers, converts: c.total6Week }));
 
   return (
     <DashboardCard matchHeight className="@container/card">
@@ -3272,7 +3272,7 @@ function NewCustomerChartCard({ volume, cohorts }: {
             <tbody className="[&_tr:last-child]:border-0">
               {/* Complete cohorts */}
               {displayComplete.map((c) => {
-                const rate = c.newCustomers > 0 ? (c.total3Week / c.newCustomers * 100).toFixed(1) : "0.0";
+                const rate = c.newCustomers > 0 ? (c.total6Week / c.newCustomers * 100).toFixed(1) : "0.0";
                 const isHovered = hoveredCohort === c.cohortStart;
                 const isExpanded = expandedRow === c.cohortStart;
                 const isNewest = c.cohortStart === mostRecentComplete;
@@ -3291,16 +3291,19 @@ function NewCustomerChartCard({ volume, cohorts }: {
                         {formatWeekRangeLabel(c.cohortStart, c.cohortEnd)}
                       </td>
                       <td data-label="New" className={`${modTdClass} font-semibold`}>{formatNumber(c.newCustomers)}</td>
-                      <td data-label="Converts" className={`${modTdClass} font-semibold`}>{c.total3Week}</td>
+                      <td data-label="Converts" className={`${modTdClass} font-semibold`}>{c.total6Week}</td>
                       <td data-label="Rate" className={`${modTdClass} font-medium`}>{rate}%</td>
                     </tr>
                     {isExpanded && (
                       <tr className="border-b" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
                         <td colSpan={4} className="px-4 py-2 pl-8 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
-                            <span>Same week: <strong className="font-medium text-foreground">{c.week1}</strong></span>
-                            <span>+1 week: <strong className="font-medium text-foreground">{c.week2}</strong></span>
-                            <span>+2 weeks: <strong className="font-medium text-foreground">{c.week3}</strong></span>
+                            <span>Wk 1: <strong className="font-medium text-foreground">{c.week1}</strong></span>
+                            <span>Wk 2: <strong className="font-medium text-foreground">{c.week2}</strong></span>
+                            <span>Wk 3: <strong className="font-medium text-foreground">{c.week3}</strong></span>
+                            <span>Wk 4: <strong className="font-medium text-foreground">{c.week4}</strong></span>
+                            <span>Wk 5: <strong className="font-medium text-foreground">{c.week5}</strong></span>
+                            <span>Wk 6: <strong className="font-medium text-foreground">{c.week6}</strong></span>
                           </div>
                         </td>
                       </tr>
@@ -3320,10 +3323,19 @@ function NewCustomerChartCard({ volume, cohorts }: {
               {incompleteCohorts.map((c) => {
                 const days = daysElapsed(c.cohortStart);
                 const wk2Possible = days >= 7;
+                const wk3Possible = days >= 14;
+                const wk4Possible = days >= 21;
+                const wk5Possible = days >= 28;
+                const wk6Possible = days >= 35;
                 const isHovered = hoveredCohort === c.cohortStart;
                 const isExpanded = expandedRow === c.cohortStart;
-                const daysRemaining = Math.max(21 - days, 0);
-                const convertsSoFar = c.week1 + (wk2Possible ? c.week2 : 0);
+                const daysRemaining = Math.max(42 - days, 0);
+                const convertsSoFar = c.week1
+                  + (wk2Possible ? c.week2 : 0)
+                  + (wk3Possible ? c.week3 : 0)
+                  + (wk4Possible ? c.week4 : 0)
+                  + (wk5Possible ? c.week5 : 0)
+                  + (wk6Possible ? c.week6 : 0);
                 const partialRate = c.newCustomers > 0 ? (convertsSoFar / c.newCustomers * 100).toFixed(1) : "0.0";
                 return (
                   <Fragment key={c.cohortStart}>
@@ -3348,9 +3360,12 @@ function NewCustomerChartCard({ volume, cohorts }: {
                       <tr className="border-b" style={{ borderLeft: `2px solid ${COLORS.newCustomer}` }}>
                         <td colSpan={4} className="px-4 py-2 pl-8 bg-muted/30">
                           <div className="flex gap-4 text-xs text-muted-foreground tabular-nums">
-                            <span>Same week: <strong className="font-medium">{c.week1}</strong></span>
-                            <span>+1 week: <strong className="font-medium">{wk2Possible ? c.week2 : "\u2014"}</strong></span>
-                            <span>+2 weeks: <strong className="font-medium">{"\u2014"}</strong></span>
+                            <span>Wk 1: <strong className="font-medium">{c.week1}</strong></span>
+                            <span>Wk 2: <strong className="font-medium">{wk2Possible ? c.week2 : "\u2014"}</strong></span>
+                            <span>Wk 3: <strong className="font-medium">{wk3Possible ? c.week3 : "\u2014"}</strong></span>
+                            <span>Wk 4: <strong className="font-medium">{wk4Possible ? c.week4 : "\u2014"}</strong></span>
+                            <span>Wk 5: <strong className="font-medium">{wk5Possible ? c.week5 : "\u2014"}</strong></span>
+                            <span>Wk 6: <strong className="font-medium">{wk6Possible ? c.week6 : "\u2014"}</strong></span>
                           </div>
                         </td>
                       </tr>

@@ -633,7 +633,11 @@ export interface NewCustomerCohortRow {
   week1: number;
   week2: number;
   week3: number;
+  week4: number;
+  week5: number;
+  week6: number;
   total3Week: number;
+  total6Week: number;
 }
 
 export interface NewCustomerCohortData {

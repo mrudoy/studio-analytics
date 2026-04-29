@@ -819,21 +819,22 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     if (cohortRows.length > 0) {
       const today = new Date();
       const todayStr = today.toISOString().split("T")[0];
+      // A cohort's 6-week window is closed once 42+ days have elapsed since cohort start.
       const completeCohorts = cohortRows.filter((c) => {
         const start = new Date(c.cohortStart + "T00:00:00");
         const cutoff = new Date(start);
-        cutoff.setDate(cutoff.getDate() + 20);
+        cutoff.setDate(cutoff.getDate() + 41);
         return cutoff.toISOString().split("T")[0] < todayStr;
       });
       let avgConversionRate: number | null = null;
       const recentComplete = completeCohorts.slice(-5);
       if (recentComplete.length >= 3) {
         const totalNew = recentComplete.reduce((s, c) => s + c.newCustomers, 0);
-        const totalConverted = recentComplete.reduce((s, c) => s + c.total3Week, 0);
+        const totalConverted = recentComplete.reduce((s, c) => s + c.total6Week, 0);
         avgConversionRate = totalNew > 0 ? Math.round((totalConverted / totalNew) * 1000) / 10 : 0;
       }
       cohorts = {
-        cohorts: cohortRows.map((c) => ({ cohortStart: c.cohortStart, cohortEnd: c.cohortEnd, newCustomers: c.newCustomers, week1: c.week1, week2: c.week2, week3: c.week3, total3Week: c.total3Week })),
+        cohorts: cohortRows.map((c) => ({ cohortStart: c.cohortStart, cohortEnd: c.cohortEnd, newCustomers: c.newCustomers, week1: c.week1, week2: c.week2, week3: c.week3, week4: c.week4, week5: c.week5, week6: c.week6, total3Week: c.total3Week, total6Week: c.total6Week })),
         avgConversionRate,
       };
     }

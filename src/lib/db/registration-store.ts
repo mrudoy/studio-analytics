@@ -1504,7 +1504,11 @@ export interface NewCustomerCohortRow {
   week1: number;
   week2: number;
   week3: number;
+  week4: number;
+  week5: number;
+  week6: number;
   total3Week: number;
+  total6Week: number;
 }
 
 // SQL fragment: in-studio intro/drop-in passes only (mirrors isDropInOrIntro).
@@ -1633,13 +1637,25 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
                         AND c.earliest_sub - nc.first_date BETWEEN 14 AND 20
                    THEN 1 END) as week3,
              COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 21 AND 27
+                   THEN 1 END) as week4,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 28 AND 34
+                   THEN 1 END) as week5,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 35 AND 41
+                   THEN 1 END) as week6,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
                         AND c.earliest_sub - nc.first_date BETWEEN 0 AND 20
-                   THEN 1 END) as total_3week
+                   THEN 1 END) as total_3week,
+             COUNT(CASE WHEN c.earliest_sub IS NOT NULL
+                        AND c.earliest_sub - nc.first_date BETWEEN 0 AND 41
+                   THEN 1 END) as total_6week
       FROM new_custs nc
       LEFT JOIN conversions c ON c.email = nc.email
       GROUP BY nc.cohort_start
       ORDER BY nc.cohort_start DESC
-      LIMIT 8
+      LIMIT 14
     )
     SELECT cohort_start::text as "cohortStart",
            cohort_end::text as "cohortEnd",
@@ -1647,7 +1663,11 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
            week1,
            week2,
            week3,
-           total_3week as "total3Week"
+           week4,
+           week5,
+           week6,
+           total_3week as "total3Week",
+           total_6week as "total6Week"
     FROM cohort_data
     ORDER BY cohort_start
   `;
@@ -1660,7 +1680,11 @@ export async function getNewCustomerCohorts(): Promise<NewCustomerCohortRow[]> {
     week1: Number(r.week1),
     week2: Number(r.week2),
     week3: Number(r.week3),
+    week4: Number(r.week4),
+    week5: Number(r.week5),
+    week6: Number(r.week6),
     total3Week: Number(r.total3Week),
+    total6Week: Number(r.total6Week),
   }));
 }
 
