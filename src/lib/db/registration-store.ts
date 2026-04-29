@@ -1514,7 +1514,7 @@ export interface NewCustomerCohortRow {
 // SQL fragment: in-studio intro/drop-in passes only (mirrors isDropInOrIntro).
 // Excludes staff, teacher, demo, teacher-training, and TV/replay/livestream visits.
 // Use col param for queries with a table alias (e.g. 'r.pass').
-function dropInPassFilter(col = "pass"): string {
+export function dropInPassFilter(col = "pass"): string {
   return `
   AND (
     UPPER(${col}) LIKE '%DROP-IN%' OR UPPER(${col}) LIKE '%DROP IN%' OR UPPER(${col}) LIKE '%DROPIN%'
@@ -1534,7 +1534,7 @@ function dropInPassFilter(col = "pass"): string {
 const IN_STUDIO_PASS_FILTER = dropInPassFilter();
 
 // SQL fragment: only SKY3 + MEMBER auto-renew plans (excludes SKY TING TV, UNKNOWN).
-const IN_STUDIO_PLAN_FILTER = `
+export const IN_STUDIO_PLAN_FILTER = `
   AND (
     UPPER(plan_name) LIKE '%SKY3%' OR UPPER(plan_name) LIKE '%SKY5%'
     OR UPPER(plan_name) LIKE '%SKYHIGH%' OR UPPER(plan_name) LIKE '%5 PACK%'

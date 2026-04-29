@@ -17,6 +17,7 @@ import type { NextRequest } from "next/server";
 const PUBLIC_PATHS = new Set([
   "/api/health",                  // Railway health checks
   "/api/diagnose-pipeline",       // Operational diagnostics (read-only metadata)
+  "/api/diagnose-conversions",    // Operational diagnostics (read-only metadata)
   "/api/webhook/union-export",    // Has own UNION_WEBHOOK_SECRET
 ]);
 
