@@ -40,6 +40,8 @@ import {
   getConversionPoolWTD,
   getConversionPoolLagStats,
   getConversionByJourneyWeekly,
+  getConversionByJourneyDaily,
+  getConversionByJourneyMonthly,
   getColdSubStartsWeekly,
   materializeFirstInStudioSub,
   getUsageFrequencyByCategory,
@@ -865,29 +867,48 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
 
   async function runJourneyConversion(): Promise<JourneyConversionData | null> {
     if (!(await hasRegistrationData())) return null;
-    const weeksBack = 12;
+    const weeksBack = 8;
+    const daysBack = 7;
+    const monthsBack = 6;
     try {
-      const [rollUpRows, introRows, aLaCarteRows, coldRows] = await Promise.all([
+      const [
+        rollUpDaily, rollUpWeekly, rollUpMonthly,
+        introDaily, introWeekly, introMonthly,
+        aLaCarteDaily, aLaCarteWeekly, aLaCarteMonthly,
+        coldRows,
+      ] = await Promise.all([
+        getConversionByJourneyDaily(daysBack, "all"),
         getConversionByJourneyWeekly(weeksBack, "all"),
+        getConversionByJourneyMonthly(monthsBack, "all"),
+        getConversionByJourneyDaily(daysBack, "intro-week"),
         getConversionByJourneyWeekly(weeksBack, "intro-week"),
+        getConversionByJourneyMonthly(monthsBack, "intro-week"),
+        getConversionByJourneyDaily(daysBack, "a-la-carte"),
         getConversionByJourneyWeekly(weeksBack, "a-la-carte"),
+        getConversionByJourneyMonthly(monthsBack, "a-la-carte"),
         getColdSubStartsWeekly(weeksBack),
       ]);
-      const buildSeries = (rows: typeof rollUpRows): JourneyBucketSeries => {
-        const totalPool = rows.reduce((s, r) => s + r.pool, 0);
-        const totalConv = rows.reduce((s, r) => s + r.converts, 0);
+      const buildSeries = (
+        daily: typeof rollUpDaily,
+        weekly: typeof rollUpWeekly,
+        monthly: typeof rollUpMonthly,
+      ): JourneyBucketSeries => {
+        const totalPool = weekly.reduce((s, r) => s + r.pool, 0);
+        const totalConv = weekly.reduce((s, r) => s + r.converts, 0);
         return {
-          weeks: rows,
-          avgPool: rows.length > 0 ? Math.round(totalPool / rows.length) : 0,
-          avgConverts: rows.length > 0 ? Math.round((totalConv / rows.length) * 10) / 10 : 0,
+          daily,
+          weeks: weekly,
+          monthly,
+          avgPool: weekly.length > 0 ? Math.round(totalPool / weekly.length) : 0,
+          avgConverts: weekly.length > 0 ? Math.round((totalConv / weekly.length) * 10) / 10 : 0,
           avgRate: totalPool > 0 ? Math.round((totalConv / totalPool) * 1000) / 10 : 0,
         };
       };
       const totalCold = coldRows.reduce((s, r) => s + r.coldSubs, 0);
       return {
-        rollUp: buildSeries(rollUpRows),
-        introWeek: buildSeries(introRows),
-        aLaCarte: buildSeries(aLaCarteRows),
+        rollUp: buildSeries(rollUpDaily, rollUpWeekly, rollUpMonthly),
+        introWeek: buildSeries(introDaily, introWeekly, introMonthly),
+        aLaCarte: buildSeries(aLaCarteDaily, aLaCarteWeekly, aLaCarteMonthly),
         coldSubsByWeek: coldRows,
         avgColdSubs: coldRows.length > 0 ? Math.round((totalCold / coldRows.length) * 10) / 10 : 0,
       };

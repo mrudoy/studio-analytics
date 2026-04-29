@@ -2326,6 +2326,247 @@ export async function getColdSubStartsWeekly(
   }));
 }
 
+/** Build the bucket-specific clauses (pool filter + converter EXISTS/NOT EXISTS).
+ *  Shared between daily / weekly / monthly journey-conversion queries.
+ */
+function buildJourneyBucketClauses(bucket: JourneyBucket): {
+  poolPassFilter: string;
+  poolPeriodExclusion: string;       // exclude intro overlap from a-la-carte pool, by period
+  converterExists: string;
+  converterPrecedenceExclusion: string;
+} {
+  let poolPassFilter = "";
+  let poolPeriodExclusion = "";
+  let converterExists = "";
+  let converterPrecedenceExclusion = "";
+
+  if (bucket === "intro-week") {
+    poolPassFilter = `AND ${introPassFilter("r.pass")}`;
+    converterExists = `
+      AND EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = a.email
+          AND r.attended_at IS NOT NULL
+          AND r.attended_at < a.sub_date
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          AND ${introPassFilter("r.pass")}
+      )`;
+  } else if (bucket === "a-la-carte") {
+    poolPassFilter = `AND NOT ${introPassFilter("r.pass")}`;
+    // Period-bucket exclusion: exclude emails who also have intro-week activity
+    // in the SAME bucket (day/week/month). Filled in per-resolution below.
+    converterExists = `
+      AND EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = a.email
+          AND r.attended_at IS NOT NULL
+          AND r.attended_at < a.sub_date
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
+          AND NOT ${introPassFilter("r.pass")}
+      )`;
+    converterPrecedenceExclusion = `
+      AND NOT EXISTS (
+        SELECT 1 FROM registrations r3
+        WHERE LOWER(r3.email) = a.email
+          AND r3.attended_at IS NOT NULL
+          AND r3.attended_at < a.sub_date
+          AND (r3.subscription = 'false' OR r3.subscription IS NULL)
+          AND ${introPassFilter("r3.pass")}
+      )`;
+  } else {
+    converterExists = `
+      AND EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = a.email
+          AND r.attended_at IS NOT NULL
+          AND r.attended_at < a.sub_date
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
+      )`;
+  }
+
+  return { poolPassFilter, poolPeriodExclusion, converterExists, converterPrecedenceExclusion };
+}
+
+export interface JourneyBucketDayRow {
+  date: string;       // YYYY-MM-DD
+  pool: number;
+  converts: number;
+}
+
+/**
+ * Daily journey conversion for the last `daysBack` days, ending yesterday.
+ * Same semantics as getConversionByJourneyWeekly but at day resolution.
+ */
+export async function getConversionByJourneyDaily(
+  daysBack: number,
+  bucket: JourneyBucket,
+): Promise<JourneyBucketDayRow[]> {
+  const pool = getPool();
+  const { poolPassFilter, converterExists, converterPrecedenceExclusion } =
+    buildJourneyBucketClauses(bucket);
+
+  const aLaCarteDayExclusion = bucket === "a-la-carte"
+    ? `AND NOT EXISTS (
+        SELECT 1 FROM registrations r2
+        WHERE LOWER(r2.email) = LOWER(r.email)
+          AND r2.attended_at::date = r.attended_at::date
+          AND (r2.subscription = 'false' OR r2.subscription IS NULL)
+          AND ${introPassFilter("r2.pass")}
+      )`
+    : "";
+
+  const query = `
+    WITH day_series AS (
+      SELECT generate_series(
+        (CURRENT_DATE - INTERVAL '${daysBack} days')::date,
+        (CURRENT_DATE - INTERVAL '1 day')::date,
+        '1 day'::interval
+      )::date as d
+    ),
+    non_auto_pool AS (
+      SELECT r.attended_at::date as d,
+             COUNT(DISTINCT LOWER(r.email)) as pool_size
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
+        AND r.attended_at >= (CURRENT_DATE - INTERVAL '${daysBack} days')::date
+        AND r.attended_at < CURRENT_DATE::date
+        ${poolPassFilter}
+        ${aLaCarteDayExclusion}
+      GROUP BY r.attended_at::date
+    ),
+    all_sub_starts AS (
+      SELECT LOWER(customer_email) as email,
+             created_at as sub_date,
+             created_at::date as convert_day
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
+        ${IN_STUDIO_PLAN_FILTER}
+        AND created_at >= (CURRENT_DATE - INTERVAL '${daysBack} days')::date
+        AND created_at < CURRENT_DATE::date
+    ),
+    converters AS (
+      SELECT DISTINCT a.email, a.convert_day
+      FROM all_sub_starts a
+      WHERE 1=1
+        ${converterExists}
+        ${converterPrecedenceExclusion}
+    ),
+    daily_converts AS (
+      SELECT convert_day as d, COUNT(*) as converts
+      FROM converters
+      GROUP BY convert_day
+    )
+    SELECT ds.d::text as date,
+           COALESCE(p.pool_size, 0) as pool,
+           COALESCE(dc.converts, 0) as converts
+    FROM day_series ds
+    LEFT JOIN non_auto_pool p ON p.d = ds.d
+    LEFT JOIN daily_converts dc ON dc.d = ds.d
+    ORDER BY ds.d
+  `;
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    date: r.date as string,
+    pool: Number(r.pool),
+    converts: Number(r.converts),
+  }));
+}
+
+export interface JourneyBucketMonthRow {
+  monthStart: string; // YYYY-MM-01
+  pool: number;
+  converts: number;
+}
+
+/**
+ * Monthly journey conversion for the last `monthsBack` months, ending last month.
+ */
+export async function getConversionByJourneyMonthly(
+  monthsBack: number,
+  bucket: JourneyBucket,
+): Promise<JourneyBucketMonthRow[]> {
+  const pool = getPool();
+  const { poolPassFilter, converterExists, converterPrecedenceExclusion } =
+    buildJourneyBucketClauses(bucket);
+
+  const aLaCarteMonthExclusion = bucket === "a-la-carte"
+    ? `AND NOT EXISTS (
+        SELECT 1 FROM registrations r2
+        WHERE LOWER(r2.email) = LOWER(r.email)
+          AND r2.attended_at IS NOT NULL
+          AND DATE_TRUNC('month', r2.attended_at)::date = DATE_TRUNC('month', r.attended_at)::date
+          AND (r2.subscription = 'false' OR r2.subscription IS NULL)
+          AND ${introPassFilter("r2.pass")}
+      )`
+    : "";
+
+  const query = `
+    WITH month_series AS (
+      SELECT generate_series(
+        (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '${monthsBack} months')::date,
+        (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date,
+        '1 month'::interval
+      )::date as month_start
+    ),
+    non_auto_pool AS (
+      SELECT DATE_TRUNC('month', r.attended_at)::date as month_start,
+             COUNT(DISTINCT LOWER(r.email)) as pool_size
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
+        AND r.attended_at >= (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '${monthsBack} months')::date
+        AND r.attended_at < DATE_TRUNC('month', CURRENT_DATE)::date
+        ${poolPassFilter}
+        ${aLaCarteMonthExclusion}
+      GROUP BY DATE_TRUNC('month', r.attended_at)::date
+    ),
+    all_sub_starts AS (
+      SELECT LOWER(customer_email) as email,
+             created_at as sub_date,
+             DATE_TRUNC('month', created_at)::date as convert_month
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
+        ${IN_STUDIO_PLAN_FILTER}
+        AND created_at >= (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '${monthsBack} months')::date
+        AND created_at < DATE_TRUNC('month', CURRENT_DATE)::date
+    ),
+    converters AS (
+      SELECT DISTINCT a.email, a.convert_month
+      FROM all_sub_starts a
+      WHERE 1=1
+        ${converterExists}
+        ${converterPrecedenceExclusion}
+    ),
+    monthly_converts AS (
+      SELECT convert_month as month_start, COUNT(*) as converts
+      FROM converters
+      GROUP BY convert_month
+    )
+    SELECT ms.month_start::text as "monthStart",
+           COALESCE(p.pool_size, 0) as pool,
+           COALESCE(mc.converts, 0) as converts
+    FROM month_series ms
+    LEFT JOIN non_auto_pool p ON p.month_start = ms.month_start
+    LEFT JOIN monthly_converts mc ON mc.month_start = ms.month_start
+    ORDER BY ms.month_start
+  `;
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    monthStart: r.monthStart as string,
+    pool: Number(r.pool),
+    converts: Number(r.converts),
+  }));
+}
+
 // ── Usage Frequency by Category ──────────────────────────────
 
 import type { UsageCategoryData, UsageSegment, UsageData } from "@/types/dashboard";

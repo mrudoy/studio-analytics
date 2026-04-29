@@ -123,7 +123,6 @@ export const NAV_ITEMS: NavItem[] = [
     color: SECTION_COLORS["conversion-new"],
     children: [
       { key: "conversion-new", label: "New Customers", icon: UserPlus },
-      { key: "conversion-pool", label: "Non Auto-Renew Customers", icon: UsersGroup },
     ],
   },
   {

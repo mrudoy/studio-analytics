@@ -3383,81 +3383,66 @@ function NewCustomerChartCard({ volume, cohorts }: {
   );
 }
 
-// ─── Conversion Bucket Card ─────────────────────────────────
-// Single card used 3x in JourneyConversionCards: roll-up, intro week, drop-in.
+// ─── Conversion Period Card ─────────────────────────────────
+// Generic time-resolution card: shows pool/converts/rate KPI summary + bar chart
+// for a given resolution (daily, weekly, monthly).
 
-function ConversionBucketCard({
+type PeriodPoint = { label: string; pool: number; converts: number };
+
+function ConversionPeriodCard({
   title,
-  description,
-  series,
-  footer,
+  subtitle,
+  points,
   accentColor,
+  footer,
 }: {
   title: string;
-  description: string;
-  series: JourneyBucketSeries;
-  footer?: string;
+  subtitle: string;
+  points: PeriodPoint[];
   accentColor: string;
+  footer?: string;
 }) {
-  const lastWeek = series.weeks.length > 0 ? series.weeks[series.weeks.length - 1] : null;
-  const lastRate = lastWeek && lastWeek.pool > 0
-    ? Math.round((lastWeek.converts / lastWeek.pool) * 1000) / 10
-    : 0;
-
-  // Sparkline data: convert rate per week
-  const sparkData = series.weeks.map((w) => ({
-    week: w.weekStart,
-    rate: w.pool > 0 ? Math.round((w.converts / w.pool) * 1000) / 10 : 0,
-    pool: w.pool,
-    converts: w.converts,
-  }));
+  const totalPool = points.reduce((s, p) => s + p.pool, 0);
+  const totalConv = points.reduce((s, p) => s + p.converts, 0);
+  const periodRate = totalPool > 0 ? Math.round((totalConv / totalPool) * 1000) / 10 : 0;
 
   return (
     <DashboardCard>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription className="text-sm text-muted-foreground mb-3">{description}</CardDescription>
+        <CardDescription className="text-sm text-muted-foreground mb-3">{subtitle}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Pool (last wk)</div>
-            <div className="text-2xl font-semibold tabular-nums">{lastWeek ? formatNumber(lastWeek.pool) : "—"}</div>
-            <div className="text-xs text-muted-foreground">Avg {formatNumber(series.avgPool)}/wk</div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Pool</div>
+            <div className="text-2xl font-semibold tabular-nums">{formatNumber(totalPool)}</div>
           </div>
           <div>
-            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Converts (last wk)</div>
-            <div className="text-2xl font-semibold tabular-nums">{lastWeek ? formatNumber(lastWeek.converts) : "—"}</div>
-            <div className="text-xs text-muted-foreground">Avg {series.avgConverts.toFixed(1)}/wk</div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Converts</div>
+            <div className="text-2xl font-semibold tabular-nums">{formatNumber(totalConv)}</div>
           </div>
           <div>
-            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Rate (last wk)</div>
-            <div className="text-2xl font-semibold tabular-nums">{lastRate.toFixed(1)}%</div>
-            <div className="text-xs text-muted-foreground">Avg {series.avgRate.toFixed(1)}%</div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Rate</div>
+            <div className="text-2xl font-semibold tabular-nums">{periodRate.toFixed(1)}%</div>
           </div>
         </div>
 
-        {sparkData.length > 1 && (
+        {points.length > 0 && (
           <ChartContainer
-            config={{ rate: { label: "Rate %", color: accentColor } } satisfies ChartConfig}
-            className="h-[110px] w-full"
+            config={{
+              pool: { label: "Pool", color: "rgba(120,120,120,0.35)" },
+              converts: { label: "Converts", color: accentColor },
+            } satisfies ChartConfig}
+            className="h-[140px] w-full"
           >
-            <RAreaChart accessibilityLayer data={sparkData} margin={{ top: 6, right: 6, left: 6, bottom: 0 }}>
-              <defs>
-                <linearGradient id={`fill-${title.replace(/\s+/g, "-")}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={accentColor} stopOpacity={0.45} />
-                  <stop offset="95%" stopColor={accentColor} stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="week" hide />
-              <Area
-                dataKey="rate"
-                type="monotone"
-                fill={`url(#fill-${title.replace(/\s+/g, "-")})`}
-                stroke={accentColor}
-                strokeWidth={1.5}
-              />
-            </RAreaChart>
+            <BarChart accessibilityLayer data={points} margin={{ top: 6, right: 6, left: 6, bottom: 0 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={6} fontSize={10} />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+              <Bar dataKey="pool" fill="rgba(120,120,120,0.35)" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="converts" fill={accentColor} radius={[2, 2, 0, 0]} />
+            </BarChart>
           </ChartContainer>
         )}
 
@@ -3469,35 +3454,159 @@ function ConversionBucketCard({
   );
 }
 
-// ─── Journey Conversion Cards (3-card row) ──────────────────
+// ─── By-Type Card (used for Intro Week / Drop-in summaries) ──
 
-function JourneyConversionCards({ data }: { data: JourneyConversionData | null }) {
+function ConversionByTypeCard({
+  title,
+  description,
+  series,
+  accentColor,
+}: {
+  title: string;
+  description: string;
+  series: JourneyBucketSeries;
+  accentColor: string;
+}) {
+  const points: PeriodPoint[] = series.weeks.map((w) => ({
+    label: formatWeekShort(w.weekStart),
+    pool: w.pool,
+    converts: w.converts,
+  }));
+  const totalPool = points.reduce((s, p) => s + p.pool, 0);
+  const totalConv = points.reduce((s, p) => s + p.converts, 0);
+  const rate = totalPool > 0 ? Math.round((totalConv / totalPool) * 1000) / 10 : 0;
+
+  return (
+    <DashboardCard>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription className="text-sm text-muted-foreground mb-3">{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Pool ({series.weeks.length}wk)</div>
+            <div className="text-2xl font-semibold tabular-nums">{formatNumber(totalPool)}</div>
+            <div className="text-xs text-muted-foreground">Avg {formatNumber(series.avgPool)}/wk</div>
+          </div>
+          <div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Converts</div>
+            <div className="text-2xl font-semibold tabular-nums">{formatNumber(totalConv)}</div>
+            <div className="text-xs text-muted-foreground">Avg {series.avgConverts.toFixed(1)}/wk</div>
+          </div>
+          <div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Rate</div>
+            <div className="text-2xl font-semibold tabular-nums">{rate.toFixed(1)}%</div>
+            <div className="text-xs text-muted-foreground">Last {series.weeks.length} wks</div>
+          </div>
+        </div>
+
+        {points.length > 0 && (
+          <ChartContainer
+            config={{
+              pool: { label: "Pool", color: "rgba(120,120,120,0.35)" },
+              converts: { label: "Converts", color: accentColor },
+            } satisfies ChartConfig}
+            className="h-[160px] w-full"
+          >
+            <BarChart accessibilityLayer data={points} margin={{ top: 6, right: 6, left: 6, bottom: 0 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={6} fontSize={10} />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+              <Bar dataKey="pool" fill="rgba(120,120,120,0.35)" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="converts" fill={accentColor} radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ChartContainer>
+        )}
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Journey Conversion Section (3 resolution cards + by-type row) ──
+
+function JourneyConversionSection({ data }: { data: JourneyConversionData | null }) {
   if (!data) return <NoData label="Conversion data" />;
+
   const coldFooter = data.avgColdSubs > 0
     ? `+${data.avgColdSubs.toFixed(1)}/wk cold sub-starts (no prior visit)`
     : undefined;
 
+  // Last week — daily breakdown (yesterday is last point; show day labels Mon-Sun)
+  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dailyPoints: PeriodPoint[] = data.rollUp.daily.map((d) => {
+    const dt = new Date(d.date + "T12:00:00");
+    return { label: dayLabels[dt.getDay()], pool: d.pool, converts: d.converts };
+  });
+
+  // Last full month — weekly breakdown (filter to weeks within last completed calendar month)
+  const today = new Date();
+  const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const monthlyWeekPoints: PeriodPoint[] = data.rollUp.weeks
+    .filter((w) => {
+      const ws = new Date(w.weekStart + "T00:00:00");
+      return ws >= firstOfLastMonth && ws < firstOfThisMonth;
+    })
+    .map((w) => ({
+      label: formatWeekShort(w.weekStart),
+      pool: w.pool,
+      converts: w.converts,
+    }));
+  const lastMonthLabel = firstOfLastMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  // Last 6 months — monthly breakdown
+  const monthlyPoints: PeriodPoint[] = data.rollUp.monthly.map((m) => {
+    const dt = new Date(m.monthStart + "T12:00:00");
+    return { label: dt.toLocaleDateString("en-US", { month: "short" }), pool: m.pool, converts: m.converts };
+  });
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-      <ConversionBucketCard
-        title="All Non-AR"
-        description="Anyone with a non-subscriber visit → sub start"
-        series={data.rollUp}
-        footer={coldFooter}
-        accentColor={COLORS.member}
-      />
-      <ConversionBucketCard
-        title="Intro Week"
-        description="Active intro week customers → sub start"
-        series={data.introWeek}
-        accentColor={COLORS.teal}
-      />
-      <ConversionBucketCard
-        title="Drop-in / Single Class"
-        description="À-la-carte (incl. class packs, re-subs) → sub start"
-        series={data.aLaCarte}
-        accentColor={COLORS.copper}
-      />
+    <div className="flex flex-col gap-4">
+      {/* ── All Non-AR ── */}
+      <SectionHeader subtitle="Anyone with a non-subscriber visit → sub start, at three time resolutions">
+        All Non-AR
+      </SectionHeader>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <ConversionPeriodCard
+          title="Last Week"
+          subtitle="Daily breakdown of last completed week"
+          points={dailyPoints}
+          accentColor={COLORS.member}
+          footer={coldFooter}
+        />
+        <ConversionPeriodCard
+          title={`Last Month (${lastMonthLabel})`}
+          subtitle="Weeks within the last completed calendar month"
+          points={monthlyWeekPoints}
+          accentColor={COLORS.member}
+        />
+        <ConversionPeriodCard
+          title="Last 6 Months"
+          subtitle="Monthly breakdown across the trailing 6 months"
+          points={monthlyPoints}
+          accentColor={COLORS.member}
+        />
+      </div>
+
+      {/* ── By Type ── */}
+      <SectionHeader subtitle="Same conversion, split by entry path">
+        By Type
+      </SectionHeader>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <ConversionByTypeCard
+          title="Intro Week"
+          description="Active intro-week customers → sub start"
+          series={data.introWeek}
+          accentColor={COLORS.teal}
+        />
+        <ConversionByTypeCard
+          title="Drop-in / Single Class"
+          description="À-la-carte (incl. class packs, re-subs) → sub start"
+          series={data.aLaCarte}
+          accentColor={COLORS.copper}
+        />
+      </div>
     </div>
   );
 }
@@ -8085,7 +8194,7 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
 
       {/* ── CONVERSION: NEW CUSTOMERS ── */}
       {activeSection === "conversion-new" && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <div className="mb-2">
             <div className="flex items-center gap-3">
               <UserPlus className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-new"] }} />
@@ -8093,37 +8202,12 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
             </div>
             <p className="text-sm text-muted-foreground mt-1 ml-10">Non auto-renew → auto-renew conversion by entry path</p>
           </div>
-          <JourneyConversionCards data={trends?.journeyConversion ?? null} />
+          <JourneyConversionSection data={trends?.journeyConversion ?? null} />
           {trends?.conversionPool && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <ConversionTimeCard pool={trends.conversionPool} />
               <ConversionVisitsCard pool={trends.conversionPool} />
             </div>
-          )}
-        </div>
-      )}
-
-      {/* ── CONVERSION: ALL NON AUTO-RENEW CUSTOMERS ── */}
-      {activeSection === "conversion-pool" && (
-        <div className="flex flex-col gap-3">
-          <div className="mb-2">
-            <div className="flex items-center gap-3">
-              <UsersGroup className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-pool"] }} />
-              <h1 className="text-3xl font-semibold tracking-tight">Non Auto-Renew Customers</h1>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Non auto-renew conversion funnel, rates, and time-to-convert analysis</p>
-          </div>
-          {trends?.conversionPool ? (
-            <>
-              <ConversionPoolKPICards pool={trends.conversionPool} />
-              <ConversionPoolModule pool={trends.conversionPool} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <ConversionTimeCard pool={trends.conversionPool} />
-                <ConversionVisitsCard pool={trends.conversionPool} />
-              </div>
-            </>
-          ) : (
-            <NoData label="Conversion Pool data" />
           )}
         </div>
       )}

@@ -823,11 +823,25 @@ export interface JourneyBucketWeek {
   converts: number;
 }
 
+export interface JourneyBucketDay {
+  date: string;
+  pool: number;
+  converts: number;
+}
+
+export interface JourneyBucketMonth {
+  monthStart: string;
+  pool: number;
+  converts: number;
+}
+
 export interface JourneyBucketSeries {
-  weeks: JourneyBucketWeek[];        // ~12 historical complete weeks (oldest → newest)
-  avgPool: number;                    // mean across weeks
+  daily: JourneyBucketDay[];          // last ~7 daily rows (yesterday is last)
+  weeks: JourneyBucketWeek[];         // last ~8 weekly rows (last completed week is last)
+  monthly: JourneyBucketMonth[];      // last ~6 monthly rows (last completed month is last)
+  avgPool: number;                    // weekly avg across all weeks
   avgConverts: number;
-  avgRate: number;                    // % — converts / pool, weighted
+  avgRate: number;                    // weighted % from weekly rows
 }
 
 export interface JourneyConversionData {
