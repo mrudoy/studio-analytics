@@ -1667,18 +1667,30 @@ async function getSky3CycleTiers(
 
   const { rows } = await pool.query(`
     WITH cohort AS (SELECT DISTINCT UNNEST($1::text[]) AS email),
-    billings AS (
+    billings_raw AS (
       SELECT
         LOWER(o.email) AS email,
         o.created_at AS billing_date,
-        ROW_NUMBER() OVER (
+        LAG(o.created_at) OVER (
           PARTITION BY LOWER(o.email)
-          ORDER BY o.created_at DESC, o.id DESC
-        ) AS rn
+          ORDER BY o.created_at ASC, o.id ASC
+        ) AS prev_billing_date
       FROM orders o
       JOIN cohort c ON LOWER(o.email) = c.email
       WHERE o.total > 0
         AND o.revenue_category IN ('SKY3', 'SKYHIGH3', 'SKY3 NEW')
+    ),
+    billings AS (
+      SELECT
+        email,
+        billing_date,
+        ROW_NUMBER() OVER (
+          PARTITION BY email
+          ORDER BY billing_date DESC
+        ) AS rn
+      FROM billings_raw
+      WHERE prev_billing_date IS NULL
+         OR (billing_date::date - prev_billing_date::date) >= 21
     ),
     sub_anchor AS (
       SELECT DISTINCT ON (LOWER(customer_email))
