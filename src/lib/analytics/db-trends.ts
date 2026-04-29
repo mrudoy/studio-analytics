@@ -39,6 +39,8 @@ import {
   getConversionPoolWeekly,
   getConversionPoolWTD,
   getConversionPoolLagStats,
+  getConversionByJourneyWeekly,
+  getColdSubStartsWeekly,
   materializeFirstInStudioSub,
   getUsageFrequencyByCategory,
   getIntroWeekConversionData,
@@ -62,6 +64,8 @@ import type {
   ConversionPoolModuleData,
   ConversionPoolSliceData,
   ConversionPoolSlice,
+  JourneyConversionData,
+  JourneyBucketSeries,
   UsageData,
   TenureMetrics,
   RenewalAlertMember,
@@ -859,6 +863,40 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     }
   }
 
+  async function runJourneyConversion(): Promise<JourneyConversionData | null> {
+    if (!(await hasRegistrationData())) return null;
+    const weeksBack = 12;
+    try {
+      const [rollUpRows, introRows, aLaCarteRows, coldRows] = await Promise.all([
+        getConversionByJourneyWeekly(weeksBack, "all"),
+        getConversionByJourneyWeekly(weeksBack, "intro-week"),
+        getConversionByJourneyWeekly(weeksBack, "a-la-carte"),
+        getColdSubStartsWeekly(weeksBack),
+      ]);
+      const buildSeries = (rows: typeof rollUpRows): JourneyBucketSeries => {
+        const totalPool = rows.reduce((s, r) => s + r.pool, 0);
+        const totalConv = rows.reduce((s, r) => s + r.converts, 0);
+        return {
+          weeks: rows,
+          avgPool: rows.length > 0 ? Math.round(totalPool / rows.length) : 0,
+          avgConverts: rows.length > 0 ? Math.round((totalConv / rows.length) * 10) / 10 : 0,
+          avgRate: totalPool > 0 ? Math.round((totalConv / totalPool) * 1000) / 10 : 0,
+        };
+      };
+      const totalCold = coldRows.reduce((s, r) => s + r.coldSubs, 0);
+      return {
+        rollUp: buildSeries(rollUpRows),
+        introWeek: buildSeries(introRows),
+        aLaCarte: buildSeries(aLaCarteRows),
+        coldSubsByWeek: coldRows,
+        avgColdSubs: coldRows.length > 0 ? Math.round((totalCold / coldRows.length) * 10) / 10 : 0,
+      };
+    } catch (err) {
+      console.warn("[db-trends] journey conversion failed:", err);
+      return null;
+    }
+  }
+
   async function runUsage(): Promise<UsageData | null> {
     const usage = await getUsageFrequencyByCategory();
     return usage.categories.length > 0 ? usage : null;
@@ -875,6 +913,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     churnRates,
     newCustResult,
     conversionPool,
+    journeyConversion,
     usage,
     attendanceDrops,
     sky3EngagementRisk,
@@ -889,6 +928,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     runChurnRates().catch((err) => { console.warn("[db-trends] churn-rates failed:", err); return null; }),
     runNewCustomers().catch((err) => { console.warn("[db-trends] new-customers failed:", err); return { volume: null, cohorts: null }; }),
     runConversionPool().catch((err) => { console.warn("[db-trends] conversion-pool failed:", err); return null; }),
+    runJourneyConversion().catch((err) => { console.warn("[db-trends] journey-conversion failed:", err); return null; }),
     runUsage().catch((err) => { console.warn("[db-trends] usage failed:", err); return null; }),
     getAttendanceDropAlerts().catch((err) => { console.warn("[db-trends] attendance-drops failed:", err); return null; }),
     getSky3EngagementRisk().catch((err) => { console.warn("[db-trends] sky3-engagement-risk failed:", err); return null; }),
@@ -932,6 +972,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     newCustomerVolume,
     newCustomerCohorts,
     conversionPool,
+    journeyConversion,
     usage,
     expiringIntroWeeks,
     dailyMovement,

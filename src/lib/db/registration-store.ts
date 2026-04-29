@@ -2109,6 +2109,223 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all", use
   };
 }
 
+// ── Conversion By Journey ─────────────────────────────────────
+// 3-card framework: roll-up + intro-week + a-la-carte (drop-in/single-class/class-pack).
+// Differs from getConversionPoolWeekly in two ways:
+//   1. Counts ANY in-studio sub start as a conversion (not just first-ever — re-subs included)
+//   2. Mutually exclusive intro-week vs a-la-carte buckets (intro-week wins)
+
+export type JourneyBucket = "all" | "intro-week" | "a-la-carte";
+
+// Intro-week pass identifiers (subset of dropInPassFilter)
+function introPassFilter(col: string): string {
+  return `(UPPER(${col}) LIKE '%INTRO WEEK%' OR UPPER(${col}) LIKE '%TRIAL%' OR UPPER(${col}) LIKE '%FIRST%')`;
+}
+
+export interface JourneyBucketWeekRow {
+  weekStart: string;
+  weekEnd: string;
+  pool: number;
+  converts: number;
+}
+
+/**
+ * Returns weekly pool + converts for a given journey bucket.
+ *
+ * - Pool = unique non-AR emails with a qualifying registration during week W.
+ * - Converts = unique emails who started ANY in-studio sub during week W AND
+ *              had a prior qualifying non-AR visit.
+ *
+ * Mutually exclusive buckets:
+ * - "intro-week": pass matches intro-week filter
+ * - "a-la-carte": pass is drop-in/single-class/class-pack (everything in
+ *                 dropInPassFilter that's NOT an intro-week pass), AND the
+ *                 email has no intro-week activity (per-week for pool, ever
+ *                 for converters)
+ * - "all": any non-AR registration (matches the union of intro-week + a-la-carte)
+ */
+export async function getConversionByJourneyWeekly(
+  weeksBack: number,
+  bucket: JourneyBucket,
+): Promise<JourneyBucketWeekRow[]> {
+  const pool = getPool();
+
+  // Pool slice filter (per-row pass match), and per-row intro-week exclusion for a-la-carte
+  let poolPassFilter = "";
+  let poolWeekExclusion = "";
+  if (bucket === "intro-week") {
+    poolPassFilter = `AND ${introPassFilter("r.pass")}`;
+  } else if (bucket === "a-la-carte") {
+    poolPassFilter = `AND NOT ${introPassFilter("r.pass")}`;
+    poolWeekExclusion = `
+      AND NOT EXISTS (
+        SELECT 1 FROM registrations r2
+        WHERE LOWER(r2.email) = LOWER(r.email)
+          AND r2.attended_at IS NOT NULL
+          AND DATE_TRUNC('week', r2.attended_at)::date = DATE_TRUNC('week', r.attended_at)::date
+          AND (r2.subscription = 'false' OR r2.subscription IS NULL)
+          AND ${introPassFilter("r2.pass")}
+      )`;
+  }
+
+  // Converter clause: prior visit matching bucket, plus precedence exclusion for a-la-carte
+  let converterExists = "";
+  let converterPrecedenceExclusion = "";
+  if (bucket === "intro-week") {
+    converterExists = `
+      AND EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = a.email
+          AND r.attended_at IS NOT NULL
+          AND r.attended_at < a.sub_date
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          AND ${introPassFilter("r.pass")}
+      )`;
+  } else if (bucket === "a-la-carte") {
+    converterExists = `
+      AND EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = a.email
+          AND r.attended_at IS NOT NULL
+          AND r.attended_at < a.sub_date
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
+          AND NOT ${introPassFilter("r.pass")}
+      )`;
+    converterPrecedenceExclusion = `
+      AND NOT EXISTS (
+        SELECT 1 FROM registrations r3
+        WHERE LOWER(r3.email) = a.email
+          AND r3.attended_at IS NOT NULL
+          AND r3.attended_at < a.sub_date
+          AND (r3.subscription = 'false' OR r3.subscription IS NULL)
+          AND ${introPassFilter("r3.pass")}
+      )`;
+  } else {
+    // "all": any prior non-AR visit
+    converterExists = `
+      AND EXISTS (
+        SELECT 1 FROM registrations r
+        WHERE LOWER(r.email) = a.email
+          AND r.attended_at IS NOT NULL
+          AND r.attended_at < a.sub_date
+          AND (r.subscription = 'false' OR r.subscription IS NULL)
+          ${dropInPassFilter("r.pass")}
+      )`;
+  }
+
+  const query = `
+    WITH week_series AS (
+      SELECT generate_series(
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date,
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date,
+        '1 week'::interval
+      )::date as week_start
+    ),
+    non_auto_pool AS (
+      SELECT DATE_TRUNC('week', r.attended_at)::date as week_start,
+             COUNT(DISTINCT LOWER(r.email)) as pool_size
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        ${dropInPassFilter("r.pass")}
+        AND r.attended_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at < DATE_TRUNC('week', CURRENT_DATE)::date
+        ${poolPassFilter}
+        ${poolWeekExclusion}
+      GROUP BY DATE_TRUNC('week', r.attended_at)::date
+    ),
+    all_sub_starts AS (
+      SELECT LOWER(customer_email) as email,
+             created_at as sub_date,
+             DATE_TRUNC('week', created_at)::date as convert_week
+      FROM auto_renews
+      WHERE customer_email IS NOT NULL
+        AND created_at IS NOT NULL
+        ${IN_STUDIO_PLAN_FILTER}
+        AND created_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND created_at < DATE_TRUNC('week', CURRENT_DATE)::date
+    ),
+    converters AS (
+      SELECT DISTINCT a.email, a.convert_week
+      FROM all_sub_starts a
+      WHERE 1=1
+        ${converterExists}
+        ${converterPrecedenceExclusion}
+    ),
+    weekly_converts AS (
+      SELECT convert_week as week_start, COUNT(*) as converts
+      FROM converters
+      GROUP BY convert_week
+    )
+    SELECT ws.week_start::text as "weekStart",
+           (ws.week_start + INTERVAL '6 days')::date::text as "weekEnd",
+           COALESCE(p.pool_size, 0) as pool,
+           COALESCE(wc.converts, 0) as converts
+    FROM week_series ws
+    LEFT JOIN non_auto_pool p ON p.week_start = ws.week_start
+    LEFT JOIN weekly_converts wc ON wc.week_start = ws.week_start
+    ORDER BY ws.week_start
+  `;
+
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    pool: Number(r.pool),
+    converts: Number(r.converts),
+  }));
+}
+
+/**
+ * Cold sub starts per week: in-studio subs whose email has zero prior non-AR
+ * registrations. Surface as a footer count on the roll-up card (no denominator).
+ */
+export async function getColdSubStartsWeekly(
+  weeksBack: number,
+): Promise<{ weekStart: string; coldSubs: number }[]> {
+  const pool = getPool();
+  const query = `
+    WITH week_series AS (
+      SELECT generate_series(
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date,
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date,
+        '1 week'::interval
+      )::date as week_start
+    ),
+    cold AS (
+      SELECT DISTINCT LOWER(ar.customer_email) as email,
+             DATE_TRUNC('week', ar.created_at)::date as week_start
+      FROM auto_renews ar
+      WHERE ar.customer_email IS NOT NULL
+        AND ar.created_at IS NOT NULL
+        ${IN_STUDIO_PLAN_FILTER}
+        AND ar.created_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND ar.created_at < DATE_TRUNC('week', CURRENT_DATE)::date
+        AND NOT EXISTS (
+          SELECT 1 FROM registrations r
+          WHERE LOWER(r.email) = LOWER(ar.customer_email)
+            AND r.attended_at IS NOT NULL
+            AND r.attended_at < ar.created_at
+            AND (r.subscription = 'false' OR r.subscription IS NULL)
+            ${dropInPassFilter("r.pass")}
+        )
+    )
+    SELECT ws.week_start::text as "weekStart",
+           COALESCE(COUNT(c.email), 0) as "coldSubs"
+    FROM week_series ws
+    LEFT JOIN cold c ON c.week_start = ws.week_start
+    GROUP BY ws.week_start
+    ORDER BY ws.week_start
+  `;
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    coldSubs: Number(r.coldSubs),
+  }));
+}
+
 // ── Usage Frequency by Category ──────────────────────────────
 
 import type { UsageCategoryData, UsageSegment, UsageData } from "@/types/dashboard";

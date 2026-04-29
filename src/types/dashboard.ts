@@ -808,10 +808,34 @@ export interface TrendsData {
   newCustomerVolume: NewCustomerVolumeData | null;
   newCustomerCohorts: NewCustomerCohortData | null;
   conversionPool: ConversionPoolModuleData | null;
+  journeyConversion: JourneyConversionData | null;
   introWeekConversion: IntroWeekConversionData | null;
   usage: UsageData | null;
   expiringIntroWeeks: ExpiringIntroWeekData | null;
   dailyMovement: DailyMovementRow[] | null;
+}
+
+// 3-card view: All Non-AR roll-up + Intro Week + Drop-in/Single-Class
+export interface JourneyBucketWeek {
+  weekStart: string;
+  weekEnd: string;
+  pool: number;
+  converts: number;
+}
+
+export interface JourneyBucketSeries {
+  weeks: JourneyBucketWeek[];        // ~12 historical complete weeks (oldest → newest)
+  avgPool: number;                    // mean across weeks
+  avgConverts: number;
+  avgRate: number;                    // % — converts / pool, weighted
+}
+
+export interface JourneyConversionData {
+  rollUp: JourneyBucketSeries;        // all non-AR
+  introWeek: JourneyBucketSeries;     // intro-week pool
+  aLaCarte: JourneyBucketSeries;      // drop-in / single-class / class-pack (excludes intro)
+  coldSubsByWeek: { weekStart: string; coldSubs: number }[];
+  avgColdSubs: number;
 }
 
 export interface DailyMovementRow {

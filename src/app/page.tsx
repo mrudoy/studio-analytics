@@ -126,6 +126,8 @@ import type {
   ConversionPoolModuleData,
   ConversionPoolSlice,
   ConversionPoolSliceData,
+  JourneyConversionData,
+  JourneyBucketSeries,
   IntroWeekData,
   ShopifyMerchData,
   ShopifyStats,
@@ -3378,6 +3380,125 @@ function NewCustomerChartCard({ volume, cohorts }: {
         </div>
       )}
     </DashboardCard>
+  );
+}
+
+// ─── Conversion Bucket Card ─────────────────────────────────
+// Single card used 3x in JourneyConversionCards: roll-up, intro week, drop-in.
+
+function ConversionBucketCard({
+  title,
+  description,
+  series,
+  footer,
+  accentColor,
+}: {
+  title: string;
+  description: string;
+  series: JourneyBucketSeries;
+  footer?: string;
+  accentColor: string;
+}) {
+  const lastWeek = series.weeks.length > 0 ? series.weeks[series.weeks.length - 1] : null;
+  const lastRate = lastWeek && lastWeek.pool > 0
+    ? Math.round((lastWeek.converts / lastWeek.pool) * 1000) / 10
+    : 0;
+
+  // Sparkline data: convert rate per week
+  const sparkData = series.weeks.map((w) => ({
+    week: w.weekStart,
+    rate: w.pool > 0 ? Math.round((w.converts / w.pool) * 1000) / 10 : 0,
+    pool: w.pool,
+    converts: w.converts,
+  }));
+
+  return (
+    <DashboardCard>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription className="text-sm text-muted-foreground mb-3">{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3" style={{ fontFamily: FONT_SANS }}>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Pool (last wk)</div>
+            <div className="text-2xl font-semibold tabular-nums">{lastWeek ? formatNumber(lastWeek.pool) : "—"}</div>
+            <div className="text-xs text-muted-foreground">Avg {formatNumber(series.avgPool)}/wk</div>
+          </div>
+          <div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Converts (last wk)</div>
+            <div className="text-2xl font-semibold tabular-nums">{lastWeek ? formatNumber(lastWeek.converts) : "—"}</div>
+            <div className="text-xs text-muted-foreground">Avg {series.avgConverts.toFixed(1)}/wk</div>
+          </div>
+          <div>
+            <div className="text-[0.75rem] uppercase tracking-wider text-muted-foreground">Rate (last wk)</div>
+            <div className="text-2xl font-semibold tabular-nums">{lastRate.toFixed(1)}%</div>
+            <div className="text-xs text-muted-foreground">Avg {series.avgRate.toFixed(1)}%</div>
+          </div>
+        </div>
+
+        {sparkData.length > 1 && (
+          <ChartContainer
+            config={{ rate: { label: "Rate %", color: accentColor } } satisfies ChartConfig}
+            className="h-[110px] w-full"
+          >
+            <RAreaChart accessibilityLayer data={sparkData} margin={{ top: 6, right: 6, left: 6, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`fill-${title.replace(/\s+/g, "-")}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={accentColor} stopOpacity={0.45} />
+                  <stop offset="95%" stopColor={accentColor} stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="week" hide />
+              <Area
+                dataKey="rate"
+                type="monotone"
+                fill={`url(#fill-${title.replace(/\s+/g, "-")})`}
+                stroke={accentColor}
+                strokeWidth={1.5}
+              />
+            </RAreaChart>
+          </ChartContainer>
+        )}
+
+        {footer && (
+          <div className="text-xs text-muted-foreground italic border-t pt-2">{footer}</div>
+        )}
+      </CardContent>
+    </DashboardCard>
+  );
+}
+
+// ─── Journey Conversion Cards (3-card row) ──────────────────
+
+function JourneyConversionCards({ data }: { data: JourneyConversionData | null }) {
+  if (!data) return <NoData label="Conversion data" />;
+  const coldFooter = data.avgColdSubs > 0
+    ? `+${data.avgColdSubs.toFixed(1)}/wk cold sub-starts (no prior visit)`
+    : undefined;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <ConversionBucketCard
+        title="All Non-AR"
+        description="Anyone with a non-subscriber visit → sub start"
+        series={data.rollUp}
+        footer={coldFooter}
+        accentColor={COLORS.member}
+      />
+      <ConversionBucketCard
+        title="Intro Week"
+        description="Active intro week customers → sub start"
+        series={data.introWeek}
+        accentColor={COLORS.teal}
+      />
+      <ConversionBucketCard
+        title="Drop-in / Single Class"
+        description="À-la-carte (incl. class packs, re-subs) → sub start"
+        series={data.aLaCarte}
+        accentColor={COLORS.copper}
+      />
+    </div>
   );
 }
 
@@ -7970,15 +8091,14 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
               <UserPlus className="size-7 shrink-0" style={{ color: SECTION_COLORS["conversion-new"] }} />
               <h1 className="text-3xl font-semibold tracking-tight">New Customers</h1>
             </div>
-            <p className="text-sm text-muted-foreground mt-1 ml-10">Weekly new customer volume, cohort analysis, and acquisition trends</p>
+            <p className="text-sm text-muted-foreground mt-1 ml-10">Non auto-renew → auto-renew conversion by entry path</p>
           </div>
-          {(trends?.newCustomerVolume || trends?.newCustomerCohorts) ? (
-            <>
-              <NewCustomerKPICards volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
-              <NewCustomerChartCard volume={trends?.newCustomerVolume ?? null} cohorts={trends?.newCustomerCohorts ?? null} />
-            </>
-          ) : (
-            <NoData label="New Customer data" />
+          <JourneyConversionCards data={trends?.journeyConversion ?? null} />
+          {trends?.conversionPool && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ConversionTimeCard pool={trends.conversionPool} />
+              <ConversionVisitsCard pool={trends.conversionPool} />
+            </div>
           )}
         </div>
       )}
