@@ -355,67 +355,56 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 /**
  * Get all active auto-renews.
  *
- * States included:
- *   - Valid Now: actively billing
- *   - Paused: on hold but committed
- *   - In Trial: trial period
- *   - Invalid: used all passes (e.g. SKY3 used 3/3), still a subscriber
- *   - Pending Cancel: canceling next cycle, currently active
- *   - Past Due: payment failed, not formally canceled
+ * Plan states considered "active" (per CLAUDE.md ACTIVE_STATES):
+ *   Valid Now, Paused, In Trial, Invalid, Pending Cancel.
+ * Past Due is NOT active (payment failed).
+ *
+ * Counting strategy — LATEST row per (email, plan_name):
+ *   - The latest row's plan_state must be in ACTIVE_STATES.
+ *   - The latest row's current_state must be NULL or 'active'. If it's
+ *     'canceled' or 'changed', the person genuinely canceled or moved
+ *     plans even though Union may keep plan_state='Valid Now' until the
+ *     paid period ends. Excluding these is what aligns the dashboard
+ *     count with Union.fit's admin "active members" number.
+ *
+ * Why "latest row" and not "any row had current_state='active'":
+ *   The previous implementation included anyone who had EVER had
+ *   current_state='active', which double-counted people who later
+ *   canceled or upgraded — they appear with latest plan_state='Valid Now'
+ *   / current_state='canceled'. That bug inflated the Member count by
+ *   ~10 (canonical 475 vs reality 466 on 2026-04-29).
+ *
+ * Why NULL current_state passes through:
+ *   Daily delta exports do not include current_state. For a row whose
+ *   latest snapshot is a daily delta, current_state is NULL and we trust
+ *   plan_state alone. The previous code's "fall back only if no row ever
+ *   had current_state" rule was too restrictive once any full export had
+ *   landed.
  *
  * NOTE: canceled_at is NOT used as a filter. For active subscribers,
  * Union.fit sets canceled_at to the next billing/renewal date, NOT the
  * cancellation date. Using it as a guard would filter out nearly everyone.
- * Instead, stale subscribers are cleaned up by reconcileAutoRenews() which
- * compares against each fresh export.
  *
  * Downstream callers (getActiveCounts, getAutoRenewStats) deduplicate by
  * customer_email so duplicate rows from multiple imports don't inflate counts.
  */
 export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
   const pool = getPool();
-  // A person is active on a plan if ANY of their rows has current_state = 'active'.
-  // Daily deltas create rows with plan_state='Valid Now' but NULL current_state
-  // for people who are actually canceled — so plan_state alone is unreliable.
-  // Full exports and subscription-changes CSVs set current_state reliably.
-  //
-  // Strategy:
-  //   1. Find all person+plan combos that have current_state='active' in any row
-  //   2. For people with NO current_state data at all, fall back to plan_state
-  //   3. Return one row per person+plan (latest by id)
   const { rows } = await pool.query(
-    `WITH active_signals AS (
-       -- Person+plan combos with at least one current_state='active' row
-       SELECT DISTINCT LOWER(customer_email) AS email, plan_name
-       FROM auto_renews
-       WHERE current_state = 'active'
-     ),
-     has_any_cs AS (
-       -- Person+plan combos with any current_state set (to distinguish "no data" from "canceled")
-       SELECT DISTINCT LOWER(customer_email) AS email, plan_name
-       FROM auto_renews
-       WHERE current_state IS NOT NULL
-     ),
-     latest_rows AS (
+    `WITH latest_rows AS (
        SELECT DISTINCT ON (LOWER(customer_email), plan_name)
               id, snapshot_id, plan_name, plan_state, plan_price,
-              customer_name, customer_email, created_at, canceled_at
+              customer_name, customer_email, created_at, canceled_at,
+              current_state
        FROM auto_renews
        ORDER BY LOWER(customer_email), plan_name, id DESC
      )
-     SELECT lr.id, lr.snapshot_id, lr.plan_name, lr.plan_state, lr.plan_price,
-            lr.customer_name, lr.customer_email, lr.created_at, lr.canceled_at
-     FROM latest_rows lr
-     WHERE (
-       -- Has current_state='active' in any row → active
-       EXISTS (SELECT 1 FROM active_signals a WHERE a.email = LOWER(lr.customer_email) AND a.plan_name = lr.plan_name)
-       OR (
-         -- No current_state data at all → fall back to plan_state
-         NOT EXISTS (SELECT 1 FROM has_any_cs h WHERE h.email = LOWER(lr.customer_email) AND h.plan_name = lr.plan_name)
-         AND lr.plan_state IN (${ACTIVE_STATES_SQL})
-       )
-     )
-     ORDER BY lr.plan_name`
+     SELECT id, snapshot_id, plan_name, plan_state, plan_price,
+            customer_name, customer_email, created_at, canceled_at
+     FROM latest_rows
+     WHERE plan_state IN (${ACTIVE_STATES_SQL})
+       AND (current_state IS NULL OR current_state = 'active')
+     ORDER BY plan_name`
   );
 
   return (rows as RawAutoRenewRow[]).map(mapRow);
