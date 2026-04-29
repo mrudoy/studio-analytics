@@ -14,6 +14,8 @@ import { getPool } from "@/lib/db/database";
 import { getPipelineQueue } from "@/lib/queue/pipeline-queue";
 import { fetchAllExports } from "@/lib/union-api/fetch-export";
 import { loadSettings } from "@/lib/crypto/credentials";
+import { getActiveCounts } from "@/lib/db/auto-renew-store";
+import { ACTIVE_STATES_SQL } from "@/lib/analytics/metrics/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +114,88 @@ export async function GET() {
     }
   } catch (err) {
     out.unionApi = { error: err instanceof Error ? err.message : String(err) };
+  }
+
+  // 5. Member count debug — surface multiple counting strategies side by side
+  // so a discrepancy with Union's admin UI can be localized to the source.
+  try {
+    const pool = getPool();
+    const canonical = await getActiveCounts();
+
+    // Alternative A: simple plan_state filter only, no current_state hybrid logic
+    // (this is what CLAUDE.md says "active = plan_state IN (...)" which is the
+    // intuitive definition; comparing surfaces drift between hybrid and simple)
+    const planStateOnly = await pool.query(
+      `SELECT
+         COUNT(DISTINCT LOWER(customer_email)) FILTER (WHERE plan_category = 'MEMBER') AS member,
+         COUNT(DISTINCT LOWER(customer_email)) FILTER (WHERE plan_category = 'SKY3') AS sky3,
+         COUNT(DISTINCT LOWER(customer_email)) FILTER (WHERE plan_category = 'SKY_TING_TV') AS sky_ting_tv,
+         COUNT(DISTINCT LOWER(customer_email)) FILTER (WHERE plan_category NOT IN ('MEMBER','SKY3','SKY_TING_TV') OR plan_category IS NULL) AS unknown,
+         COUNT(DISTINCT LOWER(customer_email)) AS total_unique_emails
+       FROM auto_renews
+       WHERE plan_state IN (${ACTIVE_STATES_SQL})`,
+    );
+
+    // Alternative B: latest row per (email, plan_name), then plan_state filter.
+    // This avoids counting people whose newest row is canceled but who have
+    // older rows still flagged active.
+    const latestPerPlan = await pool.query(
+      `WITH latest AS (
+         SELECT DISTINCT ON (LOWER(customer_email), plan_name)
+                LOWER(customer_email) AS email, plan_name, plan_state, plan_category
+         FROM auto_renews
+         ORDER BY LOWER(customer_email), plan_name, id DESC
+       )
+       SELECT
+         COUNT(DISTINCT email) FILTER (WHERE plan_category = 'MEMBER' AND plan_state IN (${ACTIVE_STATES_SQL})) AS member,
+         COUNT(DISTINCT email) FILTER (WHERE plan_category = 'SKY3' AND plan_state IN (${ACTIVE_STATES_SQL})) AS sky3,
+         COUNT(DISTINCT email) FILTER (WHERE plan_category = 'SKY_TING_TV' AND plan_state IN (${ACTIVE_STATES_SQL})) AS sky_ting_tv
+       FROM latest`,
+    );
+
+    // Alternative C: Members specifically — surface the actual emails so we
+    // can compare against Union's admin export. Cap at 600 to avoid huge response.
+    const memberEmails = await pool.query(
+      `WITH latest AS (
+         SELECT DISTINCT ON (LOWER(customer_email), plan_name)
+                LOWER(customer_email) AS email, plan_name, plan_state, plan_category, current_state
+         FROM auto_renews
+         ORDER BY LOWER(customer_email), plan_name, id DESC
+       )
+       SELECT email, plan_name, plan_state, current_state
+       FROM latest
+       WHERE plan_category = 'MEMBER' AND plan_state IN (${ACTIVE_STATES_SQL})
+       ORDER BY email
+       LIMIT 600`,
+    );
+
+    // Per-plan_state breakdown for Members so we can see WHICH state(s) drift
+    const memberStateBreakdown = await pool.query(
+      `WITH latest AS (
+         SELECT DISTINCT ON (LOWER(customer_email), plan_name)
+                LOWER(customer_email) AS email, plan_name, plan_state, plan_category, current_state
+         FROM auto_renews
+         ORDER BY LOWER(customer_email), plan_name, id DESC
+       )
+       SELECT plan_state, current_state,
+              COUNT(*) AS rows,
+              COUNT(DISTINCT email) AS unique_emails
+       FROM latest
+       WHERE plan_category = 'MEMBER'
+       GROUP BY plan_state, current_state
+       ORDER BY plan_state, current_state NULLS LAST`,
+    );
+
+    out.memberCountDebug = {
+      canonical_getActiveCounts: canonical,
+      planStateOnly: planStateOnly.rows[0],
+      latestRowPerPlan: latestPerPlan.rows[0],
+      memberStateBreakdown: memberStateBreakdown.rows,
+      memberEmailsCount: memberEmails.rows.length,
+      memberEmailsSample: memberEmails.rows.slice(0, 20),
+    };
+  } catch (err) {
+    out.memberCountDebug = { error: err instanceof Error ? err.message : String(err) };
   }
 
   return NextResponse.json(out, {
