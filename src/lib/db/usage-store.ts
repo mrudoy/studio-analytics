@@ -2095,9 +2095,37 @@ export interface TvDistributionResponse {
   tiers: { tier: string; count: number; pct: number; priorCount: number }[];
 }
 
+export interface TvTransition {
+  from: string;
+  to: string;
+  count: number;
+}
+
+export interface TvMovementResponse {
+  period_days: number;
+  boundary_crossings: {
+    into_success: { count: number; transitions: TvTransition[] };
+    into_risk: { count: number; transitions: TvTransition[] };
+  };
+  within_risk: {
+    improving: { count: number; transitions: TvTransition[] };
+    declining: { count: number; transitions: TvTransition[] };
+  };
+  within_success: {
+    improving: { count: number; transitions: TvTransition[] };
+    declining: { count: number; transitions: TvTransition[] };
+  };
+  stable: { count: number };
+  cohort_size: number;
+}
+
 export interface TvPageData {
   distribution: TvDistributionResponse;
+  movement: TvMovementResponse;
 }
+
+const TV_RISK_BANDS = ["inactive", "light"];
+const TV_SUCCESS_BANDS = ["active", "engaged"];
 
 /**
  * Active TV subscribers eligible for usage measurement, excluding paused and
@@ -2355,8 +2383,174 @@ export async function getTvPageData(periodWeeks = 4): Promise<TvPageData> {
     tiers.push({ tier: band, count, pct, priorCount });
   }
 
+  // ── Movement (vs prior cycle) ──
+  // Same bucket structure as Sky3 — boundary crossings + within-zone moves.
+  // Members without a prior cycle (only one completed billing) are excluded.
+  const buckets: Record<string, Record<string, number>> = {
+    boundary_into_success: {},
+    boundary_into_risk: {},
+    within_risk_improving: {},
+    within_risk_declining: {},
+    within_success_improving: {},
+    within_success_declining: {},
+  };
+  let stableCount = 0;
+  let movementCohortSize = 0;
+
+  for (const r of cycleTiers) {
+    const curBand = r.tier;
+    const priBand = r.prior_tier;
+    if (priBand === null) continue;
+    movementCohortSize++;
+
+    if (curBand === priBand) {
+      stableCount++;
+      continue;
+    }
+
+    const priInRisk = TV_RISK_BANDS.includes(priBand);
+    const curInRisk = TV_RISK_BANDS.includes(curBand);
+    const priInSuccess = TV_SUCCESS_BANDS.includes(priBand);
+    const curInSuccess = TV_SUCCESS_BANDS.includes(curBand);
+    const curIdx = TV_TIER_ORDER.indexOf(curBand);
+    const priIdx = TV_TIER_ORDER.indexOf(priBand);
+    const key = `${priBand}|${curBand}`;
+
+    if (priInRisk && curInSuccess) {
+      buckets.boundary_into_success[key] = (buckets.boundary_into_success[key] || 0) + 1;
+    } else if (priInSuccess && curInRisk) {
+      buckets.boundary_into_risk[key] = (buckets.boundary_into_risk[key] || 0) + 1;
+    } else if (priInRisk && curInRisk) {
+      if (curIdx > priIdx) buckets.within_risk_improving[key] = (buckets.within_risk_improving[key] || 0) + 1;
+      else buckets.within_risk_declining[key] = (buckets.within_risk_declining[key] || 0) + 1;
+    } else if (priInSuccess && curInSuccess) {
+      if (curIdx > priIdx) buckets.within_success_improving[key] = (buckets.within_success_improving[key] || 0) + 1;
+      else buckets.within_success_declining[key] = (buckets.within_success_declining[key] || 0) + 1;
+    }
+  }
+
+  const toTransitions = (map: Record<string, number>): TvTransition[] =>
+    Object.entries(map)
+      .map(([key, count]) => {
+        const [from, to] = key.split("|");
+        return { from, to, count };
+      })
+      .sort((a, b) => b.count - a.count);
+
+  const sumCounts = (map: Record<string, number>) => Object.values(map).reduce((s, c) => s + c, 0);
+
+  const movement: TvMovementResponse = {
+    period_days: periodWeeks * 7,
+    boundary_crossings: {
+      into_success: { count: sumCounts(buckets.boundary_into_success), transitions: toTransitions(buckets.boundary_into_success) },
+      into_risk: { count: sumCounts(buckets.boundary_into_risk), transitions: toTransitions(buckets.boundary_into_risk) },
+    },
+    within_risk: {
+      improving: { count: sumCounts(buckets.within_risk_improving), transitions: toTransitions(buckets.within_risk_improving) },
+      declining: { count: sumCounts(buckets.within_risk_declining), transitions: toTransitions(buckets.within_risk_declining) },
+    },
+    within_success: {
+      improving: { count: sumCounts(buckets.within_success_improving), transitions: toTransitions(buckets.within_success_improving) },
+      declining: { count: sumCounts(buckets.within_success_declining), transitions: toTransitions(buckets.within_success_declining) },
+    },
+    stable: { count: stableCount },
+    cohort_size: movementCohortSize,
+  };
+
   return {
     distribution: { periodDays, cohort: enrichedCohort, current, total, tiers },
+    movement,
+  };
+}
+
+/**
+ * TV movement members for the boundary/all-movement slide-outs.
+ * Mirror of getSky3MovementMembers.
+ */
+export async function getTvMovementMembers(params: {
+  group: MovementGroup;
+  from?: string;
+  to?: string;
+  fieldsOnly?: "email";
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: { name: string; email: string; prior_band: string; current_band: string; prior_visits: number; current_visits: number }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { group, from, to, fieldsOnly, page = 1, perPage = 25 } = params;
+
+  const { stableEmails } = await getStableTvCohort(pool);
+  const cycleTiers = await getTvCycleTiers(pool, stableEmails);
+
+  const matched: { email: string; priorBand: string; currentBand: string; priorVisits: number; currentVisits: number }[] = [];
+  for (const r of cycleTiers) {
+    if (r.prior_tier === null || r.prior_visits === null) continue;
+    const cur = { tier: r.tier, visits: r.total_visits };
+    const pri = { tier: r.prior_tier, visits: r.prior_visits };
+    if (cur.tier === pri.tier) continue;
+
+    const priInRisk = TV_RISK_BANDS.includes(pri.tier);
+    const curInRisk = TV_RISK_BANDS.includes(cur.tier);
+    const priInSuccess = TV_SUCCESS_BANDS.includes(pri.tier);
+    const curInSuccess = TV_SUCCESS_BANDS.includes(cur.tier);
+    const curIdx = TV_TIER_ORDER.indexOf(cur.tier);
+    const priIdx = TV_TIER_ORDER.indexOf(pri.tier);
+
+    let memberGroup: MovementGroup | null = null;
+    if (priInRisk && curInSuccess) memberGroup = "boundary_into_success";
+    else if (priInSuccess && curInRisk) memberGroup = "boundary_into_risk";
+    else if (priInRisk && curInRisk && curIdx > priIdx) memberGroup = "within_risk_improving";
+    else if (priInRisk && curInRisk && curIdx < priIdx) memberGroup = "within_risk_declining";
+    else if (priInSuccess && curInSuccess && curIdx > priIdx) memberGroup = "within_success_improving";
+    else if (priInSuccess && curInSuccess && curIdx < priIdx) memberGroup = "within_success_declining";
+
+    if (memberGroup !== group) continue;
+    if (from && pri.tier !== from) continue;
+    if (to && cur.tier !== to) continue;
+
+    matched.push({ email: r.member_email, priorBand: pri.tier, currentBand: cur.tier, priorVisits: pri.visits, currentVisits: cur.visits });
+  }
+
+  const total = matched.length;
+
+  if (fieldsOnly === "email") {
+    return {
+      members: matched.map(m => ({ name: "", email: m.email, prior_band: m.priorBand, current_band: m.currentBand, prior_visits: m.priorVisits, current_visits: m.currentVisits })),
+      total,
+      page: 1,
+    };
+  }
+
+  const offset = (page - 1) * perPage;
+  const pageItems = matched.slice(offset, offset + perPage);
+  if (pageItems.length === 0) return { members: [], total, page };
+
+  const emails = pageItems.map(m => m.email);
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email,
+      customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [emails]);
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, nr.name as string);
+
+  return {
+    members: pageItems.map(m => ({
+      name: nameMap.get(m.email) || m.email,
+      email: m.email,
+      prior_band: m.priorBand,
+      current_band: m.currentBand,
+      prior_visits: m.priorVisits,
+      current_visits: m.currentVisits,
+    })),
+    total,
+    page,
   };
 }
 
