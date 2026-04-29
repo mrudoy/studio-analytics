@@ -1034,7 +1034,7 @@ const SKY3_BAR_COLORS: Record<string, string> = {
 // ─── Sky3 Types ─────────────────────────────────────────────
 
 interface Sky3BandData { count: number; pct: number }
-interface Sky3CohortInfo { stable_count: number; excluded: { new_joins: number; paused: number; pending_cancel: number } }
+interface Sky3CohortInfo { stable_count: number; excluded: { partial_cycle: number; paused: number; pending_cancel: number } }
 interface Sky3DistData {
   periodDays: number;
   cohort: Sky3CohortInfo;
@@ -1258,7 +1258,7 @@ function Sky3AllMovementPanel({
       <div className="fixed top-0 right-0 bottom-0 z-50 bg-white shadow-xl flex flex-col" style={{ width: "max(400px, 33vw)", fontFamily: FONT_SANS }}>
         <div className="flex items-center justify-between p-4 border-b">
           <div>
-            <div className="font-semibold" style={{ fontSize: "15px" }}>All Movement Detail <span className="font-normal text-muted-foreground" style={{ fontSize: "13px" }}>(last {periodDays} days)</span></div>
+            <div className="font-semibold" style={{ fontSize: "15px" }}>All Movement Detail <span className="font-normal text-muted-foreground" style={{ fontSize: "13px" }}>(vs. previous billing cycle)</span></div>
             <div className="text-muted-foreground" style={{ fontSize: "13px" }}>{cohortSize} stable members</div>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XIcon size={18} /></button>
@@ -1377,7 +1377,9 @@ function Sky3DownloadButton({ count, onClick }: { count: number; onClick: () => 
 // ─── Sky3 Page (Consolidated Spec) ──────────────────────────
 
 export function UsageSky3Page() {
-  const [periodWeeks, setPeriodWeeks] = useState(4);
+  // periodWeeks is fixed at 4 — Sky3 distribution is anchored to each member's
+  // own billing cycle, not a calendar window, so the segment toggle was removed.
+  const periodWeeks = 4;
   const [selectedBand, setSelectedBand] = useState<string | null>(null);
   const [selectedBoundary, setSelectedBoundary] = useState<{ key: "boundary_into_success" | "boundary_into_risk"; title: string; transitions: Sky3Transition[] } | null>(null);
   const [showAllMovement, setShowAllMovement] = useState(false);
@@ -1400,14 +1402,13 @@ export function UsageSky3Page() {
           <BrandSky className="size-7 shrink-0" style={{ color: SECTION_COLORS["usage-sky3"] }} />
           <h1 className="text-3xl font-semibold tracking-tight">Sky3</h1>
         </div>
-        <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
 
       {/* Section 1: Where Members Are Now */}
       <div>
         <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
           Where Members Are Now{" "}
-          <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last {periodDays} days)</span>
+          <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last completed billing cycle)</span>
         </h2>
         <div className="flex flex-col">
           {distData && SKY3_BANDS.map((band) => {
@@ -1456,7 +1457,7 @@ export function UsageSky3Page() {
         <div style={{ marginTop: "8px" }}>
           <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1A1A1A", marginBottom: "4px" }}>
             Churn Risk Movement{" "}
-            <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(last {periodDays} days)</span>
+            <span style={{ fontSize: "14px", fontWeight: 400, color: "#95A5A6" }}>(vs. previous billing cycle)</span>
           </h2>
 
           <div className="flex flex-col" style={{ gap: "16px", paddingTop: "8px" }}>
@@ -1535,7 +1536,7 @@ export function UsageSky3Page() {
           </Button>
           {distData?.cohort && (
             <p style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", marginTop: "8px" }}>
-              Based on {distData.cohort.stable_count} members subscribed in both periods. Excludes {distData.cohort.excluded.new_joins} new joins, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
+              Based on {distData.cohort.stable_count} members with a completed 4-week billing cycle. Excludes {distData.cohort.excluded.partial_cycle} too new to measure, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
             </p>
           )}
         </div>

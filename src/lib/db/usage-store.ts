@@ -775,15 +775,22 @@ export async function getUsageScorecard(
   if (segment === "sky3") {
     const sky3Cards: ScorecardCard[] = [];
     const { stableEmails: sky3StableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
-    const sky3CurRows = await getSky3LiveTiers(pool, sky3StableEmails, periodStart, periodWeeks);
-    const sky3PriRows = await getSky3LiveTiers(pool, sky3StableEmails, priorPeriodStart, periodWeeks);
-    const buildCounts = (rows: { tier: string }[]) => {
+    const sky3CycleRows = await getSky3CycleTiers(pool, sky3StableEmails);
+    const buildCountsFromCycle = (rows: Sky3CycleTierRow[], pickPrior: boolean) => {
+      const eligible = pickPrior ? rows.filter(r => r.prior_tier !== null) : rows;
       const counts: Record<string, number> = {};
-      for (const r of rows) counts[r.tier] = (counts[r.tier] || 0) + 1;
-      return { total: rows.length, atTarget: rows.filter(r => TARGET_TIERS.sky3?.includes(r.tier)).length, tierCounts: counts };
+      for (const r of eligible) {
+        const tier = pickPrior ? (r.prior_tier as string) : r.tier;
+        counts[tier] = (counts[tier] || 0) + 1;
+      }
+      const atTarget = eligible.filter(r => {
+        const tier = pickPrior ? (r.prior_tier as string) : r.tier;
+        return TARGET_TIERS.sky3?.includes(tier);
+      }).length;
+      return { total: eligible.length, atTarget, tierCounts: counts };
     };
-    const currentTiers = buildCounts(sky3CurRows);
-    const priorTiers = buildCounts(sky3PriRows);
+    const currentTiers = buildCountsFromCycle(sky3CycleRows, false);
+    const priorTiers = buildCountsFromCycle(sky3CycleRows, true);
 
     // Card 1: % Using 3+ Classes (full_use + wants_more)
     const fullUseTiers = ["full_use", "wants_more"];
@@ -1231,7 +1238,7 @@ export async function getSky3TierDistribution(): Promise<{
   const pool = getPool();
   const periodStart = weeksAgo(4);
   const { stableEmails: s3Emails } = await getStableSky3Cohort(pool, periodStart, 4);
-  const tiers = await getSky3LiveTiers(pool, s3Emails, periodStart, 4);
+  const tiers = await getSky3CycleTiers(pool, s3Emails);
   const tierCounts: Record<string, number> = {};
   for (const r of tiers) tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
   const total = tiers.length;
@@ -1330,7 +1337,7 @@ export interface Sky3BandData {
 
 export interface Sky3CohortInfo {
   stable_count: number;
-  excluded: { new_joins: number; paused: number; pending_cancel: number };
+  excluded: { partial_cycle: number; paused: number; pending_cancel: number };
 }
 
 export interface Sky3DistributionResponse {
@@ -1341,20 +1348,29 @@ export interface Sky3DistributionResponse {
 }
 
 /**
- * Get the stable Sky3 cohort — members subscribed in both periods,
- * excluding paused, pending-cancel, and new joins.
+ * Get the stable Sky3 cohort — actively-subscribed members eligible for a
+ * usage-distribution measurement, excluding paused and pending-cancel members
+ * (whose visit pattern would be misleading) and members whose only Sky3 sub
+ * overlaps with an active MEMBER sub (counted under Members).
+ *
+ * Note: this function intentionally does NOT exclude "new joins" by signup
+ * date. Whether a member has a measurable cycle is decided downstream in
+ * `getSky3CycleTiers`, which requires a ≥21-day completed billing cycle.
+ * Members filtered out there are reported as `excluded.partial_cycle`.
  */
 async function getStableSky3Cohort(
   pool: import("pg").Pool,
-  periodStart: string,
-  periodWeeks: number
+  _periodStart: string,
+  _periodWeeks: number
 ): Promise<{ stableEmails: Set<string>; cohort: Sky3CohortInfo }> {
-  // All Sky3 emails with their state
+  // All Sky3 emails with their state — uses canonical ACTIVE_STATES (includes Invalid:
+  // pass-based subscribers who used all 3 classes are still subscribed and should be
+  // counted in usage analytics, not silently dropped).
   const { rows: activeRows } = await pool.query(`
     SELECT DISTINCT ON (LOWER(a.customer_email))
       LOWER(a.customer_email) AS email, a.plan_state, a.created_at
     FROM auto_renews a
-    WHERE a.plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
+    WHERE a.plan_state IN (${ACTIVE_STATES_SQL})
       AND a.plan_category = 'SKY3'
       AND a.customer_email IS NOT NULL
       AND (a.canceled_at IS NULL OR a.canceled_at::date > CURRENT_DATE)
@@ -1370,22 +1386,19 @@ async function getStableSky3Cohort(
   const pausedEmails = new Set<string>();
   const pendingCancelEmails = new Set<string>();
   const allActiveEmails = new Set<string>();
-  const newJoinEmails = new Set<string>();
 
   for (const r of activeRows) {
     const email = r.email as string;
     allActiveEmails.add(email);
     if (r.plan_state === "Paused") pausedEmails.add(email);
     if (r.plan_state === "Pending Cancel") pendingCancelEmails.add(email);
-    if (r.created_at && new Date(r.created_at as string) >= new Date(periodStart)) {
-      newJoinEmails.add(email);
-    }
   }
 
-  // Stable = active but not paused, not pending cancel, not new join
+  // Stable = active and not paused/pending cancel. Cycle-eligibility
+  // (≥21-day completed billing cycle) is enforced downstream.
   const stableEmails = new Set<string>();
   for (const email of allActiveEmails) {
-    if (!pausedEmails.has(email) && !pendingCancelEmails.has(email) && !newJoinEmails.has(email)) {
+    if (!pausedEmails.has(email) && !pendingCancelEmails.has(email)) {
       stableEmails.add(email);
     }
   }
@@ -1395,7 +1408,7 @@ async function getStableSky3Cohort(
     cohort: {
       stable_count: stableEmails.size,
       excluded: {
-        new_joins: newJoinEmails.size,
+        partial_cycle: 0, // populated by caller after cycle resolution
         paused: pausedEmails.size,
         pending_cancel: pendingCancelEmails.size,
       },
@@ -1437,49 +1450,151 @@ export interface Sky3PageData {
   movement: Sky3MovementResponse;
 }
 
-/** Live in-person visit count for Sky3 cohort — excludes TV passes. */
-async function getSky3LiveTiers(
+/**
+ * Resolve each Sky3 member's last completed billing cycle and the cycle before
+ * it from `orders`, then count in-person visits within each window.
+ *
+ * Why per-member cycles: Sky3 plans grant 3 passes per billing month, but each
+ * member's billing day is different. A fixed calendar window (e.g. last 28
+ * days) splits cycles unfairly — a member who reliably uses all 3 passes can
+ * land in any bucket depending on how their cycle straddles the window. By
+ * anchoring to each member's actual cycle, the bucket reflects real consumption
+ * over a complete period the member had full opportunity to consume.
+ *
+ * Cycle derivation:
+ *   - Renewal orders: `revenue_category IN ('SKY3','SKYHIGH3','SKY3 NEW')`
+ *     with `total > 0` (the family of 3-pack plan SKUs Union charges monthly).
+ *   - last_cycle_end   = most recent renewal order's created_at
+ *   - last_cycle_start = second-most-recent renewal order's created_at,
+ *                        falling back to max(signup, last_cycle_end - 1 month)
+ *                        when only one renewal exists.
+ *   - prior_cycle_*    = the cycle before the last completed one; null when
+ *                        fewer than 2 renewals exist.
+ *
+ * Returns one row per member with at least one renewal order. Members without
+ * any renewal data (brand-new signups, comp accounts) are filtered out — the
+ * caller can compute the excluded count via `cohort.size - rows.length`.
+ *
+ * Visits exclude TV passes (pass NOT ILIKE '%TV%') so the count reflects only
+ * in-studio class consumption that draws from the 3-pack.
+ */
+interface Sky3CycleTierRow {
+  member_email: string;
+  segment: "sky3";
+  last_cycle_start: string;
+  last_cycle_end: string;
+  total_visits: number;
+  tier: string;
+  prior_cycle_start: string | null;
+  prior_cycle_end: string | null;
+  prior_visits: number | null;
+  prior_tier: string | null;
+}
+
+async function getSky3CycleTiers(
   pool: import("pg").Pool,
-  emailSet: Set<string>,
-  periodStart: string,
-  periodWeeks: number
-): Promise<{ member_email: string; segment: string; total_visits: number; tier: string }[]> {
+  emailSet: Set<string>
+): Promise<Sky3CycleTierRow[]> {
   if (emailSet.size === 0) return [];
-  const periodEnd = new Date(periodStart);
-  periodEnd.setUTCDate(periodEnd.getUTCDate() + periodWeeks * 7);
-  const endStr = periodEnd.toISOString().slice(0, 10);
-  const monthsInPeriod = periodWeeks / 4.33;
   const emailList = Array.from(emailSet);
 
   const { rows } = await pool.query(`
-    WITH cohort AS (SELECT UNNEST($3::text[]) AS email),
-    visits AS (
-      SELECT LOWER(r.email) AS email, COUNT(*) AS total_visits
-      FROM registrations r
-      JOIN cohort c ON LOWER(r.email) = c.email
-      WHERE r.attended_at >= $1::date
-        AND r.attended_at < $2::date
-        AND r.state IN ('redeemed', 'confirmed')
-        AND r.email IS NOT NULL
-        AND (r.pass IS NULL OR r.pass NOT ILIKE '%TV%')
-      GROUP BY LOWER(r.email)
+    WITH cohort AS (SELECT DISTINCT UNNEST($1::text[]) AS email),
+    billings AS (
+      SELECT
+        LOWER(o.email) AS email,
+        o.created_at AS billing_date,
+        ROW_NUMBER() OVER (
+          PARTITION BY LOWER(o.email)
+          ORDER BY o.created_at DESC, o.id DESC
+        ) AS rn
+      FROM orders o
+      JOIN cohort c ON LOWER(o.email) = c.email
+      WHERE o.total > 0
+        AND o.revenue_category IN ('SKY3', 'SKYHIGH3', 'SKY3 NEW')
+    ),
+    sub_anchor AS (
+      SELECT DISTINCT ON (LOWER(customer_email))
+        LOWER(customer_email) AS email,
+        created_at AS sub_created_at
+      FROM auto_renews
+      WHERE plan_category = 'SKY3' AND customer_email IS NOT NULL
+      ORDER BY LOWER(customer_email), id DESC
+    ),
+    cycles AS (
+      SELECT
+        c.email,
+        b1.billing_date AS last_cycle_end,
+        COALESCE(
+          b2.billing_date,
+          GREATEST(s.sub_created_at, (b1.billing_date - INTERVAL '1 month')::date)
+        ) AS last_cycle_start,
+        b2.billing_date AS prior_cycle_end,
+        COALESCE(b3.billing_date, (b2.billing_date - INTERVAL '1 month')::date) AS prior_cycle_start
+      FROM cohort c
+      LEFT JOIN billings b1 ON b1.email = c.email AND b1.rn = 1
+      LEFT JOIN billings b2 ON b2.email = c.email AND b2.rn = 2
+      LEFT JOIN billings b3 ON b3.email = c.email AND b3.rn = 3
+      LEFT JOIN sub_anchor s ON s.email = c.email
+      WHERE b1.billing_date IS NOT NULL
+    ),
+    qualified_cycles AS (
+      -- Only keep members whose last cycle is at least ~4 weeks long.
+      -- Filters out single-billing partial first cycles (signup < 21 days
+      -- before first renewal) and anomalous mid-cycle billing retries.
+      SELECT * FROM cycles
+      WHERE (last_cycle_end - last_cycle_start) >= 21
     )
     SELECT
-      c.email AS member_email,
-      'sky3' AS segment,
-      COALESCE(v.total_visits, 0)::int AS total_visits,
+      cy.email AS member_email,
+      cy.last_cycle_start::text AS last_cycle_start,
+      cy.last_cycle_end::text AS last_cycle_end,
+      cy.prior_cycle_start::text AS prior_cycle_start,
+      cy.prior_cycle_end::text AS prior_cycle_end,
+      COALESCE((
+        SELECT COUNT(*)
+        FROM registrations r
+        WHERE LOWER(r.email) = cy.email
+          AND r.attended_at >= cy.last_cycle_start
+          AND r.attended_at < cy.last_cycle_end
+          AND r.state IN ('redeemed', 'confirmed')
+          AND (r.pass IS NULL OR r.pass NOT ILIKE '%TV%')
+      ), 0)::int AS last_visits,
       CASE
-        WHEN COALESCE(v.total_visits, 0) = 0 THEN 'not_using'
-        WHEN ROUND(COALESCE(v.total_visits, 0)::numeric / ${monthsInPeriod}) <= 1 THEN 'barely_using'
-        WHEN ROUND(COALESCE(v.total_visits, 0)::numeric / ${monthsInPeriod}) <= 2 THEN 'getting_there'
-        WHEN ROUND(COALESCE(v.total_visits, 0)::numeric / ${monthsInPeriod}) <= 3 THEN 'full_use'
-        ELSE 'wants_more'
-      END AS tier
-    FROM cohort c
-    LEFT JOIN visits v ON v.email = c.email
-  `, [periodStart, endStr, emailList]);
+        WHEN cy.prior_cycle_start IS NOT NULL AND cy.prior_cycle_end IS NOT NULL THEN
+          COALESCE((
+            SELECT COUNT(*)
+            FROM registrations r
+            WHERE LOWER(r.email) = cy.email
+              AND r.attended_at >= cy.prior_cycle_start
+              AND r.attended_at < cy.prior_cycle_end
+              AND r.state IN ('redeemed', 'confirmed')
+              AND (r.pass IS NULL OR r.pass NOT ILIKE '%TV%')
+          ), 0)::int
+        ELSE NULL
+      END AS prior_visits
+    FROM qualified_cycles cy
+  `, [emailList]);
 
-  return rows as { member_email: string; segment: string; total_visits: number; tier: string }[];
+  return rows.map((r: Record<string, unknown>) => {
+    const lastVisits = Number(r.last_visits ?? 0);
+    const priorVisitsRaw = r.prior_visits;
+    const priorVisits = priorVisitsRaw === null || priorVisitsRaw === undefined
+      ? null
+      : Number(priorVisitsRaw);
+    return {
+      member_email: r.member_email as string,
+      segment: "sky3" as const,
+      last_cycle_start: r.last_cycle_start as string,
+      last_cycle_end: r.last_cycle_end as string,
+      total_visits: lastVisits,
+      tier: assignTier("sky3", lastVisits),
+      prior_cycle_start: (r.prior_cycle_start as string | null) ?? null,
+      prior_cycle_end: (r.prior_cycle_end as string | null) ?? null,
+      prior_visits: priorVisits,
+      prior_tier: priorVisits === null ? null : assignTier("sky3", priorVisits),
+    };
+  });
 }
 
 /**
@@ -1490,21 +1605,23 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
   const pool = getPool();
   const periodDays = periodWeeks * 7;
   const periodStart = weeksAgo(periodWeeks);
-  const priorPeriodStart = weeksAgo(periodWeeks * 2);
 
-  // Single cohort + tier fetch (shared by distribution and movement)
   const { stableEmails, cohort } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
-  const [currentTiers, priorTiers] = await Promise.all([
-    getSky3LiveTiers(pool, stableEmails, periodStart, periodWeeks),
-    getSky3LiveTiers(pool, stableEmails, priorPeriodStart, periodWeeks),
-  ]);
+  const cycleTiers = await getSky3CycleTiers(pool, stableEmails);
+
+  // Members in the active cohort but without a ≥21-day completed billing
+  // cycle — too new to measure, or a billing anomaly.
+  const partialCycle = stableEmails.size - cycleTiers.length;
+  const enrichedCohort: Sky3CohortInfo = {
+    stable_count: cycleTiers.length,
+    excluded: { ...cohort.excluded, partial_cycle: partialCycle },
+  };
 
   // ── Distribution ──
-  const stableTiers = currentTiers.filter(r => stableEmails.has(r.member_email));
-  const total = stableTiers.length;
+  const total = cycleTiers.length;
   const current: Record<string, Sky3BandData> = {};
   const tierCounts: Record<string, number> = {};
-  for (const r of stableTiers) {
+  for (const r of cycleTiers) {
     tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
   }
   for (const band of SKY3_TIER_ORDER) {
@@ -1513,17 +1630,10 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
   }
 
   // ── Movement ──
+  // Compares each member's last completed cycle vs the cycle before it.
+  // Members with only one completed cycle (prior_tier === null) have no
+  // baseline to compare against, so they're excluded from movement counts.
 
-  const currentMap = new Map<string, string>();
-  const priorMap = new Map<string, string>();
-  for (const r of currentTiers) {
-    if (stableEmails.has(r.member_email)) currentMap.set(r.member_email, r.tier);
-  }
-  for (const r of priorTiers) {
-    if (stableEmails.has(r.member_email)) priorMap.set(r.member_email, r.tier);
-  }
-
-  // Categorize each member's movement
   const buckets: Record<string, Record<string, number>> = {
     boundary_into_success: {},
     boundary_into_risk: {},
@@ -1533,10 +1643,13 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
     within_success_declining: {},
   };
   let stableCount = 0;
+  let movementCohortSize = 0;
 
-  for (const email of stableEmails) {
-    const curBand = currentMap.get(email) || "not_using";
-    const priBand = priorMap.get(email) || "not_using";
+  for (const r of cycleTiers) {
+    const curBand = r.tier;
+    const priBand = r.prior_tier;
+    if (priBand === null) continue;
+    movementCohortSize++;
 
     if (curBand === priBand) {
       stableCount++;
@@ -1599,11 +1712,11 @@ export async function getSky3PageData(periodWeeks = 4): Promise<Sky3PageData> {
       declining: { count: sumCounts(buckets.within_success_declining), transitions: toTransitions(buckets.within_success_declining) },
     },
     stable: { count: stableCount },
-    cohort_size: stableEmails.size,
+    cohort_size: movementCohortSize,
   };
 
   return {
-    distribution: { periodDays, cohort, current, total },
+    distribution: { periodDays, cohort: enrichedCohort, current, total },
     movement,
   };
 }
@@ -1649,28 +1762,17 @@ export async function getSky3MovementMembers(params: {
   const pool = getPool();
   const { group, periodWeeks = 4, from, to, fieldsOnly, page = 1, perPage = 25 } = params;
   const periodStart = weeksAgo(periodWeeks);
-  const priorPeriodStart = weeksAgo(periodWeeks * 2);
 
   const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
-  const [currentTiers, priorTiers] = await Promise.all([
-    getSky3LiveTiers(pool, stableEmails, periodStart, periodWeeks),
-    getSky3LiveTiers(pool, stableEmails, priorPeriodStart, periodWeeks),
-  ]);
+  const cycleTiers = await getSky3CycleTiers(pool, stableEmails);
 
-  const currentMap = new Map<string, { tier: string; visits: number }>();
-  const priorMap = new Map<string, { tier: string; visits: number }>();
-  for (const r of currentTiers) {
-    if (stableEmails.has(r.member_email)) currentMap.set(r.member_email, { tier: r.tier, visits: r.total_visits });
-  }
-  for (const r of priorTiers) {
-    if (stableEmails.has(r.member_email)) priorMap.set(r.member_email, { tier: r.tier, visits: r.total_visits });
-  }
-
-  // Filter by group
+  // Filter by group — only members with both a current and prior cycle qualify
+  // for movement comparison.
   const matched: { email: string; priorBand: string; currentBand: string; priorVisits: number; currentVisits: number }[] = [];
-  for (const email of stableEmails) {
-    const cur = currentMap.get(email) || { tier: "not_using", visits: 0 };
-    const pri = priorMap.get(email) || { tier: "not_using", visits: 0 };
+  for (const r of cycleTiers) {
+    if (r.prior_tier === null || r.prior_visits === null) continue;
+    const cur = { tier: r.tier, visits: r.total_visits };
+    const pri = { tier: r.prior_tier, visits: r.prior_visits };
 
     if (cur.tier === pri.tier) continue; // stable, skip
 
@@ -1693,7 +1795,7 @@ export async function getSky3MovementMembers(params: {
     if (from && pri.tier !== from) continue;
     if (to && cur.tier !== to) continue;
 
-    matched.push({ email, priorBand: pri.tier, currentBand: cur.tier, priorVisits: pri.visits, currentVisits: cur.visits });
+    matched.push({ email: r.member_email, priorBand: pri.tier, currentBand: cur.tier, priorVisits: pri.visits, currentVisits: cur.visits });
   }
 
   const total = matched.length;
@@ -1759,11 +1861,11 @@ export async function getSky3MembersByBand(params: {
   // Get the stable cohort (same filter as the distribution bars)
   const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
 
-  // Get all Sky3 members with their visit counts for the period (live query, excludes TV)
-  const rows = await getSky3LiveTiers(pool, stableEmails, periodStart, periodWeeks);
+  // Resolve each member's last completed billing cycle and visits within it
+  const rows = await getSky3CycleTiers(pool, stableEmails);
 
-  // Filter by band AND stable cohort (matches what the bar chart shows)
-  const bandMembers = rows.filter(r => r.tier === band && stableEmails.has(r.member_email));
+  // Filter by band — cycle resolution already constrains to qualifying members
+  const bandMembers = rows.filter(r => r.tier === band);
   const total = bandMembers.length;
 
   // Get names for paginated subset
