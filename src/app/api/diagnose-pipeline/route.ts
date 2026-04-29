@@ -74,13 +74,40 @@ export async function GET() {
       out.unionApi = { error: "no API key configured" };
     } else {
       const all = await fetchAllExports(settings.unionApiKey);
+
+      // Read the watermark again so we can simulate the filter and see
+      // exactly which exports would pass / fail right now.
+      const pool = getPool();
+      const wmRow = (
+        await pool.query(
+          `SELECT high_water_date FROM fetch_watermarks WHERE report_type = 'unionApiExport'`,
+        )
+      ).rows[0];
+      const watermarkStr = (wmRow?.high_water_date as string | undefined) ?? null;
+      const watermarkMs = watermarkStr ? new Date(watermarkStr).getTime() : null;
+
+      const annotated = all.map((e, i) => {
+        const t = new Date(e.createdAt).getTime();
+        return {
+          i,
+          createdAt: e.createdAt,
+          createdAtParsedMs: Number.isFinite(t) ? t : null,
+          dataRangeStart: e.dataRange.start,
+          dataRangeEnd: e.dataRange.end,
+          passesFilter:
+            watermarkMs == null
+              ? true
+              : Number.isFinite(t) && t > watermarkMs,
+        };
+      });
+
       out.unionApi = {
         totalExports: all.length,
-        newestCreatedAt: all[0]?.createdAt ?? null,
-        newestDataRange: all[0]?.dataRange ?? null,
-        newestUrlPrefix: all[0]?.downloadUrl?.slice(0, 80) ?? null,
-        // Show a tiny sample of dates so we can see the spread
-        sampleCreatedAts: all.slice(0, 5).map((e) => e.createdAt),
+        watermark: watermarkStr,
+        watermarkParsedMs: watermarkMs,
+        passesFilterCount: annotated.filter((e) => e.passesFilter).length,
+        // Full list — small enough to be useful (62 rows ~ a few KB)
+        exports: annotated,
       };
     }
   } catch (err) {
