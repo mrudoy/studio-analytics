@@ -39,10 +39,12 @@ export function assignTier(segment: Segment, visitCount: number): string {
     if (visitCount === 3) return "full_use";
     return "wants_more";
   }
-  // tv — based on sessions in trailing 14 days
+  // tv — based on TV registrations in the member's last completed billing cycle
+  // (~28-31 days for monthly subs; last 28 days before renewal for annuals).
+  // Calibrated from live data: 48% inactive / 24% light / ~18% active / ~10% engaged.
   if (visitCount === 0) return "inactive";
-  if (visitCount === 1) return "light";
-  if (visitCount <= 3) return "active";
+  if (visitCount <= 2) return "light";
+  if (visitCount <= 7) return "active";
   return "engaged";
 }
 
@@ -829,6 +831,65 @@ export async function getUsageScorecard(
     return sky3Cards;
   }
 
+  // For TV: replace default cards with TV-specific cycle-based ones
+  if (segment === "tv") {
+    const tvCards: ScorecardCard[] = [];
+    const { stableEmails: tvStableEmails } = await getStableTvCohort(pool);
+    const tvCycleRows = await getTvCycleTiers(pool, tvStableEmails);
+
+    const buildCountsFromCycle = (rows: TvCycleTierRow[], pickPrior: boolean) => {
+      const eligible = pickPrior ? rows.filter(r => r.prior_tier !== null) : rows;
+      const counts: Record<string, number> = {};
+      for (const r of eligible) {
+        const tier = pickPrior ? (r.prior_tier as string) : r.tier;
+        counts[tier] = (counts[tier] || 0) + 1;
+      }
+      const atTarget = eligible.filter(r => {
+        const tier = pickPrior ? (r.prior_tier as string) : r.tier;
+        return TARGET_TIERS.tv?.includes(tier);
+      }).length;
+      return { total: eligible.length, atTarget, tierCounts: counts };
+    };
+    const currentTiers = buildCountsFromCycle(tvCycleRows, false);
+    const priorTiers = buildCountsFromCycle(tvCycleRows, true);
+
+    // Card 1: % Active in Last Cycle (light + active + engaged)
+    const curActivePct = currentTiers.total > 0
+      ? Math.round((currentTiers.atTarget / currentTiers.total) * 1000) / 10 : 0;
+    const priActivePct = priorTiers.total > 0
+      ? Math.round((priorTiers.atTarget / priorTiers.total) * 1000) / 10 : 0;
+    tvCards.push({
+      key: "pct_active_tv", label: "% Active in Last Cycle", value: curActivePct, format: "pct",
+      sparkline: [], delta: Math.round((curActivePct - priActivePct) * 10) / 10, deltaType: "pct", invertDirection: false,
+    });
+
+    // Card 2: % Inactive (0 visits in last cycle) — inverted
+    const curInactive = currentTiers.tierCounts["inactive"] || 0;
+    const curInactivePct = currentTiers.total > 0
+      ? Math.round((curInactive / currentTiers.total) * 1000) / 10 : 0;
+    const priInactive = priorTiers.tierCounts["inactive"] || 0;
+    const priInactivePct = priorTiers.total > 0
+      ? Math.round((priInactive / priorTiers.total) * 1000) / 10 : 0;
+    tvCards.push({
+      key: "pct_inactive_tv", label: "% Inactive (0 visits)", value: curInactivePct, format: "pct",
+      sparkline: [], delta: Math.round((curInactivePct - priInactivePct) * 10) / 10, deltaType: "pct", invertDirection: true,
+    });
+
+    // Card 3: Engaged (8+ visits in last cycle — heaviest streamers)
+    const engaged = currentTiers.tierCounts["engaged"] || 0;
+    const priEngaged = priorTiers.tierCounts["engaged"] || 0;
+    tvCards.push({
+      key: "engaged_count_tv", label: "Engaged (8+)", value: engaged, format: "count",
+      sparkline: [], delta: engaged - priEngaged, deltaType: "count", invertDirection: false,
+    });
+
+    // Card 4: Total Subscribed (reuse the calendar-based one from above)
+    const totalSub = cards.find(c => c.key === "total_subscribed");
+    if (totalSub) tvCards.push(totalSub);
+
+    return tvCards;
+  }
+
   // For segment-specific scorecards, add extra metrics
   if (segment === "members") {
     // Avg Visits/Mo — insert at position 3 (before Dormant)
@@ -1102,6 +1163,12 @@ export async function getUsageMembers(params: {
   const pool = getPool();
   const { segment, filter, page = 1, perPage = 25 } = params;
 
+  // TV uses cycle-anchored tiers so the member-table matches the bars.
+  // Sky3 has its own dedicated band-list endpoint; only TV is rerouted here.
+  if (segment === "tv") {
+    return getTvUsageMembersFromCycle({ filter, page, perPage });
+  }
+
   // Get latest transition period for this segment
   const { rows: periodRows } = await pool.query(`
     SELECT period_start FROM member_tier_transitions
@@ -1201,6 +1268,119 @@ export async function getUsageMembers(params: {
 }
 
 /**
+ * TV action-table backed by cycle-anchored tiers — keeps the table consistent
+ * with the bar chart (both bucket members by their last completed billing
+ * cycle, not a calendar week).
+ */
+async function getTvUsageMembersFromCycle(params: {
+  filter?: "at_risk" | "newly_on_target" | "dormant" | "improving" | null;
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  members: {
+    email: string;
+    name: string;
+    currentTier: string;
+    priorTier: string;
+    direction: string;
+    currentVisits: number;
+    priorVisits: number;
+    sparkline?: number[];
+  }[];
+  total: number;
+  page: number;
+}> {
+  const pool = getPool();
+  const { filter, page = 1, perPage = 25 } = params;
+
+  const { stableEmails } = await getStableTvCohort(pool);
+  const cycleRows = await getTvCycleTiers(pool, stableEmails);
+
+  const targetSet = new Set(TARGET_TIERS.tv ?? []);
+  const directionFor = (cur: string, pri: string | null): string => {
+    if (pri === null) return "same";
+    const ci = TV_TIER_ORDER.indexOf(cur);
+    const pi = TV_TIER_ORDER.indexOf(pri);
+    if (ci > pi) return "up";
+    if (ci < pi) return "down";
+    return "same";
+  };
+
+  const filtered = cycleRows.filter(r => {
+    if (!filter) return true;
+    const dir = directionFor(r.tier, r.prior_tier);
+    if (filter === "at_risk") {
+      return r.prior_tier !== null && targetSet.has(r.prior_tier) && !targetSet.has(r.tier);
+    }
+    if (filter === "newly_on_target") {
+      return r.prior_tier !== null && !targetSet.has(r.prior_tier) && targetSet.has(r.tier);
+    }
+    if (filter === "dormant") return r.tier === "inactive";
+    if (filter === "improving") return dir === "up";
+    return true;
+  });
+
+  // Stable ordering: down first, then same, then up; within each, higher visits first.
+  filtered.sort((a, b) => {
+    const dirOrder = (d: string) => (d === "down" ? 0 : d === "same" ? 1 : 2);
+    const da = dirOrder(directionFor(a.tier, a.prior_tier));
+    const db = dirOrder(directionFor(b.tier, b.prior_tier));
+    if (da !== db) return da - db;
+    return b.total_visits - a.total_visits;
+  });
+
+  const total = filtered.length;
+  const offset = (page - 1) * perPage;
+  const pageRows = filtered.slice(offset, offset + perPage);
+  if (pageRows.length === 0) return { members: [], total, page };
+
+  const emails = pageRows.map(r => r.member_email);
+
+  // Names (latest from auto_renews)
+  const { rows: nameRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(customer_email))
+      LOWER(customer_email) AS email, customer_name AS name
+    FROM auto_renews
+    WHERE LOWER(customer_email) = ANY($1)
+    ORDER BY LOWER(customer_email), id DESC
+  `, [emails]);
+  const nameMap = new Map<string, string>();
+  for (const nr of nameRows) nameMap.set(nr.email as string, (nr.name as string) || "");
+
+  // 8-week visit sparklines from member_weekly_visits (independent calendar trend)
+  const sparklineMap = new Map<string, number[]>();
+  const eightWeeksAgo = weeksAgo(8);
+  const { rows: sparkRows } = await pool.query(`
+    SELECT member_email, week_start, visit_count
+    FROM member_weekly_visits
+    WHERE member_email = ANY($1)
+      AND segment = 'tv'
+      AND week_start >= $2::date
+    ORDER BY member_email, week_start
+  `, [emails, eightWeeksAgo]);
+  for (const sr of sparkRows) {
+    const em = sr.member_email as string;
+    if (!sparklineMap.has(em)) sparklineMap.set(em, []);
+    sparklineMap.get(em)!.push(Number(sr.visit_count));
+  }
+
+  return {
+    members: pageRows.map(r => ({
+      email: r.member_email,
+      name: nameMap.get(r.member_email) || r.member_email,
+      currentTier: r.tier,
+      priorTier: r.prior_tier ?? r.tier,
+      direction: directionFor(r.tier, r.prior_tier),
+      currentVisits: r.total_visits,
+      priorVisits: r.prior_visits ?? 0,
+      sparkline: sparklineMap.get(r.member_email) ?? [],
+    })),
+    total,
+    page,
+  };
+}
+
+/**
  * Export members as CSV data.
  */
 export async function exportUsageMembers(params: {
@@ -1251,7 +1431,11 @@ export async function getSky3TierDistribution(): Promise<{
 }
 
 /**
- * TV-specific: get engagement distribution with prior period comparison.
+ * TV-specific: get engagement distribution with prior-cycle comparison.
+ *
+ * Cycle-anchored — each member is bucketed by their visits in their own last
+ * completed billing cycle. `priorCount` comes from the same members' prior
+ * cycle (members with only one completed cycle don't contribute to prior).
  */
 export async function getTvEngagementDistribution(): Promise<{
   tier: string;
@@ -1260,41 +1444,24 @@ export async function getTvEngagementDistribution(): Promise<{
   priorCount: number;
 }[]> {
   const pool = getPool();
-  const { rows: latestRows } = await pool.query(`
-    SELECT DISTINCT week_start FROM member_weekly_visits
-    WHERE segment = 'tv'
-    ORDER BY week_start DESC LIMIT 2
-  `);
-  if (latestRows.length === 0) return [];
+  const { stableEmails } = await getStableTvCohort(pool);
+  const cycleRows = await getTvCycleTiers(pool, stableEmails);
 
-  const currentWs = latestRows[0].week_start;
-  const priorWs = latestRows[1]?.week_start;
-
-  const { rows: currentRows } = await pool.query(`
-    SELECT tier, COUNT(*) AS cnt
-    FROM member_weekly_visits
-    WHERE segment = 'tv' AND week_start = $1::date
-    GROUP BY tier
-  `, [currentWs]);
-
-  const priorRows = priorWs ? (await pool.query(`
-    SELECT tier, COUNT(*) AS cnt
-    FROM member_weekly_visits
-    WHERE segment = 'tv' AND week_start = $1::date
-    GROUP BY tier
-  `, [priorWs])).rows : [];
-
-  const total = currentRows.reduce((s: number, r: { cnt: string }) => s + Number(r.cnt), 0);
+  const total = cycleRows.length;
+  const curCounts: Record<string, number> = {};
+  const priCounts: Record<string, number> = {};
+  for (const r of cycleRows) {
+    curCounts[r.tier] = (curCounts[r.tier] || 0) + 1;
+    if (r.prior_tier) priCounts[r.prior_tier] = (priCounts[r.prior_tier] || 0) + 1;
+  }
 
   return TV_TIER_ORDER.map(tier => {
-    const cur = currentRows.find((r: { tier: string }) => r.tier === tier);
-    const pri = priorRows.find((r: { tier: string }) => r.tier === tier);
-    const count = cur ? Number(cur.cnt) : 0;
+    const count = curCounts[tier] || 0;
     return {
       tier,
       count,
       pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
-      priorCount: pri ? Number(pri.cnt) : 0,
+      priorCount: priCounts[tier] || 0,
     };
   });
 }
@@ -1903,5 +2070,292 @@ export async function getSky3MembersByBand(params: {
     })),
     total,
     page,
+  };
+}
+
+// ── TV Distribution (cycle-anchored) ────────────────────────
+
+export interface TvCohortInfo {
+  stable_count: number;
+  excluded: { partial_cycle: number; paused: number; pending_cancel: number };
+}
+
+export interface TvBandData {
+  count: number;
+  pct: number;
+  priorCount: number;
+}
+
+export interface TvDistributionResponse {
+  periodDays: number;
+  cohort: TvCohortInfo;
+  current: Record<string, TvBandData>;
+  total: number;
+  // Per-tier rows in stable order, suitable for the bar chart consumer.
+  tiers: { tier: string; count: number; pct: number; priorCount: number }[];
+}
+
+export interface TvPageData {
+  distribution: TvDistributionResponse;
+}
+
+/**
+ * Active TV subscribers eligible for usage measurement, excluding paused and
+ * pending-cancel members (whose engagement signal would be misleading).
+ *
+ * Cycle eligibility (≥21-day completed billing cycle, including monthly and
+ * annual variants) is enforced downstream in `getTvCycleTiers`. Members
+ * filtered out there are reported as `excluded.partial_cycle`.
+ */
+async function getStableTvCohort(
+  pool: import("pg").Pool
+): Promise<{ stableEmails: Set<string>; cohort: TvCohortInfo }> {
+  const { rows: activeRows } = await pool.query(`
+    SELECT DISTINCT ON (LOWER(a.customer_email))
+      LOWER(a.customer_email) AS email, a.plan_state
+    FROM auto_renews a
+    WHERE a.plan_state IN (${ACTIVE_STATES_SQL})
+      AND a.plan_category = 'SKY_TING_TV'
+      AND a.customer_email IS NOT NULL
+      AND (a.canceled_at IS NULL OR a.canceled_at::date > CURRENT_DATE)
+    ORDER BY LOWER(a.customer_email), a.id DESC
+  `);
+
+  const pausedEmails = new Set<string>();
+  const pendingCancelEmails = new Set<string>();
+  const allActiveEmails = new Set<string>();
+  for (const r of activeRows) {
+    const email = r.email as string;
+    allActiveEmails.add(email);
+    if (r.plan_state === "Paused") pausedEmails.add(email);
+    if (r.plan_state === "Pending Cancel") pendingCancelEmails.add(email);
+  }
+
+  const stableEmails = new Set<string>();
+  for (const email of allActiveEmails) {
+    if (!pausedEmails.has(email) && !pendingCancelEmails.has(email)) {
+      stableEmails.add(email);
+    }
+  }
+
+  return {
+    stableEmails,
+    cohort: {
+      stable_count: stableEmails.size,
+      excluded: {
+        partial_cycle: 0, // populated by caller after cycle resolution
+        paused: pausedEmails.size,
+        pending_cancel: pendingCancelEmails.size,
+      },
+    },
+  };
+}
+
+/**
+ * For each TV member, resolve the last completed billing cycle and the cycle
+ * before it, then count TV registrations in each window.
+ *
+ * Why join on `union_pass_id` ↔ `subscription_pass_id` instead of
+ * `revenue_category`: TV renewal orders show up under many category strings
+ * — `'SKY TING TV'`, `'Founding Member Annual '` (trailing space),
+ * `'Uncategorized'`, `'NEW SUBSCRIBER SPECIAL'`, etc. The `subscription_pass_id`
+ * column always carries Union's subscription identifier on a renewal charge,
+ * regardless of category. Joining on it is the canonical way to find a
+ * subscription's billing history (verified against Founding Member Annual
+ * subs whose $240 charges sit under category `'Founding Member Annual'`).
+ *
+ * Window selection adapts to cycle cadence:
+ *   - Monthly (21-90 day cycle): natural billing-to-billing window [b2, b1)
+ *   - Annual / very irregular (>90 days): last 28 days before renewal
+ *     [b1 - 28d, b1) — a year-long window would dilute engagement signal
+ *   - Single billing: fall back to [max(signup, b1 - 28d), b1)
+ *   - <21 day cycle or no billings: excluded
+ *
+ * Visits exclude non-TV passes (`pass ILIKE '%TV%'`) so the count reflects
+ * only digital streaming engagement.
+ */
+interface TvCycleTierRow {
+  member_email: string;
+  segment: "tv";
+  last_cycle_start: string;
+  last_cycle_end: string;
+  total_visits: number;
+  tier: string;
+  prior_cycle_start: string | null;
+  prior_cycle_end: string | null;
+  prior_visits: number | null;
+  prior_tier: string | null;
+}
+
+async function getTvCycleTiers(
+  pool: import("pg").Pool,
+  emailSet: Set<string>
+): Promise<TvCycleTierRow[]> {
+  if (emailSet.size === 0) return [];
+  const emailList = Array.from(emailSet);
+
+  const { rows } = await pool.query(`
+    WITH cohort AS (SELECT DISTINCT UNNEST($1::text[]) AS email),
+    -- Every TV subscription pass id this email has ever held
+    tv_pass_ids AS (
+      SELECT DISTINCT LOWER(a.customer_email) AS email, a.union_pass_id
+      FROM auto_renews a
+      JOIN cohort c ON LOWER(a.customer_email) = c.email
+      WHERE a.plan_category = 'SKY_TING_TV'
+        AND a.union_pass_id IS NOT NULL AND a.union_pass_id <> ''
+    ),
+    billings AS (
+      SELECT t.email, o.created_at AS billing_date,
+        ROW_NUMBER() OVER (
+          PARTITION BY t.email
+          ORDER BY o.created_at DESC, o.id DESC
+        ) AS rn
+      FROM tv_pass_ids t
+      JOIN orders o ON o.subscription_pass_id = t.union_pass_id
+      WHERE o.total > 0
+    ),
+    sub_anchor AS (
+      SELECT DISTINCT ON (LOWER(customer_email))
+        LOWER(customer_email) AS email,
+        created_at AS sub_created_at
+      FROM auto_renews
+      WHERE plan_category = 'SKY_TING_TV' AND customer_email IS NOT NULL
+      ORDER BY LOWER(customer_email), id DESC
+    ),
+    cycles AS (
+      SELECT
+        c.email,
+        b1.billing_date AS last_cycle_end,
+        -- Window selection by cycle cadence
+        CASE
+          WHEN b2.billing_date IS NOT NULL
+               AND (b1.billing_date - b2.billing_date) BETWEEN 21 AND 90
+            THEN b2.billing_date
+          WHEN b2.billing_date IS NOT NULL
+               AND (b1.billing_date - b2.billing_date) > 90
+            THEN (b1.billing_date - INTERVAL '28 days')::date
+          WHEN b2.billing_date IS NULL AND b1.billing_date IS NOT NULL
+            THEN GREATEST(s.sub_created_at, (b1.billing_date - INTERVAL '28 days')::date)
+          ELSE NULL
+        END AS last_cycle_start,
+        -- Prior cycle: same logic shifted one renewal back
+        CASE
+          WHEN b3.billing_date IS NOT NULL
+               AND b2.billing_date IS NOT NULL
+               AND (b2.billing_date - b3.billing_date) BETWEEN 21 AND 90
+            THEN b3.billing_date
+          WHEN b2.billing_date IS NOT NULL
+               AND (
+                 b3.billing_date IS NULL
+                 OR (b2.billing_date - b3.billing_date) > 90
+               )
+            THEN (b2.billing_date - INTERVAL '28 days')::date
+          ELSE NULL
+        END AS prior_cycle_start,
+        b2.billing_date AS prior_cycle_end
+      FROM cohort c
+      LEFT JOIN billings b1 ON b1.email = c.email AND b1.rn = 1
+      LEFT JOIN billings b2 ON b2.email = c.email AND b2.rn = 2
+      LEFT JOIN billings b3 ON b3.email = c.email AND b3.rn = 3
+      LEFT JOIN sub_anchor s ON s.email = c.email
+      WHERE b1.billing_date IS NOT NULL
+    ),
+    qualified_cycles AS (
+      -- Drop members whose last window is missing (anomalous <21d natural cycle
+      -- with no usable fallback) or shorter than 21 days.
+      SELECT * FROM cycles
+      WHERE last_cycle_start IS NOT NULL
+        AND (last_cycle_end - last_cycle_start) >= 21
+    )
+    SELECT
+      cy.email AS member_email,
+      cy.last_cycle_start::text AS last_cycle_start,
+      cy.last_cycle_end::text AS last_cycle_end,
+      cy.prior_cycle_start::text AS prior_cycle_start,
+      cy.prior_cycle_end::text AS prior_cycle_end,
+      COALESCE((
+        SELECT COUNT(*)
+        FROM registrations r
+        WHERE LOWER(r.email) = cy.email
+          AND r.attended_at >= cy.last_cycle_start
+          AND r.attended_at < cy.last_cycle_end
+          AND r.state IN ('redeemed', 'confirmed')
+          AND r.pass ILIKE '%TV%'
+      ), 0)::int AS last_visits,
+      CASE
+        WHEN cy.prior_cycle_start IS NOT NULL AND cy.prior_cycle_end IS NOT NULL THEN
+          COALESCE((
+            SELECT COUNT(*)
+            FROM registrations r
+            WHERE LOWER(r.email) = cy.email
+              AND r.attended_at >= cy.prior_cycle_start
+              AND r.attended_at < cy.prior_cycle_end
+              AND r.state IN ('redeemed', 'confirmed')
+              AND r.pass ILIKE '%TV%'
+          ), 0)::int
+        ELSE NULL
+      END AS prior_visits
+    FROM qualified_cycles cy
+  `, [emailList]);
+
+  return rows.map((r: Record<string, unknown>) => {
+    const lastVisits = Number(r.last_visits ?? 0);
+    const priorVisitsRaw = r.prior_visits;
+    const priorVisits = priorVisitsRaw === null || priorVisitsRaw === undefined
+      ? null
+      : Number(priorVisitsRaw);
+    return {
+      member_email: r.member_email as string,
+      segment: "tv" as const,
+      last_cycle_start: r.last_cycle_start as string,
+      last_cycle_end: r.last_cycle_end as string,
+      total_visits: lastVisits,
+      tier: assignTier("tv", lastVisits),
+      prior_cycle_start: (r.prior_cycle_start as string | null) ?? null,
+      prior_cycle_end: (r.prior_cycle_end as string | null) ?? null,
+      prior_visits: priorVisits,
+      prior_tier: priorVisits === null ? null : assignTier("tv", priorVisits),
+    };
+  });
+}
+
+/**
+ * Get all TV page data — cycle-anchored distribution + cohort metadata.
+ * No movement section yet (annual subs make a two-cycle comparison weird).
+ */
+export async function getTvPageData(periodWeeks = 4): Promise<TvPageData> {
+  const pool = getPool();
+  const periodDays = periodWeeks * 7;
+
+  const { stableEmails, cohort } = await getStableTvCohort(pool);
+  const cycleTiers = await getTvCycleTiers(pool, stableEmails);
+
+  const partialCycle = stableEmails.size - cycleTiers.length;
+  const enrichedCohort: TvCohortInfo = {
+    stable_count: cycleTiers.length,
+    excluded: { ...cohort.excluded, partial_cycle: partialCycle },
+  };
+
+  const total = cycleTiers.length;
+  const tierCounts: Record<string, number> = {};
+  const priorTierCounts: Record<string, number> = {};
+  for (const r of cycleTiers) {
+    tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
+    if (r.prior_tier) {
+      priorTierCounts[r.prior_tier] = (priorTierCounts[r.prior_tier] || 0) + 1;
+    }
+  }
+  const current: Record<string, TvBandData> = {};
+  const tiers: { tier: string; count: number; pct: number; priorCount: number }[] = [];
+  for (const band of TV_TIER_ORDER) {
+    const count = tierCounts[band] || 0;
+    const priorCount = priorTierCounts[band] || 0;
+    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    current[band] = { count, pct, priorCount };
+    tiers.push({ tier: band, count, pct, priorCount });
+  }
+
+  return {
+    distribution: { periodDays, cohort: enrichedCohort, current, total, tiers },
   };
 }

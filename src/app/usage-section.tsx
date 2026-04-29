@@ -1574,8 +1574,18 @@ export function UsageSky3Page() {
 
 // ─── TV Detail Page ─────────────────────────────────────────
 
+interface TvDistData {
+  periodDays: number;
+  cohort: { stable_count: number; excluded: { partial_cycle: number; paused: number; pending_cancel: number } };
+  current: Record<string, { count: number; pct: number; priorCount: number }>;
+  total: number;
+  tiers: TvEngagementRow[];
+}
+
 export function UsageTvPage() {
-  const [periodWeeks, setPeriodWeeks] = useState(4);
+  // periodWeeks is fixed at 4 — TV distribution is anchored to each member's
+  // own billing cycle, not a calendar window, so the segment toggle was removed.
+  const periodWeeks = 4;
   const [filter, setFilter] = useState<ActionFilter>(null);
   const [page, setPage] = useState(1);
   const perPage = 25;
@@ -1587,10 +1597,12 @@ export function UsageTvPage() {
     [periodWeeks]
   );
 
-  const { data: engagementData } = useUsageData<TvEngagementRow[]>(
-    `/api/usage/tv-engagement`,
-    []
+  const { data: pageData } = useUsageData<{ distribution: TvDistData }>(
+    `/api/usage/tv/page-data?period_weeks=${periodWeeks}`,
+    [periodWeeks]
   );
+  const distData = pageData?.distribution;
+  const engagementTiers = distData?.tiers ?? null;
 
   const filterParam = filter ? `&filter=${filter}` : "";
   const { data: membersData } = useUsageData<{ members: UsageMemberRow[]; total: number; page: number }>(
@@ -1605,25 +1617,30 @@ export function UsageTvPage() {
           <DeviceTv className="size-7 shrink-0" style={{ color: SECTION_COLORS["usage-tv"] }} />
           <h1 className="text-3xl font-semibold tracking-tight">Sky Ting TV</h1>
         </div>
-        <TimeWindowControl value={periodWeeks} onChange={setPeriodWeeks} />
       </div>
       {(() => {
-        if (engagementData && Array.isArray(engagementData) && engagementData.length > 0) {
-          const inactiveCount = engagementData.find(t => t.tier === "inactive")?.count ?? 0;
-          const activeCount = engagementData.filter(t => t.tier !== "inactive").reduce((s, t) => s + t.count, 0);
-          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{inactiveCount.toLocaleString()} inactive — {activeCount.toLocaleString()} active in last 14 days</p>;
+        if (engagementTiers && engagementTiers.length > 0) {
+          const inactiveCount = engagementTiers.find(t => t.tier === "inactive")?.count ?? 0;
+          const activeCount = engagementTiers.filter(t => t.tier !== "inactive").reduce((s, t) => s + t.count, 0);
+          return <p className="text-sm ml-10 -mt-2" style={{ color: "#7F8C8D" }}>{inactiveCount.toLocaleString()} inactive — {activeCount.toLocaleString()} active in last completed billing cycle</p>;
         }
         return <p className="text-sm text-muted-foreground ml-10 -mt-2">Digital subscription engagement</p>;
       })()}
 
-      <AlertBanner segment="tv" tierData={engagementData && Array.isArray(engagementData) ? engagementData : null} />
+      <AlertBanner segment="tv" tierData={engagementTiers} />
 
       {scorecardData?.cards && (
         <UsageScorecard cards={scorecardData.cards} periodWeeks={periodWeeks} />
       )}
 
-      {engagementData && Array.isArray(engagementData) && (
-        <TvEngagementBars tiers={engagementData} />
+      {engagementTiers && (
+        <TvEngagementBars tiers={engagementTiers} />
+      )}
+
+      {distData?.cohort && (
+        <p style={{ fontSize: "13px", fontWeight: 400, color: "#95A5A6", marginTop: "4px" }}>
+          Based on {distData.cohort.stable_count} TV members with a completed billing cycle. Excludes {distData.cohort.excluded.partial_cycle} too new or no billing record, {distData.cohort.excluded.paused} paused, and {distData.cohort.excluded.pending_cancel} pending cancel.
+        </p>
       )}
 
       <UsageFilterBar activeFilter={filter} onFilterChange={setFilter} segment="tv" periodWeeks={periodWeeks} />
