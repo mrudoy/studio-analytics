@@ -924,3 +924,20 @@ export interface TvEngagementRow {
   pct: number;
   priorCount: number;
 }
+
+export interface IntroWeeksCohortRow {
+  cohortWeekStart: string;
+  cohortSize: number;
+  isInProgress: boolean;
+  bucketCounts: number[];
+  bucketPcts: number[];
+}
+
+export interface IntroWeeksPageData {
+  cohorts: IntroWeeksCohortRow[];
+  totals: {
+    totalBuyers: number;
+    avgVisits: number;
+    pctZeroVisit: number;
+  };
+}

@@ -47,6 +47,7 @@ export type SectionKey =
   | "usage-members"
   | "usage-sky3"
   | "usage-tv"
+  | "usage-intro-weeks"
   | "insights"
   | "data";
 
@@ -84,6 +85,7 @@ export const SECTION_COLORS: Record<SectionKey, string> = {
   "usage-members":  "#7C6B8A",
   "usage-sky3":     "#7C6B8A",
   "usage-tv":       "#7C6B8A",
+  "usage-intro-weeks": "#7C6B8A",
   insights:       "#D4A030",  // amber/gold
   data:           "#6B5B73",  // dusty purple
 };
@@ -147,6 +149,7 @@ export const NAV_ITEMS: NavItem[] = [
       { key: "usage-members", label: "Members", icon: ArrowBadgeDown },
       { key: "usage-sky3", label: "Sky3", icon: BrandSky },
       { key: "usage-tv", label: "Sky Ting TV", icon: DeviceTv },
+      { key: "usage-intro-weeks", label: "Intro Weeks", icon: CalendarWeek },
     ],
   },
   { key: "insights", label: "Insights", icon: BulbIcon, color: SECTION_COLORS.insights },
@@ -176,6 +179,7 @@ export const BREADCRUMB_MAP: Record<SectionKey, string[]> = {
   "usage-members": ["Usage", "Members"],
   "usage-sky3": ["Usage", "Sky3"],
   "usage-tv": ["Usage", "Sky Ting TV"],
+  "usage-intro-weeks": ["Usage", "Intro Weeks"],
   insights: ["Insights"],
   data: ["Data"],
 };
