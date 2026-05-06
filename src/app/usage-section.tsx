@@ -33,7 +33,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { DownloadIcon, ActivityIcon, ArrowBadgeDown, BrandSky, DeviceTv } from "@/components/dashboard/icons";
+import { DownloadIcon, ActivityIcon, ArrowBadgeDown, BrandSky, DeviceTv, CalendarWeek } from "@/components/dashboard/icons";
 import { TrendingUp, TrendingDown, Minus, ArrowRight, X as XIcon, Copy, ChevronRight, ChevronDown } from "lucide-react";
 import { SECTION_COLORS, type SectionKey } from "@/components/dashboard/sidebar-nav";
 import type {
@@ -45,6 +45,7 @@ import type {
   UsageAnnotation,
   Sky3TierRow,
   TvEngagementRow,
+  IntroWeeksPageData,
 } from "@/types/dashboard";
 
 // ─── Constants ──────────────────────────────────────────────
@@ -2699,6 +2700,158 @@ export function UsageTvPage() {
           onClose={() => setShowAllMovement(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Intro Weeks Page ───────────────────────────────────────
+
+const INTRO_BUCKET_LABELS = ["0", "1", "2", "3", "4", "5", "6", "7+"];
+const INTRO_BUCKET_COLORS = [
+  "#F5E6D8",
+  "#EDD3B8",
+  "#E5BF98",
+  "#D9A878",
+  "#C8915C",
+  "#B87333",
+  "#9C6128",
+  "#7E4E1F",
+];
+
+function formatCohortLabel(weekStartIso: string): string {
+  const start = new Date(weekStartIso + "T00:00:00Z");
+  const end = new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+export function UsageIntroWeeksPage() {
+  const { data } = useUsageData<IntroWeeksPageData>(
+    `/api/usage/intro-weeks/page-data`,
+    []
+  );
+
+  const cohorts = data?.cohorts ?? [];
+  const totals = data?.totals;
+  const cohortsDesc = [...cohorts].reverse();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-3">
+          <CalendarWeek className="size-7 shrink-0" style={{ color: SECTION_COLORS["usage-intro-weeks"] }} />
+          <h1 className="text-3xl font-semibold tracking-tight">Intro Weeks</h1>
+        </div>
+      </div>
+      <p className="text-sm text-muted-foreground ml-10 -mt-2">
+        How each weekly cohort of 2 WEEK INTRO buyers used their pass during the 14 days after purchase.
+      </p>
+
+      {totals && (
+        <DashboardCard>
+          <CardContent className="pt-4">
+            <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Total Buyers</div>
+                <div className="text-2xl font-semibold tabular-nums">{totals.totalBuyers.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">closed cohorts</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Avg Visits / Buyer</div>
+                <div className="text-2xl font-semibold tabular-nums">{totals.avgVisits.toFixed(1)}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">over 14-day window</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">% Zero-Visit</div>
+                <div className="text-2xl font-semibold tabular-nums">{totals.pctZeroVisit.toFixed(1)}%</div>
+                <div className="text-xs text-muted-foreground mt-0.5">never attended</div>
+              </div>
+            </div>
+          </CardContent>
+        </DashboardCard>
+      )}
+
+      <DashboardCard>
+        <CardHeader>
+          <CardTitle>Cohort Usage Distribution</CardTitle>
+          <CardDescription>
+            Each row is one ISO week of purchases. Bar segments show the share of buyers who attended 0–7+ classes within their personal 14-day window.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {cohortsDesc.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center">No 2-week intro cohorts yet.</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {cohortsDesc.map(c => (
+                <div key={c.cohortWeekStart} className="flex items-center gap-3">
+                  <div className="w-44 shrink-0 text-sm tabular-nums">
+                    <div className="font-medium">{formatCohortLabel(c.cohortWeekStart)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      n={c.cohortSize}
+                      {c.isInProgress && (
+                        <span className="ml-2 italic" style={{ color: "var(--st-text-secondary)" }}>
+                          in progress
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    className="flex-1 flex h-7 rounded overflow-hidden"
+                    style={{
+                      border: "1px solid var(--st-border)",
+                      opacity: c.isInProgress ? 0.6 : 1,
+                    }}
+                  >
+                    {c.bucketPcts.map((pct, i) => {
+                      if (pct <= 0) return null;
+                      const showLabel = pct >= 8;
+                      const count = c.bucketCounts[i] ?? 0;
+                      return (
+                        <div
+                          key={i}
+                          title={`${INTRO_BUCKET_LABELS[i]} visit${i === 1 ? "" : "s"}: ${count} (${pct.toFixed(1)}%)`}
+                          style={{
+                            width: `${pct}%`,
+                            background: INTRO_BUCKET_COLORS[i],
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "11px",
+                            fontWeight: 500,
+                            color: i >= 4 ? "#fff" : "#413A3A",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {showLabel ? `${pct.toFixed(0)}%` : ""}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-4 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px solid var(--st-border)" }}>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Visits in 14d:</div>
+                {INTRO_BUCKET_LABELS.map((label, i) => (
+                  <div key={label} className="flex items-center gap-1.5 text-xs">
+                    <div
+                      style={{
+                        width: 12,
+                        height: 12,
+                        background: INTRO_BUCKET_COLORS[i],
+                        border: "1px solid var(--st-border)",
+                        borderRadius: 2,
+                      }}
+                    />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </DashboardCard>
     </div>
   );
 }

@@ -3128,3 +3128,131 @@ export async function getMembersMovementMembers(params: {
     page,
   };
 }
+
+// ─── Intro Weeks (2 WEEK INTRO cohort usage) ───────────────────
+
+const INTRO_2_WEEK_PASS = "2 WEEK INTRO";
+const INTRO_2_WEEK_LAUNCH_DATE = "2026-04-06";
+const INTRO_BUCKET_COUNT = 8; // 0,1,2,3,4,5,6,7+
+
+export async function getIntroWeeksPageData(): Promise<{
+  cohorts: {
+    cohortWeekStart: string;
+    cohortSize: number;
+    isInProgress: boolean;
+    bucketCounts: number[];
+    bucketPcts: number[];
+  }[];
+  totals: { totalBuyers: number; avgVisits: number; pctZeroVisit: number };
+}> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    cohort_week_start: Date | string;
+    bucket: number;
+    n: number;
+  }>(
+    `
+    WITH first_purchase AS (
+      SELECT DISTINCT ON (LOWER(email))
+        LOWER(email) AS email,
+        created_at::date AS purchase_date
+      FROM orders
+      WHERE order_type = $1
+        AND email IS NOT NULL
+        AND email <> ''
+        AND created_at >= $2::date
+      ORDER BY LOWER(email), created_at ASC
+    ),
+    visits AS (
+      SELECT
+        fp.email,
+        fp.purchase_date,
+        COUNT(r.id)::int AS visit_count
+      FROM first_purchase fp
+      LEFT JOIN registrations r
+        ON LOWER(r.email) = fp.email
+       AND r.pass = $1
+       AND r.state IN ('redeemed', 'confirmed')
+       AND r.attended_at IS NOT NULL
+       AND r.attended_at >= fp.purchase_date
+       AND r.attended_at <= fp.purchase_date + INTERVAL '14 days'
+      GROUP BY fp.email, fp.purchase_date
+    )
+    SELECT
+      DATE_TRUNC('week', purchase_date)::date AS cohort_week_start,
+      LEAST(visit_count, 7) AS bucket,
+      COUNT(*)::int AS n
+    FROM visits
+    GROUP BY 1, 2
+    ORDER BY 1, 2
+    `,
+    [INTRO_2_WEEK_PASS, INTRO_2_WEEK_LAUNCH_DATE]
+  );
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const byWeek = new Map<string, {
+    cohortWeekStart: string;
+    bucketCounts: number[];
+    visitsSum: number;
+    cohortSize: number;
+  }>();
+
+  for (const r of rows) {
+    const weekKey = (r.cohort_week_start instanceof Date
+      ? r.cohort_week_start.toISOString().slice(0, 10)
+      : String(r.cohort_week_start).slice(0, 10));
+    const bucket = Number(r.bucket);
+    const n = Number(r.n);
+    if (!byWeek.has(weekKey)) {
+      byWeek.set(weekKey, {
+        cohortWeekStart: weekKey,
+        bucketCounts: new Array(INTRO_BUCKET_COUNT).fill(0),
+        visitsSum: 0,
+        cohortSize: 0,
+      });
+    }
+    const row = byWeek.get(weekKey)!;
+    row.bucketCounts[bucket] += n;
+    // Approximate visit sum: bucket value * n (treat 7 as 7 floor — slightly understates power users, fine for avg)
+    row.visitsSum += bucket * n;
+    row.cohortSize += n;
+  }
+
+  const cohorts = Array.from(byWeek.values())
+    .sort((a, b) => a.cohortWeekStart.localeCompare(b.cohortWeekStart))
+    .map(row => {
+      // A week's cohort window closes 14 days after the LAST possible purchase day
+      // in that ISO week (Sunday = weekStart + 6d), i.e. weekStart + 20 days.
+      const weekStart = new Date(row.cohortWeekStart + "T00:00:00Z");
+      const closedAt = new Date(weekStart.getTime() + 20 * 24 * 60 * 60 * 1000);
+      const isInProgress = today.getTime() <= closedAt.getTime();
+      const total = row.cohortSize || 1;
+      const bucketPcts = row.bucketCounts.map(c => (c / total) * 100);
+      return {
+        cohortWeekStart: row.cohortWeekStart,
+        cohortSize: row.cohortSize,
+        isInProgress,
+        bucketCounts: row.bucketCounts,
+        bucketPcts,
+      };
+    });
+
+  // Totals across CLOSED cohorts only
+  const closed = cohorts.filter(c => !c.isInProgress);
+  const totalBuyers = closed.reduce((s, c) => s + c.cohortSize, 0);
+  const totalVisits = closed.reduce((s, c) => {
+    let visits = 0;
+    for (let b = 0; b < c.bucketCounts.length; b++) visits += b * c.bucketCounts[b];
+    return s + visits;
+  }, 0);
+  const totalZero = closed.reduce((s, c) => s + (c.bucketCounts[0] || 0), 0);
+  const avgVisits = totalBuyers > 0 ? totalVisits / totalBuyers : 0;
+  const pctZeroVisit = totalBuyers > 0 ? (totalZero / totalBuyers) * 100 : 0;
+
+  return {
+    cohorts,
+    totals: { totalBuyers, avgVisits, pctZeroVisit },
+  };
+}

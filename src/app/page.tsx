@@ -158,6 +158,7 @@ import {
   UsageMembersPage,
   UsageSky3Page,
   UsageTvPage,
+  UsageIntroWeeksPage,
 } from "./usage-section";
 
 // ─── Mobile detection ────────────────────────────────────────
@@ -8280,6 +8281,9 @@ function DashboardContent({ activeSection, setActiveSection, data, refreshData }
       )}
       {activeSection === "usage-tv" && (
         <UsageTvPage />
+      )}
+      {activeSection === "usage-intro-weeks" && (
+        <UsageIntroWeeksPage />
       )}
 
       {/* ── INSIGHTS ── */}
