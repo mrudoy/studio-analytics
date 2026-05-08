@@ -3597,7 +3597,7 @@ function JourneyConversionSection({ data }: { data: JourneyConversionData | null
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <ConversionByTypeCard
           title="Intro Week"
-          description="Active intro-week customers → sub start"
+          description="Unique intro-week cohorts → Member / Sky3 / TV sub start (recent weeks still maturing)"
           series={data.introWeek}
           accentColor={COLORS.teal}
         />

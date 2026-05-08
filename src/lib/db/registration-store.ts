@@ -1546,6 +1546,20 @@ export const IN_STUDIO_PLAN_FILTER = `
   AND UPPER(plan_name) NOT LIKE '%SKY TING TV%'
   AND UPPER(plan_name) NOT LIKE '%SKYTING TV%'`;
 
+// Same as IN_STUDIO_PLAN_FILTER but TV is allowed. Used by the Intro-Week cohort
+// conversion card, which counts a sub start as a conversion regardless of whether
+// the resulting plan is in-studio or TV.
+export const ANY_AR_PLAN_FILTER = `
+  AND (
+    UPPER(plan_name) LIKE '%SKY3%' OR UPPER(plan_name) LIKE '%SKY5%'
+    OR UPPER(plan_name) LIKE '%SKYHIGH%' OR UPPER(plan_name) LIKE '%5 PACK%'
+    OR UPPER(plan_name) LIKE '%5-PACK%'
+    OR UPPER(plan_name) LIKE '%UNLIMITED%' OR UPPER(plan_name) LIKE '%MEMBER%'
+    OR UPPER(plan_name) LIKE '%ALL ACCESS%' OR UPPER(plan_name) LIKE '%TING FAM%'
+    OR UPPER(plan_name) LIKE '%WELCOME SKY3%'
+    OR UPPER(plan_name) LIKE '%SKY TING TV%' OR UPPER(plan_name) LIKE '%SKYTING TV%'
+  )`;
+
 /**
  * Get new customer volume by week.
  * A "new customer" = person whose first in-studio visit (intro week / drop-in)
@@ -2323,6 +2337,96 @@ export async function getColdSubStartsWeekly(
   return rows.map((r: Record<string, unknown>) => ({
     weekStart: r.weekStart as string,
     coldSubs: Number(r.coldSubs),
+  }));
+}
+
+/**
+ * Intro-Week conversion (cohort math, includes TV).
+ *
+ * Pool   = unique emails whose FIRST intro-week attendance falls in the given week,
+ *          within the last `weeksBack` complete Mon–Sun weeks. Each person is counted
+ *          once total (in their first cohort week), not once per week they attended.
+ * Converts = subset of the same cohort who later started a Member / Sky3 / Sky Ting TV
+ *            auto-renew (`created_at >= first_intro_at`). State-agnostic: a sub that
+ *            was started then canceled still counts.
+ *
+ * This differs from `getConversionByJourneyWeekly(_, "intro-week")` in three ways:
+ *   1. Pool is unique people across the window (this query) vs. sum of per-week
+ *      distincts (the bucket query — double-counts emails who attended in 2+ weeks).
+ *   2. Converters must come from the cohort itself (this query) vs. anyone who
+ *      started a sub in the window with any prior intro-week visit ever.
+ *   3. Plan filter includes Sky Ting TV (this query) vs. excludes it.
+ *
+ * Recency caveat: the most recent cohort weeks have had less time to convert, so
+ * their per-week rates appear low. This is expected — the headline rate is a
+ * lower bound that grows as cohorts mature.
+ */
+export async function getIntroWeekCohortConversionWeekly(
+  weeksBack: number,
+): Promise<JourneyBucketWeekRow[]> {
+  const pool = getPool();
+  const query = `
+    WITH week_series AS (
+      SELECT generate_series(
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date,
+        (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date,
+        '1 week'::interval
+      )::date as week_start
+    ),
+    intro_first_attend AS (
+      SELECT LOWER(r.email) as email,
+             MIN(r.attended_at) as first_intro_at
+      FROM registrations r
+      WHERE r.attended_at IS NOT NULL
+        AND r.email IS NOT NULL
+        AND (r.subscription = 'false' OR r.subscription IS NULL)
+        AND ${introPassFilter("r.pass")}
+        AND r.attended_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${weeksBack} weeks')::date
+        AND r.attended_at < DATE_TRUNC('week', CURRENT_DATE)::date
+      GROUP BY LOWER(r.email)
+    ),
+    cohort AS (
+      SELECT email,
+             first_intro_at,
+             DATE_TRUNC('week', first_intro_at)::date as cohort_week
+      FROM intro_first_attend
+    ),
+    weekly_pool AS (
+      SELECT cohort_week as week_start, COUNT(*) as pool_size
+      FROM cohort
+      GROUP BY cohort_week
+    ),
+    converters AS (
+      SELECT c.email, c.cohort_week
+      FROM cohort c
+      WHERE EXISTS (
+        SELECT 1 FROM auto_renews ar
+        WHERE LOWER(ar.customer_email) = c.email
+          AND ar.created_at IS NOT NULL
+          AND ar.created_at >= c.first_intro_at
+          ${ANY_AR_PLAN_FILTER}
+      )
+    ),
+    weekly_converts AS (
+      SELECT cohort_week as week_start, COUNT(*) as converts
+      FROM converters
+      GROUP BY cohort_week
+    )
+    SELECT ws.week_start::text as "weekStart",
+           (ws.week_start + INTERVAL '6 days')::date::text as "weekEnd",
+           COALESCE(p.pool_size, 0) as pool,
+           COALESCE(wc.converts, 0) as converts
+    FROM week_series ws
+    LEFT JOIN weekly_pool p ON p.week_start = ws.week_start
+    LEFT JOIN weekly_converts wc ON wc.week_start = ws.week_start
+    ORDER BY ws.week_start
+  `;
+  const { rows } = await pool.query(query);
+  return rows.map((r: Record<string, unknown>) => ({
+    weekStart: r.weekStart as string,
+    weekEnd: r.weekEnd as string,
+    pool: Number(r.pool),
+    converts: Number(r.converts),
   }));
 }
 
