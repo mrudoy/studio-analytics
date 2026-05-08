@@ -276,13 +276,15 @@ export function computeAvgChurnRates(
 
 export async function getSubscriberMovement(): Promise<SubscriberMovement> {
   const pool = getPool();
-  // DISTINCT ON (email, plan_name) collapses snapshot duplicates so each
-  // unique subscription is counted once. Mirrors getActiveAutoRenews().
+  // No DISTINCT ON — auto_renews has a UNIQUE constraint on
+  // (customer_email, plan_name, created_at), so each row already
+  // represents one unique subscription. Counting rows directly matches
+  // getActiveAutoRenews() and Union's admin row counts. People genuinely
+  // subscribed to the same plan twice (different created_at) appear as
+  // two rows and count twice — which is correct.
   const { rows: allRows } = await pool.query(
-    `SELECT DISTINCT ON (LOWER(customer_email), plan_name)
-            plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
-     FROM auto_renews
-     ORDER BY LOWER(customer_email), plan_name, id DESC`,
+    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
+     FROM auto_renews`,
   );
 
   const categorized: CategorizedRow[] = allRows.map((r: Record<string, unknown>) => {
