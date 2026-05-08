@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { saveUploadedData, saveRevenueCategories } from "@/lib/db/revenue-store";
-import { saveAutoRenews, reconcileAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
+import { saveAutoRenews, reconcileAutoRenewsFromExport, type AutoRenewRow } from "@/lib/db/auto-renew-store";
+import { ACTIVE_STATES } from "@/lib/analytics/metrics/filters";
 import { saveFirstVisits, saveRegistrations, type RegistrationRow } from "@/lib/db/registration-store";
 import { saveFullCustomers, type FullCustomerRow } from "@/lib/db/customer-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
@@ -101,9 +102,11 @@ export async function POST(request: Request) {
 
     // ── Full subscriber sync (import + reconcile) ───────────
     // Use type=subscriber_sync with a FULL subscriber export from Union.fit
-    // (e.g. "subscriptions changes" report). This:
-    //   1. Upserts all rows (restores wrongly-Canceled, adds missing people)
-    //   2. Reconciles: marks DB-active subscribers NOT in the CSV as Canceled
+    // (e.g. "active auto renews" or "subscriptions changes" report). This:
+    //   1. Upserts all rows (restores wrongly-Canceled, refreshes current_state)
+    //   2. Subscription-level reconcile: marks DB-active (email, plan_name)
+    //      pairs NOT in the CSV as Canceled. Catches plan changers whose old
+    //      subscription was never marked Canceled by the daily delta.
     if (dataType === "subscriber_sync") {
       const result = parseCSV<AutoRenew>(savedPath, AutoRenewSchema);
       if (result.data.length > 0) {
@@ -128,17 +131,32 @@ export async function POST(request: Request) {
         parsedCount = arRows.length;
         console.log(`[api/upload] Subscriber sync: saved ${arRows.length} rows (snapshot: ${snapshotId})`);
 
-        // Step 2: Reconcile — build set of active emails from CSV
-        const activeEmails = new Set(
-          result.data
-            .filter((ar) => ar.currentState === "active")
-            .map((ar) => (ar.email || "").toLowerCase())
-            .filter(Boolean)
-        );
-        const reconcileResult = await reconcileAutoRenews(activeEmails);
+        // Step 2: Row-level reconcile. Build (email|plan_name|date)
+        // tuples for active subs in the CSV. Anything in DB-active but not
+        // in this set (and created on/before CSV snapshot time) gets
+        // marked Canceled — catches stale ghosts from plan changes Union
+        // didn't emit a Canceled event for.
+        const activeTuples = new Set<string>();
+        let csvMaxCreatedMs = 0;
+        for (const ar of result.data) {
+          const ms = Date.parse(ar.created || "");
+          if (!Number.isNaN(ms) && ms > csvMaxCreatedMs) csvMaxCreatedMs = ms;
+        }
+        for (const ar of result.data) {
+          if (!ACTIVE_STATES.includes(ar.state)) continue;
+          const cs = (ar.currentState || "").trim();
+          if (cs !== "" && cs !== "active") continue;
+          const email = (ar.email || "").toLowerCase().trim();
+          const plan = (ar.name || "").trim();
+          const dateMatch = (ar.created || "").match(/^(\d{4}-\d{2}-\d{2})/);
+          const date = dateMatch ? dateMatch[1] : "";
+          if (!email || !plan || !date) continue;
+          activeTuples.add(`${email}|${plan}|${date}`);
+        }
+        const reconcileResult = await reconcileAutoRenewsFromExport(activeTuples, csvMaxCreatedMs);
         if (reconcileResult.reconciled > 0) {
-          warnings.push(`Reconciled ${reconcileResult.reconciled} stale subscribers`);
-          console.log(`[api/upload] Reconciled ${reconcileResult.reconciled} stale subscribers`);
+          warnings.push(`Reconciled ${reconcileResult.reconciled} stale subscription rows`);
+          console.log(`[api/upload] Reconciled ${reconcileResult.reconciled} stale subscription rows`);
         }
       }
       warnings.push(...result.warnings);
