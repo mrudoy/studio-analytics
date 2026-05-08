@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db/database";
+import { ACTIVE_STATES_SQL } from "@/lib/analytics/metrics/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,11 @@ async function getPartnerStats() {
   try {
     const [activeRows, communityRow, weekly12moRow, attendanceRow, active12moRow, freqRow, regularsRow] =
       await Promise.all([
-        // Active subscribers by category
+        // Active subscribers by category — row counts (matches dashboard canonical)
         client.query(`
           SELECT plan_category, COUNT(*) AS cnt
           FROM auto_renews
-          WHERE plan_state IN ('Valid Now','Paused','Pending Cancel','In Trial','Invalid')
+          WHERE plan_state IN (${ACTIVE_STATES_SQL})
           GROUP BY plan_category
         `),
         // Total unique community members ever

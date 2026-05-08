@@ -20,13 +20,13 @@ import { ACTIVE_STATES, STILL_PAYING_STATES } from "./filters";
 export type CategoryKey = "member" | "sky3" | "skyTingTv";
 
 export interface CategoryMovement {
-  /** Distinct emails newly created in this window */
+  /** Subscription rows newly created in this window */
   new: number;
-  /** Distinct emails canceled in this window (excludes plan changers) */
+  /** Subscription rows canceled in this window (excludes plan changers) */
   canceled: number;
-  /** Distinct emails active at the START of the window */
+  /** Subscription rows active at the START of the window */
   activeAtStart: number;
-  /** Sum of monthly-equivalent rates for canceled subscribers */
+  /** Sum of monthly-equivalent rates for canceled subscriptions */
   canceledMrr: number;
   /** Sum of monthly-equivalent rates for active-at-start */
   activeMrrAtStart: number;
@@ -102,7 +102,11 @@ function computeWindow(
   startDate: string,
   endDate: string,
 ): WindowMovement {
-  // Build per-category sets for new, canceled (with monthlyRate), active-at-start
+  // Per-category counters — row counts per subscription, matching the
+  // canonical row-count doctrine in getActiveCounts(). The Maps key on
+  // `${email}|${plan_name}` so each distinct subscription becomes one entry
+  // (the SQL pre-deduplicates snapshots via DISTINCT ON, so two entries with
+  // the same key shouldn't occur in practice; the Map shape is kept defensively).
   const newByCat: Record<CategoryKey, Map<string, number>> = {
     member: new Map(), sky3: new Map(), skyTingTv: new Map(),
   };
@@ -168,37 +172,32 @@ function computeWindow(
       return b.count - a.count;
     });
 
-  // Second pass: count new + canceled + active-at-start, deduped by email per category
-  // For active-at-start: max monthlyRate per email. For new/canceled: any rate is fine
-  // (we still want a representative rate for MRR sums).
+  // Second pass: count new + canceled + active-at-start as ROWS per category.
+  // Key on `${email}|${plan_name}` so a person with two different subscriptions
+  // in the same category (e.g. SKY3 Monthly + SKYHIGH3 Monthly) counts twice.
   for (const r of rows) {
     const ck = categoryKey(r.category);
     if (!ck) continue;
     const email = r.customer_email.toLowerCase();
     if (!email) continue;
+    const subKey = `${email}|${r.plan_name}`;
 
     // Active at start: created before window AND (still active OR canceled at/after window start)
     if (r.created_at && r.created_at < startDate) {
       const stillActive = ACTIVE_STATES.includes(r.plan_state);
       const canceledLater = r.canceled_at && r.canceled_at >= startDate;
       if (stillActive || canceledLater) {
-        // Dedup by email: keep max monthlyRate, but always add the email even if rate=0
-        const existing = activeAtStartByCat[ck].get(email);
-        if (existing === undefined || r.monthlyRate > existing) {
-          activeAtStartByCat[ck].set(email, r.monthlyRate);
-        }
+        activeAtStartByCat[ck].set(subKey, r.monthlyRate);
       }
     }
 
-    // Skip plan changers from new/canceled counts
+    // Skip plan changers from new/canceled counts (still detected at email level —
+    // a plan change is a person-level event, not a per-subscription event).
     if (planChangers.has(email)) continue;
 
     // New in window
     if (r.created_at && r.created_at >= startDate && r.created_at < endDate) {
-      const existing = newByCat[ck].get(email);
-      if (existing === undefined || r.monthlyRate > existing) {
-        newByCat[ck].set(email, r.monthlyRate);
-      }
+      newByCat[ck].set(subKey, r.monthlyRate);
     }
 
     // Canceled in window (excluding still-paying states)
@@ -207,10 +206,7 @@ function computeWindow(
       r.canceled_at >= startDate && r.canceled_at < endDate &&
       !STILL_PAYING_STATES.includes(r.plan_state)
     ) {
-      const existing = canceledByCat[ck].get(email);
-      if (existing === undefined || r.monthlyRate > existing) {
-        canceledByCat[ck].set(email, r.monthlyRate);
-      }
+      canceledByCat[ck].set(subKey, r.monthlyRate);
     }
   }
 
@@ -280,9 +276,13 @@ export function computeAvgChurnRates(
 
 export async function getSubscriberMovement(): Promise<SubscriberMovement> {
   const pool = getPool();
+  // DISTINCT ON (email, plan_name) collapses snapshot duplicates so each
+  // unique subscription is counted once. Mirrors getActiveAutoRenews().
   const { rows: allRows } = await pool.query(
-    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
-     FROM auto_renews`,
+    `SELECT DISTINCT ON (LOWER(customer_email), plan_name)
+            plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
+     FROM auto_renews
+     ORDER BY LOWER(customer_email), plan_name, id DESC`,
   );
 
   const categorized: CategorizedRow[] = allRows.map((r: Record<string, unknown>) => {

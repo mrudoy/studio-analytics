@@ -41,6 +41,7 @@ const SKY_TING_TV_PLANS = [
   "WE LOVE LA - SKY TING TV",
   "RETREAT TING",
   "SKY WEEK TV",
+  "FABxSKYTING",
 ];
 
 const SKY3_PLANS = [
@@ -82,7 +83,7 @@ export function getCategory(planName: string): AutoRenewCategory {
 
   // Fuzzy match: check if the plan name contains a known category keyword
   if (upper.includes("SKY3") || upper.includes("SKY5") || upper.includes("SKYHIGH") || upper.includes("5 PACK") || upper.includes("5-PACK")) return "SKY3";
-  if (upper.includes("SKY TING TV") || upper.includes("SKYTING TV")) return "SKY_TING_TV";
+  if (upper.includes("SKY TING TV") || upper.includes("SKYTING TV") || upper.includes("SKYTING")) return "SKY_TING_TV";
   if (
     upper.includes("UNLIMITED") ||
     upper.includes("MEMBER") ||

@@ -2,9 +2,9 @@
 
 ## Active Subscriber Definition
 
-**"Active" means `plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')`.**
+**"Active" means `plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid', 'Past Due')`.** This matches Union.fit's admin definition. The single canonical source is `ACTIVE_STATES` in `src/lib/analytics/metrics/filters.ts` — import from there, never inline.
 
-All queries that filter for active subscribers must use this exact set of states. Do not use `NOT IN ('Canceled', 'Invalid')` — that includes states like `Past Due` which are not considered active. This rule applies to all files that query the `auto_renews` table.
+All queries that filter for active subscribers must use this exact set of states. Only `Canceled` is excluded. This rule applies to all files that query the `auto_renews` table.
 
 ## Fonts
 
@@ -129,7 +129,7 @@ Always import these. Never inline the state strings in a new SQL query or TypeSc
 
 | Constant | States | Use for |
 |---|---|---|
-| `ACTIVE_STATES` | Valid Now, Paused, Pending Cancel, In Trial, Invalid | Counting active subscribers; active-at-start denominator for churn rates |
+| `ACTIVE_STATES` | Valid Now, Paused, Pending Cancel, In Trial, Invalid, Past Due | Counting active subscribers; active-at-start denominator for churn rates |
 | `BILLING_STATES` | Valid Now, Pending Cancel | MRR (revenue being recognized this month, ASC 606-aligned) |
 | `STILL_PAYING_STATES` | Valid Now, Paused | For canceled_at gating: rows in these states have `canceled_at = next billing date`, NOT a real cancellation. Real cancels = `plan_state NOT IN STILL_PAYING_STATES` |
 | `AT_RISK_STATES` | Past Due, Invalid, Pending Cancel | Churn-risk alerts and insight detectors |
@@ -161,14 +161,14 @@ Always import these. Never inline the state strings in a new SQL query or TypeSc
 
 ## ACTIVE SUBSCRIBER COUNTING (PERMANENT RULE)
 
-**An active subscriber = `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel')`.** (5 states. Past Due is **NOT** active — payment failed.)
+**An active subscriber row = `plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')`.** (6 states. Only `Canceled` is excluded.)
 
-- **5 states are active.** Invalid = used all passes (still a subscriber). Pending Cancel = canceling next cycle (currently active). Past Due is NOT included — payment failed = not actively subscribed.
+- **6 states are active.** Invalid = used all passes (still a subscriber). Pending Cancel = canceling next cycle (currently active). Past Due = payment failed but Union is still retrying — Union counts these as active, so we do too.
+- **Counts are subscription rows, NOT unique people.** A person paying for both `SKY3 Monthly` and `SKYHIGH3 Monthly` counts twice in Sky3 — they're paying for both, and Union's admin counts the same way. A person with subscriptions in multiple categories (e.g. Member + TV) counts once in each category. `total` = sum of category counts.
 - **Do NOT use `canceled_at` as a filter for active subscribers.** For active subscribers, Union.fit sets `canceled_at` to the next billing/renewal date, NOT the cancellation date. Using `canceled_at <= NOW()` as a guard will filter out nearly everyone.
 - **Daily zip exports are DELTAS, not full snapshots.** They contain only recent changes — NOT all active subscribers. NEVER run reconciliation against a daily export or it will mass-cancel everyone.
 - `reconcileAutoRenews()` exists but must ONLY be called with a full subscriber list (e.g. the "subscriptions changes" report from Union.fit admin, or a manual CSV upload). It is NOT wired into the daily pipeline.
-- Subscriber counts are deduplicated by `customer_email` (one person = one count per category). A person paying for both Member and TV is counted in both categories, but only once in the total.
-- This rule was set by Mike on 2026-04-01 after discovering the dashboard undercounted by ~75 people vs Union.fit's numbers. Verified against CSV export: Members 455 (exact match), Sky3 358, TV 1717.
+- **History:** Mike set the original "5 states + dedup by email" rule on 2026-04-01. Reverted on 2026-05-08 after a fresh CSV from Union showed our counts diverging again — gap analysis revealed (a) 129 `FABxSKYTING` rows were silently miscategorized as UNKNOWN, (b) 17 people had multiple subscriptions in the same category that the dedup was hiding, and (c) Union includes Past Due. Switching to row counts + including Past Due + fixing FABxSKYTING categorization aligns the dashboard exactly with Union's admin (482/395/1868 against the 2026-05-08 CSV).
 
 ## CHURN / SIGNUP EVENTS (PERMANENT RULE)
 
