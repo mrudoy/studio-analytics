@@ -794,6 +794,28 @@ const migrations: Migration[] = [
       ON CONFLICT (auto_renew_id, event_type) WHERE is_backfill = TRUE DO NOTHING;
     `,
   },
+
+  // ── 020 ─────────────────────────────────────────────────────
+  // Recategorize FABxSKYTING rows to SKY_TING_TV.
+  //
+  // Pre-fix, getCategory() in src/lib/analytics/categories.ts had no exact
+  // match for 'FABxSKYTING' and the TV fuzzy fallback required the literal
+  // substring 'SKY TING TV' or 'SKYTING TV' (with a TV-suffix). 'FABxSKYTING'
+  // matched neither and fell through to UNKNOWN — silently dropping ~129
+  // active TV subscribers from dashboard counts.
+  //
+  // The categorization function has been fixed; this migration aligns the
+  // stored plan_category column on existing rows so getDailySubscriberMovement
+  // (and any other consumer of the column) sees the correct value.
+  {
+    name: "020_recategorize_fabxskyting",
+    up: `
+      UPDATE auto_renews
+      SET plan_category = 'SKY_TING_TV'
+      WHERE plan_name = 'FABxSKYTING'
+        AND plan_category IS DISTINCT FROM 'SKY_TING_TV';
+    `,
+  },
 ];
 
 /**

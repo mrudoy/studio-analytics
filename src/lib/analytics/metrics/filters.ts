@@ -14,8 +14,10 @@
  *   - Pending Cancel: chose to cancel, currently still active until canceled_at
  *   - In Trial: trial period, hasn't been billed yet
  *   - Invalid: pass-based subscribers who used all their passes — still subscribed
+ *   - Past Due: payment failed but Union is still retrying — Union counts these
+ *     as active subscribers, so we do too.
  *
- * Excluded: 'Canceled' (formal cancellation), 'Past Due' (payment failed).
+ * Excluded: 'Canceled' (formal cancellation).
  *
  * Use this for: counting active subscribers, computing active-at-period-start
  * for churn rates, anywhere the dashboard says "active subscribers".
@@ -26,6 +28,7 @@ export const ACTIVE_STATES: readonly string[] = [
   "Pending Cancel",
   "In Trial",
   "Invalid",
+  "Past Due",
 ];
 
 /**
@@ -64,7 +67,7 @@ function asSqlList(states: readonly string[]): string {
   return states.map((s) => `'${s}'`).join(", ");
 }
 
-/** SQL fragment: `'Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid'` */
+/** SQL fragment: `'Valid Now', 'Paused', 'Pending Cancel', 'In Trial', 'Invalid', 'Past Due'` */
 export const ACTIVE_STATES_SQL = asSqlList(ACTIVE_STATES);
 
 /** SQL fragment: `'Valid Now', 'Pending Cancel'` */

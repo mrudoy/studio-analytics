@@ -531,10 +531,14 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
 /**
  * Canonical active subscriber counts by category — SINGLE SOURCE OF TRUTH.
  *
- * Returns unique people (distinct emails) per category. A person with
- * subscriptions in multiple categories appears in each. Every section
- * of the dashboard (Growth, Usage, Churn, Overview) MUST use this
- * function for "X Active" numbers.
+ * Returns subscription rows per category, NOT unique people. A person with
+ * two subscriptions in the same category (e.g. SKY3 Monthly + SKYHIGH3
+ * Monthly) counts twice in that category — they're paying for both, and
+ * Union's admin counts the same way. A person with subscriptions in
+ * multiple categories (e.g. Member + TV) counts once in each.
+ *
+ * Every section of the dashboard (Growth, Usage, Churn, Overview) MUST
+ * use this function for "X Active" numbers.
  */
 export interface ActiveCounts {
   member: number;
@@ -547,36 +551,23 @@ export interface ActiveCounts {
 export async function getActiveCounts(): Promise<ActiveCounts> {
   const active = await getActiveAutoRenews();
 
-  const emailSets = {
-    member: new Set<string>(),
-    sky3: new Set<string>(),
-    skyTingTv: new Set<string>(),
-    unknown: new Set<string>(),
+  const counts: ActiveCounts = {
+    member: 0,
+    sky3: 0,
+    skyTingTv: 0,
+    unknown: 0,
+    total: 0,
   };
 
   for (const ar of active) {
-    const email = ar.customerEmail.toLowerCase();
-    if (!email) continue;
+    if (!ar.customerEmail) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
-    emailSets[key].add(email);
+    counts[key]++;
   }
-
-  const counts: ActiveCounts = {
-    member: emailSets.member.size,
-    sky3: emailSets.sky3.size,
-    skyTingTv: emailSets.skyTingTv.size,
-    unknown: emailSets.unknown.size,
-    total: 0,
-  };
-  // Total = union of all emails (a person in both Member + TV counts once in total)
-  const allEmails = new Set<string>();
-  for (const s of Object.values(emailSets)) {
-    for (const e of s) allEmails.add(e);
-  }
-  counts.total = allEmails.size;
+  counts.total = counts.member + counts.sky3 + counts.skyTingTv + counts.unknown;
 
   return counts;
 }
@@ -585,7 +576,7 @@ export async function getActiveCounts(): Promise<ActiveCounts> {
  * Compute aggregate auto-renew stats: active counts, MRR, ARPU by category.
  * This is the primary function the dashboard uses.
  *
- * Active counts use getActiveCounts() — unique people, not subscription rows.
+ * Active counts use getActiveCounts() — subscription rows, not unique people.
  * MRR sums all subscription rows (a person with 2 plans contributes 2x MRR).
  */
 export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
@@ -596,21 +587,20 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
 
   // MRR reflects revenue being recognized per ASC 606 — only Valid Now and
   // Pending Cancel subscribers are actively billing. Paused, Invalid (passes
-  // used up), and In Trial are "active" in the subscriber sense but don't
-  // contribute to recognized revenue this month:
+  // used up), In Trial, and Past Due are "active" in the subscriber sense
+  // but don't contribute to recognized revenue this month:
   //   - Paused: no money flowing (user paused their subscription)
   //   - Invalid: passes used up, revenue already recognized at purchase/use
   //   - In Trial: plan_price shows full post-trial rate, not trial rate
+  //   - Past Due: payment failed, no revenue recognized until card retries succeed
   // Excluding these keeps MRR aligned with actual cash being collected.
   const BILLING_SET = new Set<string>(BILLING_STATES);
 
-  // Deduplicate MRR by email per category — keep highest monthlyRate per person
-  const mrrByEmail: Record<string, Map<string, number>> = {
-    member: new Map(),
-    sky3: new Map(),
-    skyTingTv: new Map(),
-    unknown: new Map(),
-  };
+  // Sum monthlyRate across ALL billing rows per category. A person with two
+  // subscriptions (e.g. SKY3 Monthly + SKYHIGH3 Monthly) contributes both
+  // rates — they're paying for both. Matches the row-count doctrine in
+  // getActiveCounts() so ARPU = MRR / count is per-subscription, not per-person.
+  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
 
   for (const ar of active) {
     if (!BILLING_SET.has(ar.planState)) continue;
@@ -618,18 +608,10 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
       : "unknown";
-    const email = ar.customerEmail.toLowerCase();
-    const existing = mrrByEmail[key].get(email) ?? 0;
-    if (ar.monthlyRate > existing) {
-      mrrByEmail[key].set(email, ar.monthlyRate);
-    }
+    mrr[key] += ar.monthlyRate;
   }
-
-  const mrr = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
-  for (const [cat, emailMap] of Object.entries(mrrByEmail)) {
-    let total = 0;
-    for (const rate of emailMap.values()) total += rate;
-    mrr[cat as keyof typeof mrr] = Math.round(total * 100) / 100;
+  for (const cat of Object.keys(mrr) as Array<keyof typeof mrr>) {
+    mrr[cat] = Math.round(mrr[cat] * 100) / 100;
   }
 
   const totalMRR = mrr.member + mrr.sky3 + mrr.skyTingTv + mrr.unknown;
