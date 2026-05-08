@@ -316,6 +316,67 @@ export async function reconcileAutoRenews(
   };
 }
 
+/**
+ * Row-level reconciliation against a fresh full export.
+ *
+ * For every currently-active row in the DB, check whether its
+ * (email, plan_name, created_at) tuple appears in the export's active set.
+ * If not, mark it Canceled. This catches stale duplicate rows where Union
+ * historically reissued a subscription with a different created_at — the
+ * active-looking ghost rows that drift our row counts above Union's.
+ *
+ * `activeTuples` MUST be the complete set of currently-active subscriptions
+ * from a full export — keys are `${email.toLowerCase()}|${planName}|${YYYY-MM-DD}`
+ * (date portion of created_at). Calling this with a partial/delta set will
+ * mass-cancel valid subscriptions.
+ *
+ * `csvMaxCreatedMs` is the latest created_at timestamp in the CSV (in ms).
+ * DB rows created after this are skipped — they're newer signups the daily
+ * delta caught after the CSV was generated, not stale data.
+ */
+export async function reconcileAutoRenewsFromExport(
+  activeTuples: Set<string>,
+  csvMaxCreatedMs: number,
+): Promise<{ reconciled: number }> {
+  const pool = getPool();
+
+  const { rows } = await pool.query(
+    `SELECT id, LOWER(customer_email) AS email, plan_name,
+            TO_CHAR(created_at, 'YYYY-MM-DD') AS created_date,
+            created_at
+     FROM auto_renews
+     WHERE plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')
+       AND (current_state IS NULL OR current_state = 'active')`,
+  );
+
+  const staleIds: number[] = [];
+  for (const row of rows) {
+    const tuple = `${row.email}|${row.plan_name}|${row.created_date}`;
+    if (activeTuples.has(tuple)) continue;
+    const ms = row.created_at ? new Date(row.created_at).getTime() : 0;
+    if (ms > csvMaxCreatedMs) continue; // newer signup, leave alone
+    staleIds.push(row.id);
+  }
+
+  if (staleIds.length === 0) {
+    console.log("[auto-renew-store] Row-level reconciliation: no stale rows");
+    return { reconciled: 0 };
+  }
+
+  await pool.query(
+    `UPDATE auto_renews
+     SET plan_state = 'Canceled',
+         canceled_at = COALESCE(canceled_at, NOW())
+     WHERE id = ANY($1)`,
+    [staleIds],
+  );
+
+  console.log(
+    `[auto-renew-store] Row-level reconciliation: marked ${staleIds.length} stale rows as Canceled`,
+  );
+  return { reconciled: staleIds.length };
+}
+
 // ── Read Operations ──────────────────────────────────────────
 
 interface RawAutoRenewRow {
@@ -390,18 +451,23 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
  */
 export async function getActiveAutoRenews(): Promise<StoredAutoRenew[]> {
   const pool = getPool();
+  // No DISTINCT ON — `auto_renews` has a UNIQUE constraint on
+  // (customer_email, plan_name, created_at) (migration 003), so each
+  // distinct subscription is exactly one row. People who genuinely have
+  // two of the "same" plan (e.g. two SKY3 Monthly subscriptions on
+  // different Union passes) will have different created_at values and
+  // thus appear as two rows — Union counts them twice in their admin UI,
+  // and we now match.
+  //
+  // The previous DISTINCT ON (email, plan_name) was a workaround for stale
+  // snapshots, but it under-counted real dual subscriptions. The current
+  // approach: trust the row data, filter strictly on plan_state +
+  // current_state, and rely on the upload-route reconciliation to mark
+  // genuinely-stale rows as Canceled (so they're filtered out here).
   const { rows } = await pool.query(
-    `WITH latest_rows AS (
-       SELECT DISTINCT ON (LOWER(customer_email), plan_name)
-              id, snapshot_id, plan_name, plan_state, plan_price,
-              customer_name, customer_email, created_at, canceled_at,
-              current_state
-       FROM auto_renews
-       ORDER BY LOWER(customer_email), plan_name, id DESC
-     )
-     SELECT id, snapshot_id, plan_name, plan_state, plan_price,
+    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, canceled_at
-     FROM latest_rows
+     FROM auto_renews
      WHERE plan_state IN (${ACTIVE_STATES_SQL})
        AND (current_state IS NULL OR current_state = 'active')
      ORDER BY plan_name`
