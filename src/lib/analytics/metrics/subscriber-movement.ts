@@ -8,14 +8,16 @@
  *   - getOverviewData() / computeWindow() in overview-store.ts (event-log based)
  *   - getChurnEventsInWindow() in auto-renew-events-store.ts (broken event log)
  *
- * Uses the canonical cancellation filter (plan_state NOT IN STILL_PAYING_STATES
- * with canceled_at in window) and excludes cross-category plan changers
- * (upgrade/downgrade between Member/Sky3/TV).
+ * Cancellations are counted by the click-cancel date (first observed transition into
+ * a churned state, from auto_renew_events) — NOT auto_renews.canceled_at, which Union
+ * sets to the period-end date for Pending Cancel rows. Cross-category plan changers
+ * (upgrade/downgrade between Member/Sky3/TV) are excluded from new+canceled counts.
  */
 import { getPool } from "../../db/database";
+import { getFirstChurnDateByAutoRenewId } from "../../db/auto-renew-events-store";
 import { getCategory, isAnnualPlan } from "../categories";
 import { parseDate } from "../date-utils";
-import { ACTIVE_STATES, STILL_PAYING_STATES } from "./filters";
+import { ACTIVE_STATES } from "./filters";
 
 export type CategoryKey = "member" | "sky3" | "skyTingTv";
 
@@ -67,6 +69,7 @@ export interface SubscriberMovement {
 }
 
 interface CategorizedRow {
+  id: number;
   plan_name: string;
   plan_state: string;
   category: string;
@@ -74,6 +77,14 @@ interface CategorizedRow {
   canceled_at: string | null;
   customer_email: string;
   monthlyRate: number;
+  /**
+   * The day we first observed this subscription transition into a churned state,
+   * derived from the auto_renew_events log. This is the "click cancel" date and
+   * REPLACES canceled_at for cancellation-window counting (Union sets canceled_at
+   * to the period-end date, not the click date — see auto-renew-events-store.ts).
+   * Null when no live churn event exists or the row failed phantom-firing guards.
+   */
+  churn_date: string | null;
 }
 
 function toDateStr(raw: unknown): string | null {
@@ -134,10 +145,13 @@ function computeWindow(
     if (r.created_at && r.created_at >= startDate && r.created_at < endDate) {
       if (!newByEmail.has(email)) newByEmail.set(email, ck);
     }
+    // Cancellations counted by churn_date (click date from auto_renew_events),
+    // NOT canceled_at (which is the period-end date for Pending Cancel rows).
+    // STILL_PAYING_STATES guard is unnecessary here because churn_date is only
+    // populated when the row is currently in Canceled or Pending Cancel state.
     if (
-      r.canceled_at &&
-      r.canceled_at >= startDate && r.canceled_at < endDate &&
-      !STILL_PAYING_STATES.includes(r.plan_state)
+      r.churn_date &&
+      r.churn_date >= startDate && r.churn_date < endDate
     ) {
       if (!canceledByEmail.has(email)) canceledByEmail.set(email, ck);
     }
@@ -200,11 +214,10 @@ function computeWindow(
       newByCat[ck].set(subKey, r.monthlyRate);
     }
 
-    // Canceled in window (excluding still-paying states)
+    // Canceled in window — keyed off churn_date from auto_renew_events.
     if (
-      r.canceled_at &&
-      r.canceled_at >= startDate && r.canceled_at < endDate &&
-      !STILL_PAYING_STATES.includes(r.plan_state)
+      r.churn_date &&
+      r.churn_date >= startDate && r.churn_date < endDate
     ) {
       canceledByCat[ck].set(subKey, r.monthlyRate);
     }
@@ -282,16 +295,21 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
   // getActiveAutoRenews() and Union's admin row counts. People genuinely
   // subscribed to the same plan twice (different created_at) appear as
   // two rows and count twice — which is correct.
-  const { rows: allRows } = await pool.query(
-    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
-     FROM auto_renews`,
-  );
+  const [{ rows: allRows }, churnDateById] = await Promise.all([
+    pool.query(
+      `SELECT id, plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
+       FROM auto_renews`,
+    ),
+    getFirstChurnDateByAutoRenewId(),
+  ]);
 
   const categorized: CategorizedRow[] = allRows.map((r: Record<string, unknown>) => {
     const name = (r.plan_name as string) || "";
     const annual = isAnnualPlan(name);
     const price = Number(r.plan_price) || 0;
+    const id = Number(r.id);
     return {
+      id,
       plan_name: name,
       plan_state: (r.plan_state as string) || "",
       category: getCategory(name),
@@ -299,6 +317,7 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
       canceled_at: toDateStr(r.canceled_at),
       customer_email: (r.customer_email as string) || "",
       monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
+      churn_date: churnDateById.get(id) ?? null,
     };
   });
 
