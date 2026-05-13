@@ -476,18 +476,23 @@ export async function GET(request: Request) {
       for (const tw of trends.weekly) {
         const mv = movementWeeklyByPeriod.get(tw.period);
         if (!mv) continue;
-        tw.memberChurn = mv.member.canceled;
+        // Member weekly churn cards are labeled "Monthly-billed member churn rate",
+        // so use the monthly-billed-only subset from canonical movement. Annual
+        // members are not represented on the Members page weekly chart.
+        const memMonthlyCanceled = mv.member.monthlyCanceled ?? mv.member.canceled;
+        const memMonthlyActive = mv.member.monthlyActiveAtStart ?? mv.member.activeAtStart;
+        tw.memberChurn = memMonthlyCanceled;
         tw.sky3Churn = mv.sky3.canceled;
         tw.skyTingTvChurn = mv.skyTingTv.canceled;
         tw.newMembers = mv.member.new;
         tw.newSky3 = mv.sky3.new;
         tw.newSkyTingTv = mv.skyTingTv.new;
         // Override weekly rate + active-at-start fields with canonical values
-        tw.activeMembersAtWeekStart = mv.member.activeAtStart;
+        tw.activeMembersAtWeekStart = memMonthlyActive;
         tw.activeSky3AtWeekStart = mv.sky3.activeAtStart;
         tw.activeSkyTingTvAtWeekStart = mv.skyTingTv.activeAtStart;
-        tw.memberChurnPct = mv.member.activeAtStart > 0
-          ? Math.round((mv.member.canceled / mv.member.activeAtStart) * 1000) / 10 : 0;
+        tw.memberChurnPct = memMonthlyActive > 0
+          ? Math.round((memMonthlyCanceled / memMonthlyActive) * 1000) / 10 : 0;
         tw.sky3ChurnPct = mv.sky3.activeAtStart > 0
           ? Math.round((mv.sky3.canceled / mv.sky3.activeAtStart) * 1000) / 10 : 0;
         tw.skyTingTvChurnPct = mv.skyTingTv.activeAtStart > 0
@@ -525,11 +530,52 @@ export async function GET(request: Request) {
               ? Math.round((mvCat.canceled / mvCat.activeAtStart) * 1000) / 10 : 0;
             m.mrrChurnRate = mvCat.activeMrrAtStart > 0
               ? Math.round((mvCat.canceledMrr / mvCat.activeMrrAtStart) * 1000) / 10 : 0;
+
+            // MEMBER-only: also override the monthly-billed subset that drives
+            // the "Monthly-billed member churn rate" card. Without this, the
+            // displayed rate (eligibleChurnRate) was the stale legacy value
+            // from db-trends.ts while the count above was the canonical one —
+            // they didn't agree.
+            if (key === "member") {
+              const memMonthlyCanceled = mvCat.monthlyCanceled ?? mvCat.canceled;
+              const memMonthlyActive = mvCat.monthlyActiveAtStart ?? mvCat.activeAtStart;
+              const memMonthlyCanceledMrr = mvCat.monthlyCanceledMrr ?? mvCat.canceledMrr;
+              const memMonthlyActiveMrr = mvCat.monthlyActiveMrrAtStart ?? mvCat.activeMrrAtStart;
+              m.monthlyCanceledCount = memMonthlyCanceled;
+              m.monthlyActiveAtStart = memMonthlyActive;
+              m.monthlyCanceledMrr = memMonthlyCanceledMrr;
+              m.monthlyActiveMrrAtStart = memMonthlyActiveMrr;
+              m.eligibleChurnRate = memMonthlyActive > 0
+                ? Math.round((memMonthlyCanceled / memMonthlyActive) * 1000) / 10 : 0;
+              m.monthlyMrrChurnRate = memMonthlyActiveMrr > 0
+                ? Math.round((memMonthlyCanceledMrr / memMonthlyActiveMrr) * 1000) / 10 : 0;
+            }
           }
           // Recompute the 6-mo averages via canonical helper
           const avgs = computeAvgChurnRates(catData.monthly);
           catData.avgUserChurnRate = avgs.avgUserChurnRate;
           catData.avgMrrChurnRate = avgs.avgMrrChurnRate;
+
+          // MEMBER-only: recompute avgEligibleChurnRate from canonical values.
+          // Excludes current partial month and 2025-10 (bulk admin cleanup),
+          // matching computeAvgChurnRates' exclusions.
+          if (key === "member") {
+            const completed = catData.monthly
+              .slice(0, -1)
+              .filter((mm) => mm.month !== "2025-10");
+            catData.avgEligibleChurnRate = completed.length > 0
+              ? Math.round(
+                  (completed.reduce((s, mm) => s + (mm.eligibleChurnRate ?? 0), 0) /
+                    completed.length) * 10,
+                ) / 10
+              : 0;
+            catData.avgMonthlyMrrChurnRate = completed.length > 0
+              ? Math.round(
+                  (completed.reduce((s, mm) => s + (mm.monthlyMrrChurnRate ?? 0), 0) /
+                    completed.length) * 10,
+                ) / 10
+              : 0;
+          }
         }
         // Update legacy flat averages
         trends.churnRates.avgMemberRate = trends.churnRates.byCategory.member?.avgUserChurnRate ?? 0;
