@@ -225,6 +225,7 @@ export class ZipTransformer {
         customerEmail: membership.email,
         createdAt: pass.createdAt || pass.created,
         canceledAt: pass.canceledAt || undefined,
+        pendingCanceledAt: pass.pendingCanceledAt || undefined,
         unionPassId: pass.id,
       });
     }

@@ -17,7 +17,7 @@ import { getPool } from "../../db/database";
 import { getFirstChurnDateByAutoRenewId } from "../../db/auto-renew-events-store";
 import { getCategory, isAnnualPlan } from "../categories";
 import { parseDate } from "../date-utils";
-import { ACTIVE_STATES, STILL_PAYING_STATES } from "./filters";
+import { ACTIVE_STATES } from "./filters";
 
 export type CategoryKey = "member" | "sky3" | "skyTingTv";
 
@@ -324,15 +324,12 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
   // two rows and count twice — which is correct.
   const [{ rows: allRows }, churnDateById] = await Promise.all([
     pool.query(
-      `SELECT id, plan_name, plan_state, plan_price, canceled_at, created_at, customer_email
+      `SELECT id, plan_name, plan_state, plan_price,
+              canceled_at, pending_canceled_at, created_at, customer_email
        FROM auto_renews`,
     ),
     getFirstChurnDateByAutoRenewId(),
   ]);
-
-  // Today's date (YYYY-MM-DD) for the past-date guard below.
-  const _today = new Date();
-  const todayStr = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, "0")}-${String(_today.getDate()).padStart(2, "0")}`;
 
   const categorized: CategorizedRow[] = allRows.map((r: Record<string, unknown>) => {
     const name = (r.plan_name as string) || "";
@@ -341,24 +338,20 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
     const id = Number(r.id);
     const state = (r.plan_state as string) || "";
     const canceledAt = toDateStr(r.canceled_at);
+    const pendingCanceledAt = toDateStr(r.pending_canceled_at);
     const liveChurnDate = churnDateById.get(id) ?? null;
-    // Fallback for cancellations pre-dating live-event capture.
-    // getFirstChurnDateByAutoRenewId is strict — drops backfill_churn,
-    // requires prev_state ∈ active-ish, requires imported_at within 7 days —
-    // so older cancellations have churn_date = null and the canonical path
-    // alone collapses Nov '25–Mar '26 to 0%. Match the legacy dashboard's
-    // wider net by using canceled_at as the click-date proxy for any row that
-    // isn't still paying. The past-date guard is essential: for Pending Cancel
-    // rows currently waiting on a future period-end, canceled_at points at
-    // that FUTURE date, not the click — and including it would silently move
-    // counts into months ahead of the period-end. Live click events always
-    // win when present, so the recent window keeps accurate click-date timing.
-    const useFallback =
-      !liveChurnDate &&
-      canceledAt !== null &&
-      canceledAt < todayStr &&
-      !STILL_PAYING_STATES.includes(state);
-    const churnDate = liveChurnDate ?? (useFallback ? canceledAt : null);
+    // Click-date priority for cancellation-window counts:
+    //   1. pending_canceled_at — Union's canonical click timestamp (set when
+    //      the user clicked cancel, i.e. entered Pending Cancel state).
+    //      Populated by the zip ingest from pass.pendingCanceledAt.
+    //   2. Live churn observation from auto_renew_events — our recording of
+    //      the Valid Now → Pending Cancel transition. Same event as
+    //      pending_canceled_at; serves as a bridge for any pre-ingest rows
+    //      that don't yet have pending_canceled_at populated.
+    //   3. null — no click date. We do NOT fall back to canceled_at: it's
+    //      the period-end date for click-then-roll cancellations and bucket-
+    //      ing by it produces the period-end clustering bug PR #8 fixed.
+    const churnDate = pendingCanceledAt ?? liveChurnDate ?? null;
     return {
       id,
       plan_name: name,
