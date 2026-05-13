@@ -335,17 +335,30 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
     const annual = isAnnualPlan(name);
     const price = Number(r.plan_price) || 0;
     const id = Number(r.id);
+    const state = (r.plan_state as string) || "";
+    const canceledAt = toDateStr(r.canceled_at);
+    const liveChurnDate = churnDateById.get(id) ?? null;
+    // Fallback for months pre-dating live-event capture: if we never observed
+    // a live churn transition (auto_renew_events filters out backfill_churn
+    // and enforces a 7-day imported_at guard, so older cancellations have no
+    // live churn_date) AND the row is now Canceled, use canceled_at. For an
+    // already-Canceled row, canceled_at is the period-end date, frozen since
+    // the period closed — imperfect for the click-date semantic but the best
+    // signal we have for historical months and what the legacy dashboard used.
+    // Pending Cancel rows are NOT given the fallback: their canceled_at is the
+    // future renewal date, not a real cancellation timestamp.
+    const churnDate = liveChurnDate ?? (state === "Canceled" ? canceledAt : null);
     return {
       id,
       plan_name: name,
-      plan_state: (r.plan_state as string) || "",
+      plan_state: state,
       category: getCategory(name),
       created_at: toDateStr(r.created_at),
-      canceled_at: toDateStr(r.canceled_at),
+      canceled_at: canceledAt,
       customer_email: (r.customer_email as string) || "",
       monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
       isAnnual: annual,
-      churn_date: churnDateById.get(id) ?? null,
+      churn_date: churnDate,
     };
   });
 
