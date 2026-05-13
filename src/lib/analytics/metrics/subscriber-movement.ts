@@ -32,6 +32,13 @@ export interface CategoryMovement {
   canceledMrr: number;
   /** Sum of monthly-equivalent rates for active-at-start */
   activeMrrAtStart: number;
+  // MEMBER-only: monthly-billed subscriber subset (excludes annual plans).
+  // Used by the "Monthly-billed member churn rate" cards on the Members page.
+  // Undefined for sky3 / skyTingTv (no annual variant).
+  monthlyCanceled?: number;
+  monthlyActiveAtStart?: number;
+  monthlyCanceledMrr?: number;
+  monthlyActiveMrrAtStart?: number;
 }
 
 export interface PlanChangeDetail {
@@ -77,6 +84,9 @@ interface CategorizedRow {
   canceled_at: string | null;
   customer_email: string;
   monthlyRate: number;
+  /** True for plans that bill annually (e.g. "Member Annual"). Drives the
+   * MEMBER monthly-billed-only split on the Members page churn cards. */
+  isAnnual: boolean;
   /**
    * The day we first observed this subscription transition into a churned state,
    * derived from the auto_renew_events log. This is the "click cancel" date and
@@ -127,6 +137,10 @@ function computeWindow(
   const activeAtStartByCat: Record<CategoryKey, Map<string, number>> = {
     member: new Map(), sky3: new Map(), skyTingTv: new Map(),
   };
+  // MEMBER-only: monthly-billed subset (excludes annual plans). Drives the
+  // "Monthly-billed member churn rate" weekly/monthly cards on the Members page.
+  const memberMonthlyCanceled = new Map<string, number>();
+  const memberMonthlyActiveAtStart = new Map<string, number>();
 
   // Plan-changer detection: by-email across categories, in this window.
   // If a customer appears as "new" in one category AND "canceled" in
@@ -202,6 +216,9 @@ function computeWindow(
       const canceledLater = r.canceled_at && r.canceled_at >= startDate;
       if (stillActive || canceledLater) {
         activeAtStartByCat[ck].set(subKey, r.monthlyRate);
+        if (ck === "member" && !r.isAnnual) {
+          memberMonthlyActiveAtStart.set(subKey, r.monthlyRate);
+        }
       }
     }
 
@@ -220,19 +237,29 @@ function computeWindow(
       r.churn_date >= startDate && r.churn_date < endDate
     ) {
       canceledByCat[ck].set(subKey, r.monthlyRate);
+      if (ck === "member" && !r.isAnnual) {
+        memberMonthlyCanceled.set(subKey, r.monthlyRate);
+      }
     }
   }
 
   function mkCategoryMetrics(ck: CategoryKey): CategoryMovement {
     const sumRates = (m: Map<string, number>) =>
       Math.round(Array.from(m.values()).reduce((s, v) => s + v, 0) * 100) / 100;
-    return {
+    const base: CategoryMovement = {
       new: newByCat[ck].size,
       canceled: canceledByCat[ck].size,
       activeAtStart: activeAtStartByCat[ck].size,
       canceledMrr: sumRates(canceledByCat[ck]),
       activeMrrAtStart: sumRates(activeAtStartByCat[ck]),
     };
+    if (ck === "member") {
+      base.monthlyCanceled = memberMonthlyCanceled.size;
+      base.monthlyActiveAtStart = memberMonthlyActiveAtStart.size;
+      base.monthlyCanceledMrr = sumRates(memberMonthlyCanceled);
+      base.monthlyActiveMrrAtStart = sumRates(memberMonthlyActiveAtStart);
+    }
+    return base;
   }
 
   return {
@@ -317,6 +344,7 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
       canceled_at: toDateStr(r.canceled_at),
       customer_email: (r.customer_email as string) || "",
       monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
+      isAnnual: annual,
       churn_date: churnDateById.get(id) ?? null,
     };
   });
