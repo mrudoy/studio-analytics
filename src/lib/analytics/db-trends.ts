@@ -1399,39 +1399,28 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
         canceledMrr: Math.round(canceledMrr * 100) / 100,
       };
 
-      // MEMBER-only: annual vs monthly breakdown + eligible churn rate
+      // MEMBER-only: annual breakdown. The monthly-billed subset
+      // (monthlyActiveAtStart, monthlyCanceledCount, eligibleChurnRate,
+      // monthlyActiveMrrAtStart, monthlyCanceledMrr, monthlyMrrChurnRate) is
+      // computed canonically in getSubscriberMovement and written here by the
+      // /api/stats route override — see route.ts around the
+      // "MEMBER-only: also override the monthly-billed subset" block.
       if (cat === "MEMBER") {
         const activeValues = Array.from(activeByEmail.values());
         const canceledValues = Array.from(canceledByEmail.values());
         const annualActive = activeValues.filter((r) => r.isAnnual);
-        const monthlyActive = activeValues.filter((r) => !r.isAnnual);
         const annualCanceled = canceledValues.filter((r) => r.isAnnual);
-        const monthlyCanceled = canceledValues.filter((r) => !r.isAnnual);
         entry.annualActiveAtStart = annualActive.length;
         entry.annualCanceledCount = annualCanceled.length;
-        entry.monthlyActiveAtStart = monthlyActive.length;
-        entry.monthlyCanceledCount = monthlyCanceled.length;
-        // Eligible churn: only monthly subscribers can churn month-to-month
-        entry.eligibleChurnRate = monthlyActive.length > 0
-          ? Math.round((monthlyCanceled.length / monthlyActive.length) * 1000) / 10
-          : 0;
-        // Annual user churn rate
         entry.annualUserChurnRate = annualActive.length > 0
           ? Math.round((annualCanceled.length / annualActive.length) * 1000) / 10
           : 0;
-        // Per-billing MRR split
         const annualActiveMrr = annualActive.reduce((s, r) => s + r.monthlyRate, 0);
         const annualCanceledMrr = annualCanceled.reduce((s, r) => s + r.monthlyRate, 0);
-        const monthlyActiveMrr = monthlyActive.reduce((s, r) => s + r.monthlyRate, 0);
-        const monthlyCanceledMrr = monthlyCanceled.reduce((s, r) => s + r.monthlyRate, 0);
         entry.annualActiveMrrAtStart = Math.round(annualActiveMrr * 100) / 100;
         entry.annualCanceledMrr = Math.round(annualCanceledMrr * 100) / 100;
         entry.annualMrrChurnRate = annualActiveMrr > 0
           ? Math.round((annualCanceledMrr / annualActiveMrr) * 1000) / 10 : 0;
-        entry.monthlyActiveMrrAtStart = Math.round(monthlyActiveMrr * 100) / 100;
-        entry.monthlyCanceledMrr = Math.round(monthlyCanceledMrr * 100) / 100;
-        entry.monthlyMrrChurnRate = monthlyActiveMrr > 0
-          ? Math.round((monthlyCanceledMrr / monthlyActiveMrr) * 1000) / 10 : 0;
       }
 
       monthlyChurn.push(entry);
@@ -1457,10 +1446,8 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     }
     const atRiskCount = atRiskEmails.size;
 
-    // MEMBER-only: average eligible churn rate (monthly subscribers only)
-    const avgEligible = cat === "MEMBER" && completedFiltered.length > 0
-      ? Math.round((completedFiltered.reduce((s, r) => s + (r.eligibleChurnRate ?? 0), 0) / completedFiltered.length) * 10) / 10
-      : undefined;
+    // avgEligibleChurnRate and avgMonthlyMrrChurnRate are recomputed from
+    // canonical movement values in the /api/stats route override.
 
     const result: typeof catResults[typeof cat] = {
       category: cat,
@@ -1468,7 +1455,6 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       avgUserChurnRate: avgUser,
       avgMrrChurnRate: avgMrr,
       atRiskCount,
-      ...(avgEligible !== undefined && { avgEligibleChurnRate: avgEligible }),
     };
 
     // MEMBER-only: split averages + at-risk by billing type
@@ -1477,7 +1463,6 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
         Math.round((completedFiltered.reduce((s, r) => s + ((r[key] as number) ?? 0), 0) / completedFiltered.length) * 10) / 10;
       result.avgAnnualUserChurnRate = avg("annualUserChurnRate");
       result.avgAnnualMrrChurnRate = avg("annualMrrChurnRate");
-      result.avgMonthlyMrrChurnRate = avg("monthlyMrrChurnRate");
       const annualAtRiskEmails = new Set<string>();
       const monthlyAtRiskEmails = new Set<string>();
       for (const r of catRows) {
