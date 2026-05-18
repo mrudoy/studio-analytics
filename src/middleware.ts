@@ -1,24 +1,25 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { verifySession, COOKIE_NAME } from "@/lib/auth/session";
 
 /**
- * API authentication middleware.
+ * Two-layer auth middleware:
  *
- * Three tiers:
- * 1. PUBLIC — no auth needed (health checks, webhooks with own auth)
- * 2. READ — same-origin browser requests OR Bearer token (dashboard data)
- * 3. WRITE — Bearer token only (mutations, admin, sensitive data)
+ * Layer 1 — Password gate (page + API level)
+ *   Checks the studio_session cookie. Unauthenticated page requests redirect
+ *   to /login; unauthenticated API requests return 401. Bearer tokens also
+ *   satisfy this layer for programmatic API access (cron, scripts).
  *
- * This prevents external sites from scraping data or triggering mutations,
- * while keeping the dashboard functional for logged-in users.
+ * Layer 2 — API auth (existing, unchanged)
+ *   Three tiers: PUBLIC (no auth), READ (same-origin or Bearer), WRITE (Bearer only).
  */
 
-/** No auth required */
+/** API paths accessible without a session cookie */
 const PUBLIC_PATHS = new Set([
-  "/api/health",                  // Railway health checks
-  "/api/diagnose-pipeline",       // Operational diagnostics (read-only metadata)
-  "/api/diagnose-conversions",    // Operational diagnostics (read-only metadata)
-  "/api/webhook/union-export",    // Has own UNION_WEBHOOK_SECRET
+  "/api/health",               // Railway health checks
+  "/api/diagnose-pipeline",    // Operational diagnostics (read-only metadata)
+  "/api/diagnose-conversions", // Operational diagnostics (read-only metadata)
+  "/api/webhook/union-export", // Has own UNION_WEBHOOK_SECRET
 ]);
 
 function isPublic(pathname: string): boolean {
@@ -39,7 +40,6 @@ function isSameOrigin(request: NextRequest): boolean {
   const host = request.headers.get("host");
   if (!host) return false;
 
-  // Check Origin header (set on cross-origin requests)
   if (origin) {
     try {
       const originHost = new URL(origin).host;
@@ -49,7 +49,6 @@ function isSameOrigin(request: NextRequest): boolean {
     }
   }
 
-  // Check Referer header (set on same-origin navigations)
   if (referer) {
     try {
       const refererHost = new URL(referer).host;
@@ -64,38 +63,79 @@ function isSameOrigin(request: NextRequest): boolean {
   return false;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only gate /api/* routes
+  // Static assets — always pass through
+  if (pathname.startsWith("/_next/") || pathname === "/favicon.ico") {
+    return NextResponse.next();
+  }
+
+  // Auth endpoints — always accessible (no session gate)
+  if (pathname.startsWith("/api/auth/")) {
+    return NextResponse.next();
+  }
+
+  // Public API paths (health checks, webhooks) — skip session gate,
+  // fall through to Layer 2 API auth below
+  const isPublicPath = isPublic(pathname);
+
+  // --- Layer 1: Session gate ---
+  if (!isPublicPath) {
+    let authenticated = false;
+
+    // Bearer token satisfies the session gate for API routes
+    if (pathname.startsWith("/api/")) {
+      const cronSecret = process.env.CRON_SECRET;
+      if (cronSecret && hasBearerToken(request, cronSecret)) {
+        authenticated = true;
+      }
+    }
+
+    if (!authenticated) {
+      const session = request.cookies.get(COOKIE_NAME)?.value;
+      authenticated = session ? await verifySession(session) : false;
+    }
+
+    if (pathname === "/login") {
+      // Authenticated users don't need the login page
+      if (authenticated) return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.next();
+    }
+
+    if (!authenticated) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("from", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  // Authenticated (or public/auth path). Non-API pages proceed immediately.
   if (!pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
 
-  // Public endpoints — no auth
-  if (isPublic(pathname)) {
+  // --- Layer 2: API auth (unchanged logic) ---
+  if (isPublicPath) {
     return NextResponse.next();
   }
 
   // Same-origin browser requests are allowed for all endpoints.
-  // This covers the dashboard UI calling /api/pipeline, /api/settings, etc.
-  // The threat model is external scrapers and CSRF, not the dashboard user.
-  // Checked BEFORE CRON_SECRET so the dashboard works even if the secret
-  // isn't configured yet.
   if (isSameOrigin(request)) {
     return NextResponse.next();
   }
 
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
-    // Fail closed: if CRON_SECRET is not set, reject non-same-origin API requests
     return NextResponse.json(
       { error: "Server misconfigured: auth secret not set" },
       { status: 500 },
     );
   }
 
-  // Bearer token always works for any endpoint
   if (hasBearerToken(request, cronSecret)) {
     return NextResponse.next();
   }
@@ -104,5 +144,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
