@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { getPool } from "./database";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
 import { BILLING_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
@@ -71,6 +72,15 @@ export interface AutoRenewStats {
 // ── Write Operations ─────────────────────────────────────────
 
 /**
+ * Postgres advisory-lock key serializing all bulk auto_renews writes.
+ * Both saveAutoRenews() (daily pipeline) and reconcileFromFullExport()
+ * (reconcile.ts) acquire pg_advisory_xact_lock(this) at the start of their
+ * transactions, so a reconcile and a concurrent daily delta cannot interleave
+ * — the lock auto-releases on COMMIT/ROLLBACK. Cross-process safe.
+ */
+export const AUTO_RENEW_WRITE_LOCK = 472900;
+
+/**
  * Save a batch of auto-renews using UPSERT (INSERT ... ON CONFLICT DO UPDATE).
  *
  * Dedup key: (customer_email, plan_name, created_at) — from migration 003.
@@ -85,11 +95,38 @@ export async function saveAutoRenews(
 ): Promise<{ inserted: number; updated: number }> {
   const pool = getPool();
   const client = await pool.connect();
-  let inserted = 0;
-  let updated = 0;
-
   try {
     await client.query("BEGIN");
+    // Serialize against a concurrent reconcile (Phase 0.5 concurrency control).
+    await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
+    const res = await upsertAutoRenewRowsTx(client, snapshotId, rows);
+    await client.query("COMMIT");
+    console.log(
+      `[auto-renew-store] Upserted ${rows.length} auto-renews (snapshot: ${snapshotId}, ` +
+        `${res.inserted} inserted, ${res.updated} updated)`,
+    );
+    return res;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Upsert auto-renew rows on an EXISTING transaction (caller owns BEGIN/COMMIT
+ * and client.release()). Enables the reconcile orchestrator to run the upsert
+ * and the cancel pass atomically in one transaction. saveAutoRenews() wraps
+ * this for standalone callers.
+ */
+export async function upsertAutoRenewRowsTx(
+  client: PoolClient,
+  snapshotId: string,
+  rows: AutoRenewRow[],
+): Promise<{ inserted: number; updated: number }> {
+  let inserted = 0;
+  let updated = 0;
 
     // Dedupe input rows by conflict key before writing.
     //
@@ -167,7 +204,7 @@ export async function saveAutoRenews(
       // This replaces the old DELETE-then-INSERT workaround, which violated
       // the permanent NEVER DELETE DATA rule. Same pattern as registration-store.ts.
       if (row.unionPassId) {
-        const updated = await client.query(
+        const upd = await client.query(
           `UPDATE auto_renews SET
              snapshot_id = $1,
              plan_name = $2,
@@ -189,8 +226,8 @@ export async function saveAutoRenews(
            WHERE union_pass_id = $15`,
           values
         );
-        if (updated.rowCount && updated.rowCount > 0) {
-          inserted += updated.rowCount;
+        if (upd.rowCount && upd.rowCount > 0) {
+          updated += upd.rowCount;
           updatedExisting = true;
         }
       }
@@ -243,18 +280,6 @@ export async function saveAutoRenews(
       console.warn(`[auto-renew-store] Skipped ${skipped}/${dedupedRows.length} rows due to per-row errors (others were saved)`);
     }
 
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
-
-  console.log(
-    `[auto-renew-store] Upserted ${rows.length} auto-renews (snapshot: ${snapshotId}, ` +
-    `${inserted} rows affected)`
-  );
   return { inserted, updated };
 }
 
@@ -425,9 +450,10 @@ function mapRow(raw: RawAutoRenewRow): StoredAutoRenew {
 /**
  * Get all active auto-renews.
  *
- * Plan states considered "active" (per CLAUDE.md ACTIVE_STATES):
- *   Valid Now, Paused, In Trial, Invalid, Pending Cancel.
- * Past Due is NOT active (payment failed).
+ * Plan states considered "active" (per CLAUDE.md ACTIVE_STATES / ACTIVE_STATES_SQL):
+ *   Valid Now, Paused, Pending Cancel, In Trial, Invalid, Past Due.
+ *   (Past Due IS active — Union keeps retrying payment and counts them active,
+ *   so we do too. Only 'Canceled' is excluded. This query uses ACTIVE_STATES_SQL.)
  *
  * Counting strategy — LATEST row per (email, plan_name):
  *   - The latest row's plan_state must be in ACTIVE_STATES.

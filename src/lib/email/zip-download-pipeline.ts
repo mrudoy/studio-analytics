@@ -44,6 +44,7 @@ import {
   type RawTransfer,
 } from "./zip-schemas";
 import { saveAutoRenews, reconcileAutoRenews } from "../db/auto-renew-store";
+import { logDeltaCancelShadow } from "../db/shadow-cancel-store";
 import { saveOrders } from "../db/order-store";
 import {
   saveRegistrations,
@@ -509,6 +510,20 @@ async function runZipImport(
     // against a delta would mass-cancel everyone not in the delta.
     // Reconciliation should only run against a FULL subscriber export
     // (e.g. the "subscriptions changes" report from Union.fit admin).
+  }
+
+  // ── B1 shadow mode: record cancellations the delta IMPLIES (NO writes) ──
+  // Passes arriving Expired/Canceled or auto-renew-off are normally dropped by
+  // transformAutoRenews. Here we LOG them to delta_cancel_shadow so we can later
+  // measure (against a full export) whether making the delta cancellation-aware
+  // would be correct — before any write is enabled. Non-fatal.
+  try {
+    const shadow = transformer.collectShadowCancellations();
+    if (shadow.length > 0) {
+      await logDeltaCancelShadow(shadow, `zip-shadow-${Date.now()}`);
+    }
+  } catch (e) {
+    console.warn("[zip-pipeline] shadow cancellation logging failed (non-fatal):", e);
   }
 
   // ── Populate pass-email cache ──────────────────────────

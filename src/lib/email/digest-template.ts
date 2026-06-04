@@ -99,7 +99,17 @@ function totalRow(
 
 // ── Public ─────────────────────────────────────────────────
 
-export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | null, pipelineStaleHours?: number | null): string {
+export interface ReconcileHealthBanner {
+  status: "OK" | "WARNING" | "OVERDUE" | "NEVER";
+  daysAgo: number | null;
+}
+
+export function buildDigestHtml(
+  data: OverviewData,
+  freshness?: DataFreshness | null,
+  pipelineStaleHours?: number | null,
+  reconcileHealth?: ReconcileHealthBanner | null,
+): string {
   const windows = [data.yesterday, data.thisWeek, data.lastWeek];
   const { currentActive } = data;
 
@@ -148,6 +158,27 @@ export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | 
           </tr>`
     : "";
 
+  // Reconciliation overdue alert — the subscriber counts drift until a full
+  // Union export is reconciled. Surface OVERDUE/never so someone re-syncs.
+  const reconcileBanner = reconcileHealth && reconcileHealth.status !== "OK"
+    ? `
+          <!-- Reconciliation Overdue Warning -->
+          <tr>
+            <td style="padding:0;">
+              <div style="background-color:#fef3c7;border-bottom:1px solid #f59e0b;padding:12px 24px;">
+                <div style="font-size:13px;font-weight:600;color:#92400e;">
+                  ${reconcileHealth.status === "NEVER"
+                    ? "Subscriber counts have never been reconciled to a full Union export"
+                    : `Full subscriber reconciliation is ${reconcileHealth.status === "OVERDUE" ? "OVERDUE" : "due soon"} — last run ${reconcileHealth.daysAgo} days ago`}
+                </div>
+                <div style="font-size:11px;color:#a16207;margin-top:2px;">
+                  Member/Sky3/TV counts drift upward between full syncs. Export Union's active-subscriptions list and run the weekly reconcile (scripts/sync-auto-renews-from-csv.ts).
+                </div>
+              </div>
+            </td>
+          </tr>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -159,13 +190,14 @@ export function buildDigestHtml(data: OverviewData, freshness?: DataFreshness | 
 
           <!-- Header -->
           <tr>
-            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner || pipelineBanner ? "none" : "1px solid #e5e7eb"};">
+            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner || pipelineBanner || reconcileBanner ? "none" : "1px solid #e5e7eb"};">
               <div style="font-size:20px;font-weight:700;color:#111827;">Auto-Renews</div>
               <div style="font-size:13px;color:#6b7280;margin-top:4px;">${today}</div>
             </td>
           </tr>
           ${freshnessBanner}
           ${pipelineBanner}
+          ${reconcileBanner}
 
           <!-- Table -->
           <tr>

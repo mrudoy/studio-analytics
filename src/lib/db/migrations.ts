@@ -817,6 +817,220 @@ const migrations: Migration[] = [
     `,
   },
 
+  // ── 021 ─────────────────────────────────────────────────────
+  // Reconciliation safety framework (Phase 0.1 + 0.2).
+  //
+  // Full-export reconciliation flips DB-active rows that are absent from a
+  // fresh Union export to 'Canceled'. That is a logically destructive write
+  // and — because trg_auto_renew_log_event (migration 019) fires on every
+  // plan_state change — a naive reconcile would inject hundreds of live
+  // 'churn' events dated NOW(), spiking the churn cards/movement/digest.
+  //
+  // This migration adds:
+  //   1. reconcile_runs        — one row per reconcile run (provenance + outcome)
+  //   2. reconcile_row_snapshot — prior (plan_state, canceled_at) of every row a
+  //                               run will touch. This snapshot IS the rollback path.
+  //   3. A new 'reconcile_churn' event_type, and a trigger update so that when the
+  //      session flag `app.reconcile` is 'on', cancel transitions are logged as
+  //      'reconcile_churn' instead of 'churn'. Every churn consumer filters
+  //      event_type='churn'/'backfill_churn', so reconcile_churn is excluded from
+  //      all time-windowed churn metrics — zero fake spike.
+  {
+    name: "021_reconcile_safety_framework",
+    up: `
+      CREATE TABLE IF NOT EXISTS reconcile_runs (
+        id BIGSERIAL PRIMARY KEY,
+        source_filename TEXT,
+        source_hash TEXT,
+        report_cutoff TIMESTAMPTZ,
+        parsed_rows INTEGER,
+        parse_failures INTEGER,
+        export_counts JSONB,
+        db_pre_counts JSONB,
+        candidate_count INTEGER,
+        applied_count INTEGER,
+        protected_count INTEGER,
+        db_post_counts JSONB,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','applied','aborted','rolled_back')),
+        notes TEXT,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        finished_at TIMESTAMPTZ
+      );
+
+      -- Prior state of every row a run will touch — the rollback source of truth.
+      CREATE TABLE IF NOT EXISTS reconcile_row_snapshot (
+        id BIGSERIAL PRIMARY KEY,
+        run_id BIGINT NOT NULL REFERENCES reconcile_runs(id),
+        auto_renew_id INTEGER NOT NULL,
+        prev_plan_state TEXT,
+        prev_canceled_at DATE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_reconcile_snapshot_run
+        ON reconcile_row_snapshot(run_id);
+
+      -- Allow the distinct reconcile_churn event_type.
+      ALTER TABLE auto_renew_events DROP CONSTRAINT IF EXISTS auto_renew_events_event_type_check;
+      ALTER TABLE auto_renew_events ADD CONSTRAINT auto_renew_events_event_type_check
+        CHECK (event_type IN
+          ('signup','churn','final_cancel','resume','transition',
+           'backfill_signup','backfill_churn','reconcile_churn'));
+
+      -- Re-define the trigger fn so reconcile-driven cancels log as 'reconcile_churn'.
+      CREATE OR REPLACE FUNCTION auto_renew_log_event() RETURNS TRIGGER AS $fn$
+      DECLARE
+        churned_states CONSTANT TEXT[] := ARRAY['Canceled','Pending Cancel'];
+        old_churned BOOLEAN;
+        new_churned BOOLEAN;
+        ev_type TEXT;
+        reconcile_mode BOOLEAN := COALESCE(current_setting('app.reconcile', true), 'off') = 'on';
+      BEGIN
+        IF TG_OP = 'INSERT' THEN
+          new_churned := NEW.plan_state = ANY(churned_states);
+          ev_type := CASE
+            WHEN reconcile_mode AND new_churned THEN 'reconcile_churn'
+            WHEN new_churned THEN 'churn'
+            ELSE 'signup' END;
+          INSERT INTO auto_renew_events (
+            auto_renew_id, customer_email, plan_name, plan_category,
+            prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+          ) VALUES (
+            NEW.id, NEW.customer_email, NEW.plan_name, NEW.plan_category,
+            NULL, NEW.plan_state, ev_type, NEW.snapshot_id, NOW(), FALSE
+          );
+          RETURN NEW;
+        END IF;
+
+        -- UPDATE: only log on actual state change
+        IF OLD.plan_state IS NOT DISTINCT FROM NEW.plan_state THEN
+          RETURN NEW;
+        END IF;
+
+        old_churned := OLD.plan_state = ANY(churned_states);
+        new_churned := NEW.plan_state = ANY(churned_states);
+
+        IF reconcile_mode AND new_churned AND NOT old_churned THEN
+          ev_type := 'reconcile_churn';
+        ELSIF new_churned AND NOT old_churned THEN
+          ev_type := 'churn';
+        ELSIF old_churned AND NOT new_churned THEN
+          ev_type := 'resume';
+        ELSIF OLD.plan_state = 'Pending Cancel' AND NEW.plan_state = 'Canceled' THEN
+          ev_type := 'final_cancel';
+        ELSE
+          ev_type := 'transition';
+        END IF;
+
+        INSERT INTO auto_renew_events (
+          auto_renew_id, customer_email, plan_name, plan_category,
+          prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+        ) VALUES (
+          NEW.id, NEW.customer_email, NEW.plan_name, NEW.plan_category,
+          OLD.plan_state, NEW.plan_state, ev_type, NEW.snapshot_id, NOW(), FALSE
+        );
+        RETURN NEW;
+      END;
+      $fn$ LANGUAGE plpgsql;
+    `,
+  },
+
+  // ── 022 ─────────────────────────────────────────────────────
+  // B1 shadow mode (Phase B1): record the cancellations the daily delta IMPLIES
+  // — passes that arrive Expired/Canceled or with auto-renew turned off — WITHOUT
+  // writing to auto_renews. Lets us validate, against the next full export,
+  // whether making the delta cancellation-aware would be correct before enabling
+  // any writes. One row per union_pass_id, upserted to its latest observation.
+  {
+    name: "022_delta_cancel_shadow",
+    up: `
+      CREATE TABLE IF NOT EXISTS delta_cancel_shadow (
+        union_pass_id TEXT PRIMARY KEY,
+        plan_name TEXT,
+        customer_email TEXT,
+        plan_category TEXT,
+        raw_state TEXT,
+        auto_renew_off BOOLEAN,
+        intended_action TEXT CHECK (intended_action IN ('cancel','pending_cancel')),
+        effective_at TIMESTAMPTZ,
+        snapshot_id TEXT,
+        observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_delta_cancel_shadow_action
+        ON delta_cancel_shadow(intended_action, observed_at);
+    `,
+  },
+
+  // ── 023 ─────────────────────────────────────────────────────
+  // Make a full reconcile completely INVISIBLE to the movement log. A reconcile
+  // corrects auto_renews in bulk — those are not real member movements, so they
+  // must not appear as signups/churn/transitions dated "today". Migration 021
+  // only re-tagged the cancel pass (reconcile_churn); the upsert pass still
+  // emitted signup/transition/resume events. This redefines the trigger to skip
+  // logging ENTIRELY when app.reconcile='on'. Audit lives in reconcile_runs +
+  // reconcile_row_snapshot; real movement is captured by the daily pipeline
+  // (which never sets the flag). 'reconcile_churn' stays in the CHECK for
+  // backward compatibility with any rows migration 021 already wrote.
+  {
+    name: "023_reconcile_movement_log_silence",
+    up: `
+      CREATE OR REPLACE FUNCTION auto_renew_log_event() RETURNS TRIGGER AS $fn$
+      DECLARE
+        churned_states CONSTANT TEXT[] := ARRAY['Canceled','Pending Cancel'];
+        old_churned BOOLEAN;
+        new_churned BOOLEAN;
+        ev_type TEXT;
+        reconcile_mode BOOLEAN := COALESCE(current_setting('app.reconcile', true), 'off') = 'on';
+      BEGIN
+        -- Reconcile corrections are not member movement → leave no trace.
+        IF reconcile_mode THEN
+          RETURN NEW;
+        END IF;
+
+        IF TG_OP = 'INSERT' THEN
+          new_churned := NEW.plan_state = ANY(churned_states);
+          ev_type := CASE WHEN new_churned THEN 'churn' ELSE 'signup' END;
+          INSERT INTO auto_renew_events (
+            auto_renew_id, customer_email, plan_name, plan_category,
+            prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+          ) VALUES (
+            NEW.id, NEW.customer_email, NEW.plan_name, NEW.plan_category,
+            NULL, NEW.plan_state, ev_type, NEW.snapshot_id, NOW(), FALSE
+          );
+          RETURN NEW;
+        END IF;
+
+        IF OLD.plan_state IS NOT DISTINCT FROM NEW.plan_state THEN
+          RETURN NEW;
+        END IF;
+
+        old_churned := OLD.plan_state = ANY(churned_states);
+        new_churned := NEW.plan_state = ANY(churned_states);
+
+        IF new_churned AND NOT old_churned THEN
+          ev_type := 'churn';
+        ELSIF old_churned AND NOT new_churned THEN
+          ev_type := 'resume';
+        ELSIF OLD.plan_state = 'Pending Cancel' AND NEW.plan_state = 'Canceled' THEN
+          ev_type := 'final_cancel';
+        ELSE
+          ev_type := 'transition';
+        END IF;
+
+        INSERT INTO auto_renew_events (
+          auto_renew_id, customer_email, plan_name, plan_category,
+          prev_state, new_state, event_type, snapshot_id, observed_at, is_backfill
+        ) VALUES (
+          NEW.id, NEW.customer_email, NEW.plan_name, NEW.plan_category,
+          OLD.plan_state, NEW.plan_state, ev_type, NEW.snapshot_id, NOW(), FALSE
+        );
+        RETURN NEW;
+      END;
+      $fn$ LANGUAGE plpgsql;
+    `,
+  },
+
+  // ── 021b (PR #12) ────────────────────────────────────────────
   // Capture the user's click-cancel timestamp separately from canceled_at.
   //
   // Union exports two timestamps for a cancellation:

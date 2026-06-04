@@ -10,6 +10,7 @@ import { loadSettings } from "../crypto/credentials";
 import { getOverviewData } from "../db/overview-store";
 import { getPool } from "../db/database";
 import { buildDigestHtml } from "./digest-template";
+import { getReconcileHealth } from "../db/reconcile";
 import { getDataFreshness } from "../union-api/fetch-export";
 
 export interface DigestResult {
@@ -92,7 +93,13 @@ export async function sendDigestEmail(): Promise<DigestResult> {
     }
   } catch { /* non-fatal */ }
 
-  const html = buildDigestHtml(data, freshness, pipelineStaleHours);
+  // Reconciliation health — surface an overdue full-sync warning in the digest.
+  let reconcileHealth: { status: "OK" | "WARNING" | "OVERDUE" | "NEVER"; daysAgo: number | null } | null = null;
+  try {
+    reconcileHealth = await getReconcileHealth();
+  } catch { /* non-fatal */ }
+
+  const html = buildDigestHtml(data, freshness, pipelineStaleHours, reconcileHealth);
 
   // Format today's date for subject line
   const today = new Date().toLocaleDateString("en-US", {
