@@ -1029,6 +1029,35 @@ const migrations: Migration[] = [
       $fn$ LANGUAGE plpgsql;
     `,
   },
+
+  // ── 021b (PR #12) ────────────────────────────────────────────
+  // Capture the user's click-cancel timestamp separately from canceled_at.
+  //
+  // Union exports two timestamps for a cancellation:
+  //   - pendingCanceledAt: when the user CLICKED cancel (entered Pending Cancel)
+  //   - canceledAt:        when the period actually ENDED (entered Canceled)
+  //
+  // We were only ingesting canceled_at, which for any sub that went through
+  // the normal click → period-end flow is the future renewal date at click
+  // time. Bucketing cancellations by canceled_at clusters them on period-end
+  // dates, which inflates whichever month a billing cycle happens to end in.
+  // Without a click date, our only workaround was the auto_renew_events log,
+  // which only has data from when our trigger started observing transitions
+  // (so anything pre-capture had no click date and dropped to 0%).
+  //
+  // Adding the column here; the next zip ingest populates it for every row
+  // Union still exports. Cancellation-window queries can then bucket by the
+  // real click date with no clustering and no fallback heuristics.
+  {
+    name: "021_pending_canceled_at",
+    up: `
+      ALTER TABLE auto_renews
+        ADD COLUMN IF NOT EXISTS pending_canceled_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_ar_pending_canceled_at
+        ON auto_renews (pending_canceled_at)
+        WHERE pending_canceled_at IS NOT NULL;
+    `,
+  },
 ];
 
 /**

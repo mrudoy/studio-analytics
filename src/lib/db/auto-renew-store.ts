@@ -16,6 +16,12 @@ export interface AutoRenewRow {
   orderId?: string;
   salesChannel?: string;
   canceledAt?: string;
+  /**
+   * When the user clicked cancel (entered Pending Cancel state) per Union.
+   * Distinct from canceledAt which is the period-end (Canceled state) date.
+   * This is the click-date signal used for cancellation-window churn counts.
+   */
+  pendingCanceledAt?: string;
   canceledBy?: string;
   admin?: string;
   currentState?: string;
@@ -187,6 +193,7 @@ export async function upsertAutoRenewRowsTx(
         row.currentPlan || null,
         row.unionPassId || null,
         getCategory(row.planName),
+        row.pendingCanceledAt || null,
       ];
 
       // If union_pass_id is provided, try UPDATE-by-id first. This handles
@@ -214,6 +221,7 @@ export async function upsertAutoRenewRowsTx(
              current_state = COALESCE($13, current_state),
              current_plan = COALESCE($14, current_plan),
              plan_category = $16,
+             pending_canceled_at = COALESCE($17, pending_canceled_at),
              imported_at = NOW()
            WHERE union_pass_id = $15`,
           values
@@ -230,8 +238,8 @@ export async function upsertAutoRenewRowsTx(
             snapshot_id, plan_name, plan_state, plan_price,
             customer_name, customer_email, created_at, order_id, sales_channel,
             canceled_at, canceled_by, admin, current_state, current_plan,
-            union_pass_id, plan_category
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            union_pass_id, plan_category, pending_canceled_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
           ON CONFLICT (customer_email, plan_name, created_at)
           DO UPDATE SET
             snapshot_id = EXCLUDED.snapshot_id,
@@ -247,6 +255,7 @@ export async function upsertAutoRenewRowsTx(
             current_plan = COALESCE(EXCLUDED.current_plan, auto_renews.current_plan),
             union_pass_id = COALESCE(EXCLUDED.union_pass_id, auto_renews.union_pass_id),
             plan_category = EXCLUDED.plan_category,
+            pending_canceled_at = COALESCE(EXCLUDED.pending_canceled_at, auto_renews.pending_canceled_at),
             imported_at = NOW()`,
           values
         );
