@@ -9,7 +9,7 @@ import { RevenueCategorySchema, AutoRenewSchema, FullRegistrationSchema, Custome
 import { invalidateStatsCache } from "@/lib/cache/stats-cache";
 import { z } from "zod";
 import { writeFileSync } from "fs";
-import { join } from "path";
+import { join, basename } from "path";
 import { mkdirSync, existsSync } from "fs";
 import type { RevenueCategory, AutoRenew } from "@/types/union-data";
 
@@ -132,8 +132,13 @@ export async function POST(request: Request) {
 
         try {
           const res = await reconcileFromFullExport(arRows, {
-            source: { filename: savedPath },
-            preflight: { parseFailures: result.warnings.length },
+            source: { filename: basename(savedPath) },
+            // parseCSV's `warnings` mixes non-fatal row-validation notes with hard
+            // parse errors, so it's NOT a clean parse-failure count — using it
+            // here would abort on benign warnings. The UI path instead relies on
+            // the match-rate / zero-active / candidate-threshold gates; warnings
+            // are surfaced to the user via `warnings` below.
+            preflight: { parseFailures: 0 },
           });
           if (res.applied > 0) {
             warnings.push(`Reconciled ${res.applied} stale subscription rows (run ${res.runId})`);

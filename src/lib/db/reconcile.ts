@@ -25,20 +25,15 @@
  */
 import type { Pool, PoolClient } from "pg";
 import { getPool } from "./database";
-import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
+import { ACTIVE_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import { getCategory } from "../analytics/categories";
 import { upsertAutoRenewRowsTx, AUTO_RENEW_WRITE_LOCK, type AutoRenewRow } from "./auto-renew-store";
 
 type Queryable = Pool | PoolClient;
 
-const ACTIVE_CSV_STATES = new Set([
-  "Valid Now",
-  "Paused",
-  "Pending Cancel",
-  "In Trial",
-  "Invalid",
-  "Past Due",
-]);
+// Canonical active states (CLAUDE.md: state strings live only in filters.ts).
+// Kept in lockstep with the DB-side ACTIVE_STATES_SQL used in queryDbActiveRows.
+const ACTIVE_CSV_STATES = new Set<string>(ACTIVE_STATES);
 
 export interface CategoryCounts {
   member: number;
@@ -388,8 +383,10 @@ export async function reconcileFromFullExport(
     );
     const runId = runIns.rows[0].id as number;
 
-    // 1. Upsert all export rows (re-activates any wrongly-canceled rows). Flag OFF
-    //    so these legitimate signups/resumes log as normal events.
+    // 1. Upsert all export rows (re-activates any wrongly-canceled rows).
+    //    app.reconcile='on' (set above) silences the trigger for this ENTIRE
+    //    transaction — both this upsert and the cancel pass emit no movement
+    //    events (migration 023). Audit lives in reconcile_runs + reconcile_row_snapshot.
     const snapshotId = `sync-${runId}-${cutoffMs || Date.now()}`;
     await upsertAutoRenewRowsTx(client, snapshotId, rows);
 

@@ -1,4 +1,5 @@
 import { getPool } from "./database";
+import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import type { ShadowCancel } from "../email/zip-transformer";
 
 /**
@@ -76,7 +77,7 @@ export async function getShadowCancelImpact(): Promise<ShadowCancelImpact> {
     `SELECT s.intended_action, COUNT(*) AS n
        FROM delta_cancel_shadow s
        JOIN auto_renews ar ON ar.union_pass_id = s.union_pass_id
-      WHERE ar.plan_state IN ('Valid Now','Paused','Pending Cancel','In Trial','Invalid','Past Due')
+      WHERE ar.plan_state IN (${ACTIVE_STATES_SQL})
         AND (ar.current_state IS NULL OR ar.current_state = 'active')
       GROUP BY s.intended_action`,
   );

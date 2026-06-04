@@ -97,7 +97,7 @@ export async function saveAutoRenews(
     await client.query("COMMIT");
     console.log(
       `[auto-renew-store] Upserted ${rows.length} auto-renews (snapshot: ${snapshotId}, ` +
-        `${res.inserted} rows affected)`,
+        `${res.inserted} inserted, ${res.updated} updated)`,
     );
     return res;
   } catch (e) {
@@ -197,7 +197,7 @@ export async function upsertAutoRenewRowsTx(
       // This replaces the old DELETE-then-INSERT workaround, which violated
       // the permanent NEVER DELETE DATA rule. Same pattern as registration-store.ts.
       if (row.unionPassId) {
-        const updated = await client.query(
+        const upd = await client.query(
           `UPDATE auto_renews SET
              snapshot_id = $1,
              plan_name = $2,
@@ -218,8 +218,8 @@ export async function upsertAutoRenewRowsTx(
            WHERE union_pass_id = $15`,
           values
         );
-        if (updated.rowCount && updated.rowCount > 0) {
-          inserted += updated.rowCount;
+        if (upd.rowCount && upd.rowCount > 0) {
+          updated += upd.rowCount;
           updatedExisting = true;
         }
       }
