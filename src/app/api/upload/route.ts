@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { saveUploadedData, saveRevenueCategories } from "@/lib/db/revenue-store";
-import { saveAutoRenews, reconcileAutoRenewsFromExport, type AutoRenewRow } from "@/lib/db/auto-renew-store";
-import { ACTIVE_STATES } from "@/lib/analytics/metrics/filters";
+import { saveAutoRenews, type AutoRenewRow } from "@/lib/db/auto-renew-store";
+import { reconcileFromFullExport } from "@/lib/db/reconcile";
 import { saveFirstVisits, saveRegistrations, type RegistrationRow } from "@/lib/db/registration-store";
 import { saveFullCustomers, type FullCustomerRow } from "@/lib/db/customer-store";
 import { parseCSV } from "@/lib/parser/csv-parser";
@@ -102,15 +102,18 @@ export async function POST(request: Request) {
 
     // ── Full subscriber sync (import + reconcile) ───────────
     // Use type=subscriber_sync with a FULL subscriber export from Union.fit
-    // (e.g. "active auto renews" or "subscriptions changes" report). This:
-    //   1. Upserts all rows (restores wrongly-Canceled, refreshes current_state)
-    //   2. Subscription-level reconcile: marks DB-active (email, plan_name)
-    //      pairs NOT in the CSV as Canceled. Catches plan changers whose old
-    //      subscription was never marked Canceled by the daily delta.
+    // (the active auto-renews list). Routed through the hardened, audited
+    // reconcile path (reconcile.ts): ONE transaction — upsert (restores
+    // wrongly-Canceled) + row snapshot + trigger-suppressed cancel of DB-active
+    // rows absent from the export. Hard preflight gates ABORT on anything
+    // suspicious. The UI can't pass authoritative --expect counts, so the
+    // per-category count gate is skipped here; match-rate, zero-active, and the
+    // candidate-count threshold still guard against mass false-cancels. For a
+    // fully-gated, rollback-tracked run use the canonical CLI:
+    // scripts/sync-auto-renews-from-csv.ts.
     if (dataType === "subscriber_sync") {
       const result = parseCSV<AutoRenew>(savedPath, AutoRenewSchema);
       if (result.data.length > 0) {
-        const snapshotId = `sync-${Date.now()}`;
         const arRows: AutoRenewRow[] = result.data.map((ar) => ({
           planName: ar.name,
           planState: ar.state,
@@ -125,38 +128,24 @@ export async function POST(request: Request) {
           currentState: ar.currentState || undefined,
           currentPlan: ar.currentPlan || undefined,
         }));
-
-        // Step 1: Upsert all rows from the full export
-        await saveAutoRenews(snapshotId, arRows);
         parsedCount = arRows.length;
-        console.log(`[api/upload] Subscriber sync: saved ${arRows.length} rows (snapshot: ${snapshotId})`);
 
-        // Step 2: Row-level reconcile. Build (email|plan_name|date)
-        // tuples for active subs in the CSV. Anything in DB-active but not
-        // in this set (and created on/before CSV snapshot time) gets
-        // marked Canceled — catches stale ghosts from plan changes Union
-        // didn't emit a Canceled event for.
-        const activeTuples = new Set<string>();
-        let csvMaxCreatedMs = 0;
-        for (const ar of result.data) {
-          const ms = Date.parse(ar.created || "");
-          if (!Number.isNaN(ms) && ms > csvMaxCreatedMs) csvMaxCreatedMs = ms;
-        }
-        for (const ar of result.data) {
-          if (!ACTIVE_STATES.includes(ar.state)) continue;
-          const cs = (ar.currentState || "").trim();
-          if (cs !== "" && cs !== "active") continue;
-          const email = (ar.email || "").toLowerCase().trim();
-          const plan = (ar.name || "").trim();
-          const dateMatch = (ar.created || "").match(/^(\d{4}-\d{2}-\d{2})/);
-          const date = dateMatch ? dateMatch[1] : "";
-          if (!email || !plan || !date) continue;
-          activeTuples.add(`${email}|${plan}|${date}`);
-        }
-        const reconcileResult = await reconcileAutoRenewsFromExport(activeTuples, csvMaxCreatedMs);
-        if (reconcileResult.reconciled > 0) {
-          warnings.push(`Reconciled ${reconcileResult.reconciled} stale subscription rows`);
-          console.log(`[api/upload] Reconciled ${reconcileResult.reconciled} stale subscription rows`);
+        try {
+          const res = await reconcileFromFullExport(arRows, {
+            source: { filename: savedPath },
+            preflight: { parseFailures: result.warnings.length },
+          });
+          if (res.applied > 0) {
+            warnings.push(`Reconciled ${res.applied} stale subscription rows (run ${res.runId})`);
+          }
+          console.log(
+            `[api/upload] Subscriber sync run ${res.runId}: canceled ${res.applied}; ` +
+            `post member=${res.postCounts.member} sky3=${res.postCounts.sky3} tv=${res.postCounts.skyTingTv}`,
+          );
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          warnings.push(`Reconcile aborted by safety gates — no changes written: ${msg}`);
+          console.warn(`[api/upload] Subscriber sync reconcile aborted: ${msg}`);
         }
       }
       warnings.push(...result.warnings);

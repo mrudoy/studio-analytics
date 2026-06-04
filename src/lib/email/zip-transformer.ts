@@ -34,6 +34,22 @@ import type { RegistrationRow } from "../db/registration-store";
 import type { CustomerRow } from "../db/customer-store";
 import type { RevenueCategory } from "@/types/union-data";
 import { inferCategoryFromName } from "../analytics/category-utils";
+import { getCategory } from "../analytics/categories";
+
+/**
+ * A cancellation the daily delta IMPLIES (Phase B1 shadow mode). Recorded, never
+ * written to auto_renews, until shadow validation proves it safe.
+ */
+export interface ShadowCancel {
+  unionPassId: string;
+  planName: string;
+  customerEmail: string;
+  category: string;
+  rawState: string;
+  autoRenewOff: boolean;
+  intendedAction: "cancel" | "pending_cancel";
+  effectiveAt: string | null;
+}
 
 // ── Extended row types with Union ID fields ─────────────────
 
@@ -235,6 +251,47 @@ export class ZipTransformer {
     );
 
     return rows;
+  }
+
+  // ── B1 shadow: cancellations implied by the delta ─────────
+
+  /**
+   * Collect the cancellations the delta IMPLIES — subscription passes that
+   * arrived Expired/Canceled, or with auto-renew turned off — WITHOUT writing
+   * anything. Phase B1 shadow mode logs these and validates them against the
+   * next full export before any real write is enabled.
+   *
+   * Only subscription-category passes (Member/Sky3/TV) are considered, keyed by
+   * union_pass_id. 'cancel' = terminal (Expired/Canceled). 'pending_cancel' =
+   * auto-renew off but not terminal (still entitled until period end — must NOT
+   * be hard-canceled).
+   */
+  collectShadowCancellations(): ShadowCancel[] {
+    const out: ShadowCancel[] = [];
+    for (const pass of this.passById.values()) {
+      const cat = getCategory(pass.name || "");
+      if (cat === "UNKNOWN") continue; // not a tracked subscription category
+      const state = pass.state || "";
+      const terminal = state === "Expired" || state === "Canceled";
+      const autoRenewOff = !pass.autoRenewUnlimited && pass.autoRenewPeriodLimit <= 0;
+      // Still an active auto-renew → handled by transformAutoRenews, not a cancel signal.
+      if (!terminal && !autoRenewOff) continue;
+      if (!pass.id) continue; // require an exact union_pass_id
+      const membership = this.membershipById.get(pass.membershipId);
+      if (!membership || !membership.email) continue;
+      out.push({
+        unionPassId: pass.id,
+        planName: pass.name || "",
+        customerEmail: membership.email,
+        category: cat,
+        rawState: state,
+        autoRenewOff,
+        intendedAction: terminal ? "cancel" : "pending_cancel",
+        effectiveAt:
+          pass.canceledAt || pass.expiredAt || pass.validEndsAt || pass.pendingCanceledAt || null,
+      });
+    }
+    return out;
   }
 
   // ── Orders: batch transform ───────────────────────────────
