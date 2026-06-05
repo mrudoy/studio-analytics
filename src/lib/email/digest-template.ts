@@ -181,16 +181,17 @@ export function buildDigestHtml(
     : "";
 
   // Automated drift-check alert — duplicate-row / TZ-skew tripwires firing.
+  const driftIsAlert = driftAlerts?.status === "alert";
   const driftBanner = driftAlerts && driftAlerts.status !== "ok" && driftAlerts.alerts.length
     ? `
           <!-- Drift Check Alert -->
           <tr>
             <td style="padding:0;">
-              <div style="background-color:${driftAlerts.status === "alert" ? "#fee2e2;border-bottom:1px solid #ef4444" : "#fef3c7;border-bottom:1px solid #f59e0b"};padding:12px 24px;">
-                <div style="font-size:13px;font-weight:600;color:${driftAlerts.status === "alert" ? "#991b1b" : "#92400e"};">
+              <div style="background-color:${driftIsAlert ? "#fee2e2" : "#fef3c7"};border-bottom:1px solid ${driftIsAlert ? "#ef4444" : "#f59e0b"};padding:12px 24px;">
+                <div style="font-size:13px;font-weight:600;color:${driftIsAlert ? "#991b1b" : "#92400e"};">
                   Subscriber-count drift check: ${driftAlerts.status.toUpperCase()}
                 </div>
-                <div style="font-size:11px;color:${driftAlerts.status === "alert" ? "#b91c1c" : "#a16207"};margin-top:2px;">
+                <div style="font-size:11px;color:${driftIsAlert ? "#b91c1c" : "#a16207"};margin-top:2px;">
                   ${driftAlerts.alerts.map((a) => a.replace(/</g, "&lt;")).join(" ")}
                 </div>
               </div>

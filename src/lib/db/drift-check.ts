@@ -100,11 +100,14 @@ export async function runDriftCheck(
     activeTotal += r.n;
   }
 
+  // Duplicate identity = more than one active row sharing the same subscription.
+  // Use order_id where present, else union_pass_id, so legacy rows that haven't
+  // been backfilled with order_id are still covered.
   const dup = await pool.query(
     `SELECT COALESCE(SUM(c - 1), 0)::int extra FROM (
        SELECT COUNT(*) c FROM auto_renews
-       WHERE ${activeFilter} AND order_id IS NOT NULL
-       GROUP BY LOWER(customer_email), plan_name, order_id
+       WHERE ${activeFilter} AND COALESCE(order_id, union_pass_id) IS NOT NULL
+       GROUP BY LOWER(customer_email), plan_name, COALESCE(order_id, union_pass_id)
        HAVING COUNT(*) > 1
      ) t`,
   );

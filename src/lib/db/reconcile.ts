@@ -194,7 +194,11 @@ export async function computeReconcileDiff(
 ): Promise<ReconcileDiff> {
   const dbRows = await queryDbActiveRows(q);
   const dbActiveTuples = new Set<string>();
-  for (const r of dbRows) dbActiveTuples.add(tupleKey(r.email, r.planName, r.createdDate));
+  const dbActiveOrderIds = new Set<string>();
+  for (const r of dbRows) {
+    dbActiveTuples.add(tupleKey(r.email, r.planName, r.createdDate));
+    if (r.orderId) dbActiveOrderIds.add(r.orderId);
+  }
 
   const candidates: ReconcileDiff["candidates"] = [];
   const candidateCounts = emptyCounts();
@@ -220,8 +224,21 @@ export async function computeReconcileDiff(
     bump(candidateCounts, r.category);
   }
 
+  // Export-active subs not currently active in the DB by EITHER key — so an
+  // order_id match with a still-skewed date doesn't inflate this figure.
   let exportOnlyActiveCount = 0;
-  for (const t of exp.activeTuples) if (!dbActiveTuples.has(t)) exportOnlyActiveCount++;
+  for (const r of exp.rows) {
+    if (!ACTIVE_CSV_STATES.has(r.planState)) continue;
+    const cs = (r.currentState || "").trim();
+    if (cs !== "" && cs !== "active") continue;
+    const email = (r.customerEmail || "").toLowerCase().trim();
+    const plan = (r.planName || "").trim();
+    const date = dateKey(r.createdAt);
+    if (!email || !plan || !date) continue;
+    const oid = (r.orderId || "").trim();
+    const inDb = (oid && dbActiveOrderIds.has(oid)) || dbActiveTuples.has(tupleKey(email, plan, date));
+    if (!inDb) exportOnlyActiveCount++;
+  }
 
   return {
     dbCounts: countActive(dbRows),
