@@ -117,6 +117,15 @@ export async function POST(request: Request) {
       console.warn(`[cron/pipeline] Backup failed:`, err instanceof Error ? err.message : err);
     }
 
+    // Automated drift check (non-fatal) — before the digest.
+    try {
+      const { runDriftCheck } = await import("@/lib/db/drift-check");
+      const drift = await runDriftCheck();
+      console.log(`[cron/pipeline] Drift check: status=${drift.status} active=${drift.activeTotal} dup=${drift.dupActiveIdentities} future=${drift.futureDatedRows}`);
+    } catch (driftErr) {
+      console.warn(`[cron/pipeline] Drift check failed:`, driftErr instanceof Error ? driftErr.message : driftErr);
+    }
+
     // Send digest email (non-fatal)
     try {
       const { sendDigestEmail } = await import("@/lib/email/email-sender");

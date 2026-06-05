@@ -242,6 +242,10 @@ export class ZipTransformer {
         createdAt: pass.createdAt || pass.created,
         canceledAt: pass.canceledAt || undefined,
         pendingCanceledAt: pass.pendingCanceledAt || undefined,
+        // Carry order_id — the stable, timezone-independent identity that also
+        // appears in Union's full subscriptions export, so reconcile can key on it
+        // instead of the fragile (email|plan|created_date) tuple.
+        orderId: pass.orderId || undefined,
         unionPassId: pass.id,
       });
     }

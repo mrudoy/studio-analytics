@@ -99,7 +99,14 @@ export async function sendDigestEmail(): Promise<DigestResult> {
     reconcileHealth = await getReconcileHealth();
   } catch { /* non-fatal */ }
 
-  const html = buildDigestHtml(data, freshness, pipelineStaleHours, reconcileHealth);
+  // Automated drift-check alerts (duplicate-row / TZ-skew tripwires).
+  let driftAlerts: { status: "ok" | "warning" | "alert"; alerts: string[] } | null = null;
+  try {
+    const { getLatestDriftAlerts } = await import("../db/drift-check");
+    driftAlerts = await getLatestDriftAlerts();
+  } catch { /* non-fatal */ }
+
+  const html = buildDigestHtml(data, freshness, pipelineStaleHours, reconcileHealth, driftAlerts);
 
   // Format today's date for subject line
   const today = new Date().toLocaleDateString("en-US", {

@@ -110,6 +110,23 @@ describe("computeReconcileDiff", () => {
     expect(d.candidates).toHaveLength(0);
     expect(d.protectedCount).toBe(1);
   });
+
+  it("matches by order_id even when created_date differs (+1-day skew fix)", async () => {
+    // Export has the correct ET date; DB row carries the old +1-day-skewed date but the
+    // SAME order_id. Must be MATCHED (kept active), not flagged as a cancel candidate.
+    const exp = summarizeExport([
+      row({ customerEmail: "a@x.com", planName: "SKY3 Monthly", createdAt: "2026-01-16", orderId: "ORD1" }),
+    ]);
+    const d = await computeReconcileDiff(
+      exp,
+      Date.parse("2026-06-01"),
+      fakeQ([
+        { id: 1, email: "a@x.com", plan_name: "SKY3 Monthly", plan_category: "SKY3", order_id: "ORD1", created_date: "2026-01-17", created_at: "2026-01-17", imported_at: "2026-01-17" },
+      ]),
+    );
+    expect(d.candidates).toHaveLength(0);
+    expect(d.matchRate).toBe(1);
+  });
 });
 
 describe("runPreflight gates", () => {

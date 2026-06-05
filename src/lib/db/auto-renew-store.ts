@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { getPool } from "./database";
+import { toEasternDate } from "./eastern-date";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
 import { BILLING_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import type { AutoRenewCategory } from "@/types/union-data";
@@ -183,10 +184,14 @@ export async function upsertAutoRenewRowsTx(
         row.planPrice,
         row.customerName,
         row.customerEmail.toLowerCase(),
-        row.createdAt || null,
+        // created_at / canceled_at are DATE columns — store Union's EASTERN calendar
+        // date so a "-0500" evening timestamp isn't rolled to +1 day in the UTC
+        // session. See eastern-date.ts. (pending_canceled_at below is TIMESTAMPTZ —
+        // it keeps full precision and is NOT date-coerced.)
+        toEasternDate(row.createdAt),
         row.orderId || null,
         row.salesChannel || null,
-        row.canceledAt || null,
+        toEasternDate(row.canceledAt),
         row.canceledBy || null,
         row.admin || null,
         row.currentState || null,

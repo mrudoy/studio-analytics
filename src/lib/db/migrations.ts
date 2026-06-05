@@ -1058,6 +1058,32 @@ const migrations: Migration[] = [
         WHERE pending_canceled_at IS NOT NULL;
     `,
   },
+
+  // ── 024 ─────────────────────────────────────────────────────
+  // Automated drift checks (Phase E). One row per check run, recording the
+  // active counts + invariant metrics + any alerts, so a recurrence of the
+  // duplicate-row inflation or the +1-day created_at skew is caught automatically
+  // (no external truth needed) and surfaced in the digest.
+  {
+    name: "024_drift_checks",
+    up: `
+      CREATE TABLE IF NOT EXISTS drift_checks (
+        id BIGSERIAL PRIMARY KEY,
+        ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        active_member INTEGER,
+        active_sky3 INTEGER,
+        active_tv INTEGER,
+        active_total INTEGER,
+        dup_active_identities INTEGER,
+        future_dated_rows INTEGER,
+        last_full_sync_age_days INTEGER,
+        metrics JSONB,
+        alerts JSONB,
+        status TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok','warning','alert'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_drift_checks_ran ON drift_checks(ran_at DESC);
+    `,
+  },
 ];
 
 /**
