@@ -111,6 +111,23 @@ async function runScheduledPipeline() {
       }
     }
 
+    // Automated drift check (non-fatal) — runs before the digest so its result
+    // is recorded and can surface in the email. Catches a recurrence of the
+    // duplicate-row inflation or the created_at TZ skew.
+    if (successCount > 0) {
+      try {
+        const { runDriftCheck } = await import("./lib/db/drift-check");
+        const drift = await runDriftCheck();
+        console.log(
+          `[scheduler] Drift check: status=${drift.status} active=${drift.activeTotal} ` +
+          `dup=${drift.dupActiveIdentities} future=${drift.futureDatedRows}` +
+          (drift.alerts.length ? ` — ${drift.alerts.join("; ")}` : ""),
+        );
+      } catch (driftErr) {
+        console.warn(`[scheduler] Drift check failed:`, driftErr instanceof Error ? driftErr.message : driftErr);
+      }
+    }
+
     // Send digest email (non-fatal, once-per-day guard inside)
     if (successCount > 0) {
       try {

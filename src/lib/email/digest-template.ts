@@ -109,6 +109,7 @@ export function buildDigestHtml(
   freshness?: DataFreshness | null,
   pipelineStaleHours?: number | null,
   reconcileHealth?: ReconcileHealthBanner | null,
+  driftAlerts?: { status: "ok" | "warning" | "alert"; alerts: string[] } | null,
 ): string {
   const windows = [data.yesterday, data.thisWeek, data.lastWeek];
   const { currentActive } = data;
@@ -179,6 +180,24 @@ export function buildDigestHtml(
           </tr>`
     : "";
 
+  // Automated drift-check alert — duplicate-row / TZ-skew tripwires firing.
+  const driftBanner = driftAlerts && driftAlerts.status !== "ok" && driftAlerts.alerts.length
+    ? `
+          <!-- Drift Check Alert -->
+          <tr>
+            <td style="padding:0;">
+              <div style="background-color:${driftAlerts.status === "alert" ? "#fee2e2;border-bottom:1px solid #ef4444" : "#fef3c7;border-bottom:1px solid #f59e0b"};padding:12px 24px;">
+                <div style="font-size:13px;font-weight:600;color:${driftAlerts.status === "alert" ? "#991b1b" : "#92400e"};">
+                  Subscriber-count drift check: ${driftAlerts.status.toUpperCase()}
+                </div>
+                <div style="font-size:11px;color:${driftAlerts.status === "alert" ? "#b91c1c" : "#a16207"};margin-top:2px;">
+                  ${driftAlerts.alerts.map((a) => a.replace(/</g, "&lt;")).join(" ")}
+                </div>
+              </div>
+            </td>
+          </tr>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -190,7 +209,7 @@ export function buildDigestHtml(
 
           <!-- Header -->
           <tr>
-            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner || pipelineBanner || reconcileBanner ? "none" : "1px solid #e5e7eb"};">
+            <td style="padding:24px 24px 12px;border-bottom:${freshnessBanner || pipelineBanner || reconcileBanner || driftBanner ? "none" : "1px solid #e5e7eb"};">
               <div style="font-size:20px;font-weight:700;color:#111827;">Auto-Renews</div>
               <div style="font-size:13px;color:#6b7280;margin-top:4px;">${today}</div>
             </td>
@@ -198,6 +217,7 @@ export function buildDigestHtml(
           ${freshnessBanner}
           ${pipelineBanner}
           ${reconcileBanner}
+          ${driftBanner}
 
           <!-- Table -->
           <tr>
