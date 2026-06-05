@@ -24,19 +24,23 @@
 import { readFileSync } from "fs";
 import { basename } from "path";
 import Papa from "papaparse";
+import type { Pool, PoolClient } from "pg";
 import { getPool } from "../src/lib/db/database";
 import { runMigrations } from "../src/lib/db/migrations";
-import { toEasternDate } from "../src/lib/db/eastern-date";
+import { ACTIVE_STATES, ACTIVE_STATES_SQL } from "../src/lib/analytics/metrics/filters";
 
-const ACTIVE = new Set(["Valid Now", "Paused", "Pending Cancel", "In Trial", "Invalid", "Past Due"]);
-const ACTIVE_SQL = "'Valid Now','Paused','Pending Cancel','In Trial','Invalid','Past Due'";
+type Queryable = Pool | PoolClient;
+const ACTIVE = new Set<string>(ACTIVE_STATES);
 
 interface Csv { subscription_name: string; subscription_state: string; customer_email: string; created_at: string; order_id: string; current_state: string; }
 
-async function counts(): Promise<Record<string, number>> {
-  const { rows } = await getPool().query(
+// Pass the open transaction client when verifying inside a transaction, so the
+// count reflects this txn's uncommitted writes (a separate pool connection would
+// read pre-commit state and the guard would never fire).
+async function counts(q: Queryable = getPool()): Promise<Record<string, number>> {
+  const { rows } = await q.query(
     `SELECT plan_category, COUNT(*)::int n FROM auto_renews
-      WHERE plan_state IN (${ACTIVE_SQL}) AND (current_state IS NULL OR current_state='active')
+      WHERE plan_state IN (${ACTIVE_STATES_SQL}) AND (current_state IS NULL OR current_state='active')
       GROUP BY 1`,
   );
   const c: Record<string, number> = { MEMBER: 0, SKY3: 0, SKY_TING_TV: 0, total: 0 };
@@ -84,7 +88,7 @@ async function main() {
   // ── 2. active rows to enrich with order_id (count-neutral) ──
   const active = await pool.query(
     `SELECT id, LOWER(customer_email) email, plan_name, order_id
-       FROM auto_renews WHERE plan_state IN (${ACTIVE_SQL}) AND (current_state IS NULL OR current_state='active')`,
+       FROM auto_renews WHERE plan_state IN (${ACTIVE_STATES_SQL}) AND (current_state IS NULL OR current_state='active')`,
   );
   const enrich: { id: number; oid: string }[] = [];
   for (const r of active.rows as { id: number; email: string; plan_name: string; order_id: string | null }[]) {
@@ -108,6 +112,7 @@ async function main() {
       [basename(csvPath), JSON.stringify(before), `remediate-run1: protect ${toProtect.length} victims, enrich ${enrich.length} order_ids`],
     );
     const runId = run.rows[0].id as number;
+    const preTx = await counts(client); // in-transaction baseline (sees committed state)
     // snapshot the rows we touch (current_state changes) for rollback
     if (toProtect.length) {
       await client.query(
@@ -120,9 +125,10 @@ async function main() {
     for (const e of enrich) {
       await client.query(`UPDATE auto_renews SET order_id=$2 WHERE id=$1`, [e.id, e.oid]);
     }
-    const after = await counts();
-    if (after.MEMBER !== before.MEMBER || after.SKY3 !== before.SKY3 || after.SKY_TING_TV !== before.SKY_TING_TV) {
-      throw new Error(`COUNT CHANGED (before ${JSON.stringify(before)} → after ${JSON.stringify(after)}) — rolling back.`);
+    // Verify THROUGH the same client so uncommitted writes are visible.
+    const after = await counts(client);
+    if (after.MEMBER !== preTx.MEMBER || after.SKY3 !== preTx.SKY3 || after.SKY_TING_TV !== preTx.SKY_TING_TV || after.total !== preTx.total) {
+      throw new Error(`COUNT CHANGED (before ${JSON.stringify(preTx)} → after ${JSON.stringify(after)}) — rolling back.`);
     }
     await client.query(
       `UPDATE reconcile_runs SET status='applied', applied_count=$2, db_post_counts=$3, finished_at=NOW() WHERE id=$1`,
