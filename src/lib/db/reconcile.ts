@@ -75,8 +75,10 @@ function dateKey(created: string | null | undefined): string {
 
 export interface ParsedExport {
   rows: AutoRenewRow[];
-  /** Active subscription tuples present in the export. */
+  /** Active subscription tuples present in the export (fallback key: email|plan|date). */
   activeTuples: Set<string>;
+  /** Active subscription order_ids present in the export (PRIMARY, TZ-independent key). */
+  activeOrderIds: Set<string>;
   /** Per-category counts of the active rows in the export. */
   counts: CategoryCounts;
   /** Active export rows whose plan maps to UNKNOWN (possible new unmapped plans). */
@@ -92,6 +94,7 @@ export interface ParsedExport {
  */
 export function summarizeExport(rows: AutoRenewRow[]): ParsedExport {
   const activeTuples = new Set<string>();
+  const activeOrderIds = new Set<string>();
   const counts = emptyCounts();
   const unknownActive: { plan: string; email: string }[] = [];
   let maxCreatedMs = 0;
@@ -111,12 +114,14 @@ export function summarizeExport(rows: AutoRenewRow[]): ParsedExport {
     if (!email || !plan || !date) continue;
 
     activeTuples.add(tupleKey(email, plan, date));
+    const orderId = (r.orderId || "").trim();
+    if (orderId) activeOrderIds.add(orderId);
     const cat = getCategory(plan);
     bump(counts, cat);
     if (cat === "UNKNOWN") unknownActive.push({ plan, email });
   }
 
-  return { rows, activeTuples, counts, unknownActive, maxCreatedMs };
+  return { rows, activeTuples, activeOrderIds, counts, unknownActive, maxCreatedMs };
 }
 
 // ── DB-side helpers ──────────────────────────────────────────
@@ -126,6 +131,7 @@ interface DbActiveRow {
   email: string;
   planName: string;
   category: string;
+  orderId: string;
   createdDate: string;
   createdMs: number;
   importedMs: number;
@@ -133,7 +139,7 @@ interface DbActiveRow {
 
 async function queryDbActiveRows(q: Queryable): Promise<DbActiveRow[]> {
   const { rows } = await q.query(
-    `SELECT id, LOWER(customer_email) AS email, plan_name, plan_category,
+    `SELECT id, LOWER(customer_email) AS email, plan_name, plan_category, order_id,
             TO_CHAR(created_at, 'YYYY-MM-DD') AS created_date,
             created_at, imported_at
      FROM auto_renews
@@ -145,6 +151,7 @@ async function queryDbActiveRows(q: Queryable): Promise<DbActiveRow[]> {
     email: (r.email as string) || "",
     planName: (r.plan_name as string) || "",
     category: (r.plan_category as string) || getCategory((r.plan_name as string) || ""),
+    orderId: (r.order_id as string) || "",
     createdDate: (r.created_date as string) || "",
     createdMs: r.created_at ? new Date(r.created_at as string).getTime() : 0,
     importedMs: r.imported_at ? new Date(r.imported_at as string).getTime() : 0,
@@ -195,8 +202,12 @@ export async function computeReconcileDiff(
   let protectedCount = 0;
 
   for (const r of dbRows) {
-    const tuple = tupleKey(r.email, r.planName, r.createdDate);
-    if (exp.activeTuples.has(tuple)) {
+    // A DB row is "present in the export" if its order_id matches (PRIMARY,
+    // timezone-independent) OR its (email|plan|created_date) tuple matches
+    // (fallback — used until order_id is backfilled onto existing rows).
+    const matchedByOrder = !!r.orderId && exp.activeOrderIds.has(r.orderId);
+    const matchedByTuple = exp.activeTuples.has(tupleKey(r.email, r.planName, r.createdDate));
+    if (matchedByOrder || matchedByTuple) {
       matched++;
       continue;
     }
