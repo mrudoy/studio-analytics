@@ -1084,6 +1084,33 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_drift_checks_ran ON drift_checks(ran_at DESC);
     `,
   },
+
+  // ── 025 ─────────────────────────────────────────────────────
+  // One-time dedup: cancel older active passes that share an order_id with a
+  // newer active pass for the same subscription. Union renews by issuing a new
+  // pass under the same order_id; the old pass stays "Valid Now" in exports.
+  // Both get upserted with different (email, plan, created_at) keys, inflating
+  // counts. Union's admin counts one per order_id; align our DB to match.
+  // No plan_state change → no churn events. The upsert now has a post-batch
+  // order_id dedup step (auto-renew-store.ts) that prevents this recurring.
+  {
+    name: "025_dedup_active_by_order_id",
+    up: `
+      UPDATE auto_renews
+      SET current_state = 'canceled'
+      WHERE plan_state IN ('Valid Now','Paused','Pending Cancel','In Trial','Invalid','Past Due')
+        AND (current_state IS NULL OR current_state = 'active')
+        AND order_id IS NOT NULL
+        AND id NOT IN (
+          SELECT DISTINCT ON (order_id) id
+          FROM auto_renews
+          WHERE plan_state IN ('Valid Now','Paused','Pending Cancel','In Trial','Invalid','Past Due')
+            AND (current_state IS NULL OR current_state = 'active')
+            AND order_id IS NOT NULL
+          ORDER BY order_id, created_at DESC, id DESC
+        );
+    `,
+  },
 ];
 
 /**

@@ -285,6 +285,44 @@ export async function upsertAutoRenewRowsTx(
       console.warn(`[auto-renew-store] Skipped ${skipped}/${dedupedRows.length} rows due to per-row errors (others were saved)`);
     }
 
+  // ── Order-ID dedup ────────────────────────────────────────────────────────
+  // Union renews a subscription by issuing a NEW pass under the SAME order_id.
+  // The old pass stays "Valid Now" in the export until Union explicitly expires
+  // it. Both get upserted here with different (email, plan, created_at) keys,
+  // creating two active rows for one subscription. Union's admin counts ONE per
+  // order_id; we must do the same.
+  //
+  // After the batch upsert, for any order_id that now has multiple active rows,
+  // keep only the most-recently-created (highest id as tiebreaker) and mark the
+  // rest current_state='canceled'. No plan_state change → no churn event fired.
+  const batchOrderIds = dedupedRows
+    .filter((r) => r.orderId)
+    .map((r) => r.orderId as string);
+
+  if (batchOrderIds.length > 0) {
+    const deduped = await client.query(
+      `UPDATE auto_renews
+       SET current_state = 'canceled'
+       WHERE order_id = ANY($1)
+         AND plan_state IN (${ACTIVE_STATES_SQL})
+         AND (current_state IS NULL OR current_state = 'active')
+         AND id NOT IN (
+           SELECT DISTINCT ON (order_id) id
+           FROM auto_renews
+           WHERE order_id = ANY($1)
+             AND plan_state IN (${ACTIVE_STATES_SQL})
+             AND (current_state IS NULL OR current_state = 'active')
+           ORDER BY order_id, created_at DESC, id DESC
+         )`,
+      [batchOrderIds],
+    );
+    if (deduped.rowCount && deduped.rowCount > 0) {
+      console.log(
+        `[auto-renew-store] Order-ID dedup: deactivated ${deduped.rowCount} older pass(es) sharing order_id`,
+      );
+    }
+  }
+
   return { inserted, updated };
 }
 
