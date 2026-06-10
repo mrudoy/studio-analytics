@@ -4,7 +4,8 @@
  * with NO dependency on an external "truth" report:
  *
  *   - duplicate active subscription identities  → the duplicate-row inflation
- *     (same `(email, plan, order_id)` active more than once) is back.
+ *     (same `order_id` active more than once, GLOBALLY — Union's order_id is
+ *     unique per subscription, so any duplicate is corruption) is back.
  *   - future-dated active rows                  → the +1-day `created_at` TZ skew
  *     (a row "created tomorrow") is back.
  *   - last full reconcile age                   → residual drift is unbounded.
@@ -21,7 +22,8 @@ export interface DriftMetrics {
   activeSky3: number;
   activeTv: number;
   activeTotal: number;
-  /** Active rows beyond the first sharing the same (email, plan, order_id). */
+  /** Active rows beyond the first sharing the same order_id (global), plus
+   *  the same for union_pass_id among rows without an order_id. */
   dupActiveIdentities: number;
   /** Active rows whose created_at is in the future (ET) — TZ-skew tripwire. */
   futureDatedRows: number;
@@ -100,16 +102,25 @@ export async function runDriftCheck(
     activeTotal += r.n;
   }
 
-  // Duplicate identity = more than one active row sharing the same subscription.
-  // Use order_id where present, else union_pass_id, so legacy rows that haven't
-  // been backfilled with order_id are still covered.
+  // Duplicate identity = more than one ACTIVE row sharing the same subscription
+  // identity. Union's order_id is unique per subscription (verified 2936/2936
+  // distinct in a full export), so the invariant is GLOBAL: group by order_id
+  // alone — never by (email, plan, order_id), which would miss a duplicate
+  // order_id spanning different emails or plans. Second leg covers legacy rows
+  // without order_id via union_pass_id (also globally unique; the partial
+  // unique index idx_ar_union_pass_id enforces it at the DB layer, this is a
+  // belt-and-suspenders assert in case that index is ever dropped).
   const dup = await pool.query(
-    `SELECT COALESCE(SUM(c - 1), 0)::int extra FROM (
-       SELECT COUNT(*) c FROM auto_renews
-       WHERE ${activeFilter} AND COALESCE(order_id, union_pass_id) IS NOT NULL
-       GROUP BY LOWER(customer_email), plan_name, COALESCE(order_id, union_pass_id)
-       HAVING COUNT(*) > 1
-     ) t`,
+    `SELECT (
+       (SELECT COALESCE(SUM(c - 1), 0) FROM (
+          SELECT COUNT(*) c FROM auto_renews
+          WHERE ${activeFilter} AND order_id IS NOT NULL
+          GROUP BY order_id HAVING COUNT(*) > 1) a)
+     + (SELECT COALESCE(SUM(c - 1), 0) FROM (
+          SELECT COUNT(*) c FROM auto_renews
+          WHERE ${activeFilter} AND order_id IS NULL AND union_pass_id IS NOT NULL
+          GROUP BY union_pass_id HAVING COUNT(*) > 1) b)
+     )::int AS extra`,
   );
   const dupActiveIdentities = (dup.rows[0]?.extra as number) ?? 0;
 
