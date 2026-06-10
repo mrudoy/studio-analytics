@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
           `SELECT pass, state, attended_at, first_name, last_name
            FROM registrations
            WHERE LOWER(email) = LOWER($1)
-             AND UPPER(pass) LIKE '%INTRO WEEK%'
+             AND UPPER(pass) LIKE '%INTRO%'
            ORDER BY attended_at`,
           [email],
         ),

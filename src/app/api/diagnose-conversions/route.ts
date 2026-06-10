@@ -62,7 +62,7 @@ export async function GET() {
                r.attended_at AS first_visit_date,
                (UPPER(r.pass) LIKE '%DROP-IN%' OR UPPER(r.pass) LIKE '%DROP IN%' OR UPPER(r.pass) LIKE '%DROPIN%'
                 OR UPPER(r.pass) LIKE '%DROPLET%'
-                OR UPPER(r.pass) LIKE '%INTRO WEEK%'
+                OR UPPER(r.pass) LIKE '%INTRO%'
                 OR UPPER(r.pass) LIKE '%TRIAL%'
                 OR UPPER(r.pass) LIKE '%FIRST%'
                 OR UPPER(r.pass) LIKE '%SINGLE CLASS%'
