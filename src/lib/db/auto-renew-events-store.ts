@@ -64,6 +64,11 @@ export async function getFirstChurnDateByAutoRenewId(): Promise<Map<number, stri
        FROM auto_renew_events
        WHERE event_type = 'churn'
          AND prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
+         -- Enforce the era partition in SQL (not just by construction): live
+         -- click dates begin at CLICK_DATE_ERA_START; the backfill leg owns
+         -- everything before it. Guards against any future data fix emitting
+         -- a 'churn' event with a pre-era timestamp.
+         AND (observed_at AT TIME ZONE 'America/New_York')::date >= $1::date
        ORDER BY auto_renew_id, observed_at ASC
      ),
      live AS (
