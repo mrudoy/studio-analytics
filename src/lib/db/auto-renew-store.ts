@@ -285,6 +285,16 @@ export async function upsertAutoRenewRowsTx(
       console.warn(`[auto-renew-store] Skipped ${skipped}/${dedupedRows.length} rows due to per-row errors (others were saved)`);
     }
 
+  // NOTE: we deliberately do NOT silently dedup active rows by order_id here.
+  // Union's order_id is unique per subscription (verified: 2936/2936 distinct in
+  // a full export), so two active rows sharing an order_id is never a legitimate
+  // "renewal twin" — it is always a data-integrity problem (e.g. a backfill that
+  // stamped one order_id across distinct subscriptions). Silently canceling the
+  // "older" row would DESTROY a real subscription and mask the bug. Instead the
+  // invariant "≤1 active row per order_id" is asserted by the drift check
+  // (drift-check.ts dupActiveIdentities → alert) and corrected by the audited
+  // full-export reconcile, never by a silent write in the hot path.
+
   return { inserted, updated };
 }
 
