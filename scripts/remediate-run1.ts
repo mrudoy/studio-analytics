@@ -175,8 +175,11 @@ async function main() {
     const exactHit = expOrderId.has(exactKey) && !activeTupleSet.has(exactKey);
     if (expOrderId.has(exactKey) && activeTupleSet.has(exactKey) && !skewHit) victimSiblingExplained++;
     if (!skewHit && !exactHit) { genuineGhost++; continue; } // genuinely gone → leave canceled
-    if (skewHit && !expOrderId.has(exactKey)) victimSkewMatched++;
     if ((r.current_state || "") === "canceled") { alreadyProtected++; continue; }
+    // Count AFTER the already-protected guard so the log reflects rows being
+    // protected in THIS run — a re-run would otherwise double-report rows as
+    // both already-protected and skew-matched (Greptile, PR #17).
+    if (skewHit && !expOrderId.has(exactKey)) victimSkewMatched++;
     toProtect.push(r.id);
   }
   console.log(`[remediate] victims in export to protect (current_state='canceled'): ${toProtect.length}  (already=${alreadyProtected}, genuine-ghost left canceled=${genuineGhost}, matched via -1d skew=${victimSkewMatched}, exact hit explained by active sibling=${victimSiblingExplained})`);
