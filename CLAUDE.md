@@ -176,17 +176,22 @@ Always import these. Never inline the state strings in a new SQL query or TypeSc
 
 **The "Intro Week → sub start" conversion rate is cohort-based, not bucket-based, and includes Sky Ting TV.**
 
-- **Pool (denominator):** unique `LOWER(email)` whose **first** intro-week attendance (`attended_at IS NOT NULL`, non-AR, pass matching `INTRO WEEK | TRIAL | FIRST`) falls in the last N complete Mon–Sun weeks. Each person counts once total — in their first cohort week — never once per week they attended.
+- **Pool (denominator):** unique `LOWER(email)` whose **first** intro attendance (`attended_at IS NOT NULL`, non-AR, pass matching `INTRO | TRIAL | FIRST`) falls in the last N complete Mon–Sun weeks. Each person counts once total — in their first cohort week — never once per week they attended.
 - **Converts (numerator):** subset of the same cohort whose email later started a Member, Sky3, **or Sky Ting TV** auto-renew (`auto_renews.created_at >= first_intro_at`). State-agnostic: a sub started then canceled still counts as a conversion.
 - **Plan filter for conversion:** use `ANY_AR_PLAN_FILTER` in `src/lib/db/registration-store.ts` (Member/Sky3 set + TV). Do NOT use `IN_STUDIO_PLAN_FILTER` for this metric — it strips TV.
 - **Canonical function:** `getIntroWeekCohortConversionWeekly(weeksBack)` in `src/lib/db/registration-store.ts`. Wired in via `runJourneyConversion()` in `src/lib/analytics/db-trends.ts` and rendered by the "Intro Week" `ConversionByTypeCard` in `src/app/page.tsx`.
 - **Recency caveat:** the most recent cohort weeks have had less time to convert, so their per-week rates appear low. The headline rate is a lower bound that grows as cohorts mature. This is by design — do not "correct" it by dropping recent weeks unless explicitly asked.
 
+**Intro pass matching (PERMANENT):**
+- All intro-pass matching goes through `introPassLike()` / `introPassFilter()` in `src/lib/db/registration-store.ts` (and `isDropInOrIntro()` in `categories.ts` for TS-side checks). Never inline `'%INTRO WEEK%'` in SQL.
+- The match is `'%INTRO%'` (broad), NOT `'%INTRO WEEK%'`: the studio renames its intro offer. "2 WEEK INTRO" launched 2026-04-07, contains "INTRO" but not the substring "INTRO WEEK", and the old pattern silently zeroed the intro pool/conversions for two months (caught 2026-06-10). Every INTRO-containing pass name in 26 months of data is a genuine intro offer, so the broad match is safe.
+- **Intro window length is pass-dependent:** `introWindowDaysSql()` — 14 days for "2 WEEK INTRO" passes (`'%2 WEEK%'`), 7 days otherwise. The active/expiring/expired intro cards must use it, never a hardcoded 7-day window.
+
 **Anti-patterns:**
 - Do NOT compute the intro-week rate by summing per-week distinct-email pools. That double-counts emails who attended in 2+ weeks (e.g. 215 vs the correct 183 unique people for the 2026-05-08 8-wk window).
 - Do NOT reuse `getConversionByJourneyWeekly(_, "intro-week")` for this card — that function uses bucket math (numerator and denominator are different sets of people, TV excluded). It remains valid for `"all"` and `"a-la-carte"` buckets, where bucket math is the intended semantics.
 
-History: 2026-05-08 verification against the user's stated definition exposed the bucket-math vs cohort-math gap. Dashboard previously displayed 38.6% under bucket math; cohort math + TV produces ~13.7% on the same window. Switched the canonical function and saved this rule.
+History: 2026-05-08 verification against the user's stated definition exposed the bucket-math vs cohort-math gap. Dashboard previously displayed 38.6% under bucket math; cohort math + TV produces ~13.7% on the same window. Switched the canonical function and saved this rule. 2026-06-10: "2 WEEK INTRO" rebrand exposed the brittle `'%INTRO WEEK%'` match (pool collapsed to ~21 people/8wk vs the true 281, converts to 0); switched to `introPassLike()` + pass-dependent windows.
 
 ## CHURN / SIGNUP EVENTS (PERMANENT RULE)
 

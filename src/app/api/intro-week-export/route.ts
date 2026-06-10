@@ -2,7 +2,8 @@ import { getActiveIntroWeekCustomers } from "@/lib/db/registration-store";
 
 export async function GET() {
   try {
-    const rows = await getActiveIntroWeekCustomers(14);
+    // Default lookback (21d) covers the 14-day "2 WEEK INTRO" window.
+    const rows = await getActiveIntroWeekCustomers();
 
     const lines: string[] = [
       "Name,Email,Intro Week Start,Intro Week End,Days Left,Classes Attended",
