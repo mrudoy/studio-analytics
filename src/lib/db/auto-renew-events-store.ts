@@ -58,28 +58,28 @@ export const CLICK_DATE_ERA_START = "2026-04-14";
 export async function getFirstChurnDateByAutoRenewId(): Promise<Map<number, string>> {
   const pool = getPool();
   const { rows } = await pool.query<{ auto_renew_id: number; churn_date: string; leg: string }>(
-    `WITH live_churn AS (
-       SELECT DISTINCT ON (auto_renew_id)
-         auto_renew_id, observed_at
-       FROM auto_renew_events
-       WHERE event_type = 'churn'
-         AND prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
+    `WITH live AS (
+       -- Guards are evaluated PER EVENT and the earliest PASSING event wins.
+       -- (Selecting the earliest event first and then guarding it would let a
+       -- noisy phantom event — guard-fail — permanently hide a later valid
+       -- churn for the same subscription.)
+       SELECT DISTINCT ON (e.auto_renew_id)
+              e.auto_renew_id,
+              TO_CHAR(e.observed_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS churn_date
+       FROM auto_renew_events e
+       JOIN auto_renews ar ON ar.id = e.auto_renew_id
+       WHERE e.event_type = 'churn'
+         AND e.prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
          -- Enforce the era partition in SQL (not just by construction): live
          -- click dates begin at CLICK_DATE_ERA_START; the backfill leg owns
          -- everything before it. Guards against any future data fix emitting
          -- a 'churn' event with a pre-era timestamp.
-         AND (observed_at AT TIME ZONE 'America/New_York')::date >= $1::date
-       ORDER BY auto_renew_id, observed_at ASC
-     ),
-     live AS (
-       SELECT lc.auto_renew_id,
-              TO_CHAR(lc.observed_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS churn_date
-       FROM live_churn lc
-       JOIN auto_renews ar ON ar.id = lc.auto_renew_id
-       WHERE ar.plan_state IN ('Canceled','Pending Cancel')
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date >= $1::date
+         AND ar.plan_state IN ('Canceled','Pending Cancel')
          AND (ar.canceled_at IS NULL
-              OR ar.canceled_at >= (lc.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '1 day')
-         AND ar.imported_at::date >= (lc.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '7 days'
+              OR ar.canceled_at >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '1 day')
+         AND ar.imported_at::date >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '7 days'
+       ORDER BY e.auto_renew_id, e.observed_at ASC
      ),
      backfill AS (
        SELECT DISTINCT ON (bc.auto_renew_id)
