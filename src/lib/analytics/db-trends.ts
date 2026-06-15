@@ -1204,7 +1204,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
   const pool = getPool();
 
   const { rows: allRows } = await pool.query(
-    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_name, customer_email FROM auto_renews`
+    `SELECT plan_name, plan_state, plan_price, canceled_at, created_at, customer_name, customer_email, current_state FROM auto_renews`
   );
 
   if (allRows.length === 0) return null;
@@ -1246,8 +1246,17 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       monthlyRate: annual ? Math.round((price / 12) * 100) / 100 : price,
       customer_name: (r.customer_name as string) || "",
       customer_email: (r.customer_email as string) || "",
+      current_state: (r.current_state as string | null) ?? null,
     };
   });
+
+  // A subscription is genuinely "active" (and therefore eligible to be counted
+  // as at-risk of churning) only when current_state is NULL or 'active' — the
+  // same rule the rest of the dashboard uses for active counts. A row in an
+  // at-risk plan_state (e.g. Pending Cancel) whose current_state is 'canceled'
+  // or 'changed' has ALREADY left/moved, so it is not "at risk" — it churned.
+  const isActiveRow = (r: { plan_state: string; current_state: string | null }) =>
+    r.current_state === null || r.current_state === "active";
 
   // Log date parsing diagnostics
   const withCreated = categorized.filter((r) => r.created_at !== null);
@@ -1437,10 +1446,13 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       ? Math.round((completedFiltered.reduce((s, r) => s + r.mrrChurnRate, 0) / completedFiltered.length) * 10) / 10
       : 0;
 
-    // At-risk per category (in-memory) — deduplicate by email
+    // At-risk per category (in-memory) — deduplicate by email.
+    // Only ACTIVE rows count: a Pending Cancel/Past Due row that has already
+    // gone current_state='canceled'/'changed' churned and must not inflate the
+    // "at risk of churning" number.
     const atRiskEmails = new Set<string>();
     for (const r of catRows) {
-      if (AT_RISK_STATES.includes(r.plan_state)) {
+      if (AT_RISK_STATES.includes(r.plan_state) && isActiveRow(r)) {
         atRiskEmails.add(r.customer_email.toLowerCase());
       }
     }
@@ -1466,7 +1478,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
       const annualAtRiskEmails = new Set<string>();
       const monthlyAtRiskEmails = new Set<string>();
       for (const r of catRows) {
-        if (!AT_RISK_STATES.includes(r.plan_state)) continue;
+        if (!AT_RISK_STATES.includes(r.plan_state) || !isActiveRow(r)) continue;
         const email = r.customer_email.toLowerCase();
         if (r.isAnnual) annualAtRiskEmails.add(email);
         else monthlyAtRiskEmails.add(email);
@@ -1614,6 +1626,7 @@ async function computeChurnRates(): Promise<ChurnRateData | null> {
     return categorized
       .filter((r) => {
         if (r.plan_state !== state) return false;
+        if (!isActiveRow(r)) return false; // exclude already-churned/changed rows
         const email = r.customer_email.toLowerCase();
         if (seen.has(email)) return false;
         seen.add(email);
