@@ -5,7 +5,7 @@ function metrics(o: Partial<DriftMetrics> = {}): DriftMetrics {
   return {
     activeMember: 507, activeSky3: 382, activeTv: 2043, activeTotal: 2932,
     dupActiveIdentities: 0, futureDatedRows: 0,
-    unknownActivePlans: 0, monthsMissingChurnEvents: 0, revenueNetExceedsGross: 0,
+    unknownActivePlans: 0, zeroChurnCompletedMonths: 0, revenueNetExceedsGross: 0,
     lastFullSyncAgeDays: 1,
     ...o,
   };
@@ -36,10 +36,10 @@ describe("deriveAlerts", () => {
     expect(r.alerts.join(" ")).toMatch(/UNKNOWN category/i);
   });
 
-  it("ALERTs when a completed month has cancels but no churn events", () => {
-    const r = deriveAlerts(metrics({ monthsMissingChurnEvents: 2 }), 2932);
+  it("ALERTs when a completed month renders zero churn (history regression)", () => {
+    const r = deriveAlerts(metrics({ zeroChurnCompletedMonths: 2 }), 2932);
     expect(r.status).toBe("alert");
-    expect(r.alerts.join(" ")).toMatch(/no churn events/i);
+    expect(r.alerts.join(" ")).toMatch(/render 0 churn|0 churn/i);
   });
 
   it("ALERTs when revenue net exceeds gross", () => {

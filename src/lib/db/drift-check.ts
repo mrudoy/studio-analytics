@@ -10,10 +10,13 @@
  *     (a row "created tomorrow") is back.
  *   - unknown-category active plans             → a new/renamed plan name maps to
  *     UNKNOWN, so it silently drops out of subscriber counts AND revenue (the
- *     FABxSKYTING / "2 WEEK INTRO"-style rename class).
- *   - completed months missing churn events     → the monthly churn history reads
- *     0% for a month that actually had cancellations (the auto_renew_events /
- *     backfill-leg regression class).
+ *     FABxSKYTING / "2 WEEK INTRO"-style rename class). Measured via the same
+ *     runtime getCategory() the dashboard uses (getActiveCounts().unknown), not
+ *     the stored column, so it can't be fooled by a stale plan_category.
+ *   - zero-churn completed months               → a completed month renders 0%
+ *     churn while subscribers were active (the monthly-churn-history regression
+ *     class). Computed from getSubscriberMovement — the exact source the churn
+ *     cards read — so it asserts the rendered OUTPUT, not a proxy for it.
  *   - revenue net > gross                        → revenue_categories data integrity
  *     (net should never exceed gross once fees are applied).
  *   - last full reconcile age                   → residual drift is unbounded.
@@ -27,6 +30,8 @@
 import { getPool } from "./database";
 import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import { getReconcileHealth } from "./reconcile";
+import { getActiveCounts } from "./auto-renew-store";
+import { getSubscriberMovement } from "../analytics/metrics/subscriber-movement";
 
 export interface DriftMetrics {
   activeMember: number;
@@ -38,13 +43,14 @@ export interface DriftMetrics {
   dupActiveIdentities: number;
   /** Active rows whose created_at is in the future (ET) — TZ-skew tripwire. */
   futureDatedRows: number;
-  /** Active subscription rows whose plan_category is UNKNOWN/NULL — a plan name
-   *  the categorizer doesn't recognize, so it vanishes from counts + revenue. */
+  /** Active subscriptions the runtime categorizer (getCategory) places in
+   *  UNKNOWN — a plan name we don't recognize, so it vanishes from counts +
+   *  revenue. Sourced from getActiveCounts().unknown (the dashboard's own path). */
   unknownActivePlans: number;
-  /** Of the last 3 completed months, how many had real cancellations
-   *  (Canceled rows by canceled_at) but ZERO churn events logged — the churn
-   *  history would render 0% for those months. */
-  monthsMissingChurnEvents: number;
+  /** Completed months in the canonical churn series (getSubscriberMovement)
+   *  that render 0 total churn while subscribers were active — the exact
+   *  symptom of the monthly-churn-history regression. */
+  zeroChurnCompletedMonths: number;
   /** Deduped revenue_categories rows where net_revenue exceeds gross revenue —
    *  a data-integrity violation (fees only reduce net). */
   revenueNetExceedsGross: number;
@@ -93,8 +99,8 @@ export function deriveAlerts(
     alerts.push(`${m.unknownActivePlans} active subscriptions map to UNKNOWN category — a plan name the categorizer doesn't recognize is dropping out of counts + revenue (check categories.ts / a Union rename).`);
     hard = true;
   }
-  if (m.monthsMissingChurnEvents > 0) {
-    alerts.push(`${m.monthsMissingChurnEvents} recent completed month(s) had cancellations but no churn events — monthly churn history may read 0% (auto_renew_events / backfill leg).`);
+  if (m.zeroChurnCompletedMonths > 0) {
+    alerts.push(`${m.zeroChurnCompletedMonths} completed month(s) render 0 churn despite active subscribers — monthly churn history is likely broken (auto_renew_events / backfill leg).`);
     hard = true;
   }
   if (m.revenueNetExceedsGross > 0) {
@@ -124,16 +130,15 @@ export async function runDriftCheck(
   const pool = getPool();
   const activeFilter = `plan_state IN (${ACTIVE_STATES_SQL}) AND (current_state IS NULL OR current_state = 'active')`;
 
-  const counts = await pool.query(
-    `SELECT plan_category, COUNT(*)::int n FROM auto_renews WHERE ${activeFilter} GROUP BY 1`,
-  );
-  let activeMember = 0, activeSky3 = 0, activeTv = 0, activeTotal = 0;
-  for (const r of counts.rows as { plan_category: string; n: number }[]) {
-    if (r.plan_category === "MEMBER") activeMember = r.n;
-    else if (r.plan_category === "SKY3") activeSky3 = r.n;
-    else if (r.plan_category === "SKY_TING_TV") activeTv = r.n;
-    activeTotal += r.n;
-  }
+  // Active counts via the canonical dashboard function (runtime getCategory),
+  // so drift-check sees exactly what the dashboard shows — including the
+  // UNKNOWN bucket, which is the rename tripwire below.
+  const counts = await getActiveCounts();
+  const activeMember = counts.member;
+  const activeSky3 = counts.sky3;
+  const activeTv = counts.skyTingTv;
+  const activeTotal = counts.total;
+  const unknownActivePlans = counts.unknown;
 
   // Duplicate identity = more than one ACTIVE row sharing the same subscription
   // identity. Union's order_id is unique per subscription (verified 2936/2936
@@ -164,38 +169,28 @@ export async function runDriftCheck(
   );
   const futureDatedRows = (future.rows[0]?.n as number) ?? 0;
 
-  // Active subscriptions the categorizer can't place — they silently vanish
-  // from per-category subscriber counts and from subscription-billing revenue.
-  const unknownPlans = await pool.query(
-    `SELECT COUNT(*)::int n FROM auto_renews
-     WHERE ${activeFilter} AND (plan_category IS NULL OR plan_category = 'UNKNOWN')`,
-  );
-  const unknownActivePlans = (unknownPlans.rows[0]?.n as number) ?? 0;
-
-  // Of the last 3 completed months, count any that had real cancellations
-  // (Canceled rows dated in the month) but ZERO churn/backfill_churn events —
-  // that is exactly the state in which the monthly churn card renders 0%.
-  const missingChurn = await pool.query(
-    `WITH months AS (
-       SELECT d::date AS ms, (d + INTERVAL '1 month')::date AS me
-       FROM generate_series(
-         DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months',
-         DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month',
-         INTERVAL '1 month') d
-     )
-     SELECT COUNT(*)::int n FROM months
-     WHERE (SELECT COUNT(*) FROM auto_renews
-              WHERE plan_state = 'Canceled' AND canceled_at >= ms AND canceled_at < me) > 0
-       AND (SELECT COUNT(*) FROM auto_renew_events
-              WHERE event_type IN ('churn','backfill_churn')
-                AND (observed_at AT TIME ZONE 'America/New_York')::date >= ms
-                AND (observed_at AT TIME ZONE 'America/New_York')::date < me) = 0`,
-  );
-  const monthsMissingChurnEvents = (missingChurn.rows[0]?.n as number) ?? 0;
+  // Monthly churn history regression: assert the RENDERED output, not a proxy.
+  // getSubscriberMovement is the exact source the churn cards read (current_state-
+  // aware churn_date, backfill leg included). A completed month (any but the last,
+  // which is the partial current month) with active subscribers but zero total
+  // churn is the precise symptom of the history breaking — a real month for a
+  // studio this size always has cancellations. 2025-10 is the known bulk-admin
+  // cleanup month and is excluded from churn averages, so exclude it here too.
+  let zeroChurnCompletedMonths = 0;
+  try {
+    const movement = await getSubscriberMovement();
+    const completed = movement.monthly.slice(0, -1).filter((m) => m.period !== "2025-10");
+    for (const m of completed) {
+      const activeAtStart = m.member.activeAtStart + m.sky3.activeAtStart + m.skyTingTv.activeAtStart;
+      const canceled = m.member.canceled + m.sky3.canceled + m.skyTingTv.canceled;
+      if (activeAtStart > 0 && canceled === 0) zeroChurnCompletedMonths++;
+    }
+  } catch { /* non-fatal — leave at 0 if movement can't be computed */ }
 
   // Revenue integrity: on the canonical deduped, single-month rows, net revenue
   // must never exceed gross (fees only reduce net). Mirrors the dedup pattern
   // every revenue-store function uses so it sees the same rows the dashboard does.
+  // Columns are NUMERIC(12,2), so an exact `>` comparison is safe (no float noise).
   const revInteg = await pool.query(
     `WITH deduped AS (
        SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
@@ -204,7 +199,7 @@ export async function runDriftCheck(
        WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
        ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
      )
-     SELECT COUNT(*)::int n FROM deduped WHERE net_revenue > revenue + 0.01`,
+     SELECT COUNT(*)::int n FROM deduped WHERE net_revenue > revenue`,
   );
   const revenueNetExceedsGross = (revInteg.rows[0]?.n as number) ?? 0;
 
@@ -221,7 +216,7 @@ export async function runDriftCheck(
   const metrics: DriftMetrics = {
     activeMember, activeSky3, activeTv, activeTotal,
     dupActiveIdentities, futureDatedRows,
-    unknownActivePlans, monthsMissingChurnEvents, revenueNetExceedsGross,
+    unknownActivePlans, zeroChurnCompletedMonths, revenueNetExceedsGross,
     lastFullSyncAgeDays,
   };
   const { status, alerts } = deriveAlerts(metrics, prevTotal, thresholds);
