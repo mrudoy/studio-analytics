@@ -1590,7 +1590,15 @@ export const ANY_AR_PLAN_FILTER = `
  * Get new customer volume by week.
  * A "new customer" = person whose first in-studio visit (intro week / drop-in)
  * falls in the week. Excludes TV/replay/livestream first visits.
- * Returns ~6 weeks of data (Monday-based weeks).
+ * Returns the current week + the 6 prior weeks (Monday-based weeks).
+ *
+ * The week series is generated from DATE_TRUNC('week', CURRENT_DATE) and the
+ * counts LEFT JOINed in, so a week with ZERO new customers — typically the
+ * current week early on (e.g. a Monday before anyone's first class) — still
+ * returns a row (count 0). Without this, a bare GROUP BY omits the empty
+ * current week and the caller (runNewCustomers) mislabels the prior complete
+ * week as "this week," overstating current-week volume. Using Postgres'
+ * own week convention avoids any JS/PG timezone mismatch on the boundary.
  */
 export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]> {
   const pool = getPool();
@@ -1605,19 +1613,25 @@ export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]
         ${IN_STUDIO_PASS_FILTER}
       GROUP BY LOWER(email)
     ),
-    weekly AS (
+    week_series AS (
+      SELECT generate_series(
+        DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '6 weeks',
+        DATE_TRUNC('week', CURRENT_DATE),
+        INTERVAL '1 week'
+      )::date AS week_start
+    ),
+    counts AS (
       SELECT DATE_TRUNC('week', first_date)::date as week_start,
              COUNT(*) as count
       FROM first_date_per_email
       GROUP BY week_start
-      ORDER BY week_start DESC
-      LIMIT 7
     )
-    SELECT week_start::text as "weekStart",
-           (week_start + INTERVAL '6 days')::date::text as "weekEnd",
-           count
-    FROM weekly
-    ORDER BY week_start
+    SELECT ws.week_start::text as "weekStart",
+           (ws.week_start + INTERVAL '6 days')::date::text as "weekEnd",
+           COALESCE(c.count, 0) as count
+    FROM week_series ws
+    LEFT JOIN counts c ON c.week_start = ws.week_start
+    ORDER BY ws.week_start
   `;
 
   const { rows } = await pool.query(query);
