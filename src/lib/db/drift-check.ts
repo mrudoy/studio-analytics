@@ -48,9 +48,13 @@ export interface DriftMetrics {
    *  revenue. Sourced from getActiveCounts().unknown (the dashboard's own path). */
   unknownActivePlans: number;
   /** Completed months in the canonical churn series (getSubscriberMovement)
-   *  that render 0 total churn while subscribers were active — the exact
-   *  symptom of the monthly-churn-history regression. */
+   *  where ANY category rendered 0 churn while it had active subscribers — the
+   *  exact symptom of the monthly-churn-history regression (checked per category
+   *  so one category's 0% can't be masked by another's churn). */
   zeroChurnCompletedMonths: number;
+  /** False when getSubscriberMovement could not be computed this run, so the
+   *  churn invariant above was NOT actually evaluated (avoids fail-open). */
+  churnSourceOk: boolean;
   /** Deduped revenue_categories rows where net_revenue exceeds gross revenue —
    *  a data-integrity violation (fees only reduce net). */
   revenueNetExceedsGross: number;
@@ -73,6 +77,36 @@ export const DEFAULT_DRIFT_THRESHOLDS: DriftThresholds = {
   totalJumpAbs: 300,
   totalJumpFrac: 0.1,
 };
+
+/** A category's per-month churn slice (subset of CategoryMovement). */
+interface MonthlyCategorySlice { activeAtStart: number; canceled: number }
+/** One month of the canonical churn series (subset of PeriodMovement). */
+export interface MonthlyChurnSlice {
+  period: string;
+  member: MonthlyCategorySlice;
+  sky3: MonthlyCategorySlice;
+  skyTingTv: MonthlyCategorySlice;
+}
+
+/**
+ * Pure (unit-tested): count completed months whose rendered churn looks broken —
+ * ANY category with active subscribers but zero churn. The churn cards render
+ * each category independently, so the check is per-category (a 0% regression in
+ * one category must not be hidden by churn in another). Excludes the last
+ * element (the partial current month) and the 2025-10 bulk-admin-cleanup month
+ * (also excluded from the churn averages). For a studio this size every
+ * completed month always has cancellations in every category, so any zero is a
+ * regression, not real data.
+ */
+export function countZeroChurnCompletedMonths(monthly: MonthlyChurnSlice[]): number {
+  const completed = monthly.slice(0, -1).filter((m) => m.period !== "2025-10");
+  let n = 0;
+  for (const m of completed) {
+    const cats = [m.member, m.sky3, m.skyTingTv];
+    if (cats.some((c) => c.activeAtStart > 0 && c.canceled === 0)) n++;
+  }
+  return n;
+}
 
 /**
  * Pure alert derivation — unit-tested. `prevTotal` is the previous run's
@@ -100,8 +134,12 @@ export function deriveAlerts(
     hard = true;
   }
   if (m.zeroChurnCompletedMonths > 0) {
-    alerts.push(`${m.zeroChurnCompletedMonths} completed month(s) render 0 churn despite active subscribers — monthly churn history is likely broken (auto_renew_events / backfill leg).`);
+    alerts.push(`${m.zeroChurnCompletedMonths} completed month(s) render 0 churn for a category that had active subscribers — monthly churn history is likely broken (auto_renew_events / backfill leg).`);
     hard = true;
+  }
+  if (!m.churnSourceOk) {
+    alerts.push(`Monthly churn invariant could not be evaluated (getSubscriberMovement failed) — a churn-history regression would go undetected this run.`);
+    soft = true;
   }
   if (m.revenueNetExceedsGross > 0) {
     alerts.push(`${m.revenueNetExceedsGross} revenue rows have net > gross — revenue_categories data integrity issue.`);
@@ -171,21 +209,19 @@ export async function runDriftCheck(
 
   // Monthly churn history regression: assert the RENDERED output, not a proxy.
   // getSubscriberMovement is the exact source the churn cards read (current_state-
-  // aware churn_date, backfill leg included). A completed month (any but the last,
-  // which is the partial current month) with active subscribers but zero total
-  // churn is the precise symptom of the history breaking — a real month for a
-  // studio this size always has cancellations. 2025-10 is the known bulk-admin
-  // cleanup month and is excluded from churn averages, so exclude it here too.
+  // aware churn_date, backfill leg included). countZeroChurnCompletedMonths checks
+  // PER CATEGORY (each card renders its own category), so a 0% regression in one
+  // category can't be masked by churn in another. If the movement source itself
+  // can't be computed we do NOT silently pass — churnSourceOk=false raises a
+  // warning so an un-evaluated run is visible rather than fail-open.
   let zeroChurnCompletedMonths = 0;
+  let churnSourceOk = true;
   try {
     const movement = await getSubscriberMovement();
-    const completed = movement.monthly.slice(0, -1).filter((m) => m.period !== "2025-10");
-    for (const m of completed) {
-      const activeAtStart = m.member.activeAtStart + m.sky3.activeAtStart + m.skyTingTv.activeAtStart;
-      const canceled = m.member.canceled + m.sky3.canceled + m.skyTingTv.canceled;
-      if (activeAtStart > 0 && canceled === 0) zeroChurnCompletedMonths++;
-    }
-  } catch { /* non-fatal — leave at 0 if movement can't be computed */ }
+    zeroChurnCompletedMonths = countZeroChurnCompletedMonths(movement.monthly);
+  } catch {
+    churnSourceOk = false;
+  }
 
   // Revenue integrity: on the canonical deduped, single-month rows, net revenue
   // must never exceed gross (fees only reduce net). Mirrors the dedup pattern
@@ -216,7 +252,7 @@ export async function runDriftCheck(
   const metrics: DriftMetrics = {
     activeMember, activeSky3, activeTv, activeTotal,
     dupActiveIdentities, futureDatedRows,
-    unknownActivePlans, zeroChurnCompletedMonths, revenueNetExceedsGross,
+    unknownActivePlans, zeroChurnCompletedMonths, churnSourceOk, revenueNetExceedsGross,
     lastFullSyncAgeDays,
   };
   const { status, alerts } = deriveAlerts(metrics, prevTotal, thresholds);
