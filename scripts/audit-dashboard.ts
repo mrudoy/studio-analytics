@@ -26,16 +26,18 @@
  * Env:
  *   DATABASE_URL            required — the same Railway DB the app uses
  *   AUDIT_BASE_URL          prod base (default https://studio-analytics-production.up.railway.app)
- *   AUDIT_PASSWORD          dashboard login (default 'skyting')
+ *   AUDIT_PASSWORD          required — the dashboard login password. No default:
+ *                           we never bake a live credential into source, and a
+ *                           silent fallback would mask a misconfigured runner.
  *
- * Usage: npx tsx scripts/audit-dashboard.ts
+ * Usage: AUDIT_PASSWORD=… npx tsx scripts/audit-dashboard.ts
  */
-import { getPool } from "../src/lib/db/database";
+import { getPool, closePool } from "../src/lib/db/database";
 import { getCategory } from "../src/lib/analytics/categories";
 import { ACTIVE_STATES, AT_RISK_STATES } from "../src/lib/analytics/metrics/filters";
 
 const BASE = process.env.AUDIT_BASE_URL || "https://studio-analytics-production.up.railway.app";
-const PASSWORD = process.env.AUDIT_PASSWORD || "skyting";
+const PASSWORD = process.env.AUDIT_PASSWORD;
 
 interface Check {
   name: string;
@@ -56,6 +58,7 @@ const CAT_KEY: Record<string, "member" | "sky3" | "skyTingTv" | "unknown"> = {
 class AuditUnavailable extends Error {}
 
 async function login(): Promise<string> {
+  if (!PASSWORD) throw new AuditUnavailable("AUDIT_PASSWORD env var is not set");
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -221,14 +224,17 @@ async function main() {
   }
   if (failed.length) {
     console.log(`\n[audit] ${failed.length} ANCHOR(S) DISAGREE WITH THE DATABASE — investigate + open a draft PR.`);
+    await closePool();
     process.exit(2);
   }
   console.log("\n[audit] clean — every anchor matches the database.");
+  await closePool();
   process.exit(0);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   const unavailable = e instanceof AuditUnavailable;
   console.error(`[audit] ${unavailable ? "could not evaluate" : "errored"}:`, e instanceof Error ? e.message : e);
+  await closePool().catch(() => {});
   process.exit(1); // both "unavailable" and unexpected errors are exit 1, never a false mismatch
 });
