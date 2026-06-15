@@ -82,20 +82,41 @@ async function fetchStats(cookie: string): Promise<Record<string, any>> {
  *  out because computeTrendsFromDB threw under safe()) as UNAVAILABLE, not as a
  *  mismatch — otherwise a transient backend failure looks like a data bug. */
 function requirePayload(stats: Record<string, any>): void {
-  const need: Array<[string, unknown]> = [
-    ["activeSubscribers", stats.activeSubscribers],
-    ["mrr", stats.mrr],
-    ["arpu", stats.arpu],
-    ["monthlyRevenue", stats.monthlyRevenue],
-    ["trends.churnRates.byCategory", stats.trends?.churnRates?.byCategory],
-    ["trends.newCustomerVolume.completedWeeks", stats.trends?.newCustomerVolume?.completedWeeks],
-  ];
-  const missing = need.filter(([, v]) => v == null).map(([k]) => k);
+  // Validate EVERY field the checks below read, down to the nested element
+  // level. A field that is missing OR malformed (wrong type) means the payload
+  // is degraded — that is AuditUnavailable (exit 1), never a data mismatch
+  // (exit 2) or a silently-passed check (exit 0). num()/str() collect the
+  // offending paths instead of throwing field-by-field.
+  const bad: string[] = [];
+  const num = (v: unknown, path: string) => { if (typeof v !== "number" || Number.isNaN(v)) bad.push(path); };
+  const str = (v: unknown, path: string) => { if (typeof v !== "string" || v === "") bad.push(path); };
+
+  const a = stats.activeSubscribers;
+  if (a == null) bad.push("activeSubscribers");
+  else for (const k of ["member", "sky3", "skyTingTv", "total"]) num(a[k], `activeSubscribers.${k}`);
+
+  const mrr = stats.mrr;
+  if (mrr == null) bad.push("mrr");
+  else for (const k of ["member", "sky3", "skyTingTv", "total"]) num(mrr[k], `mrr.${k}`);
+  num(stats.arpu?.overall, "arpu.overall");
+
+  if (!Array.isArray(stats.monthlyRevenue)) bad.push("monthlyRevenue");
+  else stats.monthlyRevenue.forEach((m: any, i: number) => { str(m?.month, `monthlyRevenue[${i}].month`); num(m?.gross, `monthlyRevenue[${i}].gross`); num(m?.net, `monthlyRevenue[${i}].net`); });
+
   const byCat = stats.trends?.churnRates?.byCategory;
-  if (byCat) for (const k of ["member", "sky3", "skyTingTv"]) {
-    if (!byCat[k] || byCat[k].atRiskCount == null || !Array.isArray(byCat[k].monthly)) missing.push(`byCategory.${k}`);
+  if (byCat == null) bad.push("trends.churnRates.byCategory");
+  else for (const k of ["member", "sky3", "skyTingTv"]) {
+    if (!byCat[k]) { bad.push(`byCategory.${k}`); continue; }
+    num(byCat[k].atRiskCount, `byCategory.${k}.atRiskCount`);
+    if (!Array.isArray(byCat[k].monthly)) bad.push(`byCategory.${k}.monthly`);
+    else byCat[k].monthly.forEach((m: any, i: number) => { str(m?.month, `byCategory.${k}.monthly[${i}].month`); num(m?.canceledCount, `byCategory.${k}.monthly[${i}].canceledCount`); num(m?.activeAtStart, `byCategory.${k}.monthly[${i}].activeAtStart`); });
   }
-  if (missing.length) throw new AuditUnavailable(`incomplete /api/stats payload (backend likely degraded): missing ${missing.join(", ")}`);
+
+  const cw = stats.trends?.newCustomerVolume?.completedWeeks;
+  if (!Array.isArray(cw) || cw.length === 0) bad.push("trends.newCustomerVolume.completedWeeks (empty/missing)");
+  else str(cw[cw.length - 1]?.weekEnd, "newCustomerVolume.completedWeeks[last].weekEnd");
+
+  if (bad.length) throw new AuditUnavailable(`incomplete/malformed /api/stats payload (backend likely degraded): ${bad.slice(0, 8).join(", ")}${bad.length > 8 ? ` …(+${bad.length - 8})` : ""}`);
 }
 
 async function main() {
@@ -114,16 +135,18 @@ async function main() {
     [ACTIVE_STATES as unknown as string[]],
   );
 
-  // ── 1. Active counts (rows, skip blank email — mirrors getActiveCounts) ──
+  // ── 1. Active counts (rows — mirrors getActiveCounts, which SKIPS blank email) ──
   const dbActive = { member: 0, sky3: 0, skyTingTv: 0 };
-  // ── 2. At-risk (active + AT_RISK_STATES, deduped by email — mirrors atRiskCount) ──
+  // ── 2. At-risk (active + AT_RISK_STATES, deduped by email — mirrors computeChurnRates,
+  //       which dedups customer_email.toLowerCase() WITHOUT a blank guard, so blank
+  //       emails collapse to one "" bucket. The two functions handle blanks
+  //       differently, so the recomputes must too. ──
   const atRiskEmails = { member: new Set<string>(), sky3: new Set<string>(), skyTingTv: new Set<string>() };
   for (const r of arRows) {
-    if (!r.email) continue;
     const key = CAT_KEY[getCategory(r.plan_name)];
     if (key === "unknown") continue; // unknown is its own bucket; the active.* anchors are the 3 real categories
-    dbActive[key]++;
-    if (AT_RISK.has(r.plan_state)) atRiskEmails[key].add(r.email);
+    if (r.email) dbActive[key]++;                                  // active: skip blank (getActiveCounts)
+    if (AT_RISK.has(r.plan_state)) atRiskEmails[key].add(r.email ?? ""); // at-risk: blank → "" (computeChurnRates)
   }
   const a = stats.activeSubscribers;
   const byCat = stats.trends.churnRates.byCategory;
