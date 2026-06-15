@@ -4,7 +4,9 @@ import { deriveAlerts, type DriftMetrics, DEFAULT_DRIFT_THRESHOLDS } from "./dri
 function metrics(o: Partial<DriftMetrics> = {}): DriftMetrics {
   return {
     activeMember: 507, activeSky3: 382, activeTv: 2043, activeTotal: 2932,
-    dupActiveIdentities: 0, futureDatedRows: 0, lastFullSyncAgeDays: 1,
+    dupActiveIdentities: 0, futureDatedRows: 0,
+    unknownActivePlans: 0, monthsMissingChurnEvents: 0, revenueNetExceedsGross: 0,
+    lastFullSyncAgeDays: 1,
     ...o,
   };
 }
@@ -26,6 +28,24 @@ describe("deriveAlerts", () => {
     const r = deriveAlerts(metrics({ futureDatedRows: 3 }), 2932);
     expect(r.status).toBe("alert");
     expect(r.alerts.join(" ")).toMatch(/future/i);
+  });
+
+  it("ALERTs when an active plan maps to UNKNOWN (rename dropping from counts)", () => {
+    const r = deriveAlerts(metrics({ unknownActivePlans: 7 }), 2932);
+    expect(r.status).toBe("alert");
+    expect(r.alerts.join(" ")).toMatch(/UNKNOWN category/i);
+  });
+
+  it("ALERTs when a completed month has cancels but no churn events", () => {
+    const r = deriveAlerts(metrics({ monthsMissingChurnEvents: 2 }), 2932);
+    expect(r.status).toBe("alert");
+    expect(r.alerts.join(" ")).toMatch(/no churn events/i);
+  });
+
+  it("ALERTs when revenue net exceeds gross", () => {
+    const r = deriveAlerts(metrics({ revenueNetExceedsGross: 1 }), 2932);
+    expect(r.status).toBe("alert");
+    expect(r.alerts.join(" ")).toMatch(/net > gross/i);
   });
 
   it("WARNs when the full reconcile is overdue", () => {

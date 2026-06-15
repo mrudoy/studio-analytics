@@ -8,10 +8,21 @@
  *     unique per subscription, so any duplicate is corruption) is back.
  *   - future-dated active rows                  → the +1-day `created_at` TZ skew
  *     (a row "created tomorrow") is back.
+ *   - unknown-category active plans             → a new/renamed plan name maps to
+ *     UNKNOWN, so it silently drops out of subscriber counts AND revenue (the
+ *     FABxSKYTING / "2 WEEK INTRO"-style rename class).
+ *   - completed months missing churn events     → the monthly churn history reads
+ *     0% for a month that actually had cancellations (the auto_renew_events /
+ *     backfill-leg regression class).
+ *   - revenue net > gross                        → revenue_categories data integrity
+ *     (net should never exceed gross once fees are applied).
  *   - last full reconcile age                   → residual drift is unbounded.
  *   - active-total jump vs the previous run      → anomaly.
  *
- * Each run is recorded in `drift_checks` and surfaced in the digest.
+ * Each new bug we fix should add an invariant here so its regression is caught
+ * automatically — every cycle, with no human and no external truth report.
+ * Each run is recorded in `drift_checks` (full metric set in the `metrics`
+ * JSONB) and surfaced in the digest.
  */
 import { getPool } from "./database";
 import { ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
@@ -27,6 +38,16 @@ export interface DriftMetrics {
   dupActiveIdentities: number;
   /** Active rows whose created_at is in the future (ET) — TZ-skew tripwire. */
   futureDatedRows: number;
+  /** Active subscription rows whose plan_category is UNKNOWN/NULL — a plan name
+   *  the categorizer doesn't recognize, so it vanishes from counts + revenue. */
+  unknownActivePlans: number;
+  /** Of the last 3 completed months, how many had real cancellations
+   *  (Canceled rows by canceled_at) but ZERO churn events logged — the churn
+   *  history would render 0% for those months. */
+  monthsMissingChurnEvents: number;
+  /** Deduped revenue_categories rows where net_revenue exceeds gross revenue —
+   *  a data-integrity violation (fees only reduce net). */
+  revenueNetExceedsGross: number;
   lastFullSyncAgeDays: number | null;
 }
 
@@ -66,6 +87,18 @@ export function deriveAlerts(
   }
   if (m.futureDatedRows > 0) {
     alerts.push(`${m.futureDatedRows} active rows are dated in the future — created_at timezone skew may have returned.`);
+    hard = true;
+  }
+  if (m.unknownActivePlans > 0) {
+    alerts.push(`${m.unknownActivePlans} active subscriptions map to UNKNOWN category — a plan name the categorizer doesn't recognize is dropping out of counts + revenue (check categories.ts / a Union rename).`);
+    hard = true;
+  }
+  if (m.monthsMissingChurnEvents > 0) {
+    alerts.push(`${m.monthsMissingChurnEvents} recent completed month(s) had cancellations but no churn events — monthly churn history may read 0% (auto_renew_events / backfill leg).`);
+    hard = true;
+  }
+  if (m.revenueNetExceedsGross > 0) {
+    alerts.push(`${m.revenueNetExceedsGross} revenue rows have net > gross — revenue_categories data integrity issue.`);
     hard = true;
   }
   if (m.lastFullSyncAgeDays != null && m.lastFullSyncAgeDays > t.maxSyncAgeDays) {
@@ -131,6 +164,50 @@ export async function runDriftCheck(
   );
   const futureDatedRows = (future.rows[0]?.n as number) ?? 0;
 
+  // Active subscriptions the categorizer can't place — they silently vanish
+  // from per-category subscriber counts and from subscription-billing revenue.
+  const unknownPlans = await pool.query(
+    `SELECT COUNT(*)::int n FROM auto_renews
+     WHERE ${activeFilter} AND (plan_category IS NULL OR plan_category = 'UNKNOWN')`,
+  );
+  const unknownActivePlans = (unknownPlans.rows[0]?.n as number) ?? 0;
+
+  // Of the last 3 completed months, count any that had real cancellations
+  // (Canceled rows dated in the month) but ZERO churn/backfill_churn events —
+  // that is exactly the state in which the monthly churn card renders 0%.
+  const missingChurn = await pool.query(
+    `WITH months AS (
+       SELECT d::date AS ms, (d + INTERVAL '1 month')::date AS me
+       FROM generate_series(
+         DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '3 months',
+         DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month',
+         INTERVAL '1 month') d
+     )
+     SELECT COUNT(*)::int n FROM months
+     WHERE (SELECT COUNT(*) FROM auto_renews
+              WHERE plan_state = 'Canceled' AND canceled_at >= ms AND canceled_at < me) > 0
+       AND (SELECT COUNT(*) FROM auto_renew_events
+              WHERE event_type IN ('churn','backfill_churn')
+                AND (observed_at AT TIME ZONE 'America/New_York')::date >= ms
+                AND (observed_at AT TIME ZONE 'America/New_York')::date < me) = 0`,
+  );
+  const monthsMissingChurnEvents = (missingChurn.rows[0]?.n as number) ?? 0;
+
+  // Revenue integrity: on the canonical deduped, single-month rows, net revenue
+  // must never exceed gross (fees only reduce net). Mirrors the dedup pattern
+  // every revenue-store function uses so it sees the same rows the dashboard does.
+  const revInteg = await pool.query(
+    `WITH deduped AS (
+       SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
+         revenue, net_revenue
+       FROM revenue_categories
+       WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
+       ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
+     )
+     SELECT COUNT(*)::int n FROM deduped WHERE net_revenue > revenue + 0.01`,
+  );
+  const revenueNetExceedsGross = (revInteg.rows[0]?.n as number) ?? 0;
+
   let lastFullSyncAgeDays: number | null = null;
   try {
     lastFullSyncAgeDays = (await getReconcileHealth(pool)).daysAgo;
@@ -143,7 +220,9 @@ export async function runDriftCheck(
 
   const metrics: DriftMetrics = {
     activeMember, activeSky3, activeTv, activeTotal,
-    dupActiveIdentities, futureDatedRows, lastFullSyncAgeDays,
+    dupActiveIdentities, futureDatedRows,
+    unknownActivePlans, monthsMissingChurnEvents, revenueNetExceedsGross,
+    lastFullSyncAgeDays,
   };
   const { status, alerts } = deriveAlerts(metrics, prevTotal, thresholds);
 
