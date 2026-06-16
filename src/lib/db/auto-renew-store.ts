@@ -422,7 +422,7 @@ export async function applyDeltaCancellations(
       try {
         const { rows } = await client.query<{ id: number } & DeltaCancelRow>(
           `SELECT id, plan_state, current_state, created_at::text AS created_at
-             FROM auto_renews WHERE union_pass_id = $1`,
+             FROM auto_renews WHERE union_pass_id = $1 LIMIT 1`,
           [c.unionPassId],
         );
         const r = rows[0] ?? null;

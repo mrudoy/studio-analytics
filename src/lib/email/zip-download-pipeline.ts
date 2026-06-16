@@ -524,12 +524,8 @@ async function runZipImport(
     const shadow = transformer.collectShadowCancellations();
     if (shadow.length > 0) {
       await logDeltaCancelShadow(shadow, `zip-shadow-${Date.now()}`);
-      const dc = await applyDeltaCancellations(`zip-delta-cancel-${Date.now()}`, shadow);
-      console.log(
-        `[zip-pipeline] Delta cancellations applied: ${dc.canceled} canceled, ` +
-        `${dc.pendingCanceled} pending-cancel (no-match ${dc.noMatch}, noop ${dc.noop}, ` +
-        `protected-newer ${dc.protectedNewer}, errored ${dc.errored})`,
-      );
+      // applyDeltaCancellations logs its own full breakdown internally.
+      await applyDeltaCancellations(`zip-delta-cancel-${Date.now()}`, shadow);
     }
   } catch (e) {
     console.warn("[zip-pipeline] delta cancellation handling failed (non-fatal):", e);
