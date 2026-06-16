@@ -89,13 +89,24 @@ describe("classifyDeltaCancel — the B1 cancellation matrix", () => {
     ).toBe("cancel");
   });
 
+  it("monotonicity: SAME-DAY is treated as possibly-newer → protected_newer (err safe vs reused pass_id)", () => {
+    expect(
+      classifyDeltaCancel(
+        signal({ effectiveAt: "2026-06-01", intendedAction: "cancel" }),
+        dbRow({ created_at: "2026-06-01" }),
+      ),
+    ).toBe("protected_newer");
+  });
+
   it("monotonicity uses the EASTERN date of an evening-ET timestamp, not the UTC roll", () => {
-    // 23:30 ET on 06-01 is 03:30 UTC on 06-02; toEasternDate must keep it 06-01.
-    // A row created on 06-01 is NOT newer than a 06-01 cancellation → still cancels.
+    // 23:30 ET on 06-01 is 03:30 UTC on 06-02; toEasternDate must keep the
+    // boundary at 06-01. A row created 05-31 (before the ET date) still cancels;
+    // had we wrongly used the UTC date (06-02), 05-31 < 06-02 would also cancel,
+    // so pair it with the 06-01 same-day case above which only protects under ET.
     expect(
       classifyDeltaCancel(
         signal({ effectiveAt: "2026-06-01T23:30:00-04:00", intendedAction: "cancel" }),
-        dbRow({ created_at: "2026-06-01" }),
+        dbRow({ created_at: "2026-05-31" }),
       ),
     ).toBe("cancel");
   });

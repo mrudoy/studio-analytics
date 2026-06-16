@@ -337,10 +337,15 @@ export function classifyDeltaCancel(
     ACTIVE_STATE_SET.has(row.plan_state) && (row.current_state == null || row.current_state === "active");
   if (targetReached || !countsActive) return "noop";
 
-  // Monotonicity: don't let a stale cancel reverse a newer activation of a reused
-  // pass_id. Both are ET calendar dates (YYYY-MM-DD) → lexical compare is correct.
+  // Monotonicity: never let a stale cancel reverse a NEWER activation of a
+  // (reused) pass_id. created_at is a DATE and effectiveAt collapses to an ET
+  // calendar date, so we can only compare at day granularity — and we treat
+  // SAME-DAY as "possibly newer" → protect (>=, not >). The asymmetry is
+  // deliberate: a false negative here (skipping a genuine same-day cancel) just
+  // leaves a ghost the full-export reconcile later catches, whereas a false
+  // positive (cancelling a live row) is the run-1 incident — so we err safe.
   const effDate = toEasternDate(c.effectiveAt);
-  if (effDate && row.created_at && row.created_at > effDate) return "protected_newer";
+  if (effDate && row.created_at && row.created_at >= effDate) return "protected_newer";
 
   return c.intendedAction === "cancel" ? "cancel" : "pending_cancel";
 }
@@ -434,10 +439,14 @@ export async function applyDeltaCancellations(
             res.protectedNewer++;
             break;
           case "cancel":
+            // Do NOT preserve the existing canceled_at: on an active row Union
+            // stores the next RENEWAL date there, not a real cancellation date,
+            // so COALESCE-ing onto it would back-date the churn to a future
+            // renewal. Use the cancellation's effective ET date, else today (ET).
             await client.query(
               `UPDATE auto_renews
                  SET plan_state = 'Canceled',
-                     canceled_at = COALESCE($2::date, canceled_at, (NOW() AT TIME ZONE 'America/New_York')::date),
+                     canceled_at = COALESCE($2::date, (NOW() AT TIME ZONE 'America/New_York')::date),
                      snapshot_id = $3,
                      imported_at = NOW()
                WHERE id = $1`,
