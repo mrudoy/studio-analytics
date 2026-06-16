@@ -43,7 +43,7 @@ import {
   type RawRefund,
   type RawTransfer,
 } from "./zip-schemas";
-import { saveAutoRenews, reconcileAutoRenews } from "../db/auto-renew-store";
+import { saveAutoRenews, reconcileAutoRenews, applyDeltaCancellations } from "../db/auto-renew-store";
 import { logDeltaCancelShadow } from "../db/shadow-cancel-store";
 import { saveOrders } from "../db/order-store";
 import {
@@ -512,18 +512,27 @@ async function runZipImport(
     // (e.g. the "subscriptions changes" report from Union.fit admin).
   }
 
-  // ── B1 shadow mode: record cancellations the delta IMPLIES (NO writes) ──
-  // Passes arriving Expired/Canceled or auto-renew-off are normally dropped by
-  // transformAutoRenews. Here we LOG them to delta_cancel_shadow so we can later
-  // measure (against a full export) whether making the delta cancellation-aware
-  // would be correct — before any write is enabled. Non-fatal.
+  // ── Delta-implied cancellations: make the daily delta cancellation-aware ──
+  // Passes arriving Expired/Canceled or auto-renew-off are dropped by
+  // transformAutoRenews, so without this the daily delta never cancels anything
+  // and stale "ghost" active rows accumulate above Union's count. We (1) LOG the
+  // implied cancellations to delta_cancel_shadow for audit/measurement, then
+  // (2) APPLY them — matched strictly by union_pass_id, guarded, idempotent
+  // (graduated from B1 shadow mode). Non-fatal: a failure here must not abort
+  // the pipeline (revenue/registrations are already saved above).
   try {
     const shadow = transformer.collectShadowCancellations();
     if (shadow.length > 0) {
       await logDeltaCancelShadow(shadow, `zip-shadow-${Date.now()}`);
+      const dc = await applyDeltaCancellations(`zip-delta-cancel-${Date.now()}`, shadow);
+      console.log(
+        `[zip-pipeline] Delta cancellations applied: ${dc.canceled} canceled, ` +
+        `${dc.pendingCanceled} pending-cancel (no-match ${dc.noMatch}, noop ${dc.noop}, ` +
+        `protected-newer ${dc.protectedNewer}, errored ${dc.errored})`,
+      );
     }
   } catch (e) {
-    console.warn("[zip-pipeline] shadow cancellation logging failed (non-fatal):", e);
+    console.warn("[zip-pipeline] delta cancellation handling failed (non-fatal):", e);
   }
 
   // ── Populate pass-email cache ──────────────────────────
