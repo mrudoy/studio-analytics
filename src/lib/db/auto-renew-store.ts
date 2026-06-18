@@ -2,8 +2,9 @@ import type { PoolClient } from "pg";
 import { getPool } from "./database";
 import { toEasternDate } from "./eastern-date";
 import { getCategory, isAnnualPlan } from "../analytics/categories";
-import { BILLING_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
+import { BILLING_STATES, ACTIVE_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import type { AutoRenewCategory } from "@/types/union-data";
+import type { ShadowCancel } from "../email/zip-transformer";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -296,6 +297,202 @@ export async function upsertAutoRenewRowsTx(
   // full-export reconcile, never by a silent write in the hot path.
 
   return { inserted, updated };
+}
+
+const ACTIVE_STATE_SET = new Set<string>(ACTIVE_STATES);
+
+/** The minimal DB-row shape classifyDeltaCancel needs (created_at as YYYY-MM-DD text). */
+export interface DeltaCancelRow {
+  plan_state: string;
+  current_state: string | null;
+  created_at: string | null;
+}
+
+export type DeltaCancelOutcome =
+  | "cancel"           // apply terminal cancel  (→ plan_state 'Canceled')
+  | "pending_cancel"   // apply pending cancel    (→ plan_state 'Pending Cancel')
+  | "no_pass_id"       // shadow signal carried no union_pass_id
+  | "no_match"         // no DB row for this union_pass_id
+  | "noop"             // matched but already at target, or not currently counted active
+  | "protected_newer"; // monotonicity guard: active row is newer than the cancellation
+
+/**
+ * Pure decision for one delta-implied cancellation — no DB, exhaustively unit-tested.
+ * `row` is the auto_renews row matched by union_pass_id, or null if none.
+ */
+export function classifyDeltaCancel(
+  c: Pick<ShadowCancel, "unionPassId" | "intendedAction" | "effectiveAt">,
+  row: DeltaCancelRow | null,
+): DeltaCancelOutcome {
+  if (!c.unionPassId) return "no_pass_id";
+  if (!row) return "no_match";
+
+  // Already at/past the target state → nothing to do.
+  const targetReached =
+    c.intendedAction === "cancel"
+      ? row.plan_state === "Canceled"
+      : (row.plan_state === "Canceled" || row.plan_state === "Pending Cancel");
+  // Only rows currently COUNTED active are eligible (mirrors the dashboard filter).
+  const countsActive =
+    ACTIVE_STATE_SET.has(row.plan_state) && (row.current_state == null || row.current_state === "active");
+  if (targetReached || !countsActive) return "noop";
+
+  // Monotonicity: never let a stale cancel reverse a NEWER activation of a
+  // (reused) pass_id. created_at is a DATE and effectiveAt collapses to an ET
+  // calendar date, so we can only compare at day granularity — and we treat
+  // SAME-DAY as "possibly newer" → protect (>=, not >). The asymmetry is
+  // deliberate: a false negative here (skipping a genuine same-day cancel) just
+  // leaves a ghost the full-export reconcile later catches, whereas a false
+  // positive (cancelling a live row) is the run-1 incident — so we err safe.
+  const effDate = toEasternDate(c.effectiveAt);
+  if (effDate && row.created_at && row.created_at >= effDate) return "protected_newer";
+
+  return c.intendedAction === "cancel" ? "cancel" : "pending_cancel";
+}
+
+export interface DeltaCancelResult {
+  /** Active row flipped to terminal 'Canceled'. */
+  canceled: number;
+  /** Active row flipped to 'Pending Cancel' (auto-renew off, still in paid period). */
+  pendingCanceled: number;
+  /** Matched, but already at/past the target state or not currently counted active. */
+  noop: number;
+  /** union_pass_id not found in the DB at all. */
+  noMatch: number;
+  /** Skipped: the active row is newer than the cancellation (reused pass_id). */
+  protectedNewer: number;
+  /** Shadow row carried no union_pass_id (defensive; collectShadowCancellations requires one). */
+  skippedNoPassId: number;
+  /** Per-row error, rolled back via savepoint — the rest of the batch still applied. */
+  errored: number;
+}
+
+/**
+ * Apply the cancellations the daily delta IMPLIES (graduated from B1 shadow mode).
+ *
+ * Passes that arrive Expired/Canceled or with auto-renew turned off are dropped by
+ * transformAutoRenews; collectShadowCancellations() surfaces them as ShadowCancel
+ * signals. This function is the WRITE that the shadow phase validated: it stops the
+ * daily delta from silently leaking cancellations, which is what let stale "ghost"
+ * active rows accumulate above Union's count.
+ *
+ * Each signal is matched STRICTLY by union_pass_id to exactly one row — NEVER by
+ * email/plan. Union reissues a pass on renewal, so the same person can hold a
+ * freshly-active pass whose email+plan collides with the old expired one; an email
+ * match would cancel the live renewal (the run-1 false-positive class).
+ *
+ *   intendedAction 'cancel'         → terminal Expired/Canceled → plan_state 'Canceled'
+ *   intendedAction 'pending_cancel' → auto-renew off, in period → plan_state 'Pending Cancel'
+ *                                     (STILL active — only flags the cancellation intent)
+ *
+ * Guards:
+ *   - only touches rows currently counted active (plan_state ∈ ACTIVE_STATES and
+ *     current_state NULL/'active'); already-terminal/deactivated rows are no-ops.
+ *   - monotonicity: skips when the active row was created AFTER the cancellation's
+ *     effective date — that means the pass_id was reused for a newer subscription,
+ *     so a stale cancel must not reverse it.
+ *   - per-row SAVEPOINT so one bad row can't abort the batch.
+ *   - serialized against saveAutoRenews()/reconcile via AUTO_RENEW_WRITE_LOCK.
+ *
+ * The plan_state change fires the auto_renew_events trigger, so churn is logged
+ * automatically (Valid Now → Pending Cancel/Canceled = 'churn'; Pending Cancel →
+ * Canceled = 'final_cancel', excluded from churn counts). No separate event write.
+ */
+export async function applyDeltaCancellations(
+  snapshotId: string,
+  cancels: ShadowCancel[],
+): Promise<DeltaCancelResult> {
+  const res: DeltaCancelResult = {
+    canceled: 0, pendingCanceled: 0, noop: 0, noMatch: 0,
+    protectedNewer: 0, skippedNoPassId: 0, errored: 0,
+  };
+  if (cancels.length === 0) return res;
+
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Serialize against a concurrent daily delta / reconcile (same lock they take).
+    await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
+
+    for (const c of cancels) {
+      if (!c.unionPassId) { res.skippedNoPassId++; continue; }
+
+      await client.query("SAVEPOINT delta_cancel");
+      try {
+        const { rows } = await client.query<{ id: number } & DeltaCancelRow>(
+          `SELECT id, plan_state, current_state, created_at::text AS created_at
+             FROM auto_renews WHERE union_pass_id = $1 LIMIT 1`,
+          [c.unionPassId],
+        );
+        const r = rows[0] ?? null;
+        const outcome = classifyDeltaCancel(c, r);
+
+        switch (outcome) {
+          case "no_match":
+            res.noMatch++;
+            break;
+          case "noop":
+            res.noop++;
+            break;
+          case "protected_newer":
+            res.protectedNewer++;
+            break;
+          case "cancel":
+            // Do NOT preserve the existing canceled_at: on an active row Union
+            // stores the next RENEWAL date there, not a real cancellation date,
+            // so COALESCE-ing onto it would back-date the churn to a future
+            // renewal. Use the cancellation's effective ET date, else today (ET).
+            await client.query(
+              `UPDATE auto_renews
+                 SET plan_state = 'Canceled',
+                     canceled_at = COALESCE($2::date, (NOW() AT TIME ZONE 'America/New_York')::date),
+                     snapshot_id = $3,
+                     imported_at = NOW()
+               WHERE id = $1`,
+              [r!.id, toEasternDate(c.effectiveAt), snapshotId],
+            );
+            res.canceled++;
+            break;
+          case "pending_cancel":
+            // still active; record the click-date (TIMESTAMPTZ keeps full precision).
+            await client.query(
+              `UPDATE auto_renews
+                 SET plan_state = 'Pending Cancel',
+                     pending_canceled_at = COALESCE(pending_canceled_at, $2),
+                     snapshot_id = $3,
+                     imported_at = NOW()
+               WHERE id = $1`,
+              [r!.id, c.effectiveAt, snapshotId],
+            );
+            res.pendingCanceled++;
+            break;
+          // "no_pass_id" can't occur here — guarded before the query.
+        }
+
+        await client.query("RELEASE SAVEPOINT delta_cancel");
+      } catch (rowErr) {
+        await client.query("ROLLBACK TO SAVEPOINT delta_cancel");
+        res.errored++;
+        const msg = rowErr instanceof Error ? rowErr.message : String(rowErr);
+        console.warn(`[auto-renew-store] delta-cancel skipped pass_id=${c.unionPassId}: ${msg}`);
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  console.log(
+    `[auto-renew-store] Delta cancellations: ${res.canceled} canceled, ${res.pendingCanceled} pending-cancel ` +
+    `(noop ${res.noop}, no-match ${res.noMatch}, protected-newer ${res.protectedNewer}, ` +
+    `no-pass-id ${res.skippedNoPassId}, errored ${res.errored})`,
+  );
+  return res;
 }
 
 /**
