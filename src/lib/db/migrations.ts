@@ -1084,6 +1084,33 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_drift_checks_ran ON drift_checks(ran_at DESC);
     `,
   },
+
+  // ── 025 ─────────────────────────────────────────────────────
+  // SUPERSEDED — intentionally a no-op.
+  //
+  // This migration originally collapsed active rows sharing an order_id (keep
+  // newest, cancel the rest). That was the WRONG fix: investigation on
+  // 2026-06-06 proved the duplicate order_ids were not "renewal twins" but
+  // CORRUPTION — `remediate-run1.ts` had enriched order_id keyed on `email|plan`
+  // (not unique), stamping ONE order_id across a person's several distinct
+  // same-plan subscriptions. Collapsing therefore destroyed genuine, separately-
+  // billed subscriptions (e.g. ihinsdale's 3 SKY UNLIMITED → 1), under-counting
+  // Member/Sky3/TV.
+  //
+  // Union's order_id is unique per subscription, so the real fixes are: (a) the
+  // enrichment source bug is corrected, (b) the audited full-export reconcile
+  // re-derives the correct order_id per row via its ON CONFLICT upsert and
+  // re-activates the wrongly-canceled rows, and (c) the drift check asserts the
+  // "≤1 active row per order_id" invariant and ALERTS rather than silently
+  // canceling. We do NOT silently cancel rows in a migration or the hot path.
+  //
+  // Left as a recorded no-op (not deleted) to preserve migration ordering on
+  // DBs where the original collapse already ran; those rows are restored by the
+  // reconcile, not by re-running this migration.
+  {
+    name: "025_dedup_active_by_order_id",
+    up: `SELECT 1;`,
+  },
 ];
 
 /**

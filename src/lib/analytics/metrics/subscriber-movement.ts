@@ -344,13 +344,16 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
     //   1. pending_canceled_at — Union's canonical click timestamp (set when
     //      the user clicked cancel, i.e. entered Pending Cancel state).
     //      Populated by the zip ingest from pass.pendingCanceledAt.
-    //   2. Live churn observation from auto_renew_events — our recording of
-    //      the Valid Now → Pending Cancel transition. Same event as
-    //      pending_canceled_at; serves as a bridge for any pre-ingest rows
-    //      that don't yet have pending_canceled_at populated.
-    //   3. null — no click date. We do NOT fall back to canceled_at: it's
-    //      the period-end date for click-then-roll cancellations and bucket-
-    //      ing by it produces the period-end clustering bug PR #8 fixed.
+    //   2. Churn date from auto_renew_events (getFirstChurnDateByAutoRenewId):
+    //      live observations of the → Pending Cancel/Canceled transition in
+    //      the click-date era, PLUS the historical backfill_churn leg for rows
+    //      terminally Canceled before the event log existed (< 2026-04-14) —
+    //      without that leg, every month before Apr '26 reads 0% churn on the
+    //      monthly history cards.
+    //   3. null — no churn record. We do NOT fall back to canceled_at here:
+    //      for current-era rows it's the period-end date for click-then-roll
+    //      cancellations and bucketing by it produces the period-end
+    //      clustering bug PR #8 fixed.
     const churnDate = pendingCanceledAt ?? liveChurnDate ?? null;
     return {
       id,

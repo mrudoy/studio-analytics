@@ -679,7 +679,7 @@ export async function getIntroWeekCountForRange(
      WHERE attended_at IS NOT NULL
        AND attended_at >= $1 AND attended_at < $2
        AND (subscription = 'false' OR subscription IS NULL)
-       AND UPPER(pass) LIKE '%INTRO WEEK%'`,
+       AND ${introPassLike("pass")}`,
     [startDate, endDate]
   );
   return Number(res.rows[0].cnt);
@@ -949,7 +949,7 @@ export async function getIntroWeekCustomersByWeek(
     WHERE attended_at IS NOT NULL
       AND email IS NOT NULL
       AND (subscription = 'false' OR subscription IS NULL)
-      AND UPPER(pass) LIKE '%INTRO WEEK%'
+      AND ${introPassLike("pass")}
       ${dateFilter}
     GROUP BY "weekStart"
     ORDER BY "weekStart"
@@ -974,17 +974,19 @@ export interface ActiveIntroWeekRow {
 }
 
 /**
- * Get all people currently within their 7-day Intro Week window.
+ * Get all people currently within their intro window.
  *
- * Logic: find each email's first attended_at with INTRO WEEK pass.
- * Their window is [first_attended, first_attended + 7 days].
- * If today is within that window (or slightly past), they appear.
+ * Logic: find each email's first attended_at with an intro pass.
+ * Their window is [first_attended, first_attended + window] where the window
+ * is pass-dependent: 14 days for the "2 WEEK INTRO" offer, 7 days otherwise
+ * (see introWindowDaysSql). If today is within that window (or slightly
+ * past), they appear.
  *
- * `lookbackDays` controls how far back to search (default 14 = includes
- * recently expired intro weeks too).
+ * `lookbackDays` controls how far back to search (default 21 = covers a full
+ * 14-day window plus recently expired ones).
  */
 export async function getActiveIntroWeekCustomers(
-  lookbackDays = 14,
+  lookbackDays = 21,
 ): Promise<ActiveIntroWeekRow[]> {
   const pool = getPool();
 
@@ -993,18 +995,20 @@ export async function getActiveIntroWeekCustomers(
       SELECT
         email,
         CONCAT(first_name, ' ', last_name) AS name,
-        attended_at AS visit_date
+        attended_at AS visit_date,
+        ${introWindowDaysSql("pass")} AS window_days
       FROM registrations
       WHERE attended_at IS NOT NULL
         AND email IS NOT NULL
-        AND UPPER(pass) LIKE '%INTRO WEEK%'
+        AND ${introPassLike("pass")}
         AND state IN ('redeemed', 'confirmed')
     ),
     first_visit AS (
       SELECT
         email,
         MIN(name) AS name,
-        MIN(visit_date) AS start_date
+        MIN(visit_date) AS start_date,
+        MAX(window_days) AS window_days
       FROM intro_visits
       GROUP BY email
       HAVING MIN(visit_date) >= CURRENT_DATE - $1::int
@@ -1013,12 +1017,12 @@ export async function getActiveIntroWeekCustomers(
       fv.name,
       fv.email,
       fv.start_date::text AS "startDate",
-      (fv.start_date + INTERVAL '7 days')::date::text AS "endDate",
-      GREATEST(0, (fv.start_date + INTERVAL '7 days')::date - CURRENT_DATE)::int AS "daysLeft",
+      (fv.start_date + fv.window_days)::date::text AS "endDate",
+      GREATEST(0, (fv.start_date + fv.window_days)::date - CURRENT_DATE)::int AS "daysLeft",
       COUNT(iv.visit_date)::int AS "classesAttended"
     FROM first_visit fv
     JOIN intro_visits iv ON iv.email = fv.email
-    GROUP BY fv.name, fv.email, fv.start_date
+    GROUP BY fv.name, fv.email, fv.start_date, fv.window_days
     ORDER BY fv.start_date DESC, fv.name
   `;
 
@@ -1038,14 +1042,15 @@ export interface IntroWeekConversionRow {
 }
 
 /**
- * Get expired intro week customers from the last 14 days and determine
+ * Get expired intro customers from the last 14 days and determine
  * which ones converted to an in-studio auto-renew subscription.
  *
- * "Expired" = their 7-day intro window ended between 0 and 14 days ago.
+ * "Expired" = their intro window (pass-dependent: 14 days for "2 WEEK INTRO",
+ * 7 days otherwise — see introWindowDaysSql) ended between 0 and 14 days ago.
  * "Converted" = they have ANY active in-studio auto-renew right now
  * (plan_state not in Canceled/Invalid/Paused, plan matches IN_STUDIO_PLAN_FILTER).
  *
- * Excludes people currently in their intro week (window hasn't ended yet).
+ * Excludes people currently in their intro window (it hasn't ended yet).
  */
 export async function getIntroWeekConversionData(lookbackDays = 14): Promise<IntroWeekConversionRow[]> {
   const pool = getPool();
@@ -1055,11 +1060,12 @@ export async function getIntroWeekConversionData(lookbackDays = 14): Promise<Int
       SELECT
         LOWER(email) AS email,
         CONCAT(first_name, ' ', last_name) AS name,
-        attended_at AS visit_date
+        attended_at AS visit_date,
+        ${introWindowDaysSql("pass")} AS window_days
       FROM registrations
       WHERE attended_at IS NOT NULL
         AND email IS NOT NULL
-        AND UPPER(pass) LIKE '%INTRO WEEK%'
+        AND ${introPassLike("pass")}
         AND state IN ('redeemed', 'confirmed')
     ),
     intro_customers AS (
@@ -1067,13 +1073,13 @@ export async function getIntroWeekConversionData(lookbackDays = 14): Promise<Int
         email,
         MIN(name) AS name,
         MIN(visit_date) AS start_date,
-        (MIN(visit_date) + INTERVAL '7 days')::date AS end_date,
+        (MIN(visit_date) + MAX(window_days))::date AS end_date,
         COUNT(visit_date)::int AS classes_attended
       FROM intro_visits
       GROUP BY email
       -- Expired in the last N days: end_date between (today - lookback) and today
-      HAVING (MIN(visit_date) + INTERVAL '7 days')::date <= CURRENT_DATE
-        AND (MIN(visit_date) + INTERVAL '7 days')::date >= CURRENT_DATE - ${lookbackDays}
+      HAVING (MIN(visit_date) + MAX(window_days))::date <= CURRENT_DATE
+        AND (MIN(visit_date) + MAX(window_days))::date >= CURRENT_DATE - ${lookbackDays}
     ),
     active_instudio AS (
       -- "Converted" = has an active in-studio subscription. Use the canonical
@@ -1101,14 +1107,15 @@ export async function getIntroWeekConversionData(lookbackDays = 14): Promise<Int
 }
 
 /**
- * Get intro week customers whose 7-day trial is expiring within 2 days.
+ * Get intro customers whose trial is expiring within 2 days.
  *
  * Logic:
- * - Intro week start = first attended class date (not purchase date)
- * - Intro week end = start + 6 days (7-day window)
+ * - Intro start = first attended class date (not purchase date)
+ * - Intro end = start + (window - 1) days, where the window is pass-dependent:
+ *   14 days for "2 WEEK INTRO", 7 days otherwise (see introWindowDaysSql)
  * - "Expiring" = end_date - today is 1 or 2 (within 2 days of end, not same day)
- * - Only looks at intro weeks started in the last 14 days
- * - Classes attended = count of registrations within the 7-day window
+ * - Only looks at intros started in the last 21 days (covers 14-day windows)
+ * - Classes attended = count of registrations within the window
  */
 export async function getExpiringIntroWeekCustomers(): Promise<{
   firstName: string;
@@ -1127,13 +1134,14 @@ export async function getExpiringIntroWeekCustomers(): Promise<{
         LOWER(email) as email,
         MIN(first_name) as first_name,
         MIN(last_name) as last_name,
-        MIN(attended_at) as intro_start
+        MIN(attended_at) as intro_start,
+        MAX(${introWindowDaysSql("pass")}) as window_days
       FROM registrations
       WHERE attended_at IS NOT NULL
         AND email IS NOT NULL
         AND (subscription = 'false' OR subscription IS NULL)
-        AND UPPER(pass) LIKE '%INTRO WEEK%'
-        AND attended_at >= (CURRENT_DATE - INTERVAL '14 days')
+        AND ${introPassLike("pass")}
+        AND attended_at >= (CURRENT_DATE - INTERVAL '21 days')
       GROUP BY LOWER(email)
     ),
     intro_windows AS (
@@ -1142,8 +1150,8 @@ export async function getExpiringIntroWeekCustomers(): Promise<{
         first_name,
         last_name,
         intro_start,
-        (intro_start + INTERVAL '6 days')::date as intro_end,
-        ((intro_start + INTERVAL '6 days')::date - CURRENT_DATE)::int as days_until_expiry
+        (intro_start + (window_days - 1))::date as intro_end,
+        ((intro_start + (window_days - 1))::date - CURRENT_DATE)::int as days_until_expiry
       FROM intro_starts
     ),
     class_counts AS (
@@ -1511,6 +1519,24 @@ export interface NewCustomerCohortRow {
   total6Week: number;
 }
 
+// SQL fragment: matches every INTRO-type pass name. Match on '%INTRO%' (not
+// '%INTRO WEEK%'): the studio renames its intro offer — "2 WEEK INTRO" launched
+// 2026-04-07 and contains "INTRO" but not the substring "INTRO WEEK", which
+// silently zeroed the intro-week pool for two months. Every pass name in 26
+// months of data containing INTRO is a genuine intro offer (INTRO WEEK,
+// 2 WEEK INTRO, Exclusive Intro Week, Intro Class Trio, Post 2-week intro…),
+// so the broad match is safe and survives the next rebrand.
+export function introPassLike(col = "pass"): string {
+  return `UPPER(${col}) LIKE '%INTRO%'`;
+}
+
+// Intro window length in days, derived from the pass name: the "2 WEEK INTRO"
+// offer (2026-04) runs 14 days; every other intro pass is the classic 7-day
+// week. Used by the active/expiring/expired intro cards.
+export function introWindowDaysSql(col = "pass"): string {
+  return `CASE WHEN UPPER(${col}) LIKE '%2 WEEK%' THEN 14 ELSE 7 END`;
+}
+
 // SQL fragment: in-studio intro/drop-in passes only (mirrors isDropInOrIntro).
 // Excludes staff, teacher, demo, teacher-training, and TV/replay/livestream visits.
 // Use col param for queries with a table alias (e.g. 'r.pass').
@@ -1519,7 +1545,7 @@ export function dropInPassFilter(col = "pass"): string {
   AND (
     UPPER(${col}) LIKE '%DROP-IN%' OR UPPER(${col}) LIKE '%DROP IN%' OR UPPER(${col}) LIKE '%DROPIN%'
     OR UPPER(${col}) LIKE '%DROPLET%'
-    OR UPPER(${col}) LIKE '%INTRO WEEK%'
+    OR ${introPassLike(col)}
     OR UPPER(${col}) LIKE '%TRIAL%'
     OR UPPER(${col}) LIKE '%FIRST%'
     OR UPPER(${col}) LIKE '%SINGLE CLASS%'
@@ -1564,7 +1590,15 @@ export const ANY_AR_PLAN_FILTER = `
  * Get new customer volume by week.
  * A "new customer" = person whose first in-studio visit (intro week / drop-in)
  * falls in the week. Excludes TV/replay/livestream first visits.
- * Returns ~6 weeks of data (Monday-based weeks).
+ * Returns the current week + the 6 prior weeks (Monday-based weeks).
+ *
+ * The week series is generated from DATE_TRUNC('week', CURRENT_DATE) and the
+ * counts LEFT JOINed in, so a week with ZERO new customers — typically the
+ * current week early on (e.g. a Monday before anyone's first class) — still
+ * returns a row (count 0). Without this, a bare GROUP BY omits the empty
+ * current week and the caller (runNewCustomers) mislabels the prior complete
+ * week as "this week," overstating current-week volume. Using Postgres'
+ * own week convention avoids any JS/PG timezone mismatch on the boundary.
  */
 export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]> {
   const pool = getPool();
@@ -1579,19 +1613,25 @@ export async function getNewCustomerVolumeByWeek(): Promise<NewCustomerWeekRow[]
         ${IN_STUDIO_PASS_FILTER}
       GROUP BY LOWER(email)
     ),
-    weekly AS (
+    week_series AS (
+      SELECT generate_series(
+        DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '6 weeks',
+        DATE_TRUNC('week', CURRENT_DATE),
+        INTERVAL '1 week'
+      )::date AS week_start
+    ),
+    counts AS (
       SELECT DATE_TRUNC('week', first_date)::date as week_start,
              COUNT(*) as count
       FROM first_date_per_email
       GROUP BY week_start
-      ORDER BY week_start DESC
-      LIMIT 7
     )
-    SELECT week_start::text as "weekStart",
-           (week_start + INTERVAL '6 days')::date::text as "weekEnd",
-           count
-    FROM weekly
-    ORDER BY week_start
+    SELECT ws.week_start::text as "weekStart",
+           (ws.week_start + INTERVAL '6 days')::date::text as "weekEnd",
+           COALESCE(c.count, 0) as count
+    FROM week_series ws
+    LEFT JOIN counts c ON c.week_start = ws.week_start
+    ORDER BY ws.week_start
   `;
 
   const { rows } = await pool.query(query);
@@ -1764,7 +1804,7 @@ export type PoolSliceKey = "all" | "drop-ins" | "intro-week" | "class-packs" | "
 const POOL_SLICE_FILTERS: Record<PoolSliceKey, string> = {
   "all": "",
   "drop-ins": `AND (UPPER(r.pass) LIKE '%DROP-IN%' OR UPPER(r.pass) LIKE '%DROP IN%' OR UPPER(r.pass) LIKE '%DROPIN%' OR UPPER(r.pass) LIKE '%DROPLET%')`,
-  "intro-week": `AND (UPPER(r.pass) LIKE '%INTRO WEEK%' OR UPPER(r.pass) LIKE '%TRIAL%' OR UPPER(r.pass) LIKE '%FIRST%')`,
+  "intro-week": `AND (${introPassLike("r.pass")} OR UPPER(r.pass) LIKE '%TRIAL%' OR UPPER(r.pass) LIKE '%FIRST%')`,
   "class-packs": `AND (UPPER(r.pass) LIKE '%PACK%' OR UPPER(r.pass) LIKE '%SINGLE CLASS%')`,
   "high-intent": "", // handled via subquery wrapping (≥2 visits in 30 days)
 };
@@ -2133,7 +2173,9 @@ export type JourneyBucket = "all" | "intro-week" | "a-la-carte";
 
 // Intro-week pass identifiers (subset of dropInPassFilter)
 function introPassFilter(col: string): string {
-  return `(UPPER(${col}) LIKE '%INTRO WEEK%' OR UPPER(${col}) LIKE '%TRIAL%' OR UPPER(${col}) LIKE '%FIRST%')`;
+  // introPassLike matches '%INTRO%' (not '%INTRO WEEK%') — see its definition
+  // for why ("2 WEEK INTRO" rebrand, 2026-04).
+  return `(${introPassLike(col)} OR UPPER(${col}) LIKE '%TRIAL%' OR UPPER(${col}) LIKE '%FIRST%')`;
 }
 
 export interface JourneyBucketWeekRow {
@@ -3233,7 +3275,7 @@ export async function getSky3ChurnProfile() {
     -- Visits BEFORE subscription start (prior customer activity)
     prior_visits AS (
       SELECT c.email,
-        COUNT(CASE WHEN UPPER(r.pass) LIKE '%INTRO WEEK%' THEN 1 END)::int AS prior_intro_visits,
+        COUNT(CASE WHEN ${introPassLike("r.pass")} THEN 1 END)::int AS prior_intro_visits,
         COUNT(CASE WHEN UPPER(r.pass) LIKE '%DROP%' OR r.pass ILIKE '%single%' THEN 1 END)::int AS prior_dropin_visits,
         COUNT(CASE WHEN UPPER(r.pass) LIKE '%GUEST%' THEN 1 END)::int AS prior_guest_visits,
         COUNT(r.id)::int AS prior_total_visits,

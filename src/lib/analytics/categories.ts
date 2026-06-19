@@ -135,7 +135,11 @@ export function isDropInOrIntro(passName: string): boolean {
     upper.includes("DROP IN") ||
     upper.includes("DROPIN") ||
     upper.includes("DROPLET") ||
-    upper.includes("INTRO WEEK") ||
+    // "INTRO" (not "INTRO WEEK"): the intro offer gets renamed — "2 WEEK INTRO"
+    // (2026-04) contains INTRO but not the substring "INTRO WEEK". Every
+    // INTRO-containing pass name in the data is a genuine intro offer.
+    // Mirrors introPassLike() in registration-store.ts.
+    upper.includes("INTRO") ||
     upper.includes("TRIAL") ||
     upper.includes("FIRST") ||
     upper.includes("SINGLE CLASS") ||
