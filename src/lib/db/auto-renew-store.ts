@@ -357,8 +357,13 @@ export interface DeltaCancelResult {
   pendingCanceled: number;
   /** Matched, but already at/past the target state or not currently counted active. */
   noop: number;
-  /** union_pass_id not found in the DB at all. */
+  /** union_pass_id not found; order_id fallback also missed. */
   noMatch: number;
+  /**
+   * union_pass_id not found, but matched via order_id fallback (row lacked union_pass_id).
+   * union_pass_id is backfilled on the matched row so future deltas find it directly.
+   */
+  noMatchOrderIdFallback: number;
   /** Skipped: the active row is newer than the cancellation (reused pass_id). */
   protectedNewer: number;
   /** Shadow row carried no union_pass_id (defensive; collectShadowCancellations requires one). */
@@ -404,7 +409,7 @@ export async function applyDeltaCancellations(
 ): Promise<DeltaCancelResult> {
   const res: DeltaCancelResult = {
     canceled: 0, pendingCanceled: 0, noop: 0, noMatch: 0,
-    protectedNewer: 0, skippedNoPassId: 0, errored: 0,
+    noMatchOrderIdFallback: 0, protectedNewer: 0, skippedNoPassId: 0, errored: 0,
   };
   if (cancels.length === 0) return res;
 
@@ -429,9 +434,55 @@ export async function applyDeltaCancellations(
         const outcome = classifyDeltaCancel(c, r);
 
         switch (outcome) {
-          case "no_match":
+          case "no_match": {
+            // Fallback: try order_id for rows not yet backfilled with union_pass_id.
+            // Only targets rows where union_pass_id IS NULL — avoids touching a row
+            // whose pass_id happens to differ (a separate subscription).
+            if (c.orderId) {
+              const { rows: fbRows } = await client.query<{ id: number } & DeltaCancelRow>(
+                `SELECT id, plan_state, current_state, created_at::text AS created_at
+                   FROM auto_renews
+                  WHERE order_id = $1 AND union_pass_id IS NULL LIMIT 1`,
+                [c.orderId],
+              );
+              const fbRow = fbRows[0] ?? null;
+              const fbOutcome = classifyDeltaCancel(c, fbRow);
+              if (fbOutcome === "cancel" || fbOutcome === "pending_cancel") {
+                const cancelAt = toEasternDate(c.effectiveAt);
+                if (fbOutcome === "cancel") {
+                  await client.query(
+                    `UPDATE auto_renews
+                        SET plan_state   = 'Canceled',
+                            canceled_at  = COALESCE($3::date, (NOW() AT TIME ZONE 'America/New_York')::date),
+                            union_pass_id = $2,
+                            snapshot_id  = $4,
+                            imported_at  = NOW()
+                      WHERE id = $1`,
+                    [fbRow!.id, c.unionPassId, cancelAt, snapshotId],
+                  );
+                  res.canceled++;
+                } else {
+                  await client.query(
+                    `UPDATE auto_renews
+                        SET plan_state         = 'Pending Cancel',
+                            pending_canceled_at = COALESCE(pending_canceled_at, $3::timestamptz),
+                            union_pass_id       = $2,
+                            snapshot_id         = $4,
+                            imported_at         = NOW()
+                      WHERE id = $1`,
+                    [fbRow!.id, c.unionPassId, c.effectiveAt, snapshotId],
+                  );
+                  res.pendingCanceled++;
+                }
+                res.noMatchOrderIdFallback++;
+                break;
+              }
+              if (fbOutcome === "noop") { res.noop++; break; }
+              if (fbOutcome === "protected_newer") { res.protectedNewer++; break; }
+            }
             res.noMatch++;
             break;
+          }
           case "noop":
             res.noop++;
             break;
@@ -489,8 +540,8 @@ export async function applyDeltaCancellations(
 
   console.log(
     `[auto-renew-store] Delta cancellations: ${res.canceled} canceled, ${res.pendingCanceled} pending-cancel ` +
-    `(noop ${res.noop}, no-match ${res.noMatch}, protected-newer ${res.protectedNewer}, ` +
-    `no-pass-id ${res.skippedNoPassId}, errored ${res.errored})`,
+    `(noop ${res.noop}, no-match ${res.noMatch}, order-id-fallback ${res.noMatchOrderIdFallback}, ` +
+    `protected-newer ${res.protectedNewer}, no-pass-id ${res.skippedNoPassId}, errored ${res.errored})`,
   );
   return res;
 }

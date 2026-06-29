@@ -2934,20 +2934,20 @@ function MRRBreakdown({ data }: { data: DashboardStats }) {
         {billing && (
           <div className="mt-4 pt-3 border-t border-border">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">
-              Subscription billing
+              Subscription run-rate
             </div>
             <div className="flex flex-col">
               <div className="flex justify-between items-center py-2 border-b border-border">
                 <span className="text-sm text-muted-foreground">
-                  {monthShortLabel(billing.currentMonth)} projection
+                  {monthShortLabel(billing.currentMonth)}
                 </span>
                 <span className="text-sm font-semibold tabular-nums">
-                  {formatCurrency(billing.currentMonthProjected)}
+                  {formatCurrency(billing.currentMonthActual)}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm text-muted-foreground">
-                  {monthShortLabel(billing.lastMonth)} total
+                  {monthShortLabel(billing.lastMonth)}
                 </span>
                 <span className="text-sm font-semibold tabular-nums">
                   {formatCurrency(billing.lastMonthTotal)}
