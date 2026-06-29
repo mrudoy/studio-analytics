@@ -81,6 +81,9 @@ export function getCategory(planName: string): AutoRenewCategory {
   const exact = planCategoryMap.get(upper);
   if (exact) return exact;
 
+  // Guest passes are never subscriptions — exclude before fuzzy "MEMBER" match.
+  if (upper.includes("GUEST")) return "UNKNOWN";
+
   // Fuzzy match: check if the plan name contains a known category keyword
   if (upper.includes("SKY3") || upper.includes("SKY5") || upper.includes("SKYHIGH") || upper.includes("5 PACK") || upper.includes("5-PACK")) return "SKY3";
   if (upper.includes("SKY TING TV") || upper.includes("SKYTING TV") || upper.includes("SKYTING")) return "SKY_TING_TV";

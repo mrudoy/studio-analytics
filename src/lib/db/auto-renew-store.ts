@@ -357,13 +357,18 @@ export interface DeltaCancelResult {
   pendingCanceled: number;
   /** Matched, but already at/past the target state or not currently counted active. */
   noop: number;
-  /** union_pass_id not found; order_id fallback also missed. */
+  /** union_pass_id not found; all fallbacks missed. */
   noMatch: number;
   /**
    * union_pass_id not found, but matched via order_id fallback (row lacked union_pass_id).
    * union_pass_id is backfilled on the matched row so future deltas find it directly.
    */
   noMatchOrderIdFallback: number;
+  /**
+   * union_pass_id + order_id both missed, but email+category matched exactly 1 active row.
+   * union_pass_id is backfilled (self-healing). Only fires on an unambiguous 1:1 match.
+   */
+  noMatchEmailFallback: number;
   /** Skipped: the active row is newer than the cancellation (reused pass_id). */
   protectedNewer: number;
   /** Shadow row carried no union_pass_id (defensive; collectShadowCancellations requires one). */
@@ -381,10 +386,11 @@ export interface DeltaCancelResult {
  * daily delta from silently leaking cancellations, which is what let stale "ghost"
  * active rows accumulate above Union's count.
  *
- * Each signal is matched STRICTLY by union_pass_id to exactly one row — NEVER by
- * email/plan. Union reissues a pass on renewal, so the same person can hold a
- * freshly-active pass whose email+plan collides with the old expired one; an email
- * match would cancel the live renewal (the run-1 false-positive class).
+ * Matching cascade: (1) union_pass_id exact, (2) order_id where pass_id is NULL,
+ * (3) email+category where exactly ONE active row exists. Union reissues pass_ids
+ * on renewal, so the DB often has a stale pass_id; the email fallback is safe only
+ * when unambiguous (1 active row). Multiple active rows = skip. Each fallback
+ * backfills union_pass_id on the matched row so the next signal matches directly.
  *
  *   intendedAction 'cancel'         → terminal Expired/Canceled → plan_state 'Canceled'
  *   intendedAction 'pending_cancel' → auto-renew off, in period → plan_state 'Pending Cancel'
@@ -409,7 +415,8 @@ export async function applyDeltaCancellations(
 ): Promise<DeltaCancelResult> {
   const res: DeltaCancelResult = {
     canceled: 0, pendingCanceled: 0, noop: 0, noMatch: 0,
-    noMatchOrderIdFallback: 0, protectedNewer: 0, skippedNoPassId: 0, errored: 0,
+    noMatchOrderIdFallback: 0, noMatchEmailFallback: 0,
+    protectedNewer: 0, skippedNoPassId: 0, errored: 0,
   };
   if (cancels.length === 0) return res;
 
@@ -480,6 +487,60 @@ export async function applyDeltaCancellations(
               if (fbOutcome === "noop") { res.noop++; break; }
               if (fbOutcome === "protected_newer") { res.protectedNewer++; break; }
             }
+            // Last resort: email + category, but ONLY when exactly 1 active row exists.
+            // Union reissues pass_ids on renewal, so the DB row has a stale pass_id that
+            // doesn't match the cancel signal. If the email+category is unambiguous (1 row),
+            // it's safe to apply. Multiple active rows = ambiguous, skip. Backfills the
+            // union_pass_id so the next signal matches directly (self-healing).
+            if (c.customerEmail && c.category) {
+              const { rows: emRows } = await client.query<{ id: number; cnt: string } & DeltaCancelRow>(
+                `SELECT id, plan_state, current_state, created_at::text AS created_at,
+                        COUNT(*) OVER () AS cnt
+                   FROM auto_renews
+                  WHERE LOWER(customer_email) = LOWER($1)
+                    AND plan_category = $2
+                    AND plan_state IN (${ACTIVE_STATES_SQL})
+                    AND (current_state IS NULL OR current_state = 'active')
+                  LIMIT 2`,
+                [c.customerEmail, c.category],
+              );
+              if (emRows.length === 1 && emRows[0].cnt === "1") {
+                const emRow = emRows[0];
+                const emOutcome = classifyDeltaCancel(c, emRow);
+                if (emOutcome === "cancel" || emOutcome === "pending_cancel") {
+                  const cancelAt = toEasternDate(c.effectiveAt);
+                  if (emOutcome === "cancel") {
+                    await client.query(
+                      `UPDATE auto_renews
+                          SET plan_state   = 'Canceled',
+                              canceled_at  = COALESCE($3::date, (NOW() AT TIME ZONE 'America/New_York')::date),
+                              union_pass_id = $2,
+                              snapshot_id  = $4,
+                              imported_at  = NOW()
+                        WHERE id = $1`,
+                      [emRow.id, c.unionPassId, cancelAt, snapshotId],
+                    );
+                    res.canceled++;
+                  } else {
+                    await client.query(
+                      `UPDATE auto_renews
+                          SET plan_state         = 'Pending Cancel',
+                              pending_canceled_at = COALESCE(pending_canceled_at, $3::timestamptz),
+                              union_pass_id       = $2,
+                              snapshot_id         = $4,
+                              imported_at         = NOW()
+                        WHERE id = $1`,
+                      [emRow.id, c.unionPassId, c.effectiveAt, snapshotId],
+                    );
+                    res.pendingCanceled++;
+                  }
+                  res.noMatchEmailFallback++;
+                  break;
+                }
+                if (emOutcome === "noop") { res.noop++; break; }
+                if (emOutcome === "protected_newer") { res.protectedNewer++; break; }
+              }
+            }
             res.noMatch++;
             break;
           }
@@ -540,8 +601,9 @@ export async function applyDeltaCancellations(
 
   console.log(
     `[auto-renew-store] Delta cancellations: ${res.canceled} canceled, ${res.pendingCanceled} pending-cancel ` +
-    `(noop ${res.noop}, no-match ${res.noMatch}, order-id-fallback ${res.noMatchOrderIdFallback}, ` +
-    `protected-newer ${res.protectedNewer}, no-pass-id ${res.skippedNoPassId}, errored ${res.errored})`,
+    `(noop ${res.noop}, no-match ${res.noMatch}, order-id-fb ${res.noMatchOrderIdFallback}, ` +
+    `email-fb ${res.noMatchEmailFallback}, protected-newer ${res.protectedNewer}, ` +
+    `no-pass-id ${res.skippedNoPassId}, errored ${res.errored})`,
   );
   return res;
 }
