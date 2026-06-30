@@ -861,7 +861,70 @@ export async function getNewAutoRenews(startDate: string, endDate: string): Prom
 }
 
 /**
+ * Get auto-renews that churned within a date range, keyed on the click-date from
+ * auto_renew_events rather than canceled_at.
+ *
+ * Union sets canceled_at to the next billing/renewal date for active subs, so
+ * bucketing by canceled_at clusters cancellations on period-end dates (e.g. the
+ * 6/22 week spike of 13 SKY3 churns from billing-date ghostrows). The event log
+ * records the state-change timestamp — the actual click date.
+ *
+ * Same guard logic as getDailySubscriberMovement / getFirstChurnDateByAutoRenewId:
+ * dedup per auto_renew_id (earliest passing event), prev_state in active-ish states,
+ * phantom guards on canceled_at + imported_at. canceledAt on returned rows is the
+ * click-date (ET), not the billing date.
+ */
+export async function getCanceledAutoRenewsWithClickDate(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
+  const pool = getPool();
+  // Era-partitioned, same as getFirstChurnDateByAutoRenewId:
+  //   LIVE leg  (>= CLICK_DATE_ERA_START): event_type='churn' only, with phantom guards.
+  //   BACKFILL leg (< CLICK_DATE_ERA_START): event_type='backfill_churn' only.
+  // Mixing both event types in a single date filter would include backfill_churn
+  // events whose observed_at == canceled_at (billing dates), re-introducing the spike.
+  const ERA_START = "2026-04-14";
+  const { rows } = await pool.query(
+    `WITH live AS (
+       SELECT DISTINCT ON (e.auto_renew_id)
+              ar.id, ar.snapshot_id, ar.plan_name, ar.plan_state, ar.plan_price,
+              ar.customer_name, ar.customer_email, ar.created_at,
+              (e.observed_at AT TIME ZONE 'America/New_York')::date AS canceled_at
+       FROM auto_renew_events e
+       JOIN auto_renews ar ON ar.id = e.auto_renew_id
+       WHERE e.event_type = 'churn'
+         AND e.prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date >= GREATEST($1::date, $3::date)
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date <  $2::date
+         AND ar.plan_state IN ('Canceled','Pending Cancel')
+         AND (ar.canceled_at IS NULL
+              OR ar.canceled_at >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '1 day')
+         AND ar.imported_at::date >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '7 days'
+       ORDER BY e.auto_renew_id, e.observed_at ASC
+     ),
+     backfill AS (
+       SELECT DISTINCT ON (e.auto_renew_id)
+              ar.id, ar.snapshot_id, ar.plan_name, ar.plan_state, ar.plan_price,
+              ar.customer_name, ar.customer_email, ar.created_at,
+              (e.observed_at AT TIME ZONE 'America/New_York')::date AS canceled_at
+       FROM auto_renew_events e
+       JOIN auto_renews ar ON ar.id = e.auto_renew_id
+       WHERE e.event_type = 'backfill_churn'
+         AND ar.plan_state = 'Canceled'
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date >= $1::date
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date <  LEAST($2::date, $3::date)
+       ORDER BY e.auto_renew_id, e.observed_at ASC
+     )
+     SELECT * FROM live
+     UNION ALL
+     SELECT * FROM backfill`,
+    [startDate, endDate, ERA_START],
+  );
+  return (rows as RawAutoRenewRow[]).map(mapRow);
+}
+
+/**
  * Get auto-renews canceled within a date range.
+ * @deprecated Use getCanceledAutoRenewsWithClickDate — this buckets by canceled_at
+ *   which Union sets to the next billing date, causing period-end spikes.
  */
 export async function getCanceledAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
   const pool = getPool();
