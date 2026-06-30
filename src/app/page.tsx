@@ -4581,10 +4581,10 @@ function CategoryDetail({ title, color, icon: Icon, count, weekly, monthly, paci
       </div>
 
       {/* ── Bottom: movement cards ── */}
-      <div className={`grid grid-cols-1 gap-3 items-start ${dailyData.length > 0 && hasMonthly ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
-      {/* ── Left card: Daily Movement ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+      {/* ── Daily Movement: full-width ── */}
       {dailyData.length > 0 && (
-        <DashboardCard>
+        <DashboardCard className="md:col-span-2">
           <CardHeader>
             <div className="flex items-center gap-2">
               {Icon ? (

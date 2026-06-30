@@ -894,6 +894,12 @@ export interface DailyMovementRow {
 
 /**
  * Daily new + churned subscriber counts per category for the last `days` days.
+ *
+ * New: keyed on auto_renews.created_at (Eastern date of signup).
+ * Churned: keyed on auto_renew_events click-date (same source as the
+ *   "Yesterday" column in the Auto-Renews table). Using canceled_at would
+ *   spike on billing-period-end dates because Union sets canceled_at to the
+ *   next renewal date for active subs, not the click date.
  */
 export async function getDailySubscriberMovement(days = 7): Promise<DailyMovementRow[]> {
   const pool = getPool();
@@ -913,21 +919,38 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
       FROM auto_renews
       WHERE created_at IS NOT NULL
         AND created_at >= CURRENT_DATE - ($1 || ' days')::interval
-        -- Filter intentionally broader than canonical ACTIVE_STATES (includes Past Due)
         AND (current_state = 'active' OR (current_state IS NULL
              AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')))
       GROUP BY created_at
     ),
+    -- Churn from auto_renew_events (click-date, not billing-period-end date).
+    -- Same guards as subscriber-movement.ts / getFirstChurnDateByAutoRenewId:
+    --   event_type IN ('churn','backfill_churn'), dedup by auto_renew_id,
+    --   prev_state in active-ish states, phantom guards on canceled_at + imported_at.
+    churn_events AS (
+      SELECT DISTINCT ON (e.auto_renew_id)
+             (e.observed_at AT TIME ZONE 'America/New_York')::date AS d,
+             ar.plan_category
+      FROM auto_renew_events e
+      JOIN auto_renews ar ON ar.id = e.auto_renew_id
+      WHERE e.event_type IN ('churn', 'backfill_churn')
+        AND e.prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
+        AND (e.observed_at AT TIME ZONE 'America/New_York')::date
+              >= CURRENT_DATE - ($1 || ' days')::interval
+        AND ar.plan_state IN ('Canceled','Pending Cancel')
+        AND (ar.canceled_at IS NULL
+             OR ar.canceled_at >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '1 day')
+        AND ar.imported_at::date
+              >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '7 days'
+      ORDER BY e.auto_renew_id, e.observed_at ASC
+    ),
     churned_by_day AS (
-      SELECT canceled_at AS d,
+      SELECT d,
         COUNT(*) FILTER (WHERE plan_category = 'MEMBER') AS churned_members,
         COUNT(*) FILTER (WHERE plan_category = 'SKY3') AS churned_sky3,
         COUNT(*) FILTER (WHERE plan_category = 'SKY_TING_TV') AS churned_tv
-      FROM auto_renews
-      WHERE canceled_at IS NOT NULL
-        AND canceled_at >= CURRENT_DATE - ($1 || ' days')::interval
-        AND plan_state = 'Canceled'
-      GROUP BY canceled_at
+      FROM churn_events
+      GROUP BY d
     )
     SELECT
       dates.d::text AS date,
