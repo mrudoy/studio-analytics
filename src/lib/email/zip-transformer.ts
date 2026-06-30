@@ -42,6 +42,8 @@ import { getCategory } from "../analytics/categories";
  */
 export interface ShadowCancel {
   unionPassId: string;
+  /** Fallback key for DB rows not yet backfilled with union_pass_id. */
+  orderId?: string;
   planName: string;
   customerEmail: string;
   category: string;
@@ -286,6 +288,7 @@ export class ZipTransformer {
       if (!membership || !membership.email) continue;
       out.push({
         unionPassId: pass.id,
+        orderId: pass.orderId || undefined,
         planName: pass.name || "",
         customerEmail: membership.email,
         category: cat,

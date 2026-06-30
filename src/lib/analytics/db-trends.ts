@@ -16,7 +16,7 @@ import { parseDate, getWeekKey, getMonthKey } from "./date-utils";
 import { ACTIVE_STATES, STILL_PAYING_STATES } from "./metrics/filters";
 import {
   getNewAutoRenews,
-  getCanceledAutoRenews,
+  getCanceledAutoRenewsWithClickDate,
   getAutoRenewStats,
   hasAutoRenewData,
   getDailySubscriberMovement,
@@ -165,7 +165,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   const endDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
 
   const newSubs = await getNewAutoRenews(startDate, endDate);
-  const canceledSubs = await getCanceledAutoRenews(startDate, endDate);
+  const canceledSubs = await getCanceledAutoRenewsWithClickDate(startDate, endDate);
 
   const weeklyBuckets = new Map<string, PeriodBucket>();
   const monthlyBuckets = new Map<string, PeriodBucket>();

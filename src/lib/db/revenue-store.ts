@@ -336,51 +336,53 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
 }
 
 /**
- * Get per-month subscription billing revenue (Member + Sky3 + Sky Ting TV categories).
- * This is the cash actually collected from subscription payments in each month —
- * different from MRR (run-rate) because annual prepays hit as lump sums here.
+ * Get per-month subscription MRR (Member + Sky3 + Sky Ting TV).
+ *
+ * Reconstructed from auto_renews: for each calendar month, sum the monthly
+ * rate of every subscriber who was active during that month. Monthly rate =
+ * plan_price for monthly plans, plan_price/12 for annual plans.
+ *
+ * A subscriber is counted for month M if:
+ *   created_at <= last day of M
+ *   AND (plan_state != 'Canceled' OR canceled_at > first day of M)
+ *
+ * We cannot use canceled_at for non-Canceled rows because Union sets it to the
+ * next renewal date on active subscriptions — so we only apply it as an end
+ * fence when plan_state IS 'Canceled'.
+ *
+ * Note: Union's daily delta exports contain only new subscription orders, not
+ * recurring renewal charges, so the orders table cannot be used for this metric.
  */
 export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gross: number; net: number }>> {
   const pool = getPool();
   const { rows } = await pool.query(`
-    WITH deduped AS (
-      SELECT DISTINCT ON (TRIM(category), TO_CHAR(period_start, 'YYYY-MM'))
-        TRIM(category) AS category, revenue, net_revenue, period_start
-      FROM revenue_categories
-      WHERE DATE_TRUNC('month', period_start) = DATE_TRUNC('month', period_end)
-      ORDER BY TRIM(category), TO_CHAR(period_start, 'YYYY-MM'), period_end DESC, created_at DESC
+    WITH months AS (
+      SELECT DATE_TRUNC('month', gs)::date AS month_start
+      FROM generate_series(
+        (SELECT DATE_TRUNC('month', MIN(created_at)) FROM auto_renews WHERE created_at > '2020-01-01'),
+        DATE_TRUNC('month', CURRENT_DATE),
+        '1 month'::interval
+      ) gs
     )
     SELECT
-      TO_CHAR(period_start, 'YYYY-MM') AS month,
-      SUM(revenue) AS gross,
-      SUM(net_revenue) AS net
-    FROM deduped
-    WHERE category IN (
-      -- Member plans
-      'SKY UNLIMITED','SKY UNLIMITED - NEW','10MEMBER','Founding Member Annual',
-      'TING FAM','friends of sky ting','All Access Auto Renew Monthly',
-      'SKY TING Monthly Membership','SKY VIRGIN - MEMBERSHIP','ALL ACCESS MONTHLY',
-      'ALL ACCESS YEARLY',
-      -- Sky3 plans
-      'SKY3','SKY3 NEW','SKYHIGH3','SKY5','SKY5 NEW','Welcome SKY3','SKY3 RETURNING',
-      -- Sky Ting TV plans
-      'SKY TING TV','SKY TING TV 2025','SKY TING TV ANNUAL','SKY TING TV NEW',
-      'SKY TING TV YEARLY','SKY TING TV VIRGIN','Limited Edition SKY TING TV',
-      'SKY WEEK TV','Digital All Inclusive Monthly','A la carte SKY TING TV',
-      'Founding Member Annual SKY TING TV','SKY TING TV On Demand',
-      'SKY TING TV - Unlimited Monthly','SKY TING TV Unlimited Yearly',
-      'SKY TING TV (VIRGIN)'
-    )
-    GROUP BY TO_CHAR(period_start, 'YYYY-MM')
-    ORDER BY month
+      TO_CHAR(m.month_start, 'YYYY-MM') AS month,
+      ROUND(SUM(
+        CASE WHEN ar.is_annual THEN ar.plan_price / 12.0 ELSE ar.plan_price END
+      )::numeric, 2) AS gross
+    FROM months m
+    JOIN auto_renews ar ON
+      ar.created_at <= (m.month_start + INTERVAL '1 month' - INTERVAL '1 day')
+      AND (ar.plan_state != 'Canceled' OR ar.canceled_at > m.month_start)
+      AND (ar.current_state IS NULL OR ar.current_state = 'active')
+      AND ar.category IN ('MEMBER', 'SKY3', 'SKY_TING_TV')
+    GROUP BY m.month_start
+    ORDER BY m.month_start
   `);
 
   const map = new Map<string, { gross: number; net: number }>();
   for (const r of rows) {
-    map.set(r.month as string, {
-      gross: Number(r.gross) || 0,
-      net: Number(r.net) || 0,
-    });
+    const gross = Number(r.gross) || 0;
+    map.set(r.month as string, { gross, net: gross });
   }
   return map;
 }

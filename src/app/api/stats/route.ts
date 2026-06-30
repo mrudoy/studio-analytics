@@ -211,21 +211,15 @@ export async function GET(request: Request) {
       if (currentEntry) stats.currentMonthRevenue = currentEntry.net;
       if (prevEntry) stats.previousMonthRevenue = prevEntry.net;
 
-      // Subscription billing: current month (actual + projected) + last month total
+      // Subscription run-rate: current and previous month from auto_renews (not orders).
+      // Both values are full-month run-rates, not partial cash — no pacing applied.
       const currentSubBilling = subBillingByMonth.get(currentMonthKey);
       const lastSubBilling = subBillingByMonth.get(prevMonthKey);
-      const pacing = trends?.pacing;
-      const curveFrac = pacing?.revenueCurveFraction;
-      const linearFrac = pacing ? pacing.daysElapsed / pacing.daysInMonth : null;
-      const frac = curveFrac ?? linearFrac ?? null;
       const currentActual = Math.round((currentSubBilling?.gross ?? 0) * 100) / 100;
-      const currentProjected = frac && frac > 0
-        ? Math.round((currentActual / frac) * 100) / 100
-        : currentActual;
       stats.subscriptionBilling = {
         currentMonth: currentMonthKey,
         currentMonthActual: currentActual,
-        currentMonthProjected: currentProjected,
+        currentMonthProjected: currentActual,
         lastMonth: prevMonthKey,
         lastMonthTotal: Math.round((lastSubBilling?.gross ?? 0) * 100) / 100,
       };
