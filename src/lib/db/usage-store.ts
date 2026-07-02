@@ -3268,3 +3268,127 @@ export async function getIntroWeeksPageData(): Promise<{
     totals: { totalBuyers, avgVisits, pctZeroVisit },
   };
 }
+
+// ── Usage Flow (billing-cycle transition matrix for Sankey) ──────────
+//
+// Reuses each segment's stable cohort + billing-cycle tier functions (the exact
+// same logic behind "Where Members Are Now"), then builds a prior-cycle → last-
+// cycle transition matrix. This answers the bidirectional question that net
+// counts can't: how many members moved INTO the Active band vs OUT of it.
+
+const FLOW_META: Record<Segment, { active: string; labels: Record<string, [string, string]> }> = {
+  members: {
+    active: "strong",
+    labels: {
+      dormant: ["Not using", "0"], low: ["Barely using", "1–2"],
+      target: ["Getting there", "3–4"], strong: ["Active", "5–8"], power_user: ["Engaged", "9+"],
+    },
+  },
+  sky3: {
+    active: "full_use",
+    labels: {
+      not_using: ["Not using", "0"], barely_using: ["Barely using", "1"],
+      getting_there: ["Getting there", "2"], full_use: ["Active", "3"], wants_more: ["Engaged", "4+"],
+    },
+  },
+  tv: {
+    active: "active",
+    labels: {
+      inactive: ["Not using", "0"], light: ["Barely using", "1–2"],
+      active: ["Active", "3–7"], engaged: ["Engaged", "8+"],
+    },
+  },
+};
+
+export interface UsageFlowBand {
+  key: string; name: string; range: string; goal: boolean;
+  prior: number; current: number; movedIn: number; movedOut: number; stayed: number; entered: number; net: number;
+}
+
+export interface UsageFlowResponse {
+  segment: Segment;
+  bands: UsageFlowBand[];
+  flows: { from: string; to: string; count: number }[];
+  activeKey: string;
+  intoActive: number;
+  outOfActive: number;
+  activeNet: number;
+  cohortMeasured: number;
+  withBaseline: number;
+  entered: number;
+}
+
+/**
+ * Billing-cycle transition matrix for one segment (prior cycle → last cycle),
+ * on the same stable cohort the dashboard distributions use.
+ */
+export async function getUsageFlow(segment: Segment, periodWeeks = 4): Promise<UsageFlowResponse> {
+  const pool = getPool();
+
+  let rows: { tier: string; prior_tier: string | null }[] = [];
+  if (segment === "sky3") {
+    const periodStart = weeksAgo(periodWeeks);
+    const { stableEmails } = await getStableSky3Cohort(pool, periodStart, periodWeeks);
+    rows = await getSky3CycleTiers(pool, stableEmails);
+  } else if (segment === "tv") {
+    const { stableEmails } = await getStableTvCohort(pool);
+    rows = await getTvCycleTiers(pool, stableEmails);
+  } else {
+    const { stableEmails } = await getStableMembersCohort(pool);
+    rows = await getMembersCycleTiers(pool, stableEmails);
+  }
+
+  const order = getTierOrder(segment);
+  const meta = FLOW_META[segment];
+
+  const current: Record<string, number> = {};
+  const prior: Record<string, number> = {};
+  const stayed: Record<string, number> = {};
+  const enteredByBand: Record<string, number> = {};
+  const flowMap: Record<string, number> = {};
+  let withBaseline = 0;
+  let entered = 0;
+
+  for (const r of rows) {
+    current[r.tier] = (current[r.tier] || 0) + 1;
+    if (r.prior_tier == null) {
+      entered++;
+      enteredByBand[r.tier] = (enteredByBand[r.tier] || 0) + 1;
+      continue;
+    }
+    withBaseline++;
+    prior[r.prior_tier] = (prior[r.prior_tier] || 0) + 1;
+    if (r.prior_tier === r.tier) {
+      stayed[r.tier] = (stayed[r.tier] || 0) + 1;
+    } else {
+      const k = `${r.prior_tier}|${r.tier}`;
+      flowMap[k] = (flowMap[k] || 0) + 1;
+    }
+  }
+
+  const flows = Object.entries(flowMap)
+    .map(([k, count]) => { const [from, to] = k.split("|"); return { from, to, count }; })
+    .sort((a, b) => b.count - a.count);
+
+  const bands: UsageFlowBand[] = order.map((key) => {
+    const movedIn = flows.filter((f) => f.to === key).reduce((s, f) => s + f.count, 0);
+    const movedOut = flows.filter((f) => f.from === key).reduce((s, f) => s + f.count, 0);
+    const [name, range] = meta.labels[key] || [key, ""];
+    return {
+      key, name, range, goal: key === meta.active,
+      prior: prior[key] || 0, current: current[key] || 0,
+      movedIn, movedOut, stayed: stayed[key] || 0, entered: enteredByBand[key] || 0,
+      net: (current[key] || 0) - (prior[key] || 0),
+    };
+  });
+
+  const activeKey = meta.active;
+  const intoActive = flows.filter((f) => f.to === activeKey).reduce((s, f) => s + f.count, 0);
+  const outOfActive = flows.filter((f) => f.from === activeKey).reduce((s, f) => s + f.count, 0);
+
+  return {
+    segment, bands, flows, activeKey,
+    intoActive, outOfActive, activeNet: intoActive - outOfActive,
+    cohortMeasured: rows.length, withBaseline, entered,
+  };
+}

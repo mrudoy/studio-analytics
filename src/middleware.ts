@@ -20,6 +20,7 @@ const PUBLIC_PATHS = new Set([
   "/api/diagnose-pipeline",    // Operational diagnostics (read-only metadata)
   "/api/diagnose-conversions", // Operational diagnostics (read-only metadata)
   "/api/webhook/union-export", // Has own UNION_WEBHOOK_SECRET
+  "/api/usage/flow",           // Aggregate usage-flow counts (no PII) — read by external Lovable tracker
 ]);
 
 function isPublic(pathname: string): boolean {
