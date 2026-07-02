@@ -53,17 +53,27 @@ import type {
 const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 const TIER_DISPLAY_LABELS: Record<string, string> = {
-  dormant: "Dormant", low: "Low", target: "Target", strong: "Strong", power_user: "Power User",
-  unused_pack: "Unused Pack", save_candidate: "Save Candidate", building_habit: "Building Habit",
-  upgrade_candidate: "Upgrade Candidate", ready_to_upgrade: "Ready to Upgrade",
-  inactive: "Inactive", light: "Light", active: "Active", engaged: "Engaged",
+  // Unified 3-band model
+  not_using: "Not Using", barely_using: "Barely Using", activated: "Activated",
+  // Legacy aliases → nearest new label
+  dormant: "Not Using", inactive: "Not Using", unused_pack: "Not Using",
+  low: "Barely Using", light: "Barely Using", save_candidate: "Barely Using",
+  target: "Activated", strong: "Activated", power_user: "Activated",
+  getting_there: "Activated", full_use: "Activated", wants_more: "Activated",
+  active: "Activated", engaged: "Activated", building_habit: "Activated",
+  upgrade_candidate: "Activated", ready_to_upgrade: "Activated",
 };
 
 const TIER_COLORS: Record<string, string> = {
-  dormant: "#C0392B", low: "#E67E22", target: "#27AE60", strong: "#2ECC71", power_user: "#1ABC9C",
-  unused_pack: "#C0392B", save_candidate: "#E67E22", building_habit: "#F1C40F",
-  upgrade_candidate: "#27AE60", ready_to_upgrade: "#1ABC9C",
-  inactive: "#C0392B", light: "#E67E22", active: "#27AE60", engaged: "#1ABC9C",
+  // Unified 3-band model
+  not_using: "#C0392B", barely_using: "#E67E22", activated: "#27AE60",
+  // Legacy aliases → matching new color
+  dormant: "#C0392B", inactive: "#C0392B", unused_pack: "#C0392B",
+  low: "#E67E22", light: "#E67E22", save_candidate: "#E67E22",
+  target: "#27AE60", strong: "#27AE60", power_user: "#27AE60",
+  getting_there: "#27AE60", full_use: "#27AE60", wants_more: "#27AE60",
+  active: "#27AE60", engaged: "#27AE60", building_habit: "#27AE60",
+  upgrade_candidate: "#27AE60", ready_to_upgrade: "#27AE60",
 };
 
 const DIRECTION_LABELS: Record<string, string> = { up: "\u2191", down: "\u2193", same: "\u2192" };
@@ -84,26 +94,26 @@ const SEGMENT_LABELS: Record<string, string> = {
 };
 
 const HEALTH_METRIC_LABELS: Record<string, string> = {
-  members: "hitting target",
-  sky3: "at full use",
-  tv: "active (14d)",
+  members: "activated",
+  sky3: "activated",
+  tv: "activated",
 };
 
 const REVENUE_OPPORTUNITY_COPY: Record<string, { means: string; action: string }> = {
-  unused_pack: { means: "Will probably cancel", action: "Win-back sequence" },
-  save_candidate: { means: "At risk of canceling", action: "Engagement check-in" },
-  building_habit: { means: "Getting value, could go either way", action: "Nurture" },
-  upgrade_candidate: { means: "Maxed out \u2014 want more", action: "Offer membership" },
-  ready_to_upgrade: { means: "Already buying extra", action: "Priority upgrade outreach" },
+  not_using: { means: "Will probably cancel", action: "Win-back sequence" },
+  barely_using: { means: "At risk of canceling", action: "Engagement check-in" },
+  activated: { means: "Getting value from the pack", action: "Nurture / offer upgrade" },
 };
 
 const TIER_DEFINITIONS: Record<string, string> = {
-  dormant: "0 visits/mo", low: "1\u20132 visits/mo", target: "3\u20134 visits/mo",
-  strong: "5\u20138 visits/mo", power_user: "9+ visits/mo",
-  unused_pack: "0 visits/mo", save_candidate: "1 visit/mo", building_habit: "2 visits/mo",
-  upgrade_candidate: "3 visits/mo", ready_to_upgrade: "4+ visits/mo",
-  inactive: "0 sessions in 14 days", light: "1 session in 14 days",
-  active: "2\u20133 sessions in 14 days", engaged: "4+ sessions in 14 days",
+  // Unified 3-band model (visit ranges vary by segment; generic labels here)
+  not_using: "0 visits", barely_using: "low usage", activated: "at target usage",
+  // Legacy aliases
+  dormant: "0 visits", inactive: "0 visits", unused_pack: "0 visits",
+  low: "low usage", light: "low usage", save_candidate: "low usage",
+  target: "at target usage", strong: "at target usage", power_user: "at target usage",
+  getting_there: "at target usage", full_use: "at target usage", wants_more: "at target usage",
+  active: "at target usage", engaged: "at target usage",
 };
 
 const ALERT_THRESHOLDS = {
@@ -260,10 +270,10 @@ function AlertBanner({ segment, tierData }: {
 
   if (segment === "sky3") {
     const total = (tierData as Sky3TierRow[]).reduce((s, t) => s + t.count, 0);
-    const breakageTiers = ["unused_pack", "save_candidate"];
+    const breakageTiers = ["not_using", "barely_using"];
     const breakageCount = (tierData as Sky3TierRow[]).filter(t => breakageTiers.includes(t.tier)).reduce((s, t) => s + t.count, 0);
     const breakagePct = total > 0 ? Math.round((breakageCount / total) * 1000) / 10 : 0;
-    const saveCandCount = (tierData as Sky3TierRow[]).find(t => t.tier === "save_candidate")?.count ?? 0;
+    const saveCandCount = (tierData as Sky3TierRow[]).find(t => t.tier === "barely_using")?.count ?? 0;
 
     if (breakagePct > ALERT_THRESHOLDS.sky3_breakage_pct_critical) {
       text = `${breakageCount} of ${total} Sky3 members are at 0\u20131 visits. ${breakageCount} members are at risk of canceling.`;
@@ -274,7 +284,7 @@ function AlertBanner({ segment, tierData }: {
     }
   } else if (segment === "tv") {
     const total = (tierData as TvEngagementRow[]).reduce((s, t) => s + t.count, 0);
-    const inactiveCount = (tierData as TvEngagementRow[]).find(t => t.tier === "inactive")?.count ?? 0;
+    const inactiveCount = (tierData as TvEngagementRow[]).find(t => t.tier === "not_using")?.count ?? 0;
     const inactivePct = total > 0 ? Math.round((inactiveCount / total) * 1000) / 10 : 0;
 
     if (inactivePct > ALERT_THRESHOLDS.tv_inactive_pct) {
@@ -525,7 +535,7 @@ function UsageFilterBar({
   const filters: { key: ActionFilter; label: string }[] = [
     { key: "at_risk", label: "At Risk" },
     { key: "newly_on_target", label: "Newly On Target" },
-    { key: "dormant", label: "Dormant" },
+    { key: "dormant", label: "Not Using" },
     { key: "improving", label: "Improving" },
     { key: null, label: "All" },
   ];
@@ -743,8 +753,8 @@ function TvEngagementBars({ tiers }: { tiers: TvEngagementRow[] }) {
         </div>
         {/* Flow summary */}
         {(() => {
-          const becameActive = tiers.filter(t => t.tier !== "inactive").reduce((sum, t) => sum + Math.max(t.count - t.priorCount, 0), 0);
-          const becameInactive = Math.max((tiers.find(t => t.tier === "inactive")?.count ?? 0) - (tiers.find(t => t.tier === "inactive")?.priorCount ?? 0), 0);
+          const becameActive = tiers.filter(t => t.tier !== "not_using").reduce((sum, t) => sum + Math.max(t.count - t.priorCount, 0), 0);
+          const becameInactive = Math.max((tiers.find(t => t.tier === "not_using")?.count ?? 0) - (tiers.find(t => t.tier === "not_using")?.priorCount ?? 0), 0);
           const net = becameActive - becameInactive;
           return (
             <p className="text-sm text-muted-foreground mt-3">
@@ -889,8 +899,8 @@ export function UsageMembersPage() {
 
             return (
               <React.Fragment key={band}>
-                {/* Churn-risk boundary line between low and target */}
-                {band === "target" && (
+                {/* Churn-risk boundary line between Barely Using and Activated */}
+                {band === "activated" && (
                   <div className="relative" style={{ margin: "12px 0" }}>
                     <div style={{ borderTop: "1px dashed #D5D5D5" }} />
                     <span
@@ -939,17 +949,17 @@ export function UsageMembersPage() {
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
               onClick={() => setSelectedBoundary({
                 key: "boundary_into_success",
-                title: `Crossed into Target or higher (${movementData.boundary_crossings.into_success.count})`,
+                title: `Crossed into Activated (${movementData.boundary_crossings.into_success.count})`,
                 transitions: movementData.boundary_crossings.into_success.transitions,
               })}
             >
               <TrendingUp size={16} color="#27AE60" className="shrink-0" />
               <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#27AE60" }}>{movementData.boundary_crossings.into_success.count}</span>
-              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Target or higher</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Activated</span>
               <span className="ml-auto">
                 <Sky3DownloadButton count={movementData.boundary_crossings.into_success.count} onClick={() => setSelectedBoundary({
                   key: "boundary_into_success",
-                  title: `Crossed into Target or higher (${movementData.boundary_crossings.into_success.count})`,
+                  title: `Crossed into Activated (${movementData.boundary_crossings.into_success.count})`,
                   transitions: movementData.boundary_crossings.into_success.transitions,
                 })} />
               </span>
@@ -962,17 +972,17 @@ export function UsageMembersPage() {
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
               onClick={() => setSelectedBoundary({
                 key: "boundary_into_risk",
-                title: `Fell into Low or Dormant (${movementData.boundary_crossings.into_risk.count})`,
+                title: `Fell out of Activated (${movementData.boundary_crossings.into_risk.count})`,
                 transitions: movementData.boundary_crossings.into_risk.transitions,
               })}
             >
               <TrendingDown size={16} color="#C0392B" className="shrink-0" />
               <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#C0392B" }}>{movementData.boundary_crossings.into_risk.count}</span>
-              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell into Low or Dormant</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell out of Activated</span>
               <span className="ml-auto">
                 <Sky3DownloadButton count={movementData.boundary_crossings.into_risk.count} onClick={() => setSelectedBoundary({
                   key: "boundary_into_risk",
-                  title: `Fell into Low or Dormant (${movementData.boundary_crossings.into_risk.count})`,
+                  title: `Fell out of Activated (${movementData.boundary_crossings.into_risk.count})`,
                   transitions: movementData.boundary_crossings.into_risk.transitions,
                 })} />
               </span>
@@ -1135,10 +1145,9 @@ interface TvMovementData {
 }
 
 const TV_VISIT_LABELS: Record<string, string> = {
-  inactive: "0 visits",
-  light: "1-2 visits",
-  active: "3-7 visits",
-  engaged: "8+ visits",
+  not_using: "0 visits",
+  barely_using: "1 visit",
+  activated: "2+ visits",
 };
 
 // ─── TV Boundary-Crossing Slide-Out ─────────────────────────
@@ -1340,22 +1349,22 @@ function TvAllMovementPanel({
 
         <div className="flex-1 overflow-auto">
           <div className="px-4 pt-3 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Active or higher ({movementData.boundary_crossings.into_success.count})</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Activated ({movementData.boundary_crossings.into_success.count})</div>
             {renderTransitionRows(movementData.boundary_crossings.into_success.transitions, "boundary_into_success")}
           </div>
 
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell into Light or lower ({movementData.boundary_crossings.into_risk.count})</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell out of Activated ({movementData.boundary_crossings.into_risk.count})</div>
             {renderTransitionRows(movementData.boundary_crossings.into_risk.transitions, "boundary_into_risk")}
           </div>
 
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (0-2 visits)</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (Not Using / Barely Using)</div>
             {renderTransitionRows([...movementData.within_risk.improving.transitions, ...movementData.within_risk.declining.transitions].sort((a, b) => b.count - a.count), "within_risk_improving")}
           </div>
 
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Within the success zone (3+ visits)</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the Activated zone</div>
             {renderTransitionRows([...movementData.within_success.improving.transitions, ...movementData.within_success.declining.transitions].sort((a, b) => b.count - a.count), "within_success_improving")}
           </div>
 
@@ -1720,22 +1729,22 @@ function MembersAllMovementPanel({
 
         <div className="flex-1 overflow-auto">
           <div className="px-4 pt-3 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Target or higher ({movementData.boundary_crossings.into_success.count})</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Activated ({movementData.boundary_crossings.into_success.count})</div>
             {renderTransitionRows(movementData.boundary_crossings.into_success.transitions, "boundary_into_success")}
           </div>
 
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell into Low or Dormant ({movementData.boundary_crossings.into_risk.count})</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell out of Activated ({movementData.boundary_crossings.into_risk.count})</div>
             {renderTransitionRows(movementData.boundary_crossings.into_risk.transitions, "boundary_into_risk")}
           </div>
 
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (0-2 visits)</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (Not Using / Barely Using)</div>
             {renderTransitionRows([...movementData.within_risk.improving.transitions, ...movementData.within_risk.declining.transitions].sort((a, b) => b.count - a.count), "within_risk_improving")}
           </div>
 
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Within the success zone (3+ visits)</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the Activated zone</div>
             {renderTransitionRows([...movementData.within_success.improving.transitions, ...movementData.within_success.declining.transitions].sort((a, b) => b.count - a.count), "within_success_improving")}
           </div>
 
@@ -1890,76 +1899,62 @@ function MembersSidePanel({ band, onClose }: { band: string; onClose: () => void
 
 // ─── Sky3 Constants ─────────────────────────────────────────
 
-const SKY3_BANDS = ["not_using", "barely_using", "getting_there", "full_use", "wants_more"] as const;
+const SKY3_BANDS = ["not_using", "barely_using", "activated"] as const;
 
 const SKY3_BAND_LABELS: Record<string, string> = {
   not_using: "Not Using (0 visits)",
-  barely_using: "Barely Using (1 visit)",
-  getting_there: "Getting There (2 visits)",
-  full_use: "Using All 3 Classes (3 visits)",
-  wants_more: "Wants More (4+ visits)",
+  barely_using: "Barely Using (1–2 visits)",
+  activated: "Activated (3+ visits)",
 };
 
 const SKY3_VISIT_LABELS: Record<string, string> = {
   not_using: "0 visits",
-  barely_using: "1 visit",
-  getting_there: "2 visits",
-  full_use: "3 visits",
-  wants_more: "4+ visits",
+  barely_using: "1–2 visits",
+  activated: "3+ visits",
 };
 
 const SKY3_BAR_COLORS: Record<string, string> = {
-  not_using: "#E8D5D0",
-  barely_using: "#E8CBAF",
-  getting_there: "#EDE09E",
-  full_use: "#C8E6C9",
-  wants_more: "#A5D6A7",
+  not_using: "#C0392B",
+  barely_using: "#E67E22",
+  activated: "#27AE60",
 };
 
 // ─── TV Constants ───────────────────────────────────────────
 
-const TV_BANDS = ["inactive", "light", "active", "engaged"] as const;
+const TV_BANDS = ["not_using", "barely_using", "activated"] as const;
 
 const TV_BAND_LABELS: Record<string, string> = {
-  inactive: "Inactive (0 visits)",
-  light: "Light (1-2 visits)",
-  active: "Active (3-7 visits)",
-  engaged: "Engaged (8+ visits)",
+  not_using: "Not Using (0 visits)",
+  barely_using: "Barely Using (1 visit)",
+  activated: "Activated (2+ visits)",
 };
 
 const TV_BAR_COLORS: Record<string, string> = {
-  inactive: "#E8D5D0",
-  light: "#E8CBAF",
-  active: "#C8E6C9",
-  engaged: "#A5D6A7",
+  not_using: "#C0392B",
+  barely_using: "#E67E22",
+  activated: "#27AE60",
 };
 
 // ─── Members Constants ──────────────────────────────────────
 
-const MEMBERS_BANDS = ["dormant", "low", "target", "strong", "power_user"] as const;
+const MEMBERS_BANDS = ["not_using", "barely_using", "activated"] as const;
 
 const MEMBERS_BAND_LABELS: Record<string, string> = {
-  dormant: "Dormant (0 visits)",
-  low: "Low (1-2 visits)",
-  target: "Target (3-4 visits)",
-  strong: "Strong (5-8 visits)",
-  power_user: "Power User (9+ visits)",
+  not_using: "Not Using (0 visits)",
+  barely_using: "Barely Using (1–3 visits)",
+  activated: "Activated (4+ visits)",
 };
 
 const MEMBERS_VISIT_LABELS: Record<string, string> = {
-  dormant: "0 visits",
-  low: "1-2 visits",
-  target: "3-4 visits",
-  strong: "5-8 visits",
-  power_user: "9+ visits",
+  not_using: "0 visits",
+  barely_using: "1–3 visits",
+  activated: "4+ visits",
 };
 
 const MEMBERS_BAR_COLORS: Record<string, string> = {
-  dormant: "#E8D5D0",
-  low: "#E8CBAF",
-  target: "#C8E6C9",
-  strong: "#A5D6A7",
-  power_user: "#7DBF80",
+  not_using: "#C0392B",
+  barely_using: "#E67E22",
+  activated: "#27AE60",
 };
 
 // ─── Sky3 Types ─────────────────────────────────────────────
@@ -2198,25 +2193,25 @@ function Sky3AllMovementPanel({
         <div className="flex-1 overflow-auto">
           {/* Crossed into success */}
           <div className="px-4 pt-3 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Using All 3 or higher ({movementData.boundary_crossings.into_success.count})</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#27AE60" }}>Crossed into Activated ({movementData.boundary_crossings.into_success.count})</div>
             {renderTransitionRows(movementData.boundary_crossings.into_success.transitions, "boundary_into_success")}
           </div>
 
           {/* Fell into risk */}
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell into Getting There or lower ({movementData.boundary_crossings.into_risk.count})</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1" style={{ color: "#C0392B" }}>Fell out of Activated ({movementData.boundary_crossings.into_risk.count})</div>
             {renderTransitionRows(movementData.boundary_crossings.into_risk.transitions, "boundary_into_risk")}
           </div>
 
           {/* Within risk zone */}
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (0-2 visits)</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the risk zone (Not Using / Barely Using)</div>
             {renderTransitionRows([...movementData.within_risk.improving.transitions, ...movementData.within_risk.declining.transitions].sort((a, b) => b.count - a.count), "within_risk_improving")}
           </div>
 
           {/* Within success zone */}
           <div className="px-4 pt-2 pb-1">
-            <div className="text-xs font-medium text-muted-foreground mb-1">Within the success zone (3+ visits)</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Within the Activated zone</div>
             {renderTransitionRows([...movementData.within_success.improving.transitions, ...movementData.within_success.declining.transitions].sort((a, b) => b.count - a.count), "within_success_improving")}
           </div>
 
@@ -2349,8 +2344,8 @@ export function UsageSky3Page() {
 
             return (
               <React.Fragment key={band}>
-                {/* Churn-risk boundary line between getting_there and full_use */}
-                {band === "full_use" && (
+                {/* Churn-risk boundary line between Barely Using and Activated */}
+                {band === "activated" && (
                   <div className="relative" style={{ margin: "12px 0" }}>
                     <div style={{ borderTop: "1px dashed #D5D5D5" }} />
                     <span
@@ -2400,17 +2395,17 @@ export function UsageSky3Page() {
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
               onClick={() => setSelectedBoundary({
                 key: "boundary_into_success",
-                title: `Crossed into Using All 3 Classes or higher (${movementData.boundary_crossings.into_success.count})`,
+                title: `Crossed into Activated (${movementData.boundary_crossings.into_success.count})`,
                 transitions: movementData.boundary_crossings.into_success.transitions,
               })}
             >
               <TrendingUp size={16} color="#27AE60" className="shrink-0" />
               <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#27AE60" }}>{movementData.boundary_crossings.into_success.count}</span>
-              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Using All 3 Classes or higher</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Activated</span>
               <span className="ml-auto">
                 <Sky3DownloadButton count={movementData.boundary_crossings.into_success.count} onClick={() => setSelectedBoundary({
                   key: "boundary_into_success",
-                  title: `Crossed into Using All 3 Classes or higher (${movementData.boundary_crossings.into_success.count})`,
+                  title: `Crossed into Activated (${movementData.boundary_crossings.into_success.count})`,
                   transitions: movementData.boundary_crossings.into_success.transitions,
                 })} />
               </span>
@@ -2424,17 +2419,17 @@ export function UsageSky3Page() {
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
               onClick={() => setSelectedBoundary({
                 key: "boundary_into_risk",
-                title: `Fell into Getting There or lower (${movementData.boundary_crossings.into_risk.count})`,
+                title: `Fell out of Activated (${movementData.boundary_crossings.into_risk.count})`,
                 transitions: movementData.boundary_crossings.into_risk.transitions,
               })}
             >
               <TrendingDown size={16} color="#C0392B" className="shrink-0" />
               <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#C0392B" }}>{movementData.boundary_crossings.into_risk.count}</span>
-              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell into Getting There or lower</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell out of Activated</span>
               <span className="ml-auto">
                 <Sky3DownloadButton count={movementData.boundary_crossings.into_risk.count} onClick={() => setSelectedBoundary({
                   key: "boundary_into_risk",
-                  title: `Fell into Getting There or lower (${movementData.boundary_crossings.into_risk.count})`,
+                  title: `Fell out of Activated (${movementData.boundary_crossings.into_risk.count})`,
                   transitions: movementData.boundary_crossings.into_risk.transitions,
                 })} />
               </span>
@@ -2554,8 +2549,8 @@ export function UsageTvPage() {
 
             return (
               <React.Fragment key={band}>
-                {/* Churn-risk boundary line between light and active */}
-                {band === "active" && (
+                {/* Churn-risk boundary line between Barely Using and Activated */}
+                {band === "activated" && (
                   <div className="relative" style={{ margin: "12px 0" }}>
                     <div style={{ borderTop: "1px dashed #D5D5D5" }} />
                     <span
@@ -2605,17 +2600,17 @@ export function UsageTvPage() {
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
               onClick={() => setSelectedBoundary({
                 key: "boundary_into_success",
-                title: `Crossed into Active or higher (${movementData.boundary_crossings.into_success.count})`,
+                title: `Crossed into Activated (${movementData.boundary_crossings.into_success.count})`,
                 transitions: movementData.boundary_crossings.into_success.transitions,
               })}
             >
               <TrendingUp size={16} color="#27AE60" className="shrink-0" />
               <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#27AE60" }}>{movementData.boundary_crossings.into_success.count}</span>
-              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Active or higher</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>crossed into Activated</span>
               <span className="ml-auto">
                 <Sky3DownloadButton count={movementData.boundary_crossings.into_success.count} onClick={() => setSelectedBoundary({
                   key: "boundary_into_success",
-                  title: `Crossed into Active or higher (${movementData.boundary_crossings.into_success.count})`,
+                  title: `Crossed into Activated (${movementData.boundary_crossings.into_success.count})`,
                   transitions: movementData.boundary_crossings.into_success.transitions,
                 })} />
               </span>
@@ -2629,17 +2624,17 @@ export function UsageTvPage() {
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
               onClick={() => setSelectedBoundary({
                 key: "boundary_into_risk",
-                title: `Fell into Light or lower (${movementData.boundary_crossings.into_risk.count})`,
+                title: `Fell out of Activated (${movementData.boundary_crossings.into_risk.count})`,
                 transitions: movementData.boundary_crossings.into_risk.transitions,
               })}
             >
               <TrendingDown size={16} color="#C0392B" className="shrink-0" />
               <span className="tabular-nums" style={{ fontSize: "24px", fontWeight: 700, color: "#C0392B" }}>{movementData.boundary_crossings.into_risk.count}</span>
-              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell into Light or lower</span>
+              <span style={{ fontSize: "16px", fontWeight: 400, color: "#333333" }}>fell out of Activated</span>
               <span className="ml-auto">
                 <Sky3DownloadButton count={movementData.boundary_crossings.into_risk.count} onClick={() => setSelectedBoundary({
                   key: "boundary_into_risk",
-                  title: `Fell into Light or lower (${movementData.boundary_crossings.into_risk.count})`,
+                  title: `Fell out of Activated (${movementData.boundary_crossings.into_risk.count})`,
                   transitions: movementData.boundary_crossings.into_risk.transitions,
                 })} />
               </span>
