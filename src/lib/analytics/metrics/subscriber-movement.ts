@@ -478,35 +478,52 @@ export interface DailyMovementRow {
 export async function getDailySubscriberMovementCanonical(days = 7): Promise<DailyMovementRow[]> {
   const categorized = await loadCategorizedRows();
   const today = easternToday();
-  const spanStart = ymd(addDays(today, -(days - 1)));
-  const spanEnd = ymd(addDays(today, 1));
 
-  // Span-level plan-changer detection (same rule as computeWindow: an email
-  // that is new in one category AND canceled in a different one within the span).
-  const newByEmail = new Map<string, CategoryKey>();
-  const canceledByEmail = new Map<string, CategoryKey>();
-  for (const r of categorized) {
-    const ck = categoryKey(r.category);
-    if (!ck) continue;
-    const email = r.customer_email.toLowerCase();
-    if (!email) continue;
-    if (r.created_at && r.created_at >= spanStart && r.created_at < spanEnd && !newByEmail.has(email)) {
-      newByEmail.set(email, ck);
+  // Plan-changer exclusion is inherently WINDOW-scoped (a person new in one
+  // category AND canceled in another within the same window). To make the
+  // daily rows sum EXACTLY to the Monday-anchored weekly window, scope changer
+  // detection per CALENDAR WEEK — the same [Monday, Monday+7) boundaries
+  // getSubscriberMovement uses. A rolling 7-day span (the prior approach) is
+  // misaligned to those weeks, so a changer straddling the Monday boundary was
+  // excluded from the daily rows but not the weekly window (or vice versa).
+  const weekChangerCache = new Map<string, Set<string>>();
+  const changersForWeek = (weekMonday: Date): Set<string> => {
+    const key = ymd(weekMonday);
+    const cached = weekChangerCache.get(key);
+    if (cached) return cached;
+    const wStart = key;
+    const wEnd = ymd(addDays(weekMonday, 7));
+    const newByEmail = new Map<string, CategoryKey>();
+    const canceledByEmail = new Map<string, CategoryKey>();
+    for (const r of categorized) {
+      const ck = categoryKey(r.category);
+      if (!ck) continue;
+      const email = r.customer_email.toLowerCase();
+      if (!email) continue;
+      if (r.created_at && r.created_at >= wStart && r.created_at < wEnd && !newByEmail.has(email)) {
+        newByEmail.set(email, ck);
+      }
+      if (r.churn_date && r.churn_date >= wStart && r.churn_date < wEnd && !canceledByEmail.has(email)) {
+        canceledByEmail.set(email, ck);
+      }
     }
-    if (r.churn_date && r.churn_date >= spanStart && r.churn_date < spanEnd && !canceledByEmail.has(email)) {
-      canceledByEmail.set(email, ck);
+    const s = new Set<string>();
+    for (const [email, canceledCat] of canceledByEmail) {
+      const newCat = newByEmail.get(email);
+      if (newCat && newCat !== canceledCat) s.add(email);
     }
-  }
-  const changers = new Set<string>();
-  for (const [email, canceledCat] of canceledByEmail) {
-    const newCat = newByEmail.get(email);
-    if (newCat && newCat !== canceledCat) changers.add(email);
-  }
-  const rows = categorized.filter((r) => !changers.has(r.customer_email.toLowerCase()));
+    weekChangerCache.set(key, s);
+    return s;
+  };
 
   const out: DailyMovementRow[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const day = addDays(today, -i);
+    // Exclude this day's calendar-week changers, then count the single day.
+    const changers = changersForWeek(mondayOf(day));
+    const rows = changers.size
+      ? categorized.filter((r) => !changers.has(r.customer_email.toLowerCase()))
+      : categorized;
     const w = computeWindow(rows, ymd(day), ymd(addDays(day, 1)));
     out.push({
       date: ymd(day),

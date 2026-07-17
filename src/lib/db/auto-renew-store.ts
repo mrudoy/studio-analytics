@@ -234,12 +234,24 @@ export async function upsertAutoRenewRowsTx(
         })();
 
         if (guardTarget && guardTarget.plan_state === "Canceled") {
-          // No cancel event on record (ancient pre-event-log row) → allow,
-          // matching prior behavior. Otherwise require source > cancel time.
+          // BLOCK BY DEFAULT: a Canceled row may only be resurrected when the
+          // source is PROVABLY newer than a known cancellation. Two cases have
+          // NO cancel event and must NOT be treated as "safe to resurrect":
+          //   1. Reconcile-canceled rows — the full-export reconcile suppresses
+          //      the auto_renew_events trigger (migration 023), so the rows it
+          //      cancels leave no event. These are the PRIMARY ghost-cancel
+          //      mechanism; a stale delta replay must never re-activate them.
+          //   2. Unknown-provenance sources (no sourceEffectiveAt) — can't prove
+          //      newer, so never resurrect (matches the documented policy).
+          // A genuine resume still works: live churns leave a 'churn' event, and
+          // a genuine resubscribe gets a NEW union_pass_id (a fresh INSERT, not a
+          // resurrection). Wrongly-canceled rows are restored by the authoritative
+          // full-export reconcile (allowResurrection), not by a daily delta.
           const lastCancelAt = guardTarget.last_cancel_at ? new Date(guardTarget.last_cancel_at).getTime() : null;
           const sourceAt = opts.sourceEffectiveAt ? new Date(opts.sourceEffectiveAt).getTime() : NaN;
-          const blocked =
-            lastCancelAt !== null && (!Number.isFinite(sourceAt) || sourceAt <= lastCancelAt);
+          const provablyNewer =
+            lastCancelAt !== null && Number.isFinite(sourceAt) && sourceAt > lastCancelAt;
+          const blocked = !provablyNewer;
           if (blocked) {
             resurrectSkipped++;
             if (resurrectSkipped <= 5) {

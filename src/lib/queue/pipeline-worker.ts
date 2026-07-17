@@ -75,6 +75,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
 
       const zipResult = await runZipWebhookPipeline({
         downloadUrl: job.data.downloadUrl,
+        sourceEffectiveAt: job.data.sourceEffectiveAt,
         onProgress: (step, percent) => updateProgress(job, step, percent),
       });
 

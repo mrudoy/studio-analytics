@@ -367,14 +367,23 @@ export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gro
     SELECT
       TO_CHAR(m.month_start, 'YYYY-MM') AS month,
       ROUND(SUM(
-        CASE WHEN ar.is_annual THEN ar.plan_price / 12.0 ELSE ar.plan_price END
+        -- Annual plans store the full yearly price → divide by 12 for the
+        -- monthly run-rate. This mirrors isAnnualPlan() in categories.ts;
+        -- auto_renews has no persisted is_annual column, so match on plan_name.
+        CASE WHEN (
+          UPPER(ar.plan_name) LIKE '%ANNUAL%'
+          OR UPPER(ar.plan_name) LIKE '%YEARLY%'
+          OR UPPER(ar.plan_name) LIKE '%12 MONTH%'
+          OR UPPER(ar.plan_name) LIKE '%12-MONTH%'
+          OR UPPER(ar.plan_name) LIKE '%12M %'
+        ) THEN ar.plan_price / 12.0 ELSE ar.plan_price END
       )::numeric, 2) AS gross
     FROM months m
     JOIN auto_renews ar ON
       ar.created_at <= (m.month_start + INTERVAL '1 month' - INTERVAL '1 day')
       AND (ar.plan_state != 'Canceled' OR ar.canceled_at > m.month_start)
       AND (ar.current_state IS NULL OR ar.current_state = 'active')
-      AND ar.category IN ('MEMBER', 'SKY3', 'SKY_TING_TV')
+      AND ar.plan_category IN ('MEMBER', 'SKY3', 'SKY_TING_TV')
     GROUP BY m.month_start
     ORDER BY m.month_start
   `);

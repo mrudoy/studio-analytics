@@ -77,11 +77,19 @@ export async function POST(request: Request) {
     }
   }
 
+  // Optional generation timestamp — feeds the anti-resurrection guard so a
+  // fresh webhook export can legitimately re-activate a canceled row (absent
+  // it, the guard safely refuses to resurrect).
+  const generatedAtRaw = body.generated_at as string | undefined;
+  const sourceEffectiveAt =
+    generatedAtRaw && !isNaN(new Date(generatedAtRaw).getTime()) ? generatedAtRaw : undefined;
+
   // ── Enqueue pipeline job ────────────────────────────────
   try {
     const jobId = await enqueuePipeline({
       triggeredBy: "union-webhook",
       downloadUrl,
+      sourceEffectiveAt,
     });
 
     console.log(
