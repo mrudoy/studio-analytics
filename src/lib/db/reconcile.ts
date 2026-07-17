@@ -416,7 +416,9 @@ export async function reconcileFromFullExport(
     //    transaction — both this upsert and the cancel pass emit no movement
     //    events (migration 023). Audit lives in reconcile_runs + reconcile_row_snapshot.
     const snapshotId = `sync-${runId}-${cutoffMs || Date.now()}`;
-    await upsertAutoRenewRowsTx(client, snapshotId, rows);
+    // Full export = authoritative current state → allowed to resurrect
+    // Canceled rows (this is exactly how wrongly-canceled rows get restored).
+    await upsertAutoRenewRowsTx(client, snapshotId, rows, { allowResurrection: true });
 
     // 2. Recompute candidates against post-upsert state (within the txn).
     const diff = await computeReconcileDiff(exp, cutoffMs, client);

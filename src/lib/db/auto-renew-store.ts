@@ -83,6 +83,33 @@ export interface AutoRenewStats {
 export const AUTO_RENEW_WRITE_LOCK = 472900;
 
 /**
+ * Options controlling how an upsert batch may change subscription STATE.
+ *
+ * Anti-resurrection guard (2026-07-17): on 2026-07-02 a mass replay of ~30
+ * old daily zips flipped 51 correctly-Canceled rows back to active, because
+ * the upsert applied each zip's stale plan_state unconditionally. That single
+ * incident caused 43% of the subscriber-count drift found by the 7/17
+ * reconcile. The guard makes replays harmless: a Canceled row may only be
+ * resurrected by a source that is provably NEWER than the cancellation.
+ */
+export interface UpsertOptions {
+  /**
+   * When the source data was generated (Union export `created_at`).
+   * A Canceled row is only flipped back to an active state if this timestamp
+   * is strictly AFTER the row's latest cancel event. Omit/null = unknown
+   * provenance = never resurrect (the weekly full-export reconcile re-activates
+   * genuine resumes via allowResurrection).
+   */
+  sourceEffectiveAt?: string | null;
+  /**
+   * Bypass the guard entirely. ONLY for authoritative full-snapshot sources:
+   * the full-export reconcile and manual full-CSV uploads. Never set this for
+   * daily delta zips.
+   */
+  allowResurrection?: boolean;
+}
+
+/**
  * Save a batch of auto-renews using UPSERT (INSERT ... ON CONFLICT DO UPDATE).
  *
  * Dedup key: (customer_email, plan_name, created_at) — from migration 003.
@@ -93,19 +120,22 @@ export const AUTO_RENEW_WRITE_LOCK = 472900;
  */
 export async function saveAutoRenews(
   snapshotId: string,
-  rows: AutoRenewRow[]
-): Promise<{ inserted: number; updated: number }> {
+  rows: AutoRenewRow[],
+  opts: UpsertOptions = {},
+): Promise<{ inserted: number; updated: number; resurrectSkipped: number }> {
   const pool = getPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     // Serialize against a concurrent reconcile (Phase 0.5 concurrency control).
     await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
-    const res = await upsertAutoRenewRowsTx(client, snapshotId, rows);
+    const res = await upsertAutoRenewRowsTx(client, snapshotId, rows, opts);
     await client.query("COMMIT");
     console.log(
       `[auto-renew-store] Upserted ${rows.length} auto-renews (snapshot: ${snapshotId}, ` +
-        `${res.inserted} inserted, ${res.updated} updated)`,
+        `${res.inserted} inserted, ${res.updated} updated` +
+        (res.resurrectSkipped > 0 ? `, ${res.resurrectSkipped} resurrection-blocked` : "") +
+        `)`,
     );
     return res;
   } catch (e) {
@@ -126,9 +156,11 @@ export async function upsertAutoRenewRowsTx(
   client: PoolClient,
   snapshotId: string,
   rows: AutoRenewRow[],
-): Promise<{ inserted: number; updated: number }> {
+  opts: UpsertOptions = {},
+): Promise<{ inserted: number; updated: number; resurrectSkipped: number }> {
   let inserted = 0;
   let updated = 0;
+  let resurrectSkipped = 0;
 
     // Dedupe input rows by conflict key before writing.
     //
@@ -167,6 +199,72 @@ export async function upsertAutoRenewRowsTx(
     for (const row of dedupedRows) {
       // Skip rows without email — they can't be deduped
       if (!row.customerEmail) continue;
+
+      // ── Anti-resurrection guard ─────────────────────────────────────
+      // A row that is Canceled in the DB may only be flipped back to an
+      // active state by a source strictly newer than the cancellation.
+      // Mirrors the write path's match precedence: union_pass_id first,
+      // then the (email, plan_name, created_at) conflict key. When the
+      // guard blocks, the row is skipped ENTIRELY (no field updates, no
+      // imported_at bump) so a stale replay leaves no trace.
+      if (!opts.allowResurrection && ACTIVE_STATES.includes(row.planState)) {
+        const guardTarget = await (async () => {
+          const guardSql = (where: string) =>
+            `SELECT ar.id, ar.plan_state,
+                    (SELECT MAX(e.observed_at) FROM auto_renew_events e
+                      WHERE e.auto_renew_id = ar.id
+                        AND e.event_type IN ('churn','final_cancel','reconcile_churn','backfill_churn')
+                    ) AS last_cancel_at
+               FROM auto_renews ar
+              WHERE ${where}
+              LIMIT 1`;
+          if (row.unionPassId) {
+            const { rows: g } = await client.query(guardSql("ar.union_pass_id = $1"), [row.unionPassId]);
+            if (g.length > 0) return g[0];
+          }
+          const easternCreated = toEasternDate(row.createdAt);
+          if (easternCreated) {
+            const { rows: g } = await client.query(
+              guardSql("ar.customer_email = $1 AND ar.plan_name = $2 AND ar.created_at = $3"),
+              [row.customerEmail.toLowerCase(), row.planName, easternCreated],
+            );
+            if (g.length > 0) return g[0];
+          }
+          return null;
+        })();
+
+        if (guardTarget && guardTarget.plan_state === "Canceled") {
+          // BLOCK BY DEFAULT: a Canceled row may only be resurrected when the
+          // source is PROVABLY newer than a known cancellation. Two cases have
+          // NO cancel event and must NOT be treated as "safe to resurrect":
+          //   1. Reconcile-canceled rows — the full-export reconcile suppresses
+          //      the auto_renew_events trigger (migration 023), so the rows it
+          //      cancels leave no event. These are the PRIMARY ghost-cancel
+          //      mechanism; a stale delta replay must never re-activate them.
+          //   2. Unknown-provenance sources (no sourceEffectiveAt) — can't prove
+          //      newer, so never resurrect (matches the documented policy).
+          // A genuine resume still works: live churns leave a 'churn' event, and
+          // a genuine resubscribe gets a NEW union_pass_id (a fresh INSERT, not a
+          // resurrection). Wrongly-canceled rows are restored by the authoritative
+          // full-export reconcile (allowResurrection), not by a daily delta.
+          const lastCancelAt = guardTarget.last_cancel_at ? new Date(guardTarget.last_cancel_at).getTime() : null;
+          const sourceAt = opts.sourceEffectiveAt ? new Date(opts.sourceEffectiveAt).getTime() : NaN;
+          const provablyNewer =
+            lastCancelAt !== null && Number.isFinite(sourceAt) && sourceAt > lastCancelAt;
+          const blocked = !provablyNewer;
+          if (blocked) {
+            resurrectSkipped++;
+            if (resurrectSkipped <= 5) {
+              console.warn(
+                `[auto-renew-store] Resurrection blocked: email=${row.customerEmail} plan=${row.planName} ` +
+                  `pass_id=${row.unionPassId ?? "null"} incoming=${row.planState} ` +
+                  `source=${opts.sourceEffectiveAt ?? "unknown"} lastCancel=${guardTarget.last_cancel_at}`,
+              );
+            }
+            continue;
+          }
+        }
+      }
 
       // Per-row savepoint: a single row that violates idx_ar_dedup (e.g. an
       // UPDATE-by-union_pass_id step would shift this row's
@@ -285,6 +383,12 @@ export async function upsertAutoRenewRowsTx(
     if (skipped > 0) {
       console.warn(`[auto-renew-store] Skipped ${skipped}/${dedupedRows.length} rows due to per-row errors (others were saved)`);
     }
+    if (resurrectSkipped > 0) {
+      console.warn(
+        `[auto-renew-store] Resurrection guard blocked ${resurrectSkipped}/${dedupedRows.length} rows ` +
+          `(stale source tried to re-activate Canceled subscriptions; source=${opts.sourceEffectiveAt ?? "unknown"})`,
+      );
+    }
 
   // NOTE: we deliberately do NOT silently dedup active rows by order_id here.
   // Union's order_id is unique per subscription (verified: 2936/2936 distinct in
@@ -296,7 +400,7 @@ export async function upsertAutoRenewRowsTx(
   // (drift-check.ts dupActiveIdentities → alert) and corrected by the audited
   // full-export reconcile, never by a silent write in the hot path.
 
-  return { inserted, updated };
+  return { inserted, updated, resurrectSkipped };
 }
 
 const ACTIVE_STATE_SET = new Set<string>(ACTIVE_STATES);
@@ -357,8 +461,18 @@ export interface DeltaCancelResult {
   pendingCanceled: number;
   /** Matched, but already at/past the target state or not currently counted active. */
   noop: number;
-  /** union_pass_id not found in the DB at all. */
+  /** union_pass_id not found; all fallbacks missed. */
   noMatch: number;
+  /**
+   * union_pass_id not found, but matched via order_id fallback (row lacked union_pass_id).
+   * union_pass_id is backfilled on the matched row so future deltas find it directly.
+   */
+  noMatchOrderIdFallback: number;
+  /**
+   * union_pass_id + order_id both missed, but email+category matched exactly 1 active row.
+   * union_pass_id is backfilled (self-healing). Only fires on an unambiguous 1:1 match.
+   */
+  noMatchEmailFallback: number;
   /** Skipped: the active row is newer than the cancellation (reused pass_id). */
   protectedNewer: number;
   /** Shadow row carried no union_pass_id (defensive; collectShadowCancellations requires one). */
@@ -376,10 +490,11 @@ export interface DeltaCancelResult {
  * daily delta from silently leaking cancellations, which is what let stale "ghost"
  * active rows accumulate above Union's count.
  *
- * Each signal is matched STRICTLY by union_pass_id to exactly one row — NEVER by
- * email/plan. Union reissues a pass on renewal, so the same person can hold a
- * freshly-active pass whose email+plan collides with the old expired one; an email
- * match would cancel the live renewal (the run-1 false-positive class).
+ * Matching cascade: (1) union_pass_id exact, (2) order_id where pass_id is NULL,
+ * (3) email+category where exactly ONE active row exists. Union reissues pass_ids
+ * on renewal, so the DB often has a stale pass_id; the email fallback is safe only
+ * when unambiguous (1 active row). Multiple active rows = skip. Each fallback
+ * backfills union_pass_id on the matched row so the next signal matches directly.
  *
  *   intendedAction 'cancel'         → terminal Expired/Canceled → plan_state 'Canceled'
  *   intendedAction 'pending_cancel' → auto-renew off, in period → plan_state 'Pending Cancel'
@@ -404,6 +519,7 @@ export async function applyDeltaCancellations(
 ): Promise<DeltaCancelResult> {
   const res: DeltaCancelResult = {
     canceled: 0, pendingCanceled: 0, noop: 0, noMatch: 0,
+    noMatchOrderIdFallback: 0, noMatchEmailFallback: 0,
     protectedNewer: 0, skippedNoPassId: 0, errored: 0,
   };
   if (cancels.length === 0) return res;
@@ -429,9 +545,109 @@ export async function applyDeltaCancellations(
         const outcome = classifyDeltaCancel(c, r);
 
         switch (outcome) {
-          case "no_match":
+          case "no_match": {
+            // Fallback: try order_id for rows not yet backfilled with union_pass_id.
+            // Only targets rows where union_pass_id IS NULL — avoids touching a row
+            // whose pass_id happens to differ (a separate subscription).
+            if (c.orderId) {
+              const { rows: fbRows } = await client.query<{ id: number } & DeltaCancelRow>(
+                `SELECT id, plan_state, current_state, created_at::text AS created_at
+                   FROM auto_renews
+                  WHERE order_id = $1 AND union_pass_id IS NULL LIMIT 1`,
+                [c.orderId],
+              );
+              const fbRow = fbRows[0] ?? null;
+              const fbOutcome = classifyDeltaCancel(c, fbRow);
+              if (fbOutcome === "cancel" || fbOutcome === "pending_cancel") {
+                const cancelAt = toEasternDate(c.effectiveAt);
+                if (fbOutcome === "cancel") {
+                  await client.query(
+                    `UPDATE auto_renews
+                        SET plan_state   = 'Canceled',
+                            canceled_at  = COALESCE($3::date, (NOW() AT TIME ZONE 'America/New_York')::date),
+                            union_pass_id = $2,
+                            snapshot_id  = $4,
+                            imported_at  = NOW()
+                      WHERE id = $1`,
+                    [fbRow!.id, c.unionPassId, cancelAt, snapshotId],
+                  );
+                  res.canceled++;
+                } else {
+                  await client.query(
+                    `UPDATE auto_renews
+                        SET plan_state         = 'Pending Cancel',
+                            pending_canceled_at = COALESCE(pending_canceled_at, $3::timestamptz),
+                            union_pass_id       = $2,
+                            snapshot_id         = $4,
+                            imported_at         = NOW()
+                      WHERE id = $1`,
+                    [fbRow!.id, c.unionPassId, c.effectiveAt, snapshotId],
+                  );
+                  res.pendingCanceled++;
+                }
+                res.noMatchOrderIdFallback++;
+                break;
+              }
+              if (fbOutcome === "noop") { res.noop++; break; }
+              if (fbOutcome === "protected_newer") { res.protectedNewer++; break; }
+            }
+            // Last resort: email + category, but ONLY when exactly 1 active row exists.
+            // Union reissues pass_ids on renewal, so the DB row has a stale pass_id that
+            // doesn't match the cancel signal. If the email+category is unambiguous (1 row),
+            // it's safe to apply. Multiple active rows = ambiguous, skip. Backfills the
+            // union_pass_id so the next signal matches directly (self-healing).
+            if (c.customerEmail && c.category) {
+              const { rows: emRows } = await client.query<{ id: number; cnt: string } & DeltaCancelRow>(
+                `SELECT id, plan_state, current_state, created_at::text AS created_at,
+                        COUNT(*) OVER () AS cnt
+                   FROM auto_renews
+                  WHERE LOWER(customer_email) = LOWER($1)
+                    AND plan_category = $2
+                    AND plan_state IN (${ACTIVE_STATES_SQL})
+                    AND (current_state IS NULL OR current_state = 'active')
+                  LIMIT 2`,
+                [c.customerEmail, c.category],
+              );
+              if (emRows.length === 1 && emRows[0].cnt === "1") {
+                const emRow = emRows[0];
+                const emOutcome = classifyDeltaCancel(c, emRow);
+                if (emOutcome === "cancel" || emOutcome === "pending_cancel") {
+                  const cancelAt = toEasternDate(c.effectiveAt);
+                  if (emOutcome === "cancel") {
+                    await client.query(
+                      `UPDATE auto_renews
+                          SET plan_state   = 'Canceled',
+                              canceled_at  = COALESCE($3::date, (NOW() AT TIME ZONE 'America/New_York')::date),
+                              union_pass_id = $2,
+                              snapshot_id  = $4,
+                              imported_at  = NOW()
+                        WHERE id = $1`,
+                      [emRow.id, c.unionPassId, cancelAt, snapshotId],
+                    );
+                    res.canceled++;
+                  } else {
+                    await client.query(
+                      `UPDATE auto_renews
+                          SET plan_state         = 'Pending Cancel',
+                              pending_canceled_at = COALESCE(pending_canceled_at, $3::timestamptz),
+                              union_pass_id       = $2,
+                              snapshot_id         = $4,
+                              imported_at         = NOW()
+                        WHERE id = $1`,
+                      [emRow.id, c.unionPassId, c.effectiveAt, snapshotId],
+                    );
+                    res.pendingCanceled++;
+                  }
+                  res.noMatchEmailFallback++;
+                  break;
+                }
+                if (emOutcome === "noop") { res.noop++; break; }
+                if (emOutcome === "protected_newer") { res.protectedNewer++; break; }
+              }
+            }
             res.noMatch++;
             break;
+          }
           case "noop":
             res.noop++;
             break;
@@ -489,7 +705,8 @@ export async function applyDeltaCancellations(
 
   console.log(
     `[auto-renew-store] Delta cancellations: ${res.canceled} canceled, ${res.pendingCanceled} pending-cancel ` +
-    `(noop ${res.noop}, no-match ${res.noMatch}, protected-newer ${res.protectedNewer}, ` +
+    `(noop ${res.noop}, no-match ${res.noMatch}, order-id-fb ${res.noMatchOrderIdFallback}, ` +
+    `email-fb ${res.noMatchEmailFallback}, protected-newer ${res.protectedNewer}, ` +
     `no-pass-id ${res.skippedNoPassId}, errored ${res.errored})`,
   );
   return res;
@@ -748,7 +965,70 @@ export async function getNewAutoRenews(startDate: string, endDate: string): Prom
 }
 
 /**
+ * Get auto-renews that churned within a date range, keyed on the click-date from
+ * auto_renew_events rather than canceled_at.
+ *
+ * Union sets canceled_at to the next billing/renewal date for active subs, so
+ * bucketing by canceled_at clusters cancellations on period-end dates (e.g. the
+ * 6/22 week spike of 13 SKY3 churns from billing-date ghostrows). The event log
+ * records the state-change timestamp — the actual click date.
+ *
+ * Same guard logic as getDailySubscriberMovement / getFirstChurnDateByAutoRenewId:
+ * dedup per auto_renew_id (earliest passing event), prev_state in active-ish states,
+ * phantom guards on canceled_at + imported_at. canceledAt on returned rows is the
+ * click-date (ET), not the billing date.
+ */
+export async function getCanceledAutoRenewsWithClickDate(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
+  const pool = getPool();
+  // Era-partitioned, same as getFirstChurnDateByAutoRenewId:
+  //   LIVE leg  (>= CLICK_DATE_ERA_START): event_type='churn' only, with phantom guards.
+  //   BACKFILL leg (< CLICK_DATE_ERA_START): event_type='backfill_churn' only.
+  // Mixing both event types in a single date filter would include backfill_churn
+  // events whose observed_at == canceled_at (billing dates), re-introducing the spike.
+  const ERA_START = "2026-04-14";
+  const { rows } = await pool.query(
+    `WITH live AS (
+       SELECT DISTINCT ON (e.auto_renew_id)
+              ar.id, ar.snapshot_id, ar.plan_name, ar.plan_state, ar.plan_price,
+              ar.customer_name, ar.customer_email, ar.created_at,
+              (e.observed_at AT TIME ZONE 'America/New_York')::date AS canceled_at
+       FROM auto_renew_events e
+       JOIN auto_renews ar ON ar.id = e.auto_renew_id
+       WHERE e.event_type = 'churn'
+         AND e.prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date >= GREATEST($1::date, $3::date)
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date <  $2::date
+         AND ar.plan_state IN ('Canceled','Pending Cancel')
+         AND (ar.canceled_at IS NULL
+              OR ar.canceled_at >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '1 day')
+         AND ar.imported_at::date >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '7 days'
+       ORDER BY e.auto_renew_id, e.observed_at ASC
+     ),
+     backfill AS (
+       SELECT DISTINCT ON (e.auto_renew_id)
+              ar.id, ar.snapshot_id, ar.plan_name, ar.plan_state, ar.plan_price,
+              ar.customer_name, ar.customer_email, ar.created_at,
+              (e.observed_at AT TIME ZONE 'America/New_York')::date AS canceled_at
+       FROM auto_renew_events e
+       JOIN auto_renews ar ON ar.id = e.auto_renew_id
+       WHERE e.event_type = 'backfill_churn'
+         AND ar.plan_state = 'Canceled'
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date >= $1::date
+         AND (e.observed_at AT TIME ZONE 'America/New_York')::date <  LEAST($2::date, $3::date)
+       ORDER BY e.auto_renew_id, e.observed_at ASC
+     )
+     SELECT * FROM live
+     UNION ALL
+     SELECT * FROM backfill`,
+    [startDate, endDate, ERA_START],
+  );
+  return (rows as RawAutoRenewRow[]).map(mapRow);
+}
+
+/**
  * Get auto-renews canceled within a date range.
+ * @deprecated Use getCanceledAutoRenewsWithClickDate — this buckets by canceled_at
+ *   which Union sets to the next billing date, causing period-end spikes.
  */
 export async function getCanceledAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
   const pool = getPool();
@@ -780,7 +1060,21 @@ export interface DailyMovementRow {
 }
 
 /**
+ * @deprecated Use getDailySubscriberMovementCanonical in
+ * subscriber-movement.ts — it derives per-day counts from the same rows and
+ * churn dates as the Auto-Renews card, so the two cards cannot disagree.
+ * This SQL version diverges: churn keyed on event observed_at (ingest day,
+ * not Union's click day), "new" filtered to still-active rows, no
+ * plan-changer exclusion, mixed UTC/ET day bucketing. Kept only until no
+ * consumers remain.
+ *
  * Daily new + churned subscriber counts per category for the last `days` days.
+ *
+ * New: keyed on auto_renews.created_at (Eastern date of signup).
+ * Churned: keyed on auto_renew_events click-date (same source as the
+ *   "Yesterday" column in the Auto-Renews table). Using canceled_at would
+ *   spike on billing-period-end dates because Union sets canceled_at to the
+ *   next renewal date for active subs, not the click date.
  */
 export async function getDailySubscriberMovement(days = 7): Promise<DailyMovementRow[]> {
   const pool = getPool();
@@ -800,21 +1094,38 @@ export async function getDailySubscriberMovement(days = 7): Promise<DailyMovemen
       FROM auto_renews
       WHERE created_at IS NOT NULL
         AND created_at >= CURRENT_DATE - ($1 || ' days')::interval
-        -- Filter intentionally broader than canonical ACTIVE_STATES (includes Past Due)
         AND (current_state = 'active' OR (current_state IS NULL
              AND plan_state IN ('Valid Now', 'Paused', 'In Trial', 'Invalid', 'Pending Cancel', 'Past Due')))
       GROUP BY created_at
     ),
+    -- Churn from auto_renew_events (click-date, not billing-period-end date).
+    -- Same guards as subscriber-movement.ts / getFirstChurnDateByAutoRenewId:
+    --   event_type IN ('churn','backfill_churn'), dedup by auto_renew_id,
+    --   prev_state in active-ish states, phantom guards on canceled_at + imported_at.
+    churn_events AS (
+      SELECT DISTINCT ON (e.auto_renew_id)
+             (e.observed_at AT TIME ZONE 'America/New_York')::date AS d,
+             ar.plan_category
+      FROM auto_renew_events e
+      JOIN auto_renews ar ON ar.id = e.auto_renew_id
+      WHERE e.event_type IN ('churn', 'backfill_churn')
+        AND e.prev_state IN ('Valid Now','Paused','In Trial','Past Due','Invalid')
+        AND (e.observed_at AT TIME ZONE 'America/New_York')::date
+              >= CURRENT_DATE - ($1 || ' days')::interval
+        AND ar.plan_state IN ('Canceled','Pending Cancel')
+        AND (ar.canceled_at IS NULL
+             OR ar.canceled_at >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '1 day')
+        AND ar.imported_at::date
+              >= (e.observed_at AT TIME ZONE 'America/New_York')::date - INTERVAL '7 days'
+      ORDER BY e.auto_renew_id, e.observed_at ASC
+    ),
     churned_by_day AS (
-      SELECT canceled_at AS d,
+      SELECT d,
         COUNT(*) FILTER (WHERE plan_category = 'MEMBER') AS churned_members,
         COUNT(*) FILTER (WHERE plan_category = 'SKY3') AS churned_sky3,
         COUNT(*) FILTER (WHERE plan_category = 'SKY_TING_TV') AS churned_tv
-      FROM auto_renews
-      WHERE canceled_at IS NOT NULL
-        AND canceled_at >= CURRENT_DATE - ($1 || ' days')::interval
-        AND plan_state = 'Canceled'
-      GROUP BY canceled_at
+      FROM churn_events
+      GROUP BY d
     )
     SELECT
       dates.d::text AS date,

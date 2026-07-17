@@ -49,4 +49,11 @@ export interface PipelineJobData {
   dateRangeEnd?: string;
   /** Direct download URL for the zip export (webhook path — skips Gmail). */
   downloadUrl?: string;
+  /**
+   * When the source export was generated (webhook `generated_at`). Feeds the
+   * anti-resurrection guard: a Canceled row is only re-activated by a source
+   * proven newer than the cancellation. Absent → the guard treats this import
+   * as unknown-provenance and never resurrects (safe default).
+   */
+  sourceEffectiveAt?: string;
 }

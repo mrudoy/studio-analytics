@@ -16,11 +16,13 @@ import { parseDate, getWeekKey, getMonthKey } from "./date-utils";
 import { ACTIVE_STATES, STILL_PAYING_STATES } from "./metrics/filters";
 import {
   getNewAutoRenews,
-  getCanceledAutoRenews,
+  getCanceledAutoRenewsWithClickDate,
   getAutoRenewStats,
   hasAutoRenewData,
-  getDailySubscriberMovement,
 } from "../db/auto-renew-store";
+// Daily Movement card MUST use the canonical movement source so its per-day
+// numbers sum to the Auto-Renews card's windows (single source of truth).
+import { getDailySubscriberMovementCanonical } from "./metrics/subscriber-movement";
 import {
   hasRegistrationData,
   hasFirstVisitData,
@@ -165,7 +167,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
   const endDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
 
   const newSubs = await getNewAutoRenews(startDate, endDate);
-  const canceledSubs = await getCanceledAutoRenews(startDate, endDate);
+  const canceledSubs = await getCanceledAutoRenewsWithClickDate(startDate, endDate);
 
   const weeklyBuckets = new Map<string, PeriodBucket>();
   const monthlyBuckets = new Map<string, PeriodBucket>();
@@ -954,7 +956,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     runUsage().catch((err) => { console.warn("[db-trends] usage failed:", err); return null; }),
     getAttendanceDropAlerts().catch((err) => { console.warn("[db-trends] attendance-drops failed:", err); return null; }),
     getSky3EngagementRisk().catch((err) => { console.warn("[db-trends] sky3-engagement-risk failed:", err); return null; }),
-    getDailySubscriberMovement(7).catch((err) => { console.warn("[db-trends] daily-movement failed:", err); return null; }),
+    getDailySubscriberMovementCanonical(7).catch((err) => { console.warn("[db-trends] daily-movement failed:", err); return null; }),
   ]);
 
   const newCustomerVolume = newCustResult.volume;

@@ -93,7 +93,9 @@ export async function POST(request: Request) {
           currentState: ar.currentState || undefined,
           currentPlan: ar.currentPlan || undefined,
         }));
-        await saveAutoRenews(snapshotId, arRows);
+        // Manual CSV upload = a human exporting Union's CURRENT state →
+        // authoritative, allowed to resurrect Canceled rows.
+        await saveAutoRenews(snapshotId, arRows, { allowResurrection: true });
         parsedCount = arRows.length;
         console.log(`[api/upload] Saved ${arRows.length} auto-renews from ${filename} (snapshot: ${snapshotId})`);
       }

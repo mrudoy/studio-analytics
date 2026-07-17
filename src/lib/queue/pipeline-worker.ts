@@ -75,6 +75,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
 
       const zipResult = await runZipWebhookPipeline({
         downloadUrl: job.data.downloadUrl,
+        sourceEffectiveAt: job.data.sourceEffectiveAt,
         onProgress: (step, percent) => updateProgress(job, step, percent),
       });
 
@@ -151,6 +152,7 @@ async function runPipelineInner(job: Job): Promise<PipelineResult> {
               const zipResult = await runZipWebhookPipeline({
                 downloadUrl: exportInfo.downloadUrl,
                 dataRange: exportInfo.dataRange,
+                sourceEffectiveAt: exportInfo.createdAt,
                 onProgress: (step, percent) => {
                   // Scale sub-progress within this export's slice
                   const scaledPct = pctBase + Math.round((percent / 100) * (80 / newExports.length));
