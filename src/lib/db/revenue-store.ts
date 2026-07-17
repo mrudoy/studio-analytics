@@ -391,16 +391,25 @@ export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gro
           OR UPPER(ar.plan_name) LIKE '%12M %'
         ) THEN ar.plan_price / 12.0 ELSE ar.plan_price END
       )::numeric, 2) AS gross
+    -- LEFT JOIN so BOTH months always appear (SUM→NULL→0 for an empty month);
+    -- an INNER JOIN would drop a month with no billing rows and let the caller
+    -- mislabel the surviving month.
     FROM months m
-    JOIN auto_renews ar ON
+    LEFT JOIN auto_renews ar ON
       ar.created_at <= (m.month_start + INTERVAL '1 month' - INTERVAL '1 day')
       AND (
         -- (a) currently billing (== canonical MRR set)
         (ar.plan_state IN (${BILLING_STATES_SQL})
          AND (ar.current_state IS NULL OR ar.current_state = 'active'))
-        -- (b) since Canceled, but was still active at the END of month M
+        -- (b) since Canceled, but was still active at the END of month M — bounded
+        --     to rows that have ACTUALLY ended (canceled_at on/before today ET).
+        --     Without the upper bound, a Canceled row carrying a FUTURE canceled_at
+        --     (Union's next-billing-date artifact, preserved by the reconcile's
+        --     COALESCE(canceled_at, NOW())) would leak into the CURRENT month —
+        --     whose month-end is itself in the future — and inflate it above MRR.
         OR (ar.plan_state = 'Canceled'
-            AND ar.canceled_at > (m.month_start + INTERVAL '1 month' - INTERVAL '1 day'))
+            AND ar.canceled_at > (m.month_start + INTERVAL '1 month' - INTERVAL '1 day')
+            AND ar.canceled_at <= (now() AT TIME ZONE 'America/New_York')::date)
       )
     GROUP BY m.month_start
     ORDER BY m.month_start
