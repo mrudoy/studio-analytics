@@ -19,8 +19,10 @@ import {
   getCanceledAutoRenewsWithClickDate,
   getAutoRenewStats,
   hasAutoRenewData,
-  getDailySubscriberMovement,
 } from "../db/auto-renew-store";
+// Daily Movement card MUST use the canonical movement source so its per-day
+// numbers sum to the Auto-Renews card's windows (single source of truth).
+import { getDailySubscriberMovementCanonical } from "./metrics/subscriber-movement";
 import {
   hasRegistrationData,
   hasFirstVisitData,
@@ -954,7 +956,7 @@ export async function computeTrendsFromDB(): Promise<TrendsData | null> {
     runUsage().catch((err) => { console.warn("[db-trends] usage failed:", err); return null; }),
     getAttendanceDropAlerts().catch((err) => { console.warn("[db-trends] attendance-drops failed:", err); return null; }),
     getSky3EngagementRisk().catch((err) => { console.warn("[db-trends] sky3-engagement-risk failed:", err); return null; }),
-    getDailySubscriberMovement(7).catch((err) => { console.warn("[db-trends] daily-movement failed:", err); return null; }),
+    getDailySubscriberMovementCanonical(7).catch((err) => { console.warn("[db-trends] daily-movement failed:", err); return null; }),
   ]);
 
   const newCustomerVolume = newCustResult.volume;

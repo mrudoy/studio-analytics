@@ -1048,6 +1048,14 @@ export interface DailyMovementRow {
 }
 
 /**
+ * @deprecated Use getDailySubscriberMovementCanonical in
+ * subscriber-movement.ts — it derives per-day counts from the same rows and
+ * churn dates as the Auto-Renews card, so the two cards cannot disagree.
+ * This SQL version diverges: churn keyed on event observed_at (ingest day,
+ * not Union's click day), "new" filtered to still-active rows, no
+ * plan-changer exclusion, mixed UTC/ET day bucketing. Kept only until no
+ * consumers remain.
+ *
  * Daily new + churned subscriber counts per category for the last `days` days.
  *
  * New: keyed on auto_renews.created_at (Eastern date of signup).

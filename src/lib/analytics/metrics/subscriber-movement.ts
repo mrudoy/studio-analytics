@@ -110,6 +110,27 @@ function toDateStr(raw: unknown): string | null {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Render a TIMESTAMPTZ value as its America/New_York calendar date.
+ * toDateStr() renders in SERVER-local time, which on the UTC production
+ * container shifts an evening-ET click to the next day — the same class of
+ * bug toEasternDate() fixed at the ingest layer. Use this for timestamp
+ * columns (pending_canceled_at); keep toDateStr() for DATE columns, which
+ * pg materializes at local midnight and must NOT be timezone-shifted.
+ */
+function tsToEasternDateStr(raw: unknown): string | null {
+  if (raw == null) return null;
+  const d = raw instanceof Date ? raw : new Date(String(raw));
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+/** Today's date at midnight, in America/New_York — the studio's calendar. */
+function easternToday(): Date {
+  const parts = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).split("-").map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
 function categoryKey(cat: string): CategoryKey | null {
   if (cat === "MEMBER") return "member";
   if (cat === "SKY3") return "sky3";
@@ -314,7 +335,14 @@ export function computeAvgChurnRates(
   };
 }
 
-export async function getSubscriberMovement(): Promise<SubscriberMovement> {
+/**
+ * Load every subscription row with its resolved category, monthly rate, and
+ * canonical churn date. Shared by getSubscriberMovement (window/period
+ * aggregation) and getDailySubscriberMovementCanonical (per-day buckets) so
+ * the Daily Movement card and the Auto-Renews card count from the IDENTICAL
+ * row → churn-date mapping and can never disagree on sources.
+ */
+async function loadCategorizedRows(): Promise<CategorizedRow[]> {
   const pool = getPool();
   // No DISTINCT ON — auto_renews has a UNIQUE constraint on
   // (customer_email, plan_name, created_at), so each row already
@@ -331,14 +359,14 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
     getFirstChurnDateByAutoRenewId(),
   ]);
 
-  const categorized: CategorizedRow[] = allRows.map((r: Record<string, unknown>) => {
+  return allRows.map((r: Record<string, unknown>) => {
     const name = (r.plan_name as string) || "";
     const annual = isAnnualPlan(name);
     const price = Number(r.plan_price) || 0;
     const id = Number(r.id);
     const state = (r.plan_state as string) || "";
     const canceledAt = toDateStr(r.canceled_at);
-    const pendingCanceledAt = toDateStr(r.pending_canceled_at);
+    const pendingCanceledAt = tsToEasternDateStr(r.pending_canceled_at);
     const liveChurnDate = churnDateById.get(id) ?? null;
     // Click-date priority for cancellation-window counts:
     //   1. pending_canceled_at — Union's canonical click timestamp (set when
@@ -368,10 +396,15 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
       churn_date: churnDate,
     };
   });
+}
 
-  // Build named windows
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // local midnight
+export async function getSubscriberMovement(): Promise<SubscriberMovement> {
+  const categorized = await loadCategorizedRows();
+
+  // Build named windows — anchored to the studio's calendar (America/New_York).
+  // The production container runs UTC; using server-local midnight put the
+  // 8pm–midnight ET stretch into "tomorrow" and skewed every window boundary.
+  const today = easternToday();
   const yesterday = addDays(today, -1);
   const tomorrow = addDays(today, 1);
 
@@ -414,4 +447,76 @@ export async function getSubscriberMovement(): Promise<SubscriberMovement> {
   }
 
   return { byWindow, weekly, monthly };
+}
+
+export interface DailyMovementRow {
+  date: string; // YYYY-MM-DD (America/New_York)
+  newMembers: number;
+  newSky3: number;
+  newTv: number;
+  churnedMembers: number;
+  churnedSky3: number;
+  churnedTv: number;
+}
+
+/**
+ * Daily new + churned counts for the Daily Movement card — derived from the
+ * SAME canonical rows/churn-dates as getSubscriberMovement, so the per-day
+ * numbers sum to the Auto-Renews card's window numbers by construction.
+ *
+ * Replaces the SQL-side getDailySubscriberMovement in auto-renew-store.ts,
+ * which diverged from the Auto-Renews card four ways: (1) it counted churn by
+ * event observed_at (our ingest day) instead of pending_canceled_at (Union's
+ * click day); (2) its "new" query filtered to still-active rows, silently
+ * dropping signups that canceled quickly; (3) it never excluded cross-category
+ * plan changers; (4) it bucketed days in mixed UTC/ET.
+ *
+ * Plan changers are detected over the FULL span (not per-day) so a Monday
+ * cancel + Wednesday upgrade is excluded from both days, matching how the
+ * weekly window treats it.
+ */
+export async function getDailySubscriberMovementCanonical(days = 7): Promise<DailyMovementRow[]> {
+  const categorized = await loadCategorizedRows();
+  const today = easternToday();
+  const spanStart = ymd(addDays(today, -(days - 1)));
+  const spanEnd = ymd(addDays(today, 1));
+
+  // Span-level plan-changer detection (same rule as computeWindow: an email
+  // that is new in one category AND canceled in a different one within the span).
+  const newByEmail = new Map<string, CategoryKey>();
+  const canceledByEmail = new Map<string, CategoryKey>();
+  for (const r of categorized) {
+    const ck = categoryKey(r.category);
+    if (!ck) continue;
+    const email = r.customer_email.toLowerCase();
+    if (!email) continue;
+    if (r.created_at && r.created_at >= spanStart && r.created_at < spanEnd && !newByEmail.has(email)) {
+      newByEmail.set(email, ck);
+    }
+    if (r.churn_date && r.churn_date >= spanStart && r.churn_date < spanEnd && !canceledByEmail.has(email)) {
+      canceledByEmail.set(email, ck);
+    }
+  }
+  const changers = new Set<string>();
+  for (const [email, canceledCat] of canceledByEmail) {
+    const newCat = newByEmail.get(email);
+    if (newCat && newCat !== canceledCat) changers.add(email);
+  }
+  const rows = categorized.filter((r) => !changers.has(r.customer_email.toLowerCase()));
+
+  const out: DailyMovementRow[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = addDays(today, -i);
+    const w = computeWindow(rows, ymd(day), ymd(addDays(day, 1)));
+    out.push({
+      date: ymd(day),
+      newMembers: w.member.new,
+      newSky3: w.sky3.new,
+      newTv: w.skyTingTv.new,
+      churnedMembers: w.member.canceled,
+      churnedSky3: w.sky3.canceled,
+      churnedTv: w.skyTingTv.canceled,
+    });
+  }
+  return out;
 }
