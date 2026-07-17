@@ -49,6 +49,7 @@ async function runScheduledPipeline() {
         const zipResult = await runZipWebhookPipeline({
           downloadUrl: exp.downloadUrl,
           dataRange: exp.dataRange,
+          sourceEffectiveAt: exp.createdAt,
           onProgress: (step, pct) => {
             if (pct % 25 === 0) console.log(`[scheduler] Export ${i + 1}: ${step} (${pct}%)`);
           },

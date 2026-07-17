@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
         const zipResult = await runZipWebhookPipeline({
           downloadUrl: exp.downloadUrl,
           dataRange: exp.dataRange,
+          sourceEffectiveAt: exp.createdAt,
           onProgress: (step, pct) => {
             if (pct % 20 === 0) console.log(`[reprocess] Export ${i + 1}: ${step} (${pct}%)`);
           },

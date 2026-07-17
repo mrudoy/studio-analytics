@@ -83,6 +83,33 @@ export interface AutoRenewStats {
 export const AUTO_RENEW_WRITE_LOCK = 472900;
 
 /**
+ * Options controlling how an upsert batch may change subscription STATE.
+ *
+ * Anti-resurrection guard (2026-07-17): on 2026-07-02 a mass replay of ~30
+ * old daily zips flipped 51 correctly-Canceled rows back to active, because
+ * the upsert applied each zip's stale plan_state unconditionally. That single
+ * incident caused 43% of the subscriber-count drift found by the 7/17
+ * reconcile. The guard makes replays harmless: a Canceled row may only be
+ * resurrected by a source that is provably NEWER than the cancellation.
+ */
+export interface UpsertOptions {
+  /**
+   * When the source data was generated (Union export `created_at`).
+   * A Canceled row is only flipped back to an active state if this timestamp
+   * is strictly AFTER the row's latest cancel event. Omit/null = unknown
+   * provenance = never resurrect (the weekly full-export reconcile re-activates
+   * genuine resumes via allowResurrection).
+   */
+  sourceEffectiveAt?: string | null;
+  /**
+   * Bypass the guard entirely. ONLY for authoritative full-snapshot sources:
+   * the full-export reconcile and manual full-CSV uploads. Never set this for
+   * daily delta zips.
+   */
+  allowResurrection?: boolean;
+}
+
+/**
  * Save a batch of auto-renews using UPSERT (INSERT ... ON CONFLICT DO UPDATE).
  *
  * Dedup key: (customer_email, plan_name, created_at) — from migration 003.
@@ -93,19 +120,22 @@ export const AUTO_RENEW_WRITE_LOCK = 472900;
  */
 export async function saveAutoRenews(
   snapshotId: string,
-  rows: AutoRenewRow[]
-): Promise<{ inserted: number; updated: number }> {
+  rows: AutoRenewRow[],
+  opts: UpsertOptions = {},
+): Promise<{ inserted: number; updated: number; resurrectSkipped: number }> {
   const pool = getPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     // Serialize against a concurrent reconcile (Phase 0.5 concurrency control).
     await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
-    const res = await upsertAutoRenewRowsTx(client, snapshotId, rows);
+    const res = await upsertAutoRenewRowsTx(client, snapshotId, rows, opts);
     await client.query("COMMIT");
     console.log(
       `[auto-renew-store] Upserted ${rows.length} auto-renews (snapshot: ${snapshotId}, ` +
-        `${res.inserted} inserted, ${res.updated} updated)`,
+        `${res.inserted} inserted, ${res.updated} updated` +
+        (res.resurrectSkipped > 0 ? `, ${res.resurrectSkipped} resurrection-blocked` : "") +
+        `)`,
     );
     return res;
   } catch (e) {
@@ -126,9 +156,11 @@ export async function upsertAutoRenewRowsTx(
   client: PoolClient,
   snapshotId: string,
   rows: AutoRenewRow[],
-): Promise<{ inserted: number; updated: number }> {
+  opts: UpsertOptions = {},
+): Promise<{ inserted: number; updated: number; resurrectSkipped: number }> {
   let inserted = 0;
   let updated = 0;
+  let resurrectSkipped = 0;
 
     // Dedupe input rows by conflict key before writing.
     //
@@ -167,6 +199,60 @@ export async function upsertAutoRenewRowsTx(
     for (const row of dedupedRows) {
       // Skip rows without email — they can't be deduped
       if (!row.customerEmail) continue;
+
+      // ── Anti-resurrection guard ─────────────────────────────────────
+      // A row that is Canceled in the DB may only be flipped back to an
+      // active state by a source strictly newer than the cancellation.
+      // Mirrors the write path's match precedence: union_pass_id first,
+      // then the (email, plan_name, created_at) conflict key. When the
+      // guard blocks, the row is skipped ENTIRELY (no field updates, no
+      // imported_at bump) so a stale replay leaves no trace.
+      if (!opts.allowResurrection && ACTIVE_STATES.includes(row.planState)) {
+        const guardTarget = await (async () => {
+          const guardSql = (where: string) =>
+            `SELECT ar.id, ar.plan_state,
+                    (SELECT MAX(e.observed_at) FROM auto_renew_events e
+                      WHERE e.auto_renew_id = ar.id
+                        AND e.event_type IN ('churn','final_cancel','reconcile_churn','backfill_churn')
+                    ) AS last_cancel_at
+               FROM auto_renews ar
+              WHERE ${where}
+              LIMIT 1`;
+          if (row.unionPassId) {
+            const { rows: g } = await client.query(guardSql("ar.union_pass_id = $1"), [row.unionPassId]);
+            if (g.length > 0) return g[0];
+          }
+          const easternCreated = toEasternDate(row.createdAt);
+          if (easternCreated) {
+            const { rows: g } = await client.query(
+              guardSql("ar.customer_email = $1 AND ar.plan_name = $2 AND ar.created_at = $3"),
+              [row.customerEmail.toLowerCase(), row.planName, easternCreated],
+            );
+            if (g.length > 0) return g[0];
+          }
+          return null;
+        })();
+
+        if (guardTarget && guardTarget.plan_state === "Canceled") {
+          // No cancel event on record (ancient pre-event-log row) → allow,
+          // matching prior behavior. Otherwise require source > cancel time.
+          const lastCancelAt = guardTarget.last_cancel_at ? new Date(guardTarget.last_cancel_at).getTime() : null;
+          const sourceAt = opts.sourceEffectiveAt ? new Date(opts.sourceEffectiveAt).getTime() : NaN;
+          const blocked =
+            lastCancelAt !== null && (!Number.isFinite(sourceAt) || sourceAt <= lastCancelAt);
+          if (blocked) {
+            resurrectSkipped++;
+            if (resurrectSkipped <= 5) {
+              console.warn(
+                `[auto-renew-store] Resurrection blocked: email=${row.customerEmail} plan=${row.planName} ` +
+                  `pass_id=${row.unionPassId ?? "null"} incoming=${row.planState} ` +
+                  `source=${opts.sourceEffectiveAt ?? "unknown"} lastCancel=${guardTarget.last_cancel_at}`,
+              );
+            }
+            continue;
+          }
+        }
+      }
 
       // Per-row savepoint: a single row that violates idx_ar_dedup (e.g. an
       // UPDATE-by-union_pass_id step would shift this row's
@@ -285,6 +371,12 @@ export async function upsertAutoRenewRowsTx(
     if (skipped > 0) {
       console.warn(`[auto-renew-store] Skipped ${skipped}/${dedupedRows.length} rows due to per-row errors (others were saved)`);
     }
+    if (resurrectSkipped > 0) {
+      console.warn(
+        `[auto-renew-store] Resurrection guard blocked ${resurrectSkipped}/${dedupedRows.length} rows ` +
+          `(stale source tried to re-activate Canceled subscriptions; source=${opts.sourceEffectiveAt ?? "unknown"})`,
+      );
+    }
 
   // NOTE: we deliberately do NOT silently dedup active rows by order_id here.
   // Union's order_id is unique per subscription (verified: 2936/2936 distinct in
@@ -296,7 +388,7 @@ export async function upsertAutoRenewRowsTx(
   // (drift-check.ts dupActiveIdentities → alert) and corrected by the audited
   // full-export reconcile, never by a silent write in the hot path.
 
-  return { inserted, updated };
+  return { inserted, updated, resurrectSkipped };
 }
 
 const ACTIVE_STATE_SET = new Set<string>(ACTIVE_STATES);

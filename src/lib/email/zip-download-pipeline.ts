@@ -97,6 +97,13 @@ export interface ZipWebhookOptions {
   /** Date range the export covers — used to restrict revenue saves to only months within range.
    *  Without this, daily exports can overwrite complete historical revenue with partial data. */
   dataRange?: { start: string; end: string };
+  /**
+   * Union's `created_at` for this export. Feeds the anti-resurrection guard:
+   * a Canceled subscription may only be re-activated by an export generated
+   * AFTER the cancellation. Omitting it means this import can never resurrect
+   * a Canceled row (safe default for replays / unknown provenance).
+   */
+  sourceEffectiveAt?: string;
 }
 
 /**
@@ -260,7 +267,9 @@ export async function runZipDownloadPipeline(
   );
 
   // ── Phase 5: Run transform + save from extracted files ──
-  return runZipImport(fileMap, progress, startTime, latestEmail.id, gmail);
+  // The export email's send time is the best available "when was this data
+  // generated" signal for the anti-resurrection guard.
+  return runZipImport(fileMap, progress, startTime, latestEmail.id, gmail, undefined, latestEmail.date.toISOString());
 }
 
 // ── Local Pipeline (for testing) ────────────────────────────
@@ -359,7 +368,7 @@ export async function runZipWebhookPipeline(
   );
 
   // ── Run transform + save ────────────────────────────────
-  return runZipImport(fileMap, progress, startTime, undefined, undefined, options.dataRange);
+  return runZipImport(fileMap, progress, startTime, undefined, undefined, options.dataRange, options.sourceEffectiveAt);
 }
 
 // ── Shared Import Logic ─────────────────────────────────────
@@ -371,6 +380,7 @@ async function runZipImport(
   emailId?: string,
   gmail?: GmailClient,
   dataRange?: { start: string; end: string },
+  sourceEffectiveAt?: string,
 ): Promise<PipelineResult> {
   const allWarnings: string[] = [];
   const recordCounts: Record<string, number> = {};
@@ -499,10 +509,14 @@ async function runZipImport(
   const autoRenewRows = transformer.transformAutoRenews();
   if (autoRenewRows.length > 0) {
     const snapshotId = `zip-${Date.now()}`;
-    const result = await saveAutoRenews(snapshotId, autoRenewRows);
+    // sourceEffectiveAt (the export's generation time) drives the
+    // anti-resurrection guard: replayed old zips cannot flip Canceled rows
+    // back to active. Absent (manual/local imports) = never resurrect.
+    const result = await saveAutoRenews(snapshotId, autoRenewRows, { sourceEffectiveAt });
     recordCounts.autoRenews = autoRenewRows.length;
     console.log(
-      `[zip-pipeline] Auto-renews saved: ${result.inserted} new, ${result.updated} updated`
+      `[zip-pipeline] Auto-renews saved: ${result.inserted} new, ${result.updated} updated` +
+        (result.resurrectSkipped > 0 ? `, ${result.resurrectSkipped} resurrection-blocked` : "")
     );
 
     // NOTE: Reconciliation is NOT run here. Daily zip exports contain only
