@@ -25,7 +25,7 @@
     "googleapis": "^171.4.0",
     "lucide-react": "^0.575.0",
     "marked": "^17.0.3",
-    "next": "^15.3.3",
+    "next": "15.5.12",
     "papaparse": "^5.5.2",
     "pg": "^8.18.0",
     "playwright": "1.58.2",
