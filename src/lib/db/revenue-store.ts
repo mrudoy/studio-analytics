@@ -1,4 +1,5 @@
 import { getPool } from "./database";
+import { BILLING_STATES_SQL } from "../analytics/metrics/filters";
 import type { RevenueCategory } from "@/types/union-data";
 
 export async function saveRevenueCategories(
@@ -336,33 +337,36 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
 }
 
 /**
- * Get per-month subscription MRR (Member + Sky3 + Sky Ting TV).
+ * Get the subscription billing RUN-RATE (Member + Sky3 + Sky Ting TV) for the
+ * CURRENT and PREVIOUS calendar month — the only two the dashboard card shows.
  *
- * Reconstructed from auto_renews: for each calendar month, sum the monthly
- * rate of every subscriber who was active during that month. Monthly rate =
- * plan_price for monthly plans, plan_price/12 for annual plans.
+ * This is a reconstruction from the CURRENT auto_renews snapshot, so it can only
+ * speak to the run-rate as of now / recently — plan_state and current_state are
+ * current values, not history. We deliberately return just these two months
+ * rather than a deep series that would silently misstate older months (a row
+ * soft-deactivated today was NOT necessarily inactive a year ago).
  *
- * A subscriber is counted for month M if:
- *   created_at <= last day of M
- *   AND (plan_state != 'Canceled' OR canceled_at > first day of M)
+ * A subscription contributes its monthly rate (plan_price, or plan_price/12 for
+ * annual plans) to month M when it was created on/before the end of M AND was
+ * in a billing state at the END of M, approximated as:
+ *   (a) currently billing — plan_state ∈ BILLING_STATES and not soft-deactivated
+ *       (current_state active); OR
+ *   (b) since Canceled, but canceled_at falls after the end of M (so it was
+ *       still active at M's close). The current_state filter is NOT applied to
+ *       this branch — a Canceled row's current_state is 'canceled' by design,
+ *       and gating on it would drop exactly the rows this branch exists to keep.
  *
- * We cannot use canceled_at for non-Canceled rows because Union sets it to the
- * next renewal date on active subscriptions — so we only apply it as an end
- * fence when plan_state IS 'Canceled'.
- *
- * Note: Union's daily delta exports contain only new subscription orders, not
- * recurring renewal charges, so the orders table cannot be used for this metric.
+ * Using BILLING_STATES (Valid Now + Pending Cancel), per the canonical MRR rule
+ * in CLAUDE.md, makes the current month equal getAutoRenewStats() MRR exactly —
+ * Paused / In Trial / Invalid / Past Due are not being billed and are excluded.
  */
 export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gross: number; net: number }>> {
   const pool = getPool();
   const { rows } = await pool.query(`
     WITH months AS (
-      SELECT DATE_TRUNC('month', gs)::date AS month_start
-      FROM generate_series(
-        (SELECT DATE_TRUNC('month', MIN(created_at)) FROM auto_renews WHERE created_at > '2020-01-01'),
-        DATE_TRUNC('month', CURRENT_DATE),
-        '1 month'::interval
-      ) gs
+      SELECT DATE_TRUNC('month', CURRENT_DATE)::date AS month_start
+      UNION ALL
+      SELECT (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date
     )
     SELECT
       TO_CHAR(m.month_start, 'YYYY-MM') AS month,
@@ -381,8 +385,14 @@ export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gro
     FROM months m
     JOIN auto_renews ar ON
       ar.created_at <= (m.month_start + INTERVAL '1 month' - INTERVAL '1 day')
-      AND (ar.plan_state != 'Canceled' OR ar.canceled_at > m.month_start)
-      AND (ar.current_state IS NULL OR ar.current_state = 'active')
+      AND (
+        -- (a) currently billing (== canonical MRR set)
+        (ar.plan_state IN (${BILLING_STATES_SQL})
+         AND (ar.current_state IS NULL OR ar.current_state = 'active'))
+        -- (b) since Canceled, but was still active at the END of month M
+        OR (ar.plan_state = 'Canceled'
+            AND ar.canceled_at > (m.month_start + INTERVAL '1 month' - INTERVAL '1 day'))
+      )
       AND ar.plan_category IN ('MEMBER', 'SKY3', 'SKY_TING_TV')
     GROUP BY m.month_start
     ORDER BY m.month_start

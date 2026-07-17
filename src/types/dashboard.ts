@@ -81,10 +81,9 @@ export interface DashboardStats {
   };
   subscriptionBilling?: {
     currentMonth: string;         // YYYY-MM
-    currentMonthActual: number;   // Subscription billing collected so far this month
-    currentMonthProjected: number; // Full-month projection (curve-based)
+    currentMonthActual: number;   // Current-month subscription billing run-rate (== canonical MRR)
     lastMonth: string;            // YYYY-MM
-    lastMonthTotal: number;       // Full-month subscription billing for the prior month
+    lastMonthTotal: number;       // Prior-month subscription billing run-rate
   };
   activeSubscribers: {
     member: number;

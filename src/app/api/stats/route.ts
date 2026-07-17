@@ -219,7 +219,6 @@ export async function GET(request: Request) {
       stats.subscriptionBilling = {
         currentMonth: currentMonthKey,
         currentMonthActual: currentActual,
-        currentMonthProjected: currentActual,
         lastMonth: prevMonthKey,
         lastMonthTotal: Math.round((lastSubBilling?.gross ?? 0) * 100) / 100,
       };
