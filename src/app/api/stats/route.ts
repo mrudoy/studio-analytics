@@ -497,6 +497,14 @@ export async function GET(request: Request) {
           ? Math.round((mv.sky3.canceled / mv.sky3.activeAtStart) * 1000) / 10 : 0;
         tw.skyTingTvChurnPct = mv.skyTingTv.activeAtStart > 0
           ? Math.round((mv.skyTingTv.canceled / mv.skyTingTv.activeAtStart) * 1000) / 10 : 0;
+        // Churn revenue-lost from the canonical (event-based) movement source too,
+        // so the "-$Y lost" figure matches the churn COUNTS above (same rows, same
+        // cancellation definition). Weekly member uses the monthly-billed subset to
+        // match memberChurn. Previously revenueLost fell through from the legacy
+        // getCanceledAutoRenews path (canceled_at + plan_state='Canceled'), which
+        // misses Pending Cancel and mistimes the churn — inconsistent with the count.
+        tw.revenueLost = (mv.member.monthlyCanceledMrr ?? mv.member.canceledMrr)
+          + mv.sky3.canceledMrr + mv.skyTingTv.canceledMrr;
       }
       const movementMonthlyByPeriod = new Map(movementResult.monthly.map((m) => [m.period, m]));
       for (const tm of trends.monthly) {
@@ -508,6 +516,9 @@ export async function GET(request: Request) {
         tm.newMembers = mv.member.new;
         tm.newSky3 = mv.sky3.new;
         tm.newSkyTingTv = mv.skyTingTv.new;
+        // Monthly churn revenue-lost from canonical movement (full member set, to
+        // match the monthly memberChurn count above). See weekly note.
+        tm.revenueLost = mv.member.canceledMrr + mv.sky3.canceledMrr + mv.skyTingTv.canceledMrr;
       }
 
       // Also override churnRates.byCategory[*].monthly[*] — that's what the
