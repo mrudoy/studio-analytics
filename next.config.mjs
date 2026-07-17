@@ -1,6 +1,11 @@
-import type { NextConfig } from "next";
+// Plain ESM config (not next.config.ts) so `next start` never needs the
+// `typescript` package at RUNTIME to transpile it. Next 15.5.x transpiles a
+// .ts config at boot; when `npm prune --omit=dev` stripped typescript from the
+// runtime image, every route 502'd (see the 2026-07-17 outage). A .mjs config
+// removes that runtime dependency entirely.
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   serverExternalPackages: [
     "playwright",
     "playwright-extra",
@@ -36,7 +41,7 @@ const nextConfig: NextConfig = {
         "buffer", "assert", "process", "stream/web", "perf_hooks",
         "worker_threads", "v8", "async_hooks", "diagnostics_channel",
       ];
-      const externalsMap: Record<string, string> = {};
+      const externalsMap = {};
       for (const mod of builtins) {
         externalsMap[mod] = `commonjs ${mod}`;
         externalsMap[`node:${mod}`] = `commonjs ${mod}`;
@@ -46,8 +51,8 @@ const nextConfig: NextConfig = {
       // Ignore optional native modules that aren't installed
       config.resolve = config.resolve || {};
       config.resolve.alias = config.resolve.alias || {};
-      (config.resolve.alias as Record<string, boolean>)["pg-native"] = false;
-      (config.resolve.alias as Record<string, boolean>)["@react-email/render"] = false;
+      config.resolve.alias["pg-native"] = false;
+      config.resolve.alias["@react-email/render"] = false;
     }
     return config;
   },
