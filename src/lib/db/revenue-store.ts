@@ -359,14 +359,23 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
  * Using BILLING_STATES (Valid Now + Pending Cancel), per the canonical MRR rule
  * in CLAUDE.md, makes the current month equal getAutoRenewStats() MRR exactly —
  * Paused / In Trial / Invalid / Past Due are not being billed and are excluded.
+ * We deliberately do NOT filter by plan_category: MRR (getAutoRenewStats) sums
+ * ALL billing rows including its `unknown` bucket, and categorizes at read time
+ * via getCategory(plan_name), NOT the persisted plan_category column (which can
+ * lag a getCategory change or backfill). Summing every billing row keeps this
+ * equal to MRR total by construction, regardless of categorization drift.
+ *
+ * Months are anchored to America/New_York (created_at / canceled_at are ET
+ * calendar dates — see eastern-date.ts), so the current/previous split doesn't
+ * flip a few hours early on a UTC server at ET month-end.
  */
 export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gross: number; net: number }>> {
   const pool = getPool();
   const { rows } = await pool.query(`
     WITH months AS (
-      SELECT DATE_TRUNC('month', CURRENT_DATE)::date AS month_start
+      SELECT DATE_TRUNC('month', (now() AT TIME ZONE 'America/New_York'))::date AS month_start
       UNION ALL
-      SELECT (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date
+      SELECT (DATE_TRUNC('month', (now() AT TIME ZONE 'America/New_York')) - INTERVAL '1 month')::date
     )
     SELECT
       TO_CHAR(m.month_start, 'YYYY-MM') AS month,
@@ -393,7 +402,6 @@ export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gro
         OR (ar.plan_state = 'Canceled'
             AND ar.canceled_at > (m.month_start + INTERVAL '1 month' - INTERVAL '1 day'))
       )
-      AND ar.plan_category IN ('MEMBER', 'SKY3', 'SKY_TING_TV')
     GROUP BY m.month_start
     ORDER BY m.month_start
   `);

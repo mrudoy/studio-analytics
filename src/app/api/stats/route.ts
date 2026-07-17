@@ -213,14 +213,19 @@ export async function GET(request: Request) {
 
       // Subscription run-rate: current and previous month from auto_renews (not orders).
       // Both values are full-month run-rates, not partial cash — no pacing applied.
-      const currentSubBilling = subBillingByMonth.get(currentMonthKey);
-      const lastSubBilling = subBillingByMonth.get(prevMonthKey);
-      const currentActual = Math.round((currentSubBilling?.gross ?? 0) * 100) / 100;
+      // Read the month keys FROM getMonthlySubscriptionBilling's own result (it
+      // returns exactly [previous, current], anchored to America/New_York) rather
+      // than recomputing here in UTC — otherwise a UTC-vs-ET month-boundary skew
+      // could look up a key the map doesn't contain and zero the card.
+      const subKeys = [...subBillingByMonth.keys()].sort();
+      const subCurrentKey = subKeys[subKeys.length - 1] ?? currentMonthKey;
+      const subPrevKey = subKeys.length > 1 ? subKeys[subKeys.length - 2] : prevMonthKey;
+      const currentActual = Math.round((subBillingByMonth.get(subCurrentKey)?.gross ?? 0) * 100) / 100;
       stats.subscriptionBilling = {
-        currentMonth: currentMonthKey,
+        currentMonth: subCurrentKey,
         currentMonthActual: currentActual,
-        lastMonth: prevMonthKey,
-        lastMonthTotal: Math.round((lastSubBilling?.gross ?? 0) * 100) / 100,
+        lastMonth: subPrevKey,
+        lastMonthTotal: Math.round((subBillingByMonth.get(subPrevKey)?.gross ?? 0) * 100) / 100,
       };
     }
 
