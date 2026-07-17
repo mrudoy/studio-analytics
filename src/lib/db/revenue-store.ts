@@ -383,13 +383,16 @@ export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gro
         -- Annual plans store the full yearly price → divide by 12 for the
         -- monthly run-rate. This mirrors isAnnualPlan() in categories.ts;
         -- auto_renews has no persisted is_annual column, so match on plan_name.
-        CASE WHEN (
+        -- Round EACH row's monthly rate to cents BEFORE summing, exactly as
+        -- mapRow() does (Math.round(price/12 * 100)/100), so this total equals
+        -- getAutoRenewStats() MRR to the penny rather than off by rounding drift.
+        ROUND((CASE WHEN (
           UPPER(ar.plan_name) LIKE '%ANNUAL%'
           OR UPPER(ar.plan_name) LIKE '%YEARLY%'
           OR UPPER(ar.plan_name) LIKE '%12 MONTH%'
           OR UPPER(ar.plan_name) LIKE '%12-MONTH%'
           OR UPPER(ar.plan_name) LIKE '%12M %'
-        ) THEN ar.plan_price / 12.0 ELSE ar.plan_price END
+        ) THEN ar.plan_price / 12.0 ELSE ar.plan_price END)::numeric, 2)
       )::numeric, 2) AS gross
     -- LEFT JOIN so BOTH months always appear (SUM→NULL→0 for an empty month);
     -- an INNER JOIN would drop a month with no billing rows and let the caller
