@@ -1,7 +1,7 @@
 import type { PoolClient } from "pg";
 import { getPool } from "./database";
 import { toEasternDate } from "./eastern-date";
-import { getCategory, isAnnualPlan } from "../analytics/categories";
+import { getCategory, isAnnualPlan, isNonSubscriptionPlan } from "../analytics/categories";
 import { BILLING_STATES, ACTIVE_STATES, ACTIVE_STATES_SQL } from "../analytics/metrics/filters";
 import type { AutoRenewCategory } from "@/types/union-data";
 import type { ShadowCancel } from "../email/zip-transformer";
@@ -1185,6 +1185,12 @@ export async function getActiveCounts(): Promise<ActiveCounts> {
 
   for (const ar of active) {
     if (!ar.customerEmail) continue;
+    // Teacher-training / retreat / mentorship installment plans recur in
+    // Union but are NOT studio-access subscriptions — never count them as
+    // active subscribers (would inflate `total`, `unknown`, and ARPU's
+    // denominator). They stay out of the UNKNOWN bucket so drift-check's
+    // rename tripwire only fires on genuinely unrecognized plan names.
+    if (isNonSubscriptionPlan(ar.planName)) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
@@ -1228,6 +1234,10 @@ export async function getAutoRenewStats(): Promise<AutoRenewStats | null> {
 
   for (const ar of active) {
     if (!BILLING_SET.has(ar.planState)) continue;
+    // Exclude non-membership installment plans (teacher training, retreats,
+    // mentorships) — their installment billing is not subscription MRR and
+    // must not skew total MRR or overall ARPU. Mirrors getActiveCounts().
+    if (isNonSubscriptionPlan(ar.planName)) continue;
     const key = ar.category === "MEMBER" ? "member"
       : ar.category === "SKY3" ? "sky3"
       : ar.category === "SKY_TING_TV" ? "skyTingTv"
