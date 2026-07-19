@@ -144,10 +144,17 @@ export function isNonSubscriptionPlan(planName: string): boolean {
  *
  * `\y` is Postgres's word-boundary escape (the POSIX equivalent of JS `\b`).
  *
+ * NULL-safe by construction: `auto_renews.plan_name` has no NOT NULL
+ * constraint, and callers use this under `AND NOT (...)`, where a NULL would
+ * make the whole predicate NULL and silently drop the row from the result
+ * (three-valued logic) rather than merely failing to exclude it. COALESCE to
+ * '' so a NULL plan name is treated as "not a non-subscription plan" — it
+ * stays counted, preserving the prior behaviour of summing every billing row.
+ *
  * @param col SQL expression for the plan-name column (e.g. `ar.plan_name`).
  */
 export function nonSubscriptionPlanSql(col: string): string {
-  const upper = `UPPER(TRIM(${col}))`;
+  const upper = `COALESCE(UPPER(TRIM(${col})), '')`;
   return `(${upper} LIKE '%PAYMENT PLAN%'
      OR ${upper} LIKE '%TEACHER TRAINING%'
      OR ${upper} LIKE '%MENTORSHIP%'
