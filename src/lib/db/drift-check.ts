@@ -170,7 +170,10 @@ export async function runDriftCheck(
 
   // Active counts via the canonical dashboard function (runtime getCategory),
   // so drift-check sees exactly what the dashboard shows — including the
-  // UNKNOWN bucket, which is the rename tripwire below.
+  // UNKNOWN bucket, which is the rename tripwire below. getActiveCounts()
+  // already drops known non-membership installment plans (teacher training,
+  // retreats, mentorships) via isNonSubscriptionPlan(), so counts.unknown
+  // fires only on a genuinely unrecognized plan name (a real Union rename).
   const counts = await getActiveCounts();
   const activeMember = counts.member;
   const activeSky3 = counts.sky3;

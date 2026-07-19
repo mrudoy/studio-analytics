@@ -99,6 +99,41 @@ export function getCategory(planName: string): AutoRenewCategory {
 }
 
 /**
+ * Detect whether an auto-renew is a NON-membership installment plan — a
+ * teacher-training, retreat, or mentorship course paid off in scheduled
+ * installments. Union models these as `auto_renews` rows (they recur until
+ * paid off), but they are NOT studio-access subscriptions: they must never
+ * count toward Member / Sky3 / TV active-subscriber counts, MRR, or ARPU.
+ *
+ * These plans categorize to UNKNOWN via getCategory() (they match no
+ * membership keyword), so every existing MEMBER/SKY3/TV rollup already
+ * ignores them. This predicate exists so the two places where the UNKNOWN
+ * bucket leaks into a headline number — getActiveCounts() (active total) and
+ * the getAutoRenewStats() MRR loop — can drop them explicitly, and so a
+ * legitimately-excluded course installment does NOT trip drift-check's
+ * "UNKNOWN active plan = a Union rename we haven't seen" tripwire. A genuine
+ * unrecognized rename still lands in UNKNOWN and still fires the alert.
+ *
+ * Signals seen in the data (all non-memberships): "TT 4 MONTH PAYMENT PLAN",
+ * "6M Payment Plan TT", "TT $700/month", "Mentorship Payment Plan",
+ * "GREECE 2026 3 PAYMENT PLAN", "Early Bird 3 Month Payment Plan".
+ * No Member/Sky3/TV plan name contains "PAYMENT PLAN", a standalone "TT",
+ * "TEACHER TRAINING", or "MENTORSHIP", so the match cannot swallow a real
+ * membership (verified against every active row on 2026-07-19).
+ */
+export function isNonSubscriptionPlan(planName: string): boolean {
+  const upper = planName.trim().toUpperCase();
+  return (
+    upper.includes("PAYMENT PLAN") ||
+    upper.includes("TEACHER TRAINING") ||
+    upper.includes("MENTORSHIP") ||
+    // Standalone "TT" = teacher training (e.g. "TT $700/month", "KODY TT 2.0").
+    // Word-boundary so it never matches inside another token.
+    /\bTT\b/.test(upper)
+  );
+}
+
+/**
  * Detect whether an auto-renew plan bills annually (vs monthly).
  * Annual plans store the full yearly price, so MRR = price / 12.
  *
