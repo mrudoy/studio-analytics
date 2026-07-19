@@ -134,6 +134,27 @@ export function isNonSubscriptionPlan(planName: string): boolean {
 }
 
 /**
+ * SQL twin of isNonSubscriptionPlan(), for queries that must agree with the
+ * TypeScript path to the penny — notably getMonthlySubscriptionBilling(),
+ * which is documented as equalling getAutoRenewStats() MRR exactly. If these
+ * two definitions drift apart, the MRR headline and the subscription
+ * run-rate footer silently disagree, which is exactly the class of bug the
+ * METRIC SOURCES rule in CLAUDE.md exists to prevent. Change both together —
+ * categories.test.ts asserts they classify every plan name identically.
+ *
+ * `\y` is Postgres's word-boundary escape (the POSIX equivalent of JS `\b`).
+ *
+ * @param col SQL expression for the plan-name column (e.g. `ar.plan_name`).
+ */
+export function nonSubscriptionPlanSql(col: string): string {
+  const upper = `UPPER(TRIM(${col}))`;
+  return `(${upper} LIKE '%PAYMENT PLAN%'
+     OR ${upper} LIKE '%TEACHER TRAINING%'
+     OR ${upper} LIKE '%MENTORSHIP%'
+     OR ${upper} ~ '\\yTT\\y')`;
+}
+
+/**
  * Detect whether an auto-renew plan bills annually (vs monthly).
  * Annual plans store the full yearly price, so MRR = price / 12.
  *

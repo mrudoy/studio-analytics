@@ -1,5 +1,6 @@
 import { getPool } from "./database";
 import { BILLING_STATES_SQL } from "../analytics/metrics/filters";
+import { nonSubscriptionPlanSql } from "../analytics/categories";
 import type { RevenueCategory } from "@/types/union-data";
 
 export async function saveRevenueCategories(
@@ -365,6 +366,13 @@ export async function getMonthlyRetreatRevenue(): Promise<Map<string, { gross: n
  * lag a getCategory change or backfill). Summing every billing row keeps this
  * equal to MRR total by construction, regardless of categorization drift.
  *
+ * The ONE exception is non-membership installment plans (teacher training,
+ * retreats, mentorships): getAutoRenewStats() skips them via
+ * isNonSubscriptionPlan(), so this query must skip them too — via the SQL twin
+ * nonSubscriptionPlanSql() — or the two numbers disagree by those rows'
+ * installment price and the MRR card's headline and run-rate footer contradict
+ * each other. Keep the two predicates in sync.
+ *
  * Months are anchored to America/New_York (created_at / canceled_at are ET
  * calendar dates — see eastern-date.ts), so the current/previous split doesn't
  * flip a few hours early on a UTC server at ET month-end.
@@ -414,6 +422,10 @@ export async function getMonthlySubscriptionBilling(): Promise<Map<string, { gro
             AND ar.canceled_at > (m.month_start + INTERVAL '1 month' - INTERVAL '1 day')
             AND ar.canceled_at <= (now() AT TIME ZONE 'America/New_York')::date)
       )
+      -- Course installment plans are not subscription billing. Mirrors the
+      -- isNonSubscriptionPlan() skip in getAutoRenewStats()'s MRR loop; without
+      -- it this total exceeds canonical MRR by those rows' installment price.
+      AND NOT ${nonSubscriptionPlanSql("ar.plan_name")}
     GROUP BY m.month_start
     ORDER BY m.month_start
   `);

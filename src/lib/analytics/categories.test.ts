@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { getCategory, isNonSubscriptionPlan } from "./categories";
+import { getCategory, isNonSubscriptionPlan, nonSubscriptionPlanSql } from "./categories";
 
-describe("isNonSubscriptionPlan", () => {
-  // Every non-membership installment plan seen in 26 months of Union data.
-  const NON_SUB_PLANS = [
+// Every non-membership installment plan seen in 26 months of Union data.
+const NON_SUB_PLANS = [
     "TT 4 MONTH PAYMENT PLAN",
     "TT 5 MONTH PAYMENT PLAN",
     "6M Payment Plan TT",
@@ -19,31 +18,32 @@ describe("isNonSubscriptionPlan", () => {
     "Early Bird 3 Month Payment Plan",
     "EARLY BIRD 6 MONTH PAYMENT PLAN",
     "GREECE 2026 2 PAYMENT PLAN",
-    "GREECE 2026 3 PAYMENT PLAN",
-  ];
+  "GREECE 2026 3 PAYMENT PLAN",
+];
 
+// Real memberships must NEVER be flagged — that would drop live subscribers.
+const MEMBERSHIPS = [
+  "SKY UNLIMITED",
+  "SKY UNLIMITED ANNUAL",
+  "ALL ACCESS MONTHLY",
+  "SKY TING Monthly Membership",
+  "TING FAM",
+  "SKY3",
+  "SKYHIGH3",
+  "SKY5",
+  "5 Pack",
+  "SKY TING TV",
+  "SKY TING TV ANNUAL",
+  "FABxSKYTING",
+  "FRIENDS OF SKY TING TV",
+];
+
+describe("isNonSubscriptionPlan", () => {
   for (const plan of NON_SUB_PLANS) {
     it(`flags "${plan}" as a non-subscription installment plan`, () => {
       expect(isNonSubscriptionPlan(plan)).toBe(true);
     });
   }
-
-  // Real memberships must NEVER be flagged — that would drop live subscribers.
-  const MEMBERSHIPS = [
-    "SKY UNLIMITED",
-    "SKY UNLIMITED ANNUAL",
-    "ALL ACCESS MONTHLY",
-    "SKY TING Monthly Membership",
-    "TING FAM",
-    "SKY3",
-    "SKYHIGH3",
-    "SKY5",
-    "5 Pack",
-    "SKY TING TV",
-    "SKY TING TV ANNUAL",
-    "FABxSKYTING",
-    "FRIENDS OF SKY TING TV",
-  ];
 
   for (const plan of MEMBERSHIPS) {
     it(`does NOT flag membership "${plan}"`, () => {
@@ -67,5 +67,46 @@ describe("isNonSubscriptionPlan", () => {
     for (const plan of NON_SUB_PLANS) {
       expect(getCategory(plan)).toBe("UNKNOWN");
     }
+  });
+});
+
+describe("nonSubscriptionPlanSql (SQL twin of isNonSubscriptionPlan)", () => {
+  // getMonthlySubscriptionBilling() must equal getAutoRenewStats() MRR to the
+  // penny, so the SQL predicate and the TS predicate must classify identically.
+  // This emulates the Postgres semantics of the generated SQL in JS: UPPER(TRIM(x))
+  // then the same four branches (\y is Postgres's \b).
+  function evalSql(planName: string): boolean {
+    const sql = nonSubscriptionPlanSql("plan_name");
+    const upper = planName.trim().toUpperCase();
+    const likes = [...sql.matchAll(/LIKE '%([^%]+)%'/g)].map((m) => m[1]);
+    // Postgres `\y` word boundary → JS `\b`. The SQL string holds a literal
+    // backslash-y, so match a literal backslash here.
+    const regexes = [...sql.matchAll(/~ '\\y([A-Z]+)\\y'/g)].map((m) => m[1]);
+    // Guard: if the SQL shape changes so neither branch parses, fail loudly
+    // rather than silently passing every case.
+    expect(likes.length).toBeGreaterThan(0);
+    expect(regexes.length).toBeGreaterThan(0);
+    return (
+      likes.some((l) => upper.includes(l)) ||
+      regexes.some((r) => new RegExp(`\\b${r}\\b`).test(upper))
+    );
+  }
+
+  const ALL_CASES = [
+    ...NON_SUB_PLANS,
+    ...MEMBERSHIPS,
+    "SETTLE UNLIMITED",
+    "SHUTTLE PASS",
+    "  tt 4 month payment plan  ",
+  ];
+
+  for (const plan of ALL_CASES) {
+    it(`agrees with the TS predicate for "${plan}"`, () => {
+      expect(evalSql(plan)).toBe(isNonSubscriptionPlan(plan));
+    });
+  }
+
+  it("references the column expression it is given", () => {
+    expect(nonSubscriptionPlanSql("ar.plan_name")).toContain("ar.plan_name");
   });
 });
