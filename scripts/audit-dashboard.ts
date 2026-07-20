@@ -149,6 +149,11 @@ function requirePayload(stats: Record<string, any>): void {
       str(m?.period, `movement.monthly[${i}].period`);
       for (const k of ["member", "sky3", "skyTingTv"]) {
         if (!m?.[k]) { bad.push(`movement.monthly[${i}].${k}`); continue; }
+        // `new` is read by the zero-signup anchor and MUST be validated here:
+        // an absent field makes `m[k].new === 0` false, so the anchor would
+        // silently PASS on degraded movement data instead of reporting
+        // UNAVAILABLE — a fail-open in the exact check meant to catch it.
+        num(m[k].new, `movement.monthly[${i}].${k}.new`);
         num(m[k].canceled, `movement.monthly[${i}].${k}.canceled`);
         num(m[k].activeAtStart, `movement.monthly[${i}].${k}.activeAtStart`);
       }
