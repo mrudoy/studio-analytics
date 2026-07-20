@@ -469,55 +469,25 @@ async function main() {
     independent: "movement.new ≤ auto_renews created in the same window",
   });
 
-  // ── 9. A category's whole signup series never collapses to zero ──
-  // Signup-side counterpart to the zero-churn anchor, but deliberately NOT the
-  // same "any single month is 0" shape. A single zero month is legitimate: Sky3
-  // recorded 0 new signups for the 16 consecutive months before it launched
-  // (2024-01..2025-04), and a product being wound down does the same on the way
-  // out. Asserting per-month would fire on both.
-  //
-  // What is NOT legitimate is the entire completed series reading zero WHILE THE
-  // DATABASE ACTUALLY HAS signup rows for that category in those months. That
-  // gap — rows exist, the metric renders zero — is the filter-break signature
-  // ('%INTRO WEEK%' rebrand class), and it cannot be explained by the business.
-  //
-  // The DB leg is what makes this safe. Judging from the payload alone cannot
-  // distinguish a broken filter from a category closed to new sales for the
-  // whole lookback (a long wind-down leaves activeAtStart populated and new at
-  // zero legitimately). Asking the database settles it: no rows means it really
-  // did sell nothing, which is a business fact, not a bug.
-  // Excludes the trailing partial month and 2025-10 (bulk admin cleanup).
+  // NOTE: a signup-side "collapse to zero" anchor was attempted here and pulled
+  // before merge. Every formulation had a false-positive path, because from
+  // outside the function a broken filter and a legitimate business lull render
+  // identically:
+  //   • per-month `new === 0`  → fires on a pre-launch or wind-down month (Sky3
+  //     genuinely recorded 0 new signups for the 16 months before it launched).
+  //   • whole-series zero      → fires on a category closed to new sales for the
+  //     entire lookback.
+  //   • whole-series zero + "but the DB has rows" → fires when the only rows are
+  //     cross-category plan changers, which getSubscriberMovement deliberately
+  //     excludes from `new` but a raw created_at query counts.
+  // Separating those needs the email-scoped plan-changer set, i.e. the very
+  // logic under test — an anchor that re-implements the function would mirror
+  // its bugs instead of catching them. Left unguarded on purpose rather than
+  // shipping a check that cries wolf; see the follow-up for doing it inside
+  // subscriber-movement, where the changer set is already in scope.
   const monthlyMv = stats.movement.monthly as any[];
-  const completedMv = monthlyMv.slice(0, -1).filter((m) => m.period !== "2025-10");
-  const collapsed: string[] = [];
-  for (const k of ["member", "sky3", "skyTingTv"] as const) {
-    // Only meaningful for a category that still has subscribers to sign up for.
-    const live = completedMv.filter((m) => m[k].activeAtStart > 0);
-    if (!live.length || !live.every((m) => m[k].new === 0)) continue;
-    // Payload says zero everywhere. Ask the DB whether rows actually exist.
-    // Range is [first live month, start of the month AFTER the last) so the
-    // final month is included; Postgres does the month arithmetic.
-    const { rows: dbRows } = await pool.query<{ plan_name: string }>(
-      `SELECT plan_name FROM auto_renews
-       WHERE created_at >= ($1 || '-01')::date
-         AND created_at <  (($2 || '-01')::date + INTERVAL '1 month')`,
-      [live[0].period, live[live.length - 1].period],
-    );
-    const dbCount = dbRows.filter((r) => (CAT_KEY[getCategory(r.plan_name)] ?? "unknown") === k).length;
-    if (dbCount > 0) {
-      collapsed.push(`${k}: movement reports 0 new across all ${live.length} completed months, but the DB has ${dbCount} rows created in that span`);
-    }
-  }
-  checks.push({
-    // Vacuous only if the payload has no completed months at all, which
-    // requirePayload already rejects as UNAVAILABLE.
-    name: "movement.signupSeriesNotCollapsed",
-    ok: collapsed.length === 0,
-    dashboard: collapsed.length ? collapsed : `${completedMv.length} completed months, no category fully zeroed`,
-    independent: "a live category cannot have zero new signups in every completed month",
-  });
 
-  // ── 10. trends.* churn equals the movement source it is copied from ──
+  // ── 9. trends.* churn equals the movement source it is copied from ──
   // CLAUDE.md: trends.churnRates is OVERWRITTEN from the canonical movement
   // result at API assembly (route.ts), so the two surfaces must be identical by
   // construction. Any divergence means the override silently stopped applying
