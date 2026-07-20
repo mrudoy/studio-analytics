@@ -469,23 +469,35 @@ async function main() {
   // right way to be wrong here: the audit runs nightly, a genuine defect is
   // persistent, and the next clean run catches it — whereas a false alarm
   // teaches everyone to ignore the auditor, taking the other anchors with it.
-  const { rows: churnedRows } = await pool.query<{ n: string }>(
-    `SELECT COUNT(*)::text n FROM auto_renews WHERE imported_at > $1::timestamptz`,
-    [watermarkBefore],
-  );
-  const raceBudget = watermarkBefore ? Number(churnedRows[0]?.n ?? 0) : 0;
-
-  const overCounted: string[] = [];
+  // Measure first, then price the budget. Sampling it before these reads would
+  // miss a write landing between the sample and rawCreatedByCat — the budget
+  // must span the whole interval it is meant to excuse, from the pre-render
+  // watermark through the last raw read.
+  const candidates: { label: string; excess: number }[] = [];
   for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
     const b = stats.movement.byWindow[w];
     const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
     for (const k of ["member", "sky3", "skyTingTv"] as const) {
       const excess = b[k].new - rawByCat[k];
-      if (excess > raceBudget) {
-        overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]} (excess ${excess} > race budget ${raceBudget})`);
-      }
+      if (excess > 0) candidates.push({ label: `${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`, excess });
     }
   }
+
+  // Empty string means the table had no rows at all when the watermark was
+  // taken (MAX over zero rows is NULL), so nothing can have been written
+  // "since" it and the budget is 0. Skip the query rather than let ''::timestamptz
+  // raise — a first-ever run must not die here.
+  let raceBudget = 0;
+  if (candidates.length && watermarkBefore) {
+    const { rows: writtenRows } = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::text n FROM auto_renews WHERE imported_at > $1::timestamptz`,
+      [watermarkBefore],
+    );
+    raceBudget = Number(writtenRows[0]?.n ?? 0);
+  }
+  const overCounted = candidates
+    .filter((c) => c.excess > raceBudget)
+    .map((c) => `${c.label} (excess ${c.excess} > race budget ${raceBudget})`);
   checks.push({
     name: "movement.newSignups<=rowsCreated",
     ok: overCounted.length === 0,
