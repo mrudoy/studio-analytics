@@ -452,45 +452,46 @@ async function main() {
   // imported_at, and can change created_at or plan_name, dropping the raw count
   // below a movement figure that was CORRECT when rendered.
   //
-  // Two failure modes pull in opposite directions and BOTH matter: reporting
-  // that race as a data bug is a false positive, but suppressing on any write
-  // would mask a genuine overcount whenever the pipeline happens to run — a
-  // real defect silently downgraded to "couldn't check". So neither guess:
-  // when a breach coincides with a write, re-render and re-measure. A breach
-  // that survives a fresh /api/stats AND a fresh DB read describes one
-  // consistent instant and is real; one that evaporates was the race.
-  const measureBreaches = async (s: Record<string, any>): Promise<string[]> => {
-    const found: string[] = [];
-    for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
-      const b = s.movement.byWindow[w];
-      const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
-      for (const k of ["member", "sky3", "skyTingTv"] as const) {
-        if (b[k].new > rawByCat[k]) found.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+  // The two sides are read at different instants and cannot be made atomic, so
+  // successive attempts to eliminate the race (re-read, suppress-on-write,
+  // re-render) each only relocated its window. Tolerate it by construction
+  // instead: every row the pipeline wrote during the audit is a row that could
+  // have moved into or out of any one window/category, so the race can shift a
+  // raw count by AT MOST that many. A breach larger than that budget cannot be
+  // explained by concurrent writes and is real.
+  //
+  // In the overwhelmingly common case nothing is written, the budget is 0 and
+  // this is exactly the strict original bound. During a large concurrent import
+  // the budget widens, which is correct — the comparison genuinely is not
+  // trustworthy mid-import.
+  //
+  // The residual is a racy run under-reporting a real overcount. That is the
+  // right way to be wrong here: the audit runs nightly, a genuine defect is
+  // persistent, and the next clean run catches it — whereas a false alarm
+  // teaches everyone to ignore the auditor, taking the other anchors with it.
+  const { rows: churnedRows } = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text n FROM auto_renews WHERE imported_at > $1::timestamptz`,
+    [watermarkBefore],
+  );
+  const raceBudget = watermarkBefore ? Number(churnedRows[0]?.n ?? 0) : 0;
+
+  const overCounted: string[] = [];
+  for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
+    const b = stats.movement.byWindow[w];
+    const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+    for (const k of ["member", "sky3", "skyTingTv"] as const) {
+      const excess = b[k].new - rawByCat[k];
+      if (excess > raceBudget) {
+        overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]} (excess ${excess} > race budget ${raceBudget})`);
       }
     }
-    return found;
-  };
-
-  let overCounted = await measureBreaches(stats);
-  let raceNote: string | undefined;
-  if (overCounted.length && (await pipelineWatermark(pool)) !== watermarkBefore) {
-    // Second pass against a render taken after the write. requirePayload guards
-    // it too, so a degraded retry surfaces as UNAVAILABLE rather than a verdict
-    // read off a malformed payload.
-    const retryStats = await fetchStats(cookie);
-    requirePayload(retryStats);
-    const retry = await measureBreaches(retryStats);
-    if (retry.length === 0) {
-      raceNote = "an initial breach disappeared on re-measure after a mid-audit pipeline write (race, not a data bug)";
-    }
-    overCounted = retry;
   }
   checks.push({
     name: "movement.newSignups<=rowsCreated",
     ok: overCounted.length === 0,
-    note: raceNote,
+    note: raceBudget > 0 ? `${raceBudget} row(s) written mid-audit; breaches within that budget tolerated` : undefined,
     dashboard: overCounted.length ? overCounted : "every window within bound",
-    independent: "movement.new ≤ auto_renews created in the same window",
+    independent: "movement.new ≤ auto_renews created in the same window (± concurrent-write budget)",
   });
 
   // NOTE: a signup-side "collapse to zero" anchor was attempted here and pulled
