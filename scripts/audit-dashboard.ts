@@ -432,22 +432,35 @@ async function main() {
     return byCat;
   };
 
+  // These reads happen AFTER /api/stats rendered, so a pipeline run in between
+  // can mutate a counted row — saveAutoRenews upserts by union_pass_id and bumps
+  // imported_at, and can change created_at or plan_name, dropping the raw count
+  // below a movement figure that was CORRECT when rendered. Re-reading does not
+  // discriminate: a permanent mutation reads the same both times. So instead
+  // detect the race directly — if any auto_renews row was written during the
+  // audit, the two sides no longer describe the same instant and the comparison
+  // is not evaluable. That is UNAVAILABLE (exit 1), never a mismatch (exit 2).
+  const pipelineWatermark = async (): Promise<string> => {
+    const { rows } = await pool.query<{ ts: string | null }>(
+      `SELECT MAX(imported_at)::text AS ts FROM auto_renews`,
+    );
+    return rows[0]?.ts ?? "";
+  };
+  const watermarkBefore = await pipelineWatermark();
+
   const overCounted: string[] = [];
   for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
     const b = stats.movement.byWindow[w];
-    let rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
-    let breaches = (["member", "sky3", "skyTingTv"] as const).filter((k) => b[k].new > rawByCat[k]);
-    if (breaches.length) {
-      // This read happens AFTER /api/stats rendered, so the pipeline can mutate a
-      // counted row in between — saveAutoRenews upserts by union_pass_id and can
-      // change created_at or plan_name, dropping the raw count below a movement
-      // figure that was correct when rendered. That is a race, not a data bug, so
-      // re-read once and only report breaches that PERSIST. A genuine defect is
-      // deterministic and survives the re-read; a transient write does not.
-      rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
-      breaches = breaches.filter((k) => b[k].new > rawByCat[k]);
+    const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+    for (const k of ["member", "sky3", "skyTingTv"] as const) {
+      if (b[k].new > rawByCat[k]) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
     }
-    for (const k of breaches) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+  }
+  if (overCounted.length && (await pipelineWatermark()) !== watermarkBefore) {
+    throw new AuditUnavailable(
+      "auto_renews was written by the pipeline mid-audit, so /api/stats and the DB " +
+      "recompute describe different instants — signup bounds not evaluable this run",
+    );
   }
   checks.push({
     name: "movement.newSignups<=rowsCreated",
@@ -463,12 +476,16 @@ async function main() {
   // (2024-01..2025-04), and a product being wound down does the same on the way
   // out. Asserting per-month would fire on both.
   //
-  // What is NOT legitimate is the ENTIRE completed series reading zero while the
-  // category still has active subscribers. The bug class this guards — a renamed
-  // plan dropping out of the filter, the '%INTRO WEEK%' rebrand shape — zeroes
-  // every month at once, because the series is recomputed retroactively on every
-  // render rather than accumulated. A real business wind-down leaves the older
-  // months intact, so it cannot produce this signature.
+  // What is NOT legitimate is the entire completed series reading zero WHILE THE
+  // DATABASE ACTUALLY HAS signup rows for that category in those months. That
+  // gap — rows exist, the metric renders zero — is the filter-break signature
+  // ('%INTRO WEEK%' rebrand class), and it cannot be explained by the business.
+  //
+  // The DB leg is what makes this safe. Judging from the payload alone cannot
+  // distinguish a broken filter from a category closed to new sales for the
+  // whole lookback (a long wind-down leaves activeAtStart populated and new at
+  // zero legitimately). Asking the database settles it: no rows means it really
+  // did sell nothing, which is a business fact, not a bug.
   // Excludes the trailing partial month and 2025-10 (bulk admin cleanup).
   const monthlyMv = stats.movement.monthly as any[];
   const completedMv = monthlyMv.slice(0, -1).filter((m) => m.period !== "2025-10");
@@ -476,8 +493,19 @@ async function main() {
   for (const k of ["member", "sky3", "skyTingTv"] as const) {
     // Only meaningful for a category that still has subscribers to sign up for.
     const live = completedMv.filter((m) => m[k].activeAtStart > 0);
-    if (live.length && live.every((m) => m[k].new === 0)) {
-      collapsed.push(`${k}: 0 new across all ${live.length} completed months (activeAtStart>0 throughout)`);
+    if (!live.length || !live.every((m) => m[k].new === 0)) continue;
+    // Payload says zero everywhere. Ask the DB whether rows actually exist.
+    // Range is [first live month, start of the month AFTER the last) so the
+    // final month is included; Postgres does the month arithmetic.
+    const { rows: dbRows } = await pool.query<{ plan_name: string }>(
+      `SELECT plan_name FROM auto_renews
+       WHERE created_at >= ($1 || '-01')::date
+         AND created_at <  (($2 || '-01')::date + INTERVAL '1 month')`,
+      [live[0].period, live[live.length - 1].period],
+    );
+    const dbCount = dbRows.filter((r) => (CAT_KEY[getCategory(r.plan_name)] ?? "unknown") === k).length;
+    if (dbCount > 0) {
+      collapsed.push(`${k}: movement reports 0 new across all ${live.length} completed months, but the DB has ${dbCount} rows created in that span`);
     }
   }
   checks.push({
