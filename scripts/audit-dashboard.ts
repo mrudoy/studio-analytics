@@ -419,21 +419,35 @@ async function main() {
   // Deliberately an inequality, not an equality: reproducing the email-scoped
   // plan-changer exclusion here would re-implement the function and mirror its
   // bugs instead of checking it. Anchor 9 covers the collapse-to-zero direction.
+  // Categorize with the SAME runtime getCategory the dashboard uses (never the
+  // stored plan_category column, which lags a rename).
+  const rawCreatedByCat = async (from: string, to: string) => {
+    const { rows } = await pool.query<{ plan_name: string }>(
+      `SELECT plan_name FROM auto_renews
+       WHERE created_at >= $1::date AND created_at < $2::date`,
+      [from, to],
+    );
+    const byCat: Record<string, number> = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+    for (const r of rows) byCat[CAT_KEY[getCategory(r.plan_name)] ?? "unknown"]++;
+    return byCat;
+  };
+
   const overCounted: string[] = [];
   for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
     const b = stats.movement.byWindow[w];
-    const { rows: createdRows } = await pool.query<{ plan_name: string; email: string | null }>(
-      `SELECT plan_name, LOWER(customer_email) AS email FROM auto_renews
-       WHERE created_at >= $1::date AND created_at < $2::date`,
-      [b.windowStart, b.windowEnd],
-    );
-    // Categorize with the SAME runtime getCategory the dashboard uses (never the
-    // stored plan_category column, which lags a rename).
-    const rawByCat: Record<string, number> = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
-    for (const r of createdRows) rawByCat[CAT_KEY[getCategory(r.plan_name)] ?? "unknown"]++;
-    for (const k of ["member", "sky3", "skyTingTv"] as const) {
-      if (b[k].new > rawByCat[k]) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+    let rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+    let breaches = (["member", "sky3", "skyTingTv"] as const).filter((k) => b[k].new > rawByCat[k]);
+    if (breaches.length) {
+      // This read happens AFTER /api/stats rendered, so the pipeline can mutate a
+      // counted row in between — saveAutoRenews upserts by union_pass_id and can
+      // change created_at or plan_name, dropping the raw count below a movement
+      // figure that was correct when rendered. That is a race, not a data bug, so
+      // re-read once and only report breaches that PERSIST. A genuine defect is
+      // deterministic and survives the re-read; a transient write does not.
+      rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+      breaches = breaches.filter((k) => b[k].new > rawByCat[k]);
     }
+    for (const k of breaches) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
   }
   checks.push({
     name: "movement.newSignups<=rowsCreated",
@@ -442,27 +456,37 @@ async function main() {
     independent: "movement.new ≤ auto_renews created in the same window",
   });
 
-  // ── 9. Completed months never render zero NEW signups (per category) ──
-  // Mirror of anchor 6 on the signup side. A completed month with active
-  // subscribers but zero new signups in a category is the collapse-to-zero
-  // signature (a renamed plan falling out of the filter, or a window that
-  // stopped matching) — the exact failure the '%INTRO WEEK%' rebrand caused.
-  // Checked at MONTH granularity, not week: a quiet week with 0 new members is
-  // legitimate for a studio this size, a quiet month is not. Excludes the
-  // trailing partial month and 2025-10 (bulk admin cleanup), matching anchor 6.
+  // ── 9. A category's whole signup series never collapses to zero ──
+  // Signup-side counterpart to the zero-churn anchor, but deliberately NOT the
+  // same "any single month is 0" shape. A single zero month is legitimate: Sky3
+  // recorded 0 new signups for the 16 consecutive months before it launched
+  // (2024-01..2025-04), and a product being wound down does the same on the way
+  // out. Asserting per-month would fire on both.
+  //
+  // What is NOT legitimate is the ENTIRE completed series reading zero while the
+  // category still has active subscribers. The bug class this guards — a renamed
+  // plan dropping out of the filter, the '%INTRO WEEK%' rebrand shape — zeroes
+  // every month at once, because the series is recomputed retroactively on every
+  // render rather than accumulated. A real business wind-down leaves the older
+  // months intact, so it cannot produce this signature.
+  // Excludes the trailing partial month and 2025-10 (bulk admin cleanup).
   const monthlyMv = stats.movement.monthly as any[];
-  const zeroNew: string[] = [];
-  for (const m of monthlyMv.slice(0, -1)) {
-    if (m.period === "2025-10") continue;
-    for (const k of ["member", "sky3", "skyTingTv"] as const) {
-      if (m[k].activeAtStart > 0 && m[k].new === 0) zeroNew.push(`${k}:${m.period}`);
+  const completedMv = monthlyMv.slice(0, -1).filter((m) => m.period !== "2025-10");
+  const collapsed: string[] = [];
+  for (const k of ["member", "sky3", "skyTingTv"] as const) {
+    // Only meaningful for a category that still has subscribers to sign up for.
+    const live = completedMv.filter((m) => m[k].activeAtStart > 0);
+    if (live.length && live.every((m) => m[k].new === 0)) {
+      collapsed.push(`${k}: 0 new across all ${live.length} completed months (activeAtStart>0 throughout)`);
     }
   }
   checks.push({
-    name: "movement.noZeroNewCompletedMonths",
-    ok: zeroNew.length === 0,
-    dashboard: zeroNew.length ? zeroNew : "every completed month has new signups",
-    independent: "completed months with active subs must have new > 0",
+    // Vacuous only if the payload has no completed months at all, which
+    // requirePayload already rejects as UNAVAILABLE.
+    name: "movement.signupSeriesNotCollapsed",
+    ok: collapsed.length === 0,
+    dashboard: collapsed.length ? collapsed : `${completedMv.length} completed months, no category fully zeroed`,
+    independent: "a live category cannot have zero new signups in every completed month",
   });
 
   // ── 10. trends.* churn equals the movement source it is copied from ──
@@ -472,12 +496,26 @@ async function main() {
   // and the churn cards are rendering the stale legacy rollup again — a
   // regression a green build would never catch. Exact integer equality.
   const mvByPeriod = new Map(monthlyMv.map((m) => [m.period, m]));
+  // Months genuinely older than the movement window are legitimately absent from
+  // it. Anything INSIDE the span is not: an un-overridden month is exactly what
+  // this anchor exists to catch, and silently `continue`-ing past it would let
+  // the failure through. This bites at the UTC/ET month boundary, where the
+  // legacy trends leg (server-local `new Date()`) can emit a month the ET-based
+  // movement leg has not started yet. So skipping is allowed only OUTSIDE the
+  // span; a gap inside it is reported.
+  const mvPeriods = monthlyMv.map((m) => m.period as string).sort();
+  const spanStart = mvPeriods[0];
+  const spanEnd = mvPeriods[mvPeriods.length - 1];
   const drifted: string[] = [];
+  const uncovered: string[] = [];
   let comparedPairs = 0;
   for (const k of ["member", "sky3", "skyTingTv"] as const) {
     for (const row of (byCat[k].monthly ?? []) as { month: string; canceledCount: number; activeAtStart: number }[]) {
       const m = mvByPeriod.get(row.month);
-      if (!m) continue; // trends may render months outside the movement span
+      if (!m) {
+        if (row.month >= spanStart && row.month <= spanEnd) uncovered.push(`${k}:${row.month}`);
+        continue;
+      }
       comparedPairs++;
       if (row.canceledCount !== m[k].canceled || row.activeAtStart !== m[k].activeAtStart) {
         drifted.push(`${k}:${row.month} trends(cx=${row.canceledCount},start=${row.activeAtStart}) vs movement(cx=${m[k].canceled},start=${m[k].activeAtStart})`);
@@ -488,8 +526,10 @@ async function main() {
     // A payload where no period overlaps would pass vacuously, so the pair count
     // is part of the assertion, not just the note.
     name: "trends.monthlyChurn=movementSource",
-    ok: drifted.length === 0 && comparedPairs > 0,
-    dashboard: drifted.length ? drifted : `${comparedPairs} (category,month) pairs identical`,
+    ok: drifted.length === 0 && uncovered.length === 0 && comparedPairs > 0,
+    dashboard: drifted.length || uncovered.length
+      ? [...drifted, ...uncovered.map((u) => `${u} rendered by trends but missing from movement (inside span ${spanStart}..${spanEnd})`)]
+      : `${comparedPairs} (category,month) pairs identical`,
     independent: "trends.churnRates must equal movement.monthly (route.ts override)",
   });
 
