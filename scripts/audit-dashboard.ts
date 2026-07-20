@@ -450,30 +450,45 @@ async function main() {
   // These reads happen AFTER /api/stats rendered, so a pipeline run in between
   // can mutate a counted row — saveAutoRenews upserts by union_pass_id and bumps
   // imported_at, and can change created_at or plan_name, dropping the raw count
-  // below a movement figure that was CORRECT when rendered. Re-reading does not
-  // discriminate: a permanent mutation reads the same both times. So instead
-  // detect the race directly — if any auto_renews row was written between the
-  // pre-render watermark and here, the two sides no longer describe the same
-  // instant and the comparison is not evaluable: UNAVAILABLE (exit 1), never a
-  // mismatch (exit 2). Only consulted once a breach is seen, so the clean path
-  // costs a single MAX() taken before the render.
-  const overCounted: string[] = [];
-  for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
-    const b = stats.movement.byWindow[w];
-    const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
-    for (const k of ["member", "sky3", "skyTingTv"] as const) {
-      if (b[k].new > rawByCat[k]) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+  // below a movement figure that was CORRECT when rendered.
+  //
+  // Two failure modes pull in opposite directions and BOTH matter: reporting
+  // that race as a data bug is a false positive, but suppressing on any write
+  // would mask a genuine overcount whenever the pipeline happens to run — a
+  // real defect silently downgraded to "couldn't check". So neither guess:
+  // when a breach coincides with a write, re-render and re-measure. A breach
+  // that survives a fresh /api/stats AND a fresh DB read describes one
+  // consistent instant and is real; one that evaporates was the race.
+  const measureBreaches = async (s: Record<string, any>): Promise<string[]> => {
+    const found: string[] = [];
+    for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
+      const b = s.movement.byWindow[w];
+      const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+      for (const k of ["member", "sky3", "skyTingTv"] as const) {
+        if (b[k].new > rawByCat[k]) found.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+      }
     }
-  }
+    return found;
+  };
+
+  let overCounted = await measureBreaches(stats);
+  let raceNote: string | undefined;
   if (overCounted.length && (await pipelineWatermark(pool)) !== watermarkBefore) {
-    throw new AuditUnavailable(
-      "auto_renews was written by the pipeline mid-audit, so /api/stats and the DB " +
-      "recompute describe different instants — signup bounds not evaluable this run",
-    );
+    // Second pass against a render taken after the write. requirePayload guards
+    // it too, so a degraded retry surfaces as UNAVAILABLE rather than a verdict
+    // read off a malformed payload.
+    const retryStats = await fetchStats(cookie);
+    requirePayload(retryStats);
+    const retry = await measureBreaches(retryStats);
+    if (retry.length === 0) {
+      raceNote = "an initial breach disappeared on re-measure after a mid-audit pipeline write (race, not a data bug)";
+    }
+    overCounted = retry;
   }
   checks.push({
     name: "movement.newSignups<=rowsCreated",
     ok: overCounted.length === 0,
+    note: raceNote,
     dashboard: overCounted.length ? overCounted : "every window within bound",
     independent: "movement.new ≤ auto_renews created in the same window",
   });
