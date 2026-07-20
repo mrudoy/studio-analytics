@@ -126,9 +126,16 @@ function requirePayload(stats: Record<string, any>): void {
 
   // movement is the canonical subscriber-movement source (getSubscriberMovement).
   // It feeds the new/canceled window cards AND is copied over trends.* at API
-  // assembly, so anchors 8-10 read both surfaces. A missing/partial block means
-  // the safe() wrapper swallowed a failure — UNAVAILABLE, never a mismatch.
-  const mvWindows = ["yesterday", "thisWeek", "lastWeek", "thisMonth"] as const;
+  // assembly, so the movement anchors read both surfaces. A missing/partial
+  // block means the safe() wrapper swallowed a failure — UNAVAILABLE, never a
+  // mismatch.
+  //
+  // Validate EXACTLY the fields the remaining anchors read, no more: flagging a
+  // field nothing consumes would exit 1 on a payload the audit could actually
+  // have evaluated, which is its own kind of false alarm. Windows are the three
+  // the signup-bound anchor iterates (thisWeek is not one of them); monthly
+  // needs `period` plus the churn pair, not `new`.
+  const mvWindows = ["yesterday", "lastWeek", "thisMonth"] as const;
   const mv = stats.movement;
   if (mv == null) bad.push("movement");
   else {
@@ -140,8 +147,6 @@ function requirePayload(stats: Record<string, any>): void {
       for (const k of ["member", "sky3", "skyTingTv"]) {
         if (!b[k]) { bad.push(`movement.byWindow.${w}.${k}`); continue; }
         num(b[k].new, `movement.byWindow.${w}.${k}.new`);
-        num(b[k].canceled, `movement.byWindow.${w}.${k}.canceled`);
-        num(b[k].activeAtStart, `movement.byWindow.${w}.${k}.activeAtStart`);
       }
     }
     if (!Array.isArray(mv.monthly) || mv.monthly.length === 0) bad.push("movement.monthly (empty/missing)");
@@ -149,11 +154,6 @@ function requirePayload(stats: Record<string, any>): void {
       str(m?.period, `movement.monthly[${i}].period`);
       for (const k of ["member", "sky3", "skyTingTv"]) {
         if (!m?.[k]) { bad.push(`movement.monthly[${i}].${k}`); continue; }
-        // `new` is read by the zero-signup anchor and MUST be validated here:
-        // an absent field makes `m[k].new === 0` false, so the anchor would
-        // silently PASS on degraded movement data instead of reporting
-        // UNAVAILABLE — a fail-open in the exact check meant to catch it.
-        num(m[k].new, `movement.monthly[${i}].${k}.new`);
         num(m[k].canceled, `movement.monthly[${i}].${k}.canceled`);
         num(m[k].activeAtStart, `movement.monthly[${i}].${k}.activeAtStart`);
       }
@@ -171,10 +171,25 @@ function requirePayload(stats: Record<string, any>): void {
   if (bad.length) throw new AuditUnavailable(`incomplete/malformed /api/stats payload (backend likely degraded): ${bad.slice(0, 8).join(", ")}${bad.length > 8 ? ` …(+${bad.length - 8})` : ""}`);
 }
 
+/** MAX(auto_renews.imported_at) — bumped by saveAutoRenews on every write, so a
+ *  change means the pipeline touched subscription rows. Used to tell a real
+ *  mismatch apart from a mid-audit race (see anchor 8). */
+async function pipelineWatermark(pool: ReturnType<typeof getPool>): Promise<string> {
+  const { rows } = await pool.query<{ ts: string | null }>(
+    `SELECT MAX(imported_at)::text AS ts FROM auto_renews`,
+  );
+  return rows[0]?.ts ?? "";
+}
+
 async function main() {
   const checks: Check[] = [];
   const pool = getPool();
   const cookie = await login();
+  // Captured BEFORE the render, not after: the race window opens the moment
+  // /api/stats reads its data. A watermark taken after fetchStats would already
+  // include a write that landed during the render, making that write invisible
+  // to the comparison and letting anchor 8 false-fail on it.
+  const watermarkBefore = await pipelineWatermark(pool);
   const stats = await fetchStats(cookie);
   requirePayload(stats);
 
@@ -437,17 +452,11 @@ async function main() {
   // imported_at, and can change created_at or plan_name, dropping the raw count
   // below a movement figure that was CORRECT when rendered. Re-reading does not
   // discriminate: a permanent mutation reads the same both times. So instead
-  // detect the race directly — if any auto_renews row was written during the
-  // audit, the two sides no longer describe the same instant and the comparison
-  // is not evaluable. That is UNAVAILABLE (exit 1), never a mismatch (exit 2).
-  const pipelineWatermark = async (): Promise<string> => {
-    const { rows } = await pool.query<{ ts: string | null }>(
-      `SELECT MAX(imported_at)::text AS ts FROM auto_renews`,
-    );
-    return rows[0]?.ts ?? "";
-  };
-  const watermarkBefore = await pipelineWatermark();
-
+  // detect the race directly — if any auto_renews row was written between the
+  // pre-render watermark and here, the two sides no longer describe the same
+  // instant and the comparison is not evaluable: UNAVAILABLE (exit 1), never a
+  // mismatch (exit 2). Only consulted once a breach is seen, so the clean path
+  // costs a single MAX() taken before the render.
   const overCounted: string[] = [];
   for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
     const b = stats.movement.byWindow[w];
@@ -456,7 +465,7 @@ async function main() {
       if (b[k].new > rawByCat[k]) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
     }
   }
-  if (overCounted.length && (await pipelineWatermark()) !== watermarkBefore) {
+  if (overCounted.length && (await pipelineWatermark(pool)) !== watermarkBefore) {
     throw new AuditUnavailable(
       "auto_renews was written by the pipeline mid-audit, so /api/stats and the DB " +
       "recompute describe different instants — signup bounds not evaluable this run",
