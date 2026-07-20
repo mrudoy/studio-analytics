@@ -253,10 +253,13 @@ async function main() {
   // takes MIN(attended_at), so someone whose intro began just BEFORE the window and
   // ran into it is counted as a fresh cohort member of the oldest rendered week.
   // CLAUDE.md's definition ("whose FIRST intro attendance falls in the last N weeks")
-  // would exclude them. Measured 2026-07-19: 24 of the 227-person 8-week pool, ALL 24
-  // in the oldest week — inflating it 30 -> 54. Every other week is clean, because the
-  // window is far longer than the longest intro pass (14 days), so only the left edge
-  // can absorb earlier-started intros.
+  // would exclude them. MEASURED 2026-07-19: 24 of the 227-person 8-week pool, all 24
+  // in the oldest week — inflating it 30 -> 54; every other week measured 0.
+  // That concentration is an OBSERVATION, not a guarantee the code enforces: the pass
+  // predicate is broad (INTRO|TRIAL|FIRST) and nothing ties a repeat qualifying
+  // attendance to a pass duration, so an interior week CAN pick this up if someone has
+  // an older qualifying attendance plus a later one inside the window. Re-measure
+  // before relying on the left-edge-only shape.
   // This anchor mirrors the shipped behaviour on purpose: its job is to catch
   // REGRESSIONS, and silently redefining a rendered conversion metric is a product
   // decision for Mike, not an auto-fix. Flagged for a human call.
