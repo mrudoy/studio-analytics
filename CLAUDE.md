@@ -202,7 +202,7 @@ History: 2026-05-08 verification against the user's stated definition exposed th
 - **`final_cancel`** events (Pending Cancel → Canceled) are logged for audit but EXCLUDED from churn counts so the same cancellation isn't counted twice.
 - **Backfill events** (`backfill_signup`, `backfill_churn`) were synthesized from `created_at` / `canceled_at` at migration time. They count identically to live events in dashboard queries. The `is_backfill` flag exists for audit only.
 - Do NOT add new consumers that compute churn from `canceled_at + plan_state='Canceled'`. That pattern is semantically broken (misses Pending Cancel + wrong timing). Use `getChurnEventsInWindow()` in `src/lib/db/auto-renew-events-store.ts`.
-- Follow-up: `src/lib/analytics/db-trends.ts` still uses the legacy `getCanceledAutoRenews` for weekly/monthly churn rollups. Migrate those next.
+- **Migration complete (2026-07-20).** `src/lib/analytics/db-trends.ts` now sources its weekly/monthly churn rollups from `getCanceledAutoRenewsWithClickDate()` (event-based, era-partitioned), and the legacy `getCanceledAutoRenews` has been deleted. There is no remaining `canceled_at`-bucketed churn query in the codebase — keep it that way.
 
 ## Architecture
 
