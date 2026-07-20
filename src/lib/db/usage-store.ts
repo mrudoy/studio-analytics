@@ -26,31 +26,24 @@ const SEGMENT_TO_PLAN_CATEGORY: Record<Segment, string> = {
 
 export function assignTier(segment: Segment, visitCount: number): string {
   if (segment === "members") {
-    if (visitCount === 0) return "dormant";
-    if (visitCount <= 2) return "low";
-    if (visitCount <= 4) return "target";
-    if (visitCount <= 8) return "strong";
-    return "power_user";
+    if (visitCount === 0) return "not_using";
+    if (visitCount <= 3) return "barely_using";
+    return "activated";
   }
   if (segment === "sky3") {
     if (visitCount === 0) return "not_using";
-    if (visitCount === 1) return "barely_using";
-    if (visitCount === 2) return "getting_there";
-    if (visitCount === 3) return "full_use";
-    return "wants_more";
+    if (visitCount <= 2) return "barely_using";
+    return "activated";
   }
   // tv — based on TV registrations in the member's last completed billing cycle
-  // (~28-31 days for monthly subs; last 28 days before renewal for annuals).
-  // Calibrated from live data: 48% inactive / 24% light / ~18% active / ~10% engaged.
-  if (visitCount === 0) return "inactive";
-  if (visitCount <= 2) return "light";
-  if (visitCount <= 7) return "active";
-  return "engaged";
+  if (visitCount === 0) return "not_using";
+  if (visitCount <= 1) return "barely_using";
+  return "activated";
 }
 
-export const MEMBERS_TIER_ORDER = ["dormant", "low", "target", "strong", "power_user"];
-export const SKY3_TIER_ORDER = ["not_using", "barely_using", "getting_there", "full_use", "wants_more"];
-export const TV_TIER_ORDER = ["inactive", "light", "active", "engaged"];
+export const MEMBERS_TIER_ORDER = ["not_using", "barely_using", "activated"];
+export const SKY3_TIER_ORDER = ["not_using", "barely_using", "activated"];
+export const TV_TIER_ORDER = ["not_using", "barely_using", "activated"];
 
 function getTierOrder(segment: Segment): string[] {
   if (segment === "members") return MEMBERS_TIER_ORDER;
@@ -69,59 +62,65 @@ function computeDirection(segment: Segment, priorTier: string, currentTier: stri
 
 /** Tiers considered "at target" for % Hitting Target calculations */
 const TARGET_TIERS: Record<Segment, string[]> = {
-  members: ["target", "strong", "power_user"],
-  sky3: ["full_use", "wants_more"],
-  tv: ["light", "active", "engaged"],
+  members: ["activated"],
+  sky3: ["activated"],
+  tv: ["activated"],
 };
 
 export const TIER_DISPLAY_LABELS: Record<string, string> = {
-  dormant: "Dormant",
-  low: "Low",
-  target: "Target",
-  strong: "Strong",
-  power_user: "Power User",
-  // Sky3 (new bands)
+  // Unified 3-band model
   not_using: "Not Using",
   barely_using: "Barely Using",
-  getting_there: "Getting There",
-  full_use: "Using All 3 Classes",
-  wants_more: "Wants More",
-  // Legacy Sky3 keys (for transition compatibility)
+  activated: "Activated",
+  // Legacy keys mapped to nearest new label so historical DB rows still render
+  // Not-Using group
+  dormant: "Not Using",
+  inactive: "Not Using",
   unused_pack: "Not Using",
+  // Barely-Using group
+  low: "Barely Using",
+  light: "Barely Using",
   save_candidate: "Barely Using",
-  building_habit: "Getting There",
-  upgrade_candidate: "Using All 3 Classes",
-  ready_to_upgrade: "Wants More",
-  // TV
-  inactive: "Inactive",
-  light: "Light",
-  active: "Active",
-  engaged: "Engaged",
+  // Activated group
+  target: "Activated",
+  strong: "Activated",
+  power_user: "Activated",
+  getting_there: "Activated",
+  full_use: "Activated",
+  wants_more: "Activated",
+  active: "Activated",
+  engaged: "Activated",
+  building_habit: "Activated",
+  upgrade_candidate: "Activated",
+  ready_to_upgrade: "Activated",
 };
 
 export const TIER_COLORS: Record<string, string> = {
+  // Unified 3-band model
+  not_using: "#C0392B",
+  barely_using: "#E67E22",
+  activated: "#27AE60",
+  // Legacy keys mapped to matching new color
+  // Not-Using group (red)
   dormant: "#C0392B",
-  low: "#E67E22",
-  target: "#27AE60",
-  strong: "#2ECC71",
-  power_user: "#1ABC9C",
-  // Sky3 (new warm-to-green gradient)
-  not_using: "#E8D5D0",
-  barely_using: "#F0DCC8",
-  getting_there: "#F5EAB8",
-  full_use: "#C8E6C9",
-  wants_more: "#A5D6A7",
-  // Legacy Sky3 keys
-  unused_pack: "#E8D5D0",
-  save_candidate: "#F0DCC8",
-  building_habit: "#F5EAB8",
-  upgrade_candidate: "#C8E6C9",
-  ready_to_upgrade: "#A5D6A7",
-  // TV
   inactive: "#C0392B",
+  unused_pack: "#C0392B",
+  // Barely-Using group (amber)
+  low: "#E67E22",
   light: "#E67E22",
+  save_candidate: "#E67E22",
+  // Activated group (green)
+  target: "#27AE60",
+  strong: "#27AE60",
+  power_user: "#27AE60",
+  getting_there: "#27AE60",
+  full_use: "#27AE60",
+  wants_more: "#27AE60",
   active: "#27AE60",
-  engaged: "#1ABC9C",
+  engaged: "#27AE60",
+  building_habit: "#27AE60",
+  upgrade_candidate: "#27AE60",
+  ready_to_upgrade: "#27AE60",
 };
 
 export const DIRECTION_LABELS: Record<string, string> = {
@@ -137,11 +136,9 @@ export const DELTA_COLORS = {
 };
 
 export const REVENUE_OPPORTUNITY_COPY: Record<string, { means: string; action: string }> = {
-  unused_pack: { means: "Will probably cancel", action: "Win-back sequence" },
-  save_candidate: { means: "At risk of canceling", action: "Engagement check-in" },
-  building_habit: { means: "Getting value, could go either way", action: "Nurture" },
-  upgrade_candidate: { means: "Maxed out — want more", action: "Offer membership" },
-  ready_to_upgrade: { means: "Already buying extra", action: "Priority upgrade outreach" },
+  not_using: { means: "Will probably cancel", action: "Win-back sequence" },
+  barely_using: { means: "At risk of canceling", action: "Engagement check-in" },
+  activated: { means: "Getting value from the pack", action: "Nurture / offer upgrade" },
 };
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -272,10 +269,9 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
   await pool.query(`
     UPDATE member_weekly_visits SET tier = CASE
       WHEN segment = 'tv' THEN CASE
-        WHEN visit_count = 0 THEN 'inactive'
-        WHEN visit_count = 1 THEN 'light'
-        WHEN visit_count <= 3 THEN 'active'
-        ELSE 'engaged' END
+        WHEN visit_count = 0 THEN 'not_using'
+        WHEN visit_count = 1 THEN 'barely_using'
+        ELSE 'activated' END
       ELSE ''
     END
     WHERE week_start = $1
@@ -361,26 +357,21 @@ export async function computeTierTransitions(currentPeriodStart: string, periodW
   const tierCase = (visitExpr: string, seg: string) => {
     if (seg === "members") {
       return `CASE
-        WHEN ${visitExpr} = 0 THEN 'dormant'
-        WHEN ${visitExpr} <= 2 THEN 'low'
-        WHEN ${visitExpr} <= 4 THEN 'target'
-        WHEN ${visitExpr} <= 8 THEN 'strong'
-        ELSE 'power_user' END`;
+        WHEN ${visitExpr} = 0 THEN 'not_using'
+        WHEN ${visitExpr} <= 3 THEN 'barely_using'
+        ELSE 'activated' END`;
     }
     if (seg === "sky3") {
       return `CASE
         WHEN ${visitExpr} = 0 THEN 'not_using'
-        WHEN ${visitExpr} = 1 THEN 'barely_using'
-        WHEN ${visitExpr} = 2 THEN 'getting_there'
-        WHEN ${visitExpr} = 3 THEN 'full_use'
-        ELSE 'wants_more' END`;
+        WHEN ${visitExpr} <= 2 THEN 'barely_using'
+        ELSE 'activated' END`;
     }
     // tv
     return `CASE
-      WHEN ${visitExpr} = 0 THEN 'inactive'
-      WHEN ${visitExpr} = 1 THEN 'light'
-      WHEN ${visitExpr} <= 3 THEN 'active'
-      ELSE 'engaged' END`;
+      WHEN ${visitExpr} = 0 THEN 'not_using'
+      WHEN ${visitExpr} <= 1 THEN 'barely_using'
+      ELSE 'activated' END`;
   };
 
   for (const seg of ["members", "sky3", "tv"] as Segment[]) {
@@ -478,22 +469,17 @@ async function getPeriodTiers(
     SELECT member_email, segment, total_visits,
       CASE
         WHEN segment IN ('members') THEN CASE
-          WHEN total_visits = 0 THEN 'dormant'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 2 THEN 'low'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 4 THEN 'target'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 8 THEN 'strong'
-          ELSE 'power_user' END
+          WHEN total_visits = 0 THEN 'not_using'
+          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 3 THEN 'barely_using'
+          ELSE 'activated' END
         WHEN segment = 'sky3' THEN CASE
           WHEN total_visits = 0 THEN 'not_using'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 1 THEN 'barely_using'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 2 THEN 'getting_there'
-          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 3 THEN 'full_use'
-          ELSE 'wants_more' END
+          WHEN ROUND(total_visits / ${monthsInPeriod}) <= 2 THEN 'barely_using'
+          ELSE 'activated' END
         WHEN segment = 'tv' THEN CASE
-          WHEN total_visits = 0 THEN 'inactive'
-          WHEN total_visits = 1 THEN 'light'
-          WHEN total_visits <= 3 THEN 'active'
-          ELSE 'engaged' END
+          WHEN total_visits = 0 THEN 'not_using'
+          WHEN total_visits <= 1 THEN 'barely_using'
+          ELSE 'activated' END
         ELSE ''
       END AS tier
     FROM agg
@@ -576,9 +562,9 @@ export async function getUsageScorecard(
     return { up, stayed: Number(r.stayed), down, net: up - down };
   }
 
-  // Helper to get dormant/inactive count (uses period-aggregated tiers)
+  // Helper to get not-using count (uses period-aggregated tiers)
   async function getDormantCount(segs: Segment[], pStart: string, pWeeks: number): Promise<number> {
-    const dormantTiers = new Set(["dormant", "inactive", "unused_pack"]);
+    const dormantTiers = new Set(["not_using"]);
     const { tierCounts } = await getPeriodTierCounts(pool, segs, pStart, pWeeks);
     let count = 0;
     for (const [tier, cnt] of Object.entries(tierCounts)) {
@@ -719,7 +705,7 @@ export async function getUsageScorecard(
     });
   }
 
-  // Card 4: Dormant / Inactive Count
+  // Card 4: Not Using Count
   {
     const current = await getDormantCount(targetSegs, periodStart, periodWeeks);
     const prior = await getDormantCount(targetSegs, priorPeriodStart, periodWeeks);
@@ -730,7 +716,7 @@ export async function getUsageScorecard(
 
     cards.push({
       key: "dormant_count",
-      label: "Dormant / Inactive",
+      label: "Not Using",
       value: current,
       format: "count",
       sparkline,
@@ -794,33 +780,31 @@ export async function getUsageScorecard(
     const currentTiers = buildCountsFromCycle(sky3CycleRows, false);
     const priorTiers = buildCountsFromCycle(sky3CycleRows, true);
 
-    // Card 1: % Using 3+ Classes (full_use + wants_more)
-    const fullUseTiers = ["full_use", "wants_more"];
-    const curFullUse = fullUseTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
-    const curFullUsePct = currentTiers.total > 0 ? Math.round((curFullUse / currentTiers.total) * 1000) / 10 : 0;
-    const priFullUse = fullUseTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
-    const priFullUsePct = priorTiers.total > 0 ? Math.round((priFullUse / priorTiers.total) * 1000) / 10 : 0;
+    // Card 1: % Activated (3+ visits)
+    const curActivated = currentTiers.tierCounts["activated"] || 0;
+    const curFullUsePct = currentTiers.total > 0 ? Math.round((curActivated / currentTiers.total) * 1000) / 10 : 0;
+    const priActivated = priorTiers.tierCounts["activated"] || 0;
+    const priFullUsePct = priorTiers.total > 0 ? Math.round((priActivated / priorTiers.total) * 1000) / 10 : 0;
     sky3Cards.push({
-      key: "pct_full_use", label: "% Using 3+ Classes", value: curFullUsePct, format: "pct",
+      key: "pct_full_use", label: "% Activated", value: curFullUsePct, format: "pct",
       sparkline: [], delta: Math.round((curFullUsePct - priFullUsePct) * 10) / 10, deltaType: "pct", invertDirection: false,
     });
 
     // Card 2: % Not Using (0-1 visits) — inverted (lower is better)
-    const notUsingTiers = ["not_using", "barely_using"];
-    const curNotUsing = notUsingTiers.reduce((s, t) => s + (currentTiers.tierCounts[t] || 0), 0);
+    const curNotUsing = currentTiers.tierCounts["not_using"] || 0;
     const curNotUsingPct = currentTiers.total > 0 ? Math.round((curNotUsing / currentTiers.total) * 1000) / 10 : 0;
-    const priNotUsing = notUsingTiers.reduce((s, t) => s + (priorTiers.tierCounts[t] || 0), 0);
+    const priNotUsing = priorTiers.tierCounts["not_using"] || 0;
     const priNotUsingPct = priorTiers.total > 0 ? Math.round((priNotUsing / priorTiers.total) * 1000) / 10 : 0;
     sky3Cards.push({
-      key: "pct_not_using", label: "% Not Using (0\u20131)", value: curNotUsingPct, format: "pct",
+      key: "pct_not_using", label: "% Not Using", value: curNotUsingPct, format: "pct",
       sparkline: [], delta: Math.round((curNotUsingPct - priNotUsingPct) * 10) / 10, deltaType: "pct", invertDirection: true,
     });
 
     // Card 3: Wants More (4+ visits — real upgrade signal)
-    const wantsMore = currentTiers.tierCounts["wants_more"] || 0;
-    const priWantsMore = priorTiers.tierCounts["wants_more"] || 0;
+    const wantsMore = currentTiers.tierCounts["activated"] || 0;
+    const priWantsMore = priorTiers.tierCounts["activated"] || 0;
     sky3Cards.push({
-      key: "wants_more_count", label: "Wants More (4+)", value: wantsMore, format: "count",
+      key: "wants_more_count", label: "Activated (3+)", value: wantsMore, format: "count",
       sparkline: [], delta: wantsMore - priWantsMore, deltaType: "count", invertDirection: false,
     });
 
@@ -853,33 +837,33 @@ export async function getUsageScorecard(
     const currentTiers = buildCountsFromCycle(tvCycleRows, false);
     const priorTiers = buildCountsFromCycle(tvCycleRows, true);
 
-    // Card 1: % Active in Last Cycle (light + active + engaged)
+    // Card 1: % Activated in Last Cycle (activated = 2+ visits)
     const curActivePct = currentTiers.total > 0
       ? Math.round((currentTiers.atTarget / currentTiers.total) * 1000) / 10 : 0;
     const priActivePct = priorTiers.total > 0
       ? Math.round((priorTiers.atTarget / priorTiers.total) * 1000) / 10 : 0;
     tvCards.push({
-      key: "pct_active_tv", label: "% Active in Last Cycle", value: curActivePct, format: "pct",
+      key: "pct_active_tv", label: "% Activated in Last Cycle", value: curActivePct, format: "pct",
       sparkline: [], delta: Math.round((curActivePct - priActivePct) * 10) / 10, deltaType: "pct", invertDirection: false,
     });
 
     // Card 2: % Inactive (0 visits in last cycle) — inverted
-    const curInactive = currentTiers.tierCounts["inactive"] || 0;
+    const curInactive = currentTiers.tierCounts["not_using"] || 0;
     const curInactivePct = currentTiers.total > 0
       ? Math.round((curInactive / currentTiers.total) * 1000) / 10 : 0;
-    const priInactive = priorTiers.tierCounts["inactive"] || 0;
+    const priInactive = priorTiers.tierCounts["not_using"] || 0;
     const priInactivePct = priorTiers.total > 0
       ? Math.round((priInactive / priorTiers.total) * 1000) / 10 : 0;
     tvCards.push({
-      key: "pct_inactive_tv", label: "% Inactive (0 visits)", value: curInactivePct, format: "pct",
+      key: "pct_inactive_tv", label: "% Not Using (0 visits)", value: curInactivePct, format: "pct",
       sparkline: [], delta: Math.round((curInactivePct - priInactivePct) * 10) / 10, deltaType: "pct", invertDirection: true,
     });
 
-    // Card 3: Engaged (8+ visits in last cycle — heaviest streamers)
-    const engaged = currentTiers.tierCounts["engaged"] || 0;
-    const priEngaged = priorTiers.tierCounts["engaged"] || 0;
+    // Card 3: Activated (2+ visits in last cycle)
+    const engaged = currentTiers.tierCounts["activated"] || 0;
+    const priEngaged = priorTiers.tierCounts["activated"] || 0;
     tvCards.push({
-      key: "engaged_count_tv", label: "Engaged (8+)", value: engaged, format: "count",
+      key: "engaged_count_tv", label: "Activated (2+)", value: engaged, format: "count",
       sparkline: [], delta: engaged - priEngaged, deltaType: "count", invertDirection: false,
     });
 
@@ -1190,8 +1174,7 @@ export async function getUsageMembers(params: {
   } else if (filter === "newly_on_target") {
     filterClause = `AND prior_tier NOT IN (${targetTiers}) AND current_tier IN (${targetTiers})`;
   } else if (filter === "dormant") {
-    const dormantTiers = segment === "members" ? "'dormant'" : segment === "sky3" ? "'not_using'" : "'inactive'";
-    filterClause = `AND current_tier IN (${dormantTiers})`;
+    filterClause = `AND current_tier IN ('not_using')`;
   } else if (filter === "improving") {
     filterClause = `AND direction = 'up'`;
   }
@@ -1315,7 +1298,7 @@ async function getTvUsageMembersFromCycle(params: {
     if (filter === "newly_on_target") {
       return r.prior_tier !== null && !targetSet.has(r.prior_tier) && targetSet.has(r.tier);
     }
-    if (filter === "dormant") return r.tier === "inactive";
+    if (filter === "dormant") return r.tier === "not_using";
     if (filter === "improving") return dir === "up";
     return true;
   });
@@ -1585,8 +1568,8 @@ async function getStableSky3Cohort(
 
 // ── Sky3 Movement (Churn-Risk Framing) ─────────────────────
 
-const RISK_BANDS = ["not_using", "barely_using", "getting_there"];
-const SUCCESS_BANDS = ["full_use", "wants_more"];
+const RISK_BANDS = ["not_using", "barely_using"];
+const SUCCESS_BANDS = ["activated"];
 
 export interface Sky3Transition {
   from: string;
@@ -2136,8 +2119,8 @@ export interface TvPageData {
   movement: TvMovementResponse;
 }
 
-const TV_RISK_BANDS = ["inactive", "light"];
-const TV_SUCCESS_BANDS = ["active", "engaged"];
+const TV_RISK_BANDS = ["not_using", "barely_using"];
+const TV_SUCCESS_BANDS = ["activated"];
 
 /**
  * Active TV subscribers eligible for usage measurement, excluding paused and
@@ -2674,8 +2657,8 @@ export interface MembersPageData {
   movement: MembersMovementResponse;
 }
 
-const MEMBERS_RISK_BANDS = ["dormant", "low"];
-const MEMBERS_SUCCESS_BANDS = ["target", "strong", "power_user"];
+const MEMBERS_RISK_BANDS = ["not_using", "barely_using"];
+const MEMBERS_SUCCESS_BANDS = ["activated"];
 
 /**
  * Active Members eligible for usage measurement, excluding paused and
