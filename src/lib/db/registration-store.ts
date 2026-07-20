@@ -2172,7 +2172,10 @@ export async function getConversionPoolLagStats(slice: PoolSliceKey = "all", use
 export type JourneyBucket = "all" | "intro-week" | "a-la-carte";
 
 // Intro-week pass identifiers (subset of dropInPassFilter)
-function introPassFilter(col: string): string {
+// Exported so scripts/audit-dashboard.ts recomputes the intro cohort against the
+// SAME pass predicate the dashboard uses — the auditor's independence is in the
+// cohort dedup/assignment, not in re-deriving which passes count as "intro".
+export function introPassFilter(col: string): string {
   // introPassLike matches '%INTRO%' (not '%INTRO WEEK%') — see its definition
   // for why ("2 WEEK INTRO" rebrand, 2026-04).
   return `(${introPassLike(col)} OR UPPER(${col}) LIKE '%TRIAL%' OR UPPER(${col}) LIKE '%FIRST%')`;

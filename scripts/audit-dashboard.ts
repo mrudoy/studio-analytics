@@ -35,6 +35,11 @@
 import { getPool, closePool } from "../src/lib/db/database";
 import { getCategory } from "../src/lib/analytics/categories";
 import { ACTIVE_STATES, AT_RISK_STATES } from "../src/lib/analytics/metrics/filters";
+import { ANY_AR_PLAN_FILTER, introPassFilter } from "../src/lib/db/registration-store";
+
+/** Weeks of intro-cohort history the dashboard renders — must track the
+ *  `weeksBack` in runJourneyConversion (src/lib/analytics/db-trends.ts). */
+const INTRO_WEEKS_BACK = 8;
 
 const BASE = process.env.AUDIT_BASE_URL || "https://studio-analytics-production.up.railway.app";
 const PASSWORD = process.env.AUDIT_PASSWORD;
@@ -118,6 +123,14 @@ function requirePayload(stats: Record<string, any>): void {
   const cw = stats.trends?.newCustomerVolume?.completedWeeks;
   if (!Array.isArray(cw) || cw.length === 0) bad.push("trends.newCustomerVolume.completedWeeks (empty/missing)");
   else str(cw[cw.length - 1]?.weekEnd, "newCustomerVolume.completedWeeks[last].weekEnd");
+
+  // journeyConversion is null when the DB has no registration data at all
+  // (runJourneyConversion bails early). That is "cannot evaluate", not a data
+  // bug — so a missing/short block is UNAVAILABLE, never a mismatch.
+  const iw = stats.trends?.journeyConversion?.introWeek?.weeks;
+  if (!Array.isArray(iw)) bad.push("trends.journeyConversion.introWeek.weeks");
+  else if (iw.length !== INTRO_WEEKS_BACK) bad.push(`journeyConversion.introWeek.weeks (${iw.length} weeks, expected ${INTRO_WEEKS_BACK})`);
+  else iw.forEach((w: any, i: number) => { str(w?.weekStart, `introWeek.weeks[${i}].weekStart`); num(w?.pool, `introWeek.weeks[${i}].pool`); num(w?.converts, `introWeek.weeks[${i}].converts`); });
 
   if (bad.length) throw new AuditUnavailable(`incomplete/malformed /api/stats payload (backend likely degraded): ${bad.slice(0, 8).join(", ")}${bad.length > 8 ? ` …(+${bad.length - 8})` : ""}`);
 }
@@ -213,6 +226,125 @@ async function main() {
     name: "monthlyChurn.noZeroCompletedMonths",
     ok: zeroChurn.length === 0,
     dashboard: zeroChurn.length ? zeroChurn : "all completed months churn>0", independent: "every completed month must have churn",
+  });
+
+  // ── 7. Intro-week cohort conversion: independent cohort recompute ──
+  // Guards the metric with the worst bug history on the dashboard:
+  //   • bucket-math regression — summing per-week distinct-email pools instead of
+  //     counting each email ONCE in their first cohort week (2026-05-08: 215 vs 183).
+  //   • dropping Sky Ting TV from the converter plan filter (using
+  //     IN_STUDIO_PLAN_FILTER instead of ANY_AR_PLAN_FILTER) — deflates converts.
+  //   • mis-bucketing a cohort into the wrong week.
+  // The recompute pulls RAW rows and does all cohort dedup/assignment in JS, so
+  // it shares no CTE logic with getIntroWeekCohortConversionWeekly. Postgres still
+  // does the week bucketing and the epoch math — replicating DATE_TRUNC('week')
+  // in JS would just invent a timezone bug (see the check-4 note).
+  //
+  // NOTE: the pass/plan predicates ARE shared with the dashboard (imported above),
+  // so this anchor deliberately does NOT catch a predicate that stops matching the
+  // studio's intro pass (the 2026-04 "2 WEEK INTRO" rebrand, which silently zeroed
+  // the pool for two months). Both sides would collapse together. That class needs
+  // a separate detector — a new high-volume non-AR pass the intro filter misses —
+  // which is left out here on purpose: the candidate pass names in this data
+  // ("SKY WEEK", "DEMO FALL 2025", "Community Day") make a token-based rule too
+  // false-positive-prone to gate an auto-fix on.
+  const { rows: introAtt } = await pool.query<{ email: string; at_epoch: number; attend_week: string }>(
+    `SELECT LOWER(r.email) AS email,
+            EXTRACT(EPOCH FROM r.attended_at)::float8 AS at_epoch,
+            DATE_TRUNC('week', r.attended_at)::date::text AS attend_week
+     FROM registrations r
+     WHERE r.attended_at IS NOT NULL AND r.email IS NOT NULL
+       AND (r.subscription = 'false' OR r.subscription IS NULL)
+       AND ${introPassFilter("r.pass")}
+       AND r.attended_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${INTRO_WEEKS_BACK} weeks')::date
+       AND r.attended_at <  DATE_TRUNC('week', CURRENT_DATE)::date`,
+  );
+  // Any conversion must post-date a first-intro inside the window, so restricting
+  // auto-renews to the same window start is equivalent to the unbounded scan.
+  const { rows: introArs } = await pool.query<{ email: string; created_epoch: number }>(
+    `SELECT LOWER(customer_email) AS email,
+            EXTRACT(EPOCH FROM created_at::timestamp)::float8 AS created_epoch
+     FROM auto_renews
+     WHERE customer_email IS NOT NULL AND created_at IS NOT NULL
+       AND created_at >= (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${INTRO_WEEKS_BACK} weeks')::date
+       ${ANY_AR_PLAN_FILTER}`,
+  );
+
+  // Each email lands in exactly one cohort week: the week of their FIRST intro attendance.
+  const firstIntro = new Map<string, { epoch: number; week: string }>();
+  for (const r of introAtt) {
+    const cur = firstIntro.get(r.email);
+    if (!cur || r.at_epoch < cur.epoch) firstIntro.set(r.email, { epoch: r.at_epoch, week: r.attend_week });
+  }
+  const arStarts = new Map<string, number[]>();
+  for (const r of introArs) {
+    const list = arStarts.get(r.email);
+    if (list) list.push(r.created_epoch);
+    else arStarts.set(r.email, [r.created_epoch]);
+  }
+  const dbPool = new Map<string, number>();
+  const dbConverts = new Map<string, number>();
+  for (const [email, f] of firstIntro) {
+    dbPool.set(f.week, (dbPool.get(f.week) ?? 0) + 1);
+    // State-agnostic: a sub started then canceled still counts as a conversion.
+    if ((arStarts.get(email) ?? []).some((e) => e >= f.epoch)) {
+      dbConverts.set(f.week, (dbConverts.get(f.week) ?? 0) + 1);
+    }
+  }
+
+  // Both sides derive their window from DATE_TRUNC('week', CURRENT_DATE) — but the
+  // DB session runs UTC, so around Sunday ~8pm ET (= Monday 00:00 UTC) CURRENT_DATE
+  // rolls and the window slides one week. /api/stats and this recompute run seconds
+  // apart, so a run straddling that boundary would see two different 8-week windows.
+  // Comparing only the OVERLAPPING weeks makes the anchor immune to that race
+  // instead of firing a false mismatch once a week.
+  const { rows: myWeekRows } = await pool.query<{ week_start: string }>(
+    `SELECT generate_series(
+       (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '${INTRO_WEEKS_BACK} weeks')::date,
+       (DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '1 week')::date,
+       '1 week'::interval)::date::text AS week_start`,
+  );
+  const myWeeks = myWeekRows.map((r) => r.week_start);
+  const dashWeeks = stats.trends.journeyConversion.introWeek.weeks as { weekStart: string; pool: number; converts: number }[];
+  // Both series are contiguous weekly runs, so the overlap is a simple range clamp.
+  const lo = myWeeks[0] > dashWeeks[0].weekStart ? myWeeks[0] : dashWeeks[0].weekStart;
+  const hi = myWeeks[myWeeks.length - 1] < dashWeeks[dashWeeks.length - 1].weekStart
+    ? myWeeks[myWeeks.length - 1] : dashWeeks[dashWeeks.length - 1].weekStart;
+  const overlap = dashWeeks.filter((w) => w.weekStart >= lo && w.weekStart <= hi);
+
+  const cohortDiffs: string[] = [];
+  for (const w of overlap) {
+    const expPool = dbPool.get(w.weekStart) ?? 0;
+    const expConv = dbConverts.get(w.weekStart) ?? 0;
+    if (w.pool !== expPool) cohortDiffs.push(`${w.weekStart} pool ${w.pool}≠${expPool}`);
+    if (w.converts !== expConv) cohortDiffs.push(`${w.weekStart} converts ${w.converts}≠${expConv}`);
+  }
+  // A cohort week the recompute found inside the overlap but the dashboard never
+  // rendered is a real gap (a dropped week), not a boundary artifact.
+  const rendered = new Set(dashWeeks.map((w) => w.weekStart));
+  for (const week of dbPool.keys()) {
+    if (week >= lo && week <= hi && !rendered.has(week)) cohortDiffs.push(`${week} missing from dashboard`);
+  }
+  // A near-empty overlap means something other than the boundary race is wrong
+  // (e.g. the dashboard rendering a stale window) — that we DO want to surface.
+  const tooLittleOverlap = overlap.length < INTRO_WEEKS_BACK - 1;
+  checks.push({
+    name: "introConversion.cohortWeeks=dbRecompute",
+    ok: cohortDiffs.length === 0 && !tooLittleOverlap,
+    dashboard: cohortDiffs.length ? cohortDiffs.slice(0, 6)
+      : tooLittleOverlap ? `only ${overlap.length}/${INTRO_WEEKS_BACK} weeks overlap (dashboard ${dashWeeks[0].weekStart}…, db ${myWeeks[0]}…)`
+      : `${overlap.length} weeks match`,
+    independent: "each email counted once, in the week of their first intro attendance",
+    note: "cohort math (not bucket math); converts = Member/Sky3/TV sub started on/after first intro",
+  });
+
+  // Structural: a cohort week can never have more converters than people.
+  const overConverted = dashWeeks.filter((w) => w.converts > w.pool).map((w) => `${w.weekStart} ${w.converts}>${w.pool}`);
+  checks.push({
+    name: "introConversion.convertsLEpool",
+    ok: overConverted.length === 0,
+    dashboard: overConverted.length ? overConverted : "converts ≤ pool every week",
+    independent: "converters are a subset of the cohort",
   });
 
   // ── Report ─────────────────────────────────────────────────────
