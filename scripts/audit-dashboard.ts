@@ -248,6 +248,18 @@ async function main() {
   // which is left out here on purpose: the candidate pass names in this data
   // ("SKY WEEK", "DEMO FALL 2025", "Community Day") make a token-based rule too
   // false-positive-prone to gate an auto-fix on.
+  // KNOWN ARTIFACT (documented, deliberately asserted as-is — NOT auto-"fixed"):
+  // getIntroWeekCohortConversionWeekly filters attendances to the window and THEN
+  // takes MIN(attended_at), so someone whose intro began just BEFORE the window and
+  // ran into it is counted as a fresh cohort member of the oldest rendered week.
+  // CLAUDE.md's definition ("whose FIRST intro attendance falls in the last N weeks")
+  // would exclude them. Measured 2026-07-19: 24 of the 227-person 8-week pool, ALL 24
+  // in the oldest week — inflating it 30 -> 54. Every other week is clean, because the
+  // window is far longer than the longest intro pass (14 days), so only the left edge
+  // can absorb earlier-started intros.
+  // This anchor mirrors the shipped behaviour on purpose: its job is to catch
+  // REGRESSIONS, and silently redefining a rendered conversion metric is a product
+  // decision for Mike, not an auto-fix. Flagged for a human call.
   const { rows: introAtt } = await pool.query<{ email: string; at_epoch: number; attend_week: string }>(
     `SELECT LOWER(r.email) AS email,
             EXTRACT(EPOCH FROM r.attended_at)::float8 AS at_epoch,
@@ -313,6 +325,16 @@ async function main() {
   const overlap = dashWeeks.filter((w) => w.weekStart >= lo && w.weekStart <= hi);
 
   const cohortDiffs: string[] = [];
+  // Validate the rendered week SEQUENCE before its values. Comparing values alone
+  // is blind to a dropped zero-pool week (absent from dbPool, so the missing-week
+  // scan below can't see it) masked by a duplicated neighbour — the row count still
+  // matches and every rendered week still agrees.
+  const expectedSeq = myWeeks.filter((w) => w >= lo && w <= hi);
+  const renderedSeq = overlap.map((w) => w.weekStart);
+  if (renderedSeq.join(",") !== expectedSeq.join(",")) {
+    cohortDiffs.push(`week sequence ${renderedSeq.join(",")} ≠ expected ${expectedSeq.join(",")}`);
+  }
+
   for (const w of overlap) {
     const expPool = dbPool.get(w.weekStart) ?? 0;
     const expConv = dbConverts.get(w.weekStart) ?? 0;
