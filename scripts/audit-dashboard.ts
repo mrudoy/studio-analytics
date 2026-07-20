@@ -124,6 +124,37 @@ function requirePayload(stats: Record<string, any>): void {
   if (!Array.isArray(cw) || cw.length === 0) bad.push("trends.newCustomerVolume.completedWeeks (empty/missing)");
   else str(cw[cw.length - 1]?.weekEnd, "newCustomerVolume.completedWeeks[last].weekEnd");
 
+  // movement is the canonical subscriber-movement source (getSubscriberMovement).
+  // It feeds the new/canceled window cards AND is copied over trends.* at API
+  // assembly, so anchors 8-10 read both surfaces. A missing/partial block means
+  // the safe() wrapper swallowed a failure — UNAVAILABLE, never a mismatch.
+  const mvWindows = ["yesterday", "thisWeek", "lastWeek", "thisMonth"] as const;
+  const mv = stats.movement;
+  if (mv == null) bad.push("movement");
+  else {
+    for (const w of mvWindows) {
+      const b = mv.byWindow?.[w];
+      if (b == null) { bad.push(`movement.byWindow.${w}`); continue; }
+      str(b.windowStart, `movement.byWindow.${w}.windowStart`);
+      str(b.windowEnd, `movement.byWindow.${w}.windowEnd`);
+      for (const k of ["member", "sky3", "skyTingTv"]) {
+        if (!b[k]) { bad.push(`movement.byWindow.${w}.${k}`); continue; }
+        num(b[k].new, `movement.byWindow.${w}.${k}.new`);
+        num(b[k].canceled, `movement.byWindow.${w}.${k}.canceled`);
+        num(b[k].activeAtStart, `movement.byWindow.${w}.${k}.activeAtStart`);
+      }
+    }
+    if (!Array.isArray(mv.monthly) || mv.monthly.length === 0) bad.push("movement.monthly (empty/missing)");
+    else mv.monthly.forEach((m: any, i: number) => {
+      str(m?.period, `movement.monthly[${i}].period`);
+      for (const k of ["member", "sky3", "skyTingTv"]) {
+        if (!m?.[k]) { bad.push(`movement.monthly[${i}].${k}`); continue; }
+        num(m[k].canceled, `movement.monthly[${i}].${k}.canceled`);
+        num(m[k].activeAtStart, `movement.monthly[${i}].${k}.activeAtStart`);
+      }
+    });
+  }
+
   // journeyConversion is null when the DB has no registration data at all
   // (runJourneyConversion bails early). That is "cannot evaluate", not a data
   // bug — so a missing/short block is UNAVAILABLE, never a mismatch.
@@ -370,6 +401,91 @@ async function main() {
     ok: overConverted.length === 0,
     dashboard: overConverted.length ? overConverted : "converts ≤ pool every week",
     independent: "converters are a subset of the cohort",
+  });
+
+  // ── 8. New signups per window never exceed rows actually created ──
+  // getSubscriberMovement is the canonical owner of new/canceled per window, and
+  // nothing else guarded it. The independent side counts raw auto_renews created
+  // in the SAME window straight from the table — no plan-changer exclusion, no
+  // installment-plan exclusion — so it is a strict UPPER BOUND on what movement
+  // may report. Those exclusions only ever remove rows, so movement.new > raw is
+  // impossible unless the window boundaries drifted (the off-by-one week class
+  // that already bit newCustomerVolume) or rows are being double-counted.
+  // Deliberately an inequality, not an equality: reproducing the email-scoped
+  // plan-changer exclusion here would re-implement the function and mirror its
+  // bugs instead of checking it. Anchor 9 covers the collapse-to-zero direction.
+  const overCounted: string[] = [];
+  for (const w of ["yesterday", "lastWeek", "thisMonth"] as const) {
+    const b = stats.movement.byWindow[w];
+    const { rows: createdRows } = await pool.query<{ plan_name: string; email: string | null }>(
+      `SELECT plan_name, LOWER(customer_email) AS email FROM auto_renews
+       WHERE created_at >= $1::date AND created_at < $2::date`,
+      [b.windowStart, b.windowEnd],
+    );
+    // Categorize with the SAME runtime getCategory the dashboard uses (never the
+    // stored plan_category column, which lags a rename).
+    const rawByCat: Record<string, number> = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+    for (const r of createdRows) rawByCat[CAT_KEY[getCategory(r.plan_name)] ?? "unknown"]++;
+    for (const k of ["member", "sky3", "skyTingTv"] as const) {
+      if (b[k].new > rawByCat[k]) overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+    }
+  }
+  checks.push({
+    name: "movement.newSignups<=rowsCreated",
+    ok: overCounted.length === 0,
+    dashboard: overCounted.length ? overCounted : "every window within bound",
+    independent: "movement.new ≤ auto_renews created in the same window",
+  });
+
+  // ── 9. Completed months never render zero NEW signups (per category) ──
+  // Mirror of anchor 6 on the signup side. A completed month with active
+  // subscribers but zero new signups in a category is the collapse-to-zero
+  // signature (a renamed plan falling out of the filter, or a window that
+  // stopped matching) — the exact failure the '%INTRO WEEK%' rebrand caused.
+  // Checked at MONTH granularity, not week: a quiet week with 0 new members is
+  // legitimate for a studio this size, a quiet month is not. Excludes the
+  // trailing partial month and 2025-10 (bulk admin cleanup), matching anchor 6.
+  const monthlyMv = stats.movement.monthly as any[];
+  const zeroNew: string[] = [];
+  for (const m of monthlyMv.slice(0, -1)) {
+    if (m.period === "2025-10") continue;
+    for (const k of ["member", "sky3", "skyTingTv"] as const) {
+      if (m[k].activeAtStart > 0 && m[k].new === 0) zeroNew.push(`${k}:${m.period}`);
+    }
+  }
+  checks.push({
+    name: "movement.noZeroNewCompletedMonths",
+    ok: zeroNew.length === 0,
+    dashboard: zeroNew.length ? zeroNew : "every completed month has new signups",
+    independent: "completed months with active subs must have new > 0",
+  });
+
+  // ── 10. trends.* churn equals the movement source it is copied from ──
+  // CLAUDE.md: trends.churnRates is OVERWRITTEN from the canonical movement
+  // result at API assembly (route.ts), so the two surfaces must be identical by
+  // construction. Any divergence means the override silently stopped applying
+  // and the churn cards are rendering the stale legacy rollup again — a
+  // regression a green build would never catch. Exact integer equality.
+  const mvByPeriod = new Map(monthlyMv.map((m) => [m.period, m]));
+  const drifted: string[] = [];
+  let comparedPairs = 0;
+  for (const k of ["member", "sky3", "skyTingTv"] as const) {
+    for (const row of (byCat[k].monthly ?? []) as { month: string; canceledCount: number; activeAtStart: number }[]) {
+      const m = mvByPeriod.get(row.month);
+      if (!m) continue; // trends may render months outside the movement span
+      comparedPairs++;
+      if (row.canceledCount !== m[k].canceled || row.activeAtStart !== m[k].activeAtStart) {
+        drifted.push(`${k}:${row.month} trends(cx=${row.canceledCount},start=${row.activeAtStart}) vs movement(cx=${m[k].canceled},start=${m[k].activeAtStart})`);
+      }
+    }
+  }
+  checks.push({
+    // A payload where no period overlaps would pass vacuously, so the pair count
+    // is part of the assertion, not just the note.
+    name: "trends.monthlyChurn=movementSource",
+    ok: drifted.length === 0 && comparedPairs > 0,
+    dashboard: drifted.length ? drifted : `${comparedPairs} (category,month) pairs identical`,
+    independent: "trends.churnRates must equal movement.monthly (route.ts override)",
   });
 
   // ── Report ─────────────────────────────────────────────────────
