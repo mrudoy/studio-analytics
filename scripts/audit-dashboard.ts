@@ -362,8 +362,23 @@ async function main() {
   // month. 0.5 tolerance covers cent-level float noise only — this is an
   // equality, not a fuzzy cross-metric estimate.
   //
-  // Payload-internal on purpose (both fields come from the ONE fetched render),
-  // so there is no month-boundary or writer race to absorb.
+  // Concurrency: the route computes the two fields from SEPARATE reads of
+  // auto_renews, so in general a bulk writer committing mid-render could skew
+  // them apart. Not here: this render was triggered while the audit held
+  // AUTO_RENEW_WRITE_LOCK (acquired before fetchStats), so no compliant bulk
+  // writer can commit between the route's reads, and a lock-bypassing writer
+  // changes the auto_renews fingerprint — which throws AuditUnavailable before
+  // any check is reported. Either way this anchor can never fire on a
+  // concurrent-write artifact.
+  //
+  // Rounding: SQL numeric ROUND and JS Math.round can in principle disagree by
+  // 1¢ on an annual row whose price/12 lands exactly on a half-cent
+  // (plan_price*100 ≡ 6 mod 12), where the IEEE-754 quotient may sit on the
+  // other side of the .5. Breaching the 0.5 tolerance needs 50+ same-direction
+  // boundary rows; measured 2026-07-22: 0 of 535 active billing annual rows are
+  // at a boundary (16 distinct plan prices, none qualify). If this ever fires
+  // with a sub-$1 diff, re-measure boundary exposure before treating it as
+  // predicate drift.
   const sb = stats.subscriptionBilling;
   checks.push({
     name: "subscriptionBilling.currentMonth=mrr",
