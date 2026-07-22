@@ -85,8 +85,18 @@ class AuditUnavailable extends Error {}
  * transaction (xact-scoped, like the writers). lock_timeout bounds the wait so
  * an in-flight bulk import defers the audit (exit 1, "try again later") rather
  * than hanging it; the timeout must comfortably exceed a normal import.
+ *
+ * HOLD time is bounded too, not just the wait: lock_timeout does nothing once
+ * the lock is acquired, and the audit holds it across an HTTP fetch to prod.
+ * The fetch has its own 120s abort, and a 300s watchdog is the backstop for
+ * any other hang (a stuck pool query, an event-loop stall): it releases the
+ * lock so the pipeline is NEVER blocked longer than 5 minutes by an audit,
+ * and marks the run expired so it exits UNAVAILABLE instead of judging
+ * comparisons that were no longer serialized.
  */
 let auditLockClient: PoolClient | null = null;
+let lockWatchdog: NodeJS.Timeout | null = null;
+let lockExpired = false;
 
 async function acquireWriteLock(pool: ReturnType<typeof getPool>): Promise<void> {
   const client = await pool.connect();
@@ -95,6 +105,11 @@ async function acquireWriteLock(pool: ReturnType<typeof getPool>): Promise<void>
     await client.query("SET LOCAL lock_timeout = '180s'");
     await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
     auditLockClient = client;
+    lockWatchdog = setTimeout(() => {
+      lockExpired = true;
+      console.error("[audit] write-lock watchdog fired after 300s — releasing so the pipeline is never blocked by a hung audit");
+      void releaseWriteLock();
+    }, 300_000);
   } catch (e) {
     // 55P03 lock_not_available = a bulk import is still running after 180s.
     // That's "cannot evaluate right now", never a data mismatch.
@@ -111,6 +126,7 @@ async function acquireWriteLock(pool: ReturnType<typeof getPool>): Promise<void>
  *  pool.end() waits for checked-out clients, so an unreleased lock client would
  *  hang the shutdown. */
 async function releaseWriteLock(): Promise<void> {
+  if (lockWatchdog) { clearTimeout(lockWatchdog); lockWatchdog = null; }
   const client = auditLockClient;
   auditLockClient = null;
   if (!client) return;
@@ -135,11 +151,24 @@ async function fetchStats(cookie: string): Promise<Record<string, any>> {
   // nocache=1 forces a fresh render so the payload reflects the SAME moment as
   // our DB recompute (a 15-min-stale cache could spuriously disagree). This
   // benignly warms the prod stats cache, exactly like a normal user page load.
-  const res = await fetch(`${BASE}/api/stats?nocache=1`, {
-    headers: { Cookie: cookie, Referer: `${BASE}/` },
-  });
-  if (!res.ok) throw new AuditUnavailable(`/api/stats failed: HTTP ${res.status}`);
-  return res.json();
+  //
+  // HARD TIMEOUT: this fetch runs while we hold AUTO_RENEW_WRITE_LOCK, so a
+  // hung render/network must never translate into an indefinitely blocked
+  // pipeline. The signal covers the body read (res.json()) too. 120s is ~4×
+  // a slow cold render.
+  try {
+    const res = await fetch(`${BASE}/api/stats?nocache=1`, {
+      headers: { Cookie: cookie, Referer: `${BASE}/` },
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) throw new AuditUnavailable(`/api/stats failed: HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    if ((e as Error)?.name === "TimeoutError" || (e as Error)?.name === "AbortError") {
+      throw new AuditUnavailable("/api/stats did not respond within 120s — audit deferred (write lock released)");
+    }
+    throw e;
+  }
 }
 
 /** Reject an incomplete payload (e.g. /api/stats served 200 with trends nulled
@@ -545,6 +574,12 @@ async function main() {
         overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
       }
     }
+  }
+
+  // If the watchdog force-released the lock mid-audit, the reads above were no
+  // longer serialized against writers — the run cannot be judged.
+  if (lockExpired) {
+    throw new AuditUnavailable("write-lock watchdog expired (>300s hold) — comparisons were not fully serialized; audit deferred");
   }
 
   // Mutual-exclusion tripwire: if auto_renews changed while we held the lock,
