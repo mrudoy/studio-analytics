@@ -32,7 +32,9 @@
  *
  * Usage: AUDIT_PASSWORD=… npx tsx scripts/audit-dashboard.ts
  */
+import type { PoolClient } from "pg";
 import { getPool, closePool } from "../src/lib/db/database";
+import { AUTO_RENEW_WRITE_LOCK } from "../src/lib/db/auto-renew-store";
 import { getCategory } from "../src/lib/analytics/categories";
 import { ACTIVE_STATES, AT_RISK_STATES } from "../src/lib/analytics/metrics/filters";
 import { ANY_AR_PLAN_FILTER, introPassFilter } from "../src/lib/db/registration-store";
@@ -62,6 +64,76 @@ const CAT_KEY: Record<string, "member" | "sky3" | "skyTingTv" | "unknown"> = {
  *  mismatch (→ exit 2). */
 class AuditUnavailable extends Error {}
 
+/**
+ * Mutual exclusion against bulk auto_renews writers, instead of racing them.
+ *
+ * Every bulk writer (saveAutoRenews, applyDeltaCancellations,
+ * reconcileFromFullExport) opens its transaction by taking
+ * pg_advisory_xact_lock(AUTO_RENEW_WRITE_LOCK) BEFORE writing anything, and
+ * holds it to COMMIT/ROLLBACK. So while the audit holds the same key:
+ *   - a writer already past the lock is impossible (we'd still be waiting);
+ *   - a writer that BEGAN but hasn't acquired the lock yet has written nothing
+ *     and cannot commit rows until we release;
+ * ⇒ no auto_renews commit can become visible between our /api/stats render and
+ * our raw reads. That turns the signup upper-bound anchor back into a strict
+ * inequality — no probabilistic "concurrent-write budget" needed. Earlier
+ * budget designs kept failing review because imported_at is stamped with NOW()
+ * (transaction-START time) inside one big writer transaction, so commit-time
+ * visibility can never be reconstructed from timestamps after the fact.
+ *
+ * Session state: the lock lives on ONE dedicated client inside an open
+ * transaction (xact-scoped, like the writers). lock_timeout bounds the wait so
+ * an in-flight bulk import defers the audit (exit 1, "try again later") rather
+ * than hanging it; the timeout must comfortably exceed a normal import.
+ *
+ * HOLD time is bounded too, not just the wait: lock_timeout does nothing once
+ * the lock is acquired, and the audit holds it across an HTTP fetch to prod.
+ * The fetch has its own 120s abort, and a 300s watchdog is the backstop for
+ * any other hang (a stuck pool query, an event-loop stall): it releases the
+ * lock so the pipeline is NEVER blocked longer than 5 minutes by an audit,
+ * and marks the run expired so it exits UNAVAILABLE instead of judging
+ * comparisons that were no longer serialized.
+ */
+let auditLockClient: PoolClient | null = null;
+let lockWatchdog: NodeJS.Timeout | null = null;
+let lockExpired = false;
+
+async function acquireWriteLock(pool: ReturnType<typeof getPool>): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '180s'");
+    await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
+    auditLockClient = client;
+    lockWatchdog = setTimeout(() => {
+      lockExpired = true;
+      console.error("[audit] write-lock watchdog fired after 300s — releasing so the pipeline is never blocked by a hung audit");
+      void releaseWriteLock();
+    }, 300_000);
+  } catch (e) {
+    // 55P03 lock_not_available = a bulk import is still running after 180s.
+    // That's "cannot evaluate right now", never a data mismatch.
+    try { await client.query("ROLLBACK"); } catch { /* connection may be dead */ }
+    client.release();
+    if ((e as { code?: string })?.code === "55P03") {
+      throw new AuditUnavailable("bulk auto_renews import held the write lock for >180s — audit deferred");
+    }
+    throw e;
+  }
+}
+
+/** Safe to call on every exit path (idempotent). MUST run before closePool():
+ *  pool.end() waits for checked-out clients, so an unreleased lock client would
+ *  hang the shutdown. */
+async function releaseWriteLock(): Promise<void> {
+  if (lockWatchdog) { clearTimeout(lockWatchdog); lockWatchdog = null; }
+  const client = auditLockClient;
+  auditLockClient = null;
+  if (!client) return;
+  try { await client.query("COMMIT"); } catch { /* lock dies with the connection anyway */ }
+  client.release();
+}
+
 async function login(): Promise<string> {
   if (!PASSWORD) throw new AuditUnavailable("AUDIT_PASSWORD env var is not set");
   const res = await fetch(`${BASE}/api/auth/login`, {
@@ -79,11 +151,24 @@ async function fetchStats(cookie: string): Promise<Record<string, any>> {
   // nocache=1 forces a fresh render so the payload reflects the SAME moment as
   // our DB recompute (a 15-min-stale cache could spuriously disagree). This
   // benignly warms the prod stats cache, exactly like a normal user page load.
-  const res = await fetch(`${BASE}/api/stats?nocache=1`, {
-    headers: { Cookie: cookie, Referer: `${BASE}/` },
-  });
-  if (!res.ok) throw new AuditUnavailable(`/api/stats failed: HTTP ${res.status}`);
-  return res.json();
+  //
+  // HARD TIMEOUT: this fetch runs while we hold AUTO_RENEW_WRITE_LOCK, so a
+  // hung render/network must never translate into an indefinitely blocked
+  // pipeline. The signal covers the body read (res.json()) too. 120s is ~4×
+  // a slow cold render.
+  try {
+    const res = await fetch(`${BASE}/api/stats?nocache=1`, {
+      headers: { Cookie: cookie, Referer: `${BASE}/` },
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) throw new AuditUnavailable(`/api/stats failed: HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    if ((e as Error)?.name === "TimeoutError" || (e as Error)?.name === "AbortError") {
+      throw new AuditUnavailable("/api/stats did not respond within 120s — audit deferred (write lock released)");
+    }
+    throw e;
+  }
 }
 
 /** Reject an incomplete payload (e.g. /api/stats served 200 with trends nulled
@@ -124,6 +209,56 @@ function requirePayload(stats: Record<string, any>): void {
   if (!Array.isArray(cw) || cw.length === 0) bad.push("trends.newCustomerVolume.completedWeeks (empty/missing)");
   else str(cw[cw.length - 1]?.weekEnd, "newCustomerVolume.completedWeeks[last].weekEnd");
 
+  // movement is the canonical subscriber-movement source (getSubscriberMovement).
+  // It feeds the new/canceled window cards AND is copied over trends.* at API
+  // assembly, so the movement anchors read both surfaces. A missing/partial
+  // block means the safe() wrapper swallowed a failure — UNAVAILABLE, never a
+  // mismatch.
+  //
+  // Validate EXACTLY the fields the remaining anchors read, no more: flagging a
+  // field nothing consumes would exit 1 on a payload the audit could actually
+  // have evaluated, which is its own kind of false alarm. Windows are ALL FIVE
+  // the dashboard renders (page.tsx movement table) — the signup-bound anchor
+  // iterates every one of them; monthly needs `period`, the churn pair, and
+  // `new` (anchor 9 diffs trends.monthly signup fields against it).
+  const mvWindows = ["yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"] as const;
+  const mv = stats.movement;
+  if (mv == null) bad.push("movement");
+  else {
+    for (const w of mvWindows) {
+      const b = mv.byWindow?.[w];
+      if (b == null) { bad.push(`movement.byWindow.${w}`); continue; }
+      str(b.windowStart, `movement.byWindow.${w}.windowStart`);
+      str(b.windowEnd, `movement.byWindow.${w}.windowEnd`);
+      for (const k of ["member", "sky3", "skyTingTv"]) {
+        if (!b[k]) { bad.push(`movement.byWindow.${w}.${k}`); continue; }
+        num(b[k].new, `movement.byWindow.${w}.${k}.new`);
+      }
+    }
+    if (!Array.isArray(mv.monthly) || mv.monthly.length === 0) bad.push("movement.monthly (empty/missing)");
+    else mv.monthly.forEach((m: any, i: number) => {
+      str(m?.period, `movement.monthly[${i}].period`);
+      for (const k of ["member", "sky3", "skyTingTv"]) {
+        if (!m?.[k]) { bad.push(`movement.monthly[${i}].${k}`); continue; }
+        num(m[k].canceled, `movement.monthly[${i}].${k}.canceled`);
+        num(m[k].activeAtStart, `movement.monthly[${i}].${k}.activeAtStart`);
+        num(m[k].new, `movement.monthly[${i}].${k}.new`);
+      }
+    });
+  }
+
+  // trends.monthly is the OTHER surface route.ts overrides from movement (the
+  // growth cards read it, separately from churnRates.byCategory). Anchor 9
+  // compares its churn + signup fields against movement.monthly, so a payload
+  // missing them cannot be judged.
+  if (!Array.isArray(stats.trends?.monthly) || stats.trends.monthly.length === 0) bad.push("trends.monthly (empty/missing)");
+  else stats.trends.monthly.forEach((m: any, i: number) => {
+    str(m?.period, `trends.monthly[${i}].period`);
+    for (const f of ["memberChurn", "sky3Churn", "skyTingTvChurn", "newMembers", "newSky3", "newSkyTingTv"]) {
+      num(m?.[f], `trends.monthly[${i}].${f}`);
+    }
+  });
+
   // journeyConversion is null when the DB has no registration data at all
   // (runJourneyConversion bails early). That is "cannot evaluate", not a data
   // bug — so a missing/short block is UNAVAILABLE, never a mismatch.
@@ -135,10 +270,30 @@ function requirePayload(stats: Record<string, any>): void {
   if (bad.length) throw new AuditUnavailable(`incomplete/malformed /api/stats payload (backend likely degraded): ${bad.slice(0, 8).join(", ")}${bad.length > 8 ? ` …(+${bad.length - 8})` : ""}`);
 }
 
+/** Tripwire for writers that BYPASS the advisory lock (a hand-run SQL fixup, a
+ *  future writer that forgets pg_advisory_xact_lock). MAX(imported_at) moves on
+ *  any upsert (stamped NOW(), i.e. "recently"); COUNT(*) moves on insert/delete.
+ *  If the fingerprint changes while we hold the lock, the mutual-exclusion
+ *  premise is broken and the run is UNAVAILABLE — never judged. (Residual blind
+ *  spot: a lock-bypassing UPDATE inside a transaction old enough that its NOW()
+ *  predates the previous import — accepted; no live code path does raw updates.) */
+async function autoRenewsFingerprint(pool: ReturnType<typeof getPool>): Promise<string> {
+  const { rows } = await pool.query<{ ts: string | null; n: string }>(
+    `SELECT MAX(imported_at)::text AS ts, COUNT(*)::text AS n FROM auto_renews`,
+  );
+  return `${rows[0]?.ts ?? ""}|${rows[0]?.n ?? "0"}`;
+}
+
 async function main() {
   const checks: Check[] = [];
   const pool = getPool();
   const cookie = await login();
+  // Take the writers' lock BEFORE the render: the race window opens the moment
+  // /api/stats reads its data, so the exclusion must span render → raw reads.
+  // Held until after anchor 8's raw reads (the last auto_renews comparison);
+  // everything after that compares fields within the one fetched payload.
+  await acquireWriteLock(pool);
+  const fingerprintBefore = await autoRenewsFingerprint(pool);
   const stats = await fetchStats(cookie);
   requirePayload(stats);
 
@@ -372,6 +527,172 @@ async function main() {
     independent: "converters are a subset of the cohort",
   });
 
+  // ── 8. New signups per window never exceed rows actually created ──
+  // getSubscriberMovement is the canonical owner of new/canceled per window, and
+  // nothing else guarded it. The independent side counts raw auto_renews created
+  // in the SAME window straight from the table — no plan-changer exclusion, no
+  // installment-plan exclusion — so it is a strict UPPER BOUND on what movement
+  // may report. Those exclusions only ever remove rows, so movement.new > raw is
+  // impossible unless the window boundaries drifted (the off-by-one week class
+  // that already bit newCustomerVolume) or rows are being double-counted.
+  // Deliberately an inequality, not an equality: reproducing the email-scoped
+  // plan-changer exclusion here would re-implement the function and mirror its
+  // bugs instead of checking it. Anchor 9 covers the collapse-to-zero direction.
+  // Categorize with the SAME runtime getCategory the dashboard uses (never the
+  // stored plan_category column, which lags a rename).
+  const rawCreatedByCat = async (from: string, to: string) => {
+    const { rows } = await pool.query<{ plan_name: string }>(
+      `SELECT plan_name FROM auto_renews
+       WHERE created_at >= $1::date AND created_at < $2::date`,
+      [from, to],
+    );
+    const byCat: Record<string, number> = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+    for (const r of rows) byCat[CAT_KEY[getCategory(r.plan_name)] ?? "unknown"]++;
+    return byCat;
+  };
+
+  // These reads happen AFTER /api/stats rendered, but the advisory write lock
+  // (acquired before the render, see acquireWriteLock) guarantees no bulk
+  // writer commits in between — so a breach here can never be a mid-audit
+  // import, it is real. Earlier revisions priced a "concurrent-write budget"
+  // from imported_at timestamps instead; that kept failing review because
+  // imported_at is NOW() = transaction-START time inside one big writer
+  // transaction, so a long-running import could commit mid-audit with stamps
+  // that predate any watermark (false alarm), and an unbounded budget window
+  // could excuse a real overcount (false pass). Mutual exclusion removes the
+  // race instead of estimating it.
+  //
+  // ALL FIVE rendered windows are checked — the movement table on page.tsx
+  // renders yesterday/thisWeek/lastWeek/thisMonth/lastMonth, so an unchecked
+  // window would be an unguarded rendered surface.
+  const overCounted: string[] = [];
+  for (const w of ["yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"] as const) {
+    const b = stats.movement.byWindow[w];
+    const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+    for (const k of ["member", "sky3", "skyTingTv"] as const) {
+      if (b[k].new > rawByCat[k]) {
+        overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+      }
+    }
+  }
+
+  // If the watchdog force-released the lock mid-audit, the reads above were no
+  // longer serialized against writers — the run cannot be judged.
+  if (lockExpired) {
+    throw new AuditUnavailable("write-lock watchdog expired (>300s hold) — comparisons were not fully serialized; audit deferred");
+  }
+
+  // Mutual-exclusion tripwire: if auto_renews changed while we held the lock,
+  // some writer bypassed AUTO_RENEW_WRITE_LOCK and the strict bound above was
+  // computed on shifting data. That run cannot be judged — defer, never emit a
+  // mismatch (or a pass) from it.
+  const fingerprintAfter = await autoRenewsFingerprint(pool);
+  if (fingerprintAfter !== fingerprintBefore) {
+    throw new AuditUnavailable(
+      `auto_renews changed mid-audit despite the write lock (${fingerprintBefore} → ${fingerprintAfter}) — a writer is bypassing AUTO_RENEW_WRITE_LOCK`,
+    );
+  }
+  // Last auto_renews read is done — let queued pipeline imports proceed.
+  await releaseWriteLock();
+
+  checks.push({
+    name: "movement.newSignups<=rowsCreated",
+    ok: overCounted.length === 0,
+    dashboard: overCounted.length ? overCounted : "every window within bound",
+    independent: "movement.new ≤ auto_renews rows created in the same window (strict; render+reads serialized against writers)",
+  });
+
+  // NOTE: a signup-side "collapse to zero" anchor was attempted here and pulled
+  // before merge. Every formulation had a false-positive path, because from
+  // outside the function a broken filter and a legitimate business lull render
+  // identically:
+  //   • per-month `new === 0`  → fires on a pre-launch or wind-down month (Sky3
+  //     genuinely recorded 0 new signups for the 16 months before it launched).
+  //   • whole-series zero      → fires on a category closed to new sales for the
+  //     entire lookback.
+  //   • whole-series zero + "but the DB has rows" → fires when the only rows are
+  //     cross-category plan changers, which getSubscriberMovement deliberately
+  //     excludes from `new` but a raw created_at query counts.
+  // Separating those needs the email-scoped plan-changer set, i.e. the very
+  // logic under test — an anchor that re-implements the function would mirror
+  // its bugs instead of catching them. Left unguarded on purpose rather than
+  // shipping a check that cries wolf; see the follow-up for doing it inside
+  // subscriber-movement, where the changer set is already in scope.
+  const monthlyMv = stats.movement.monthly as any[];
+
+  // ── 9. trends.* churn equals the movement source it is copied from ──
+  // CLAUDE.md: trends.churnRates is OVERWRITTEN from the canonical movement
+  // result at API assembly (route.ts), so the two surfaces must be identical by
+  // construction. Any divergence means the override silently stopped applying
+  // and the churn cards are rendering the stale legacy rollup again — a
+  // regression a green build would never catch. Exact integer equality.
+  const mvByPeriod = new Map(monthlyMv.map((m) => [m.period, m]));
+  // Months genuinely older than the movement window are legitimately absent from
+  // it. Anything INSIDE the span is not: an un-overridden month is exactly what
+  // this anchor exists to catch, and silently `continue`-ing past it would let
+  // the failure through. This bites at the UTC/ET month boundary, where the
+  // legacy trends leg (server-local `new Date()`) can emit a month the ET-based
+  // movement leg has not started yet. So skipping is allowed only OUTSIDE the
+  // span; a gap inside it is reported.
+  const mvPeriods = monthlyMv.map((m) => m.period as string).sort();
+  const spanStart = mvPeriods[0];
+  const spanEnd = mvPeriods[mvPeriods.length - 1];
+  const drifted: string[] = [];
+  const uncovered: string[] = [];
+  let comparedPairs = 0;
+  for (const k of ["member", "sky3", "skyTingTv"] as const) {
+    for (const row of (byCat[k].monthly ?? []) as { month: string; canceledCount: number; activeAtStart: number }[]) {
+      const m = mvByPeriod.get(row.month);
+      if (!m) {
+        if (row.month >= spanStart && row.month <= spanEnd) uncovered.push(`${k}:${row.month}`);
+        continue;
+      }
+      comparedPairs++;
+      if (row.canceledCount !== m[k].canceled || row.activeAtStart !== m[k].activeAtStart) {
+        drifted.push(`${k}:${row.month} trends(cx=${row.canceledCount},start=${row.activeAtStart}) vs movement(cx=${m[k].canceled},start=${m[k].activeAtStart})`);
+      }
+    }
+  }
+
+  // The SECOND surface route.ts overrides from movement: trends.monthly[*]
+  // (memberChurn/sky3Churn/skyTingTvChurn + newMembers/newSky3/newSkyTingTv).
+  // The growth category cards render THESE fields directly — separately from
+  // churnRates.byCategory — so byCategory agreeing proves nothing about them.
+  // Same span rule as above: a trends.monthly period inside the movement span
+  // with no movement row is exactly the silent `if (!mv) continue` skip in
+  // route.ts that this anchor exists to catch.
+  const TM_FIELDS = [
+    ["memberChurn", "member", "canceled"],
+    ["sky3Churn", "sky3", "canceled"],
+    ["skyTingTvChurn", "skyTingTv", "canceled"],
+    ["newMembers", "member", "new"],
+    ["newSky3", "sky3", "new"],
+    ["newSkyTingTv", "skyTingTv", "new"],
+  ] as const;
+  let comparedTrendRows = 0;
+  for (const tm of stats.trends.monthly as any[]) {
+    const m = mvByPeriod.get(tm.period);
+    if (!m) {
+      if (tm.period >= spanStart && tm.period <= spanEnd) uncovered.push(`trends.monthly:${tm.period}`);
+      continue;
+    }
+    comparedTrendRows++;
+    const diffs = TM_FIELDS
+      .filter(([f, k, mvField]) => tm[f] !== m[k][mvField])
+      .map(([f, k, mvField]) => `${f}=${tm[f]}≠movement.${k}.${mvField}=${m[k][mvField]}`);
+    if (diffs.length) drifted.push(`trends.monthly:${tm.period} ${diffs.join(", ")}`);
+  }
+  checks.push({
+    // A payload where no period overlaps would pass vacuously, so the pair count
+    // is part of the assertion, not just the note.
+    name: "trends.monthlyChurn=movementSource",
+    ok: drifted.length === 0 && uncovered.length === 0 && comparedPairs > 0 && comparedTrendRows > 0,
+    dashboard: drifted.length || uncovered.length
+      ? [...drifted, ...uncovered.map((u) => `${u} rendered by trends but missing from movement (inside span ${spanStart}..${spanEnd})`)]
+      : `${comparedPairs} (category,month) pairs + ${comparedTrendRows} trends.monthly rows identical`,
+    independent: "trends.churnRates AND trends.monthly must equal movement.monthly (route.ts overrides both)",
+  });
+
   // ── Report ─────────────────────────────────────────────────────
   const failed = checks.filter((c) => !c.ok);
   console.log(`\n[audit] ${BASE}  —  ${checks.length} anchors, ${failed.length} mismatch(es)\n`);
@@ -392,6 +713,7 @@ async function main() {
 main().catch(async (e) => {
   const unavailable = e instanceof AuditUnavailable;
   console.error(`[audit] ${unavailable ? "could not evaluate" : "errored"}:`, e instanceof Error ? e.message : e);
+  await releaseWriteLock().catch(() => {}); // before closePool: pool.end() waits on checked-out clients
   await closePool().catch(() => {});
   process.exit(1); // both "unavailable" and unexpected errors are exit 1, never a false mismatch
 });

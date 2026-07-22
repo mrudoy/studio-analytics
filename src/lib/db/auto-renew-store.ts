@@ -1025,30 +1025,6 @@ export async function getCanceledAutoRenewsWithClickDate(startDate: string, endD
   return (rows as RawAutoRenewRow[]).map(mapRow);
 }
 
-/**
- * Get auto-renews canceled within a date range.
- * @deprecated Use getCanceledAutoRenewsWithClickDate — this buckets by canceled_at
- *   which Union sets to the next billing date, causing period-end spikes.
- */
-export async function getCanceledAutoRenews(startDate: string, endDate: string): Promise<StoredAutoRenew[]> {
-  const pool = getPool();
-  // Only count rows where plan_state is actually 'Canceled'.
-  // For active subscribers, canceled_at is the next billing date — NOT a cancellation.
-  // Daily deltas import active rows with canceled_at in recent ranges; filtering by
-  // plan_state='Canceled' ensures we only count real cancellations.
-  const { rows } = await pool.query(
-    `SELECT id, snapshot_id, plan_name, plan_state, plan_price,
-            customer_name, customer_email, created_at, canceled_at
-     FROM auto_renews
-     WHERE canceled_at IS NOT NULL AND canceled_at >= $1 AND canceled_at < $2
-       AND plan_state = 'Canceled'
-     ORDER BY canceled_at`,
-    [startDate, endDate]
-  );
-
-  return (rows as RawAutoRenewRow[]).map(mapRow);
-}
-
 export interface DailyMovementRow {
   date: string; // YYYY-MM-DD
   newMembers: number;

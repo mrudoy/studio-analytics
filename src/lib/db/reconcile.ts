@@ -536,6 +536,12 @@ export async function rollbackReconcile(runId: number): Promise<{ restored: numb
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Same serialization as every other bulk auto_renews writer (saveAutoRenews,
+    // applyDeltaCancellations, reconcileFromFullExport): the nightly auditor
+    // holds this lock while it compares /api/stats to raw rows, and its
+    // correctness argument is "no writer can commit mid-audit". A rollback that
+    // skipped the lock would break that premise.
+    await client.query("SELECT pg_advisory_xact_lock($1)", [AUTO_RENEW_WRITE_LOCK]);
     const snap = await client.query(
       `SELECT auto_renew_id, prev_plan_state, prev_canceled_at
          FROM reconcile_row_snapshot WHERE run_id = $1`,
@@ -547,7 +553,10 @@ export async function rollbackReconcile(runId: number): Promise<{ restored: numb
     await client.query("SET LOCAL app.reconcile = 'on'");
     for (const r of snap.rows as Record<string, unknown>[]) {
       const upd = await client.query(
-        `UPDATE auto_renews SET plan_state=$2, canceled_at=$3 WHERE id=$1`,
+        // imported_at bump: keeps MAX(imported_at) honest as a "this table was
+        // touched" watermark (the auditor fingerprints it as a tripwire for
+        // writers that bypass the advisory lock).
+        `UPDATE auto_renews SET plan_state=$2, canceled_at=$3, imported_at=NOW() WHERE id=$1`,
         [r.auto_renew_id, r.prev_plan_state, r.prev_canceled_at],
       );
       restored += upd.rowCount ?? 0;
