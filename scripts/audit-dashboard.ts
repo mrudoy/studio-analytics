@@ -193,6 +193,12 @@ function requirePayload(stats: Record<string, any>): void {
   else for (const k of ["member", "sky3", "skyTingTv", "total"]) num(mrr[k], `mrr.${k}`);
   num(stats.arpu?.overall, "arpu.overall");
 
+  // subscriptionBilling is only assembled when monthlyRevenueResult resolved
+  // (route.ts wraps it in `if (monthlyRevenueResult)`), so a missing block means
+  // safe() swallowed a backend failure — a degraded payload, never judgeable.
+  num(stats.subscriptionBilling?.currentMonthActual, "subscriptionBilling.currentMonthActual");
+  str(stats.subscriptionBilling?.currentMonth, "subscriptionBilling.currentMonth");
+
   if (!Array.isArray(stats.monthlyRevenue)) bad.push("monthlyRevenue");
   else stats.monthlyRevenue.forEach((m: any, i: number) => { str(m?.month, `monthlyRevenue[${i}].month`); num(m?.gross, `monthlyRevenue[${i}].gross`); num(m?.net, `monthlyRevenue[${i}].net`); });
 
@@ -337,6 +343,49 @@ async function main() {
   checks.push({ name: "mrr.total=Σcategory", ok: Math.abs((mrr.total ?? 0) - mrrSum) < 0.5, dashboard: mrr.total, independent: mrrSum });
   const expArpu = (a.total ?? 0) > 0 ? Math.round(((mrr.total ?? 0) / a.total) * 100) / 100 : 0;
   checks.push({ name: "arpu.overall=mrr/active", ok: Math.abs((stats.arpu.overall ?? 0) - expArpu) < 0.5, dashboard: stats.arpu.overall, independent: expArpu });
+
+  // ── 3b. Current-month subscription billing ≡ MRR (structural identity) ──
+  // subscriptionBilling.currentMonthActual (getMonthlySubscriptionBilling, SQL)
+  // and mrr.total (getAutoRenewStats, TS) are the SAME number computed by two
+  // independent implementations that must mirror each other predicate-for-
+  // predicate: BILLING_STATES vs BILLING_STATES_SQL, isNonSubscriptionPlan()
+  // vs nonSubscriptionPlanSql(), and the annual-plan /12 with per-row cent
+  // rounding. The SQL's clause (b) ("since Canceled but active at month END")
+  // is empty for the CURRENT month by construction — its canceled_at range
+  // (> month_end AND <= today) is vacuous while month_end is in the future —
+  // so only the canonical billing set can contribute. Verified equal to the
+  // penny on 2026-07-20 and 2026-07-22.
+  //
+  // What a breach means: one side of a paired TS/SQL predicate changed without
+  // the other (the exact drift class PR #33 warned about), or future-dated
+  // Canceled rows are leaking past clause (b)'s upper bound into the current
+  // month. 0.5 tolerance covers cent-level float noise only — this is an
+  // equality, not a fuzzy cross-metric estimate.
+  //
+  // Concurrency: the route computes the two fields from SEPARATE reads of
+  // auto_renews, so in general a bulk writer committing mid-render could skew
+  // them apart. Not here: this render was triggered while the audit held
+  // AUTO_RENEW_WRITE_LOCK (acquired before fetchStats), so no compliant bulk
+  // writer can commit between the route's reads, and a lock-bypassing writer
+  // changes the auto_renews fingerprint — which throws AuditUnavailable before
+  // any check is reported. Either way this anchor can never fire on a
+  // concurrent-write artifact.
+  //
+  // Rounding: SQL numeric ROUND and JS Math.round can in principle disagree by
+  // 1¢ on an annual row whose price/12 lands exactly on a half-cent
+  // (plan_price*100 ≡ 6 mod 12), where the IEEE-754 quotient may sit on the
+  // other side of the .5. Breaching the 0.5 tolerance needs 50+ same-direction
+  // boundary rows; measured 2026-07-22: 0 of 535 active billing annual rows are
+  // at a boundary (16 distinct plan prices, none qualify). If this ever fires
+  // with a sub-$1 diff, re-measure boundary exposure before treating it as
+  // predicate drift.
+  const sb = stats.subscriptionBilling;
+  checks.push({
+    name: "subscriptionBilling.currentMonth=mrr",
+    ok: Math.abs((sb.currentMonthActual ?? 0) - (mrr.total ?? 0)) < 0.5,
+    dashboard: sb.currentMonthActual, independent: mrr.total,
+    note: "current-month billing run-rate must equal canonical MRR to the penny (clause (b) is structurally empty for the current month)",
+  });
 
   // ── 4. New-customer "current week" is the real calendar week ────
   // Anchor the boundary on Postgres' own DATE_TRUNC('week', CURRENT_DATE) — the
