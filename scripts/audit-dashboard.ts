@@ -224,9 +224,10 @@ function requirePayload(stats: Record<string, any>): void {
   // Validate EXACTLY the fields the remaining anchors read, no more: flagging a
   // field nothing consumes would exit 1 on a payload the audit could actually
   // have evaluated, which is its own kind of false alarm. Windows are ALL FIVE
-  // the dashboard renders (page.tsx movement table) — the signup-bound anchor
-  // iterates every one of them; monthly needs `period`, the churn pair, and
-  // `new` (anchor 9 diffs trends.monthly signup fields against it).
+  // the dashboard renders (page.tsx movement table) — the signup-bound and
+  // canceled-bound anchors iterate every one of them (reading `new` and
+  // `canceled`); monthly needs `period`, the churn pair, and `new` (anchor 9
+  // diffs trends.monthly signup fields against it).
   const mvWindows = ["yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"] as const;
   const mv = stats.movement;
   if (mv == null) bad.push("movement");
@@ -239,6 +240,7 @@ function requirePayload(stats: Record<string, any>): void {
       for (const k of ["member", "sky3", "skyTingTv"]) {
         if (!b[k]) { bad.push(`movement.byWindow.${w}.${k}`); continue; }
         num(b[k].new, `movement.byWindow.${w}.${k}.new`);
+        num(b[k].canceled, `movement.byWindow.${w}.${k}.canceled`);
       }
     }
     if (!Array.isArray(mv.monthly) || mv.monthly.length === 0) bad.push("movement.monthly (empty/missing)");
@@ -296,8 +298,11 @@ async function main() {
   const cookie = await login();
   // Take the writers' lock BEFORE the render: the race window opens the moment
   // /api/stats reads its data, so the exclusion must span render → raw reads.
-  // Held until after anchor 8's raw reads (the last auto_renews comparison);
-  // everything after that compares fields within the one fetched payload.
+  // Held until after anchors 8/8b's raw reads (the last auto_renews /
+  // auto_renew_events comparisons); everything after that compares fields
+  // within the one fetched payload. (auto_renew_events is only ever written by
+  // the trigger on auto_renews plan_state changes, so the auto_renews
+  // fingerprint tripwire covers it too.)
   await acquireWriteLock(pool);
   const fingerprintBefore = await autoRenewsFingerprint(pool);
   const stats = await fetchStats(cookie);
@@ -600,6 +605,45 @@ async function main() {
     return byCat;
   };
 
+  // ── 8b. Canceled per window never exceed rows with a churn record ──
+  // The canceled-side twin of anchor 8. getSubscriberMovement counts a row as
+  // canceled when its churn_date lands in the window, where churn_date is
+  // (1) pending_canceled_at rendered as an America/New_York date, else
+  // (2) the earliest guard-passing churn/backfill_churn event date from
+  // auto_renew_events (getFirstChurnDateByAutoRenewId). Whichever leg wins,
+  // the date IS the ET date of one of those two sources — so a row movement
+  // counts in [from, to) necessarily has pending_canceled_at OR a
+  // churn/backfill_churn event on an ET date inside [from, to). Counting ALL
+  // such rows — no phantom-event guards, no plan-changer exclusion, no blank-
+  // email skip, no Map-collapse of same email|plan subscriptions — is
+  // therefore a strict UPPER BOUND: every one of those differences only ever
+  // REMOVES rows from movement's count (or collapses two into one). A breach
+  // means window boundaries drifted (the off-by-one class that bit
+  // newCustomerVolume) or rows are double-counted — never a filtering change.
+  // Deliberately an inequality: reproducing the guard/changer logic here would
+  // re-implement the function under test and mirror its bugs. The
+  // collapse-to-zero direction stays with anchors 6 and 9 (monthly churn can't
+  // be 0; trends must equal movement).
+  // Categorize with the SAME runtime getCategory the dashboard uses.
+  const rawChurnRecordsByCat = async (from: string, to: string) => {
+    const { rows } = await pool.query<{ plan_name: string }>(
+      `SELECT ar.plan_name FROM auto_renews ar
+       WHERE (ar.pending_canceled_at IS NOT NULL
+              AND (ar.pending_canceled_at AT TIME ZONE 'America/New_York')::date >= $1::date
+              AND (ar.pending_canceled_at AT TIME ZONE 'America/New_York')::date <  $2::date)
+          OR EXISTS (
+              SELECT 1 FROM auto_renew_events e
+              WHERE e.auto_renew_id = ar.id
+                AND e.event_type IN ('churn', 'backfill_churn')
+                AND (e.observed_at AT TIME ZONE 'America/New_York')::date >= $1::date
+                AND (e.observed_at AT TIME ZONE 'America/New_York')::date <  $2::date)`,
+      [from, to],
+    );
+    const byCat: Record<string, number> = { member: 0, sky3: 0, skyTingTv: 0, unknown: 0 };
+    for (const r of rows) byCat[CAT_KEY[getCategory(r.plan_name)] ?? "unknown"]++;
+    return byCat;
+  };
+
   // These reads happen AFTER /api/stats rendered, but the advisory write lock
   // (acquired before the render, see acquireWriteLock) guarantees no bulk
   // writer commits in between — so a breach here can never be a mid-audit
@@ -615,12 +659,17 @@ async function main() {
   // renders yesterday/thisWeek/lastWeek/thisMonth/lastMonth, so an unchecked
   // window would be an unguarded rendered surface.
   const overCounted: string[] = [];
+  const overCanceled: string[] = [];
   for (const w of ["yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"] as const) {
     const b = stats.movement.byWindow[w];
     const rawByCat = await rawCreatedByCat(b.windowStart, b.windowEnd);
+    const churnByCat = await rawChurnRecordsByCat(b.windowStart, b.windowEnd);
     for (const k of ["member", "sky3", "skyTingTv"] as const) {
       if (b[k].new > rawByCat[k]) {
         overCounted.push(`${w}/${k}: movement=${b[k].new} > created=${rawByCat[k]}`);
+      }
+      if (b[k].canceled > churnByCat[k]) {
+        overCanceled.push(`${w}/${k}: movement=${b[k].canceled} > churnRecords=${churnByCat[k]}`);
       }
     }
   }
@@ -649,6 +698,13 @@ async function main() {
     ok: overCounted.length === 0,
     dashboard: overCounted.length ? overCounted : "every window within bound",
     independent: "movement.new ≤ auto_renews rows created in the same window (strict; render+reads serialized against writers)",
+  });
+
+  checks.push({
+    name: "movement.canceled<=churnRecords",
+    ok: overCanceled.length === 0,
+    dashboard: overCanceled.length ? overCanceled : "every window within bound",
+    independent: "movement.canceled ≤ rows with pending_canceled_at or a churn/backfill_churn event on an ET date inside the window (strict; serialized against writers)",
   });
 
   // NOTE: a signup-side "collapse to zero" anchor was attempted here and pulled
