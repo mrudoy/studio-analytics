@@ -235,7 +235,8 @@ export async function computeWeeklyVisits(weekStart: string): Promise<number> {
         LOWER(customer_email) AS email,
         customer_name AS name
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
+      WHERE plan_state IN (${ACTIVE_STATES_SQL})
+        AND (current_state IS NULL OR current_state = 'active')
         AND plan_category = 'SKY_TING_TV'
         AND customer_email IS NOT NULL
     ),
@@ -593,7 +594,8 @@ export async function getUsageScorecard(
     const { rows } = await pool.query(`
       SELECT COUNT(DISTINCT LOWER(customer_email)) AS cnt
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
+      WHERE plan_state IN (${ACTIVE_STATES_SQL})
+        AND (current_state IS NULL OR current_state = 'active')
         AND plan_category IN (${cats})
         AND customer_email IS NOT NULL
     `);
@@ -1014,7 +1016,8 @@ export async function getUsageSegments(periodWeeks = 4): Promise<{
     const { rows: subRows } = await pool.query(`
       SELECT COUNT(DISTINCT LOWER(customer_email)) AS cnt
       FROM auto_renews
-      WHERE plan_state IN ('Valid Now', 'Paused', 'Pending Cancel', 'In Trial')
+      WHERE plan_state IN (${ACTIVE_STATES_SQL})
+        AND (current_state IS NULL OR current_state = 'active')
         AND plan_category = $1
         AND customer_email IS NOT NULL
     `, [cat]);
